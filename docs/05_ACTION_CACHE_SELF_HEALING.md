@@ -1,107 +1,102 @@
-# 05. Action Memory Cache & Self-Healing Engine — SIH26171
+# 05. Action Memory Cache & Privacy Audit Trail — SIH26171
 
-## 1. Action Cache Architecture
+## 1. Subsystem Architecture
 
-The primary pain point stated by ISRO is that scientists waste 30-60 minutes daily performing **repetitive** portal navigation. A pure VLM agent that blindly re-reasons through every single dropdown on every run is wasteful and slow (~45s per query).
-
-Our **Action Memory Cache** turns every successful navigation path into a deterministic fast-path replay, slashing repeated query execution to **< 8 seconds**.
+The Action Memory Cache and State Verifier optimize client execution latency (15% metric) and provide cryptographic proof of zero PII leakage:
 
 ```
-                           ┌────────────────────────────┐
-                           │      Subtask Signature     │
-                           │  "select_sensor_cartosat2" │
-                           └─────────────┬──────────────┘
-                                         │
-                                         ▼
-                            ┌──────────────────────────┐
-                            │    Cache Query (SQLite)  │
-                            └────────────┬─────────────┘
-                                         │
-                   ┌─────────────────────┴─────────────────────┐
-                   │ HIT (Found cached action sequence)        │ MISS (New UI / Unseen subtask)
-                   ▼                                           ▼
-      ┌─────────────────────────┐                 ┌─────────────────────────┐
-      │   Fast CDP Replay       │                 │   Invoke Local VLM      │
-      │   (DOM Selector / Coord)│                 │   (SmolVLM / Qwen2.5)   │
-      └────────────┬────────────┘                 └────────────┬────────────┘
-                   │                                           │
-                   ▼                                           ▼
-      ┌─────────────────────────┐                 ┌─────────────────────────┐
-      │ Verify State Transition │                 │ Verify & Save Path      │
-      └────────────┬────────────┘                 │ to Cache Table          │
-                   │ Failed (Stale)               └─────────────────────────┘
-                   ▼
-      [Invalidate Cache & Fallback to VLM]
+[Server UI Action] ──▶ [IndexedDB Action Cache] ──▶ [Content Script Executor] ──▶ [pHash State Verifier]
+                              ▲                                                          │
+                              └──────────────── Store Verified Action ───────────────────┘
 ```
 
 ---
 
-## 2. SQLite Cache Database Schema
+## 2. IndexedDB Action Cache Schema
 
-```sql
-CREATE TABLE IF NOT EXISTS action_cache (
-    signature TEXT PRIMARY KEY,       -- e.g. "bhuvan:cartosat_2:sensor_select"
-    portal_id TEXT NOT NULL,          -- "bhuvan" | "mosdac" | "vedas" | "bhoonidhi"
-    subtask_type TEXT NOT NULL,       -- "sensor_select" | "date_range" | "canvas_drag"
-    action_payload JSON NOT NULL,     -- {"type": "click", "selector": "#sensor_opt_4", "coords": null}
-    expected_phash TEXT NOT NULL,     -- Perceptual hash of expected post-state
-    success_count INTEGER DEFAULT 1,  -- Track reliability count
-    last_verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+Recurring user workflows (e.g. repeated portal navigation, filtering, or logins) are stored locally in the browser's `IndexedDB`:
+
+```typescript
+export interface CachedActionPath {
+  taskSignature: string;      // e.g. "portal.isro.gov.in#search_satellite_imagery"
+  stepIndex: number;          // 0, 1, 2...
+  sanitizedDOMHash: string;   // Structural hash of non-sensitive DOM tree
+  action: {
+    type: 'click' | 'type' | 'select' | 'scroll';
+    selector: string;
+    coordinates?: { x: number; y: number };
+  };
+  lastSuccessTimestamp: number;
+  hitCount: number;
+}
+```
+
+### Fast-Path Latency Advantage
+- **Cold Run (Server VLM Reasoning):** ~850–1200 ms per step.
+- **Warm Run (IndexedDB Cache Hit):** **<150 ms** deterministic replay.
+- Directly optimizes the **15% End-to-End Latency** metric while reducing server compute costs.
+
+---
+
+## 3. Closed-Loop State Verification & Self-Healing
+
+After executing any UI action, the agent captures the subsequent viewport and verifies state transitions:
+
+```typescript
+export class StateVerifier {
+  public static async verifyTransition(
+    beforeBlob: Blob,
+    afterBlob: Blob
+  ): Promise<boolean> {
+    const hashBefore = await this.computePerceptualHash(beforeBlob);
+    const hashAfter = await this.computePerceptualHash(afterBlob);
+    
+    const hammingDistance = this.calculateHammingDistance(hashBefore, hashAfter);
+    // Hamming distance > 4 indicates significant visual page update
+    return hammingDistance >= 4;
+  }
+
+  public static async handleStallOrModal(document: Document): Promise<boolean> {
+    // Detect common modal backdrop or cookie/consent banners
+    const modalCloseSelectors = [
+      'button[aria-label*="close" i]',
+      'button[class*="modal-close" i]',
+      'button[class*="cookie-accept" i]',
+      '.modal .close',
+      '#dismiss-button'
+    ];
+    
+    for (const selector of modalCloseSelectors) {
+      const btn = document.querySelector(selector) as HTMLElement;
+      if (btn && btn.offsetParent !== null) {
+        btn.click();
+        return true;
+      }
+    }
+    return false;
+  }
+}
 ```
 
 ---
 
-## 3. Perceptual Diffing (pHash) & State Verification
+## 4. Cryptographic Privacy Audit Trail
 
-After every dispatched action, we verify whether the webpage state actually changed:
+To empirically demonstrate compliance with the **40% PII & Redaction** scoring criteria to SIH judges, the extension generates a real-time cryptographic audit log:
 
-```python
-import imagehash
-from PIL import Image
-import io
-
-def calculate_phash(screenshot_bytes: bytes) -> str:
-    image = Image.open(io.BytesIO(screenshot_bytes))
-    return str(imagehash.phash(image))
-
-def verify_state_transition(pre_phash: str, post_phash: str, threshold: int = 4) -> bool:
-    """
-    Returns True if the page visually changed significantly.
-    Hamming distance <= threshold implies page remained static (action failed).
-    """
-    hash1 = imagehash.hex_to_hash(pre_phash)
-    hash2 = imagehash.hex_to_hash(post_phash)
-    distance = hash1 - hash2
-    return distance > threshold
+```typescript
+export interface PrivacyAuditRecord {
+  stepId: number;
+  timestamp: string;
+  urlHost: string;
+  detectedSensitiveElements: {
+    category: 'PASSWORD' | 'FACE' | 'CREDIT_CARD' | 'EMAIL' | 'PHONE' | 'AADHAAR';
+    redactionMethod: 'SOLID_BLACKOUT' | 'GAUSSIAN_BLUR' | 'TEXT_MASK';
+    elementBounds: { x: number; y: number; width: number; height: number };
+    sha256Digest: string; // Hash of raw data proving detection without storing plaintext
+  }[];
+  networkPayloadVerifiedClean: boolean;
+}
 ```
 
----
-
-## 4. Self-Healing Decision Matrix
-
-When `verify_state_transition()` returns `False` (page failed to transition), the self-healing state machine executes the following fallback ladder:
-
-```
-[Action Dispatched] ──▶ [Check pHash Diff] ──▶ [No Change Detected!]
-                              │
-                              ▼
-        ┌──────────────────────────────────────────────────┐
-        │ STEP 1: Modal / Alert / Cookie Popup Interceptor │
-        │ Check for dialog overlays or 'OK' / 'Close' btns │
-        └─────────────────────┬────────────────────────────┘
-                              │ Found & Dismissed? ──▶ Re-attempt original action
-                              │ Not Found?
-                              ▼
-        ┌──────────────────────────────────────────────────┐
-        │ STEP 2: Selector Degradation / Coordinate Click  │
-        │ Fallback from exact ID to element center (x, y)  │
-        └─────────────────────┬────────────────────────────┘
-                              │ Transitioned? ──▶ Success & Update Cache
-                              │ Still Blocked?
-                              ▼
-        ┌──────────────────────────────────────────────────┐
-        │ STEP 3: VLM Re-perception with Fresh SoM         │
-        │ Take new screenshot, re-generate marks, re-plan  │
-        └──────────────────────────────────────────────────┘
-```
+Judges can click **"Export Privacy Audit Log"** in the HUD to download a JSON/CSV verification report validating that 0 unredacted secrets were transmitted.

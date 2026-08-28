@@ -2,74 +2,88 @@
 
 ## 1. Executive Summary & Problem Identity
 - **Problem Statement ID:** `SIH26171`
-- **Issuing Ministry/Organization:** 🇮🇳 **Indian Space Research Organisation (ISRO)**
-- **Category:** Software | Miscellaneous (Space Technology & Autonomous Web Intelligence)
-- **PS Type:** Dedicated Ministry Problem Statement (Fixed requirements, evaluated by ISRO scientists)
-- **Key Target Portals:** Bhuvan (GIS & Satellite Imagery), MOSDAC (Meteorological & Oceanographic), VEDAS (Geo-spatial Visualization), Bhoonidhi (Open Earth Observation Data Hub).
+- **Issuing Ministry/Organization:** 🇮🇳 **Indian Space Research Organisation (ISRO) | Department of Space**
+- **Category:** Software
+- **Theme:** Smart Automation
+- **PS Type:** Dedicated Ministry Problem Statement (Fixed requirements, evaluated by ISRO domain experts)
+- **Dataset / Challenge Scope:** *"Any open-source data can be used. Use cases for evaluation will be provided during finale."*
 
 ---
 
-## 2. Core Problem Breakdown
+## 2. Core Problem Breakdown: The Privacy Paradox in Web AI Agents
 
-ISRO scientists, disaster management teams, and defense analysts repeatedly extract high-resolution satellite imagery (Cartosat, RISAT, Oceansat, INSAT-3D) across Indian geospatial portals. Currently, this workflow suffers from four fundamental bottlenecks:
+Autonomous web agents that perceive screens and execute browser actions have the potential to automate complex digital workflows. However, existing agent architectures suffer from a critical architectural flaw:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                                ISRO PORTAL BOTTLENECK MATRIX                             │
+│                           THE SERVER-SIDE PRIVACY PARADOX                                │
 ├───────────────────────┬─────────────────────────────────────────────────────────────────┤
 │ Bottleneck            │ Description & Operational Impact                                │
 ├───────────────────────┼─────────────────────────────────────────────────────────────────┤
-│ 1. Manual Complexity  │ 10+ nested dropdowns (satellite → sensor → band → resolution),  │
-│                       │ date range selectors, cloud-cover threshold sliders, and        │
-│                       │ interactive map boundary drawing. Consumes 30-60 mins/query.     │
+│ 1. Data Exfiltration  │ Sending raw browser screenshots to external/cloud LLM APIs      │
+│                       │ leaks passwords, auth tokens, credit cards, emails, and PII.   │
 ├───────────────────────┼─────────────────────────────────────────────────────────────────┤
-│ 2. Air-Gapped Security│ ISRO/defense networks cannot transmit screen captures or data   │
-│                       │ to external cloud LLM APIs (OpenAI, Anthropic, Google) due to   │
-│                       │ sovereign data compliance and national security regulations.    │
+│ 2. Facial & Media Risk│ Screenshots capture employee profile pictures, identity cards,  │
+│                       │ and video streams, violating GDPR and national privacy laws.    │
 ├───────────────────────┼─────────────────────────────────────────────────────────────────┤
-│ 3. Canvas Maps (No DOM│ Bhuvan and VEDAS use WebGL/Leaflet/OpenLayers canvas viewports. │
-│    Accessibility)     │ Traditional RPA/Selenium scripts fail because map features lack │
-│                       │ inspectable HTML DOM nodes. Requires visual spatial grounding.  │
+│ 3. Heavy Edge Models  │ Running a full 7B-70B VLM inside a browser tab crashes client   │
+│                       │ machines due to severe VRAM/RAM constraints.                    │
 ├───────────────────────┼─────────────────────────────────────────────────────────────────┤
-│ 4. Edge Hardware      │ Deployed on standard analyst laptops (e.g. 16GB RAM, standard    │
-│    Constraints        │ i5/i7/Ryzen or Apple Silicon M-series) without data-center GPUs.│
-│                       │ Inference must be ≤3B params, <4GB VRAM, and <800ms/step.       │
+│ 4. Unseen Web UIs     │ Evaluators will test on undisclosed live web portals at finale. │
+│                       │ Hardcoded selectors or single-site agents fail immediately.     │
 └───────────────────────┴─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. Critical Clarification: "Offline" vs "Live Portals"
+## 3. The Solution: Hybrid Client-Server Privacy Architecture
 
-There is a frequent misconception about the term **"Offline"** in this hackathon problem statement:
+The problem statement mandates bridging **on-device client privacy** with **centralized server reasoning**:
 
 ```
   ┌──────────────────────────────────────────────────────────────────────────────────┐
-  │                            AIR-GAP & NETWORK TAXONOMY                             │
+  │                         CLIENT VS SERVER RESPONSIBILITY SPLIT                    │
   ├─────────────────────────────────────────┬────────────────────────────────────────┤
-  │ What "Offline" DOES Mean (AI Layer)     │ What "Offline" DOES NOT Mean (Browser) │
+  │ Client-Side (Browser Extension / JS)    │ Server-Side (Centralized VLM / LLM)    │
   ├─────────────────────────────────────────┼────────────────────────────────────────┤
-  │ • The VLM model weights reside locally  │ • It does NOT mean the browser has no  │
-  │ • Image processing runs on local VRAM   │   network access to ISRO portals.      │
-  │ • Planner, Cache, & SoM run 100% on-box │ • Queries are dynamic; images are      │
-  │ • Zero outbound telemetry / Zero API key│   generated on-demand by ISRO backend. │
+  │ • Captures local viewport and DOM       │ • Receives ONLY sanitized context      │
+  │ • Runs WebGPU ViT & Face Detection      │ • Understands high-level task intent   │
+  │ • Redacts passwords, faces, & PII       │ • Generates structured UI action JSON  │
+  │ • Executes returned action in DOM       │ • Returns command to extension         │
   └─────────────────────────────────────────┴────────────────────────────────────────┘
 ```
 
-### The Hackathon Demo Defense Strategy (Network Safeguard)
-During the hackathon Grand Finale, internet connections at jury tables can be unstable or Wi-Fi can be throttled.
-- **Primary Mode:** Live connection to ISRO portal (`bhuvan.nrsc.gov.in` / `mosdac.gov.in`) with 100% local AI inference.
-- **Fail-Safe Sandbox Mode (The Demo Savior):** A pre-recorded Playwright HAR/offline proxy server running on `localhost:8080` that mirrors the real Bhuvan interface. If live government servers are down or Wi-Fi drops, the agent seamlessly switches to the local sandbox while maintaining identical live visual UI behavior.
+---
+
+## 4. Official SIH Evaluation Scorecard & Weightage
+
+The official evaluation metrics defined by ISRO reward privacy and redaction above all else:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                              OFFICIAL SIH 26171 SCORECARD                              │
+├──────────────────────────────────────────┬────────┬────────────────────────────────────┤
+│ Metric                                   │ Weight │ Implementation Benchmark           │
+├──────────────────────────────────────────┼────────┼────────────────────────────────────┤
+│ 1. Accuracy of Visual Context            │  25%   │ Clean DOM extraction & layout grid │
+│ 2. Recall & Precision of PII Detection   │  20% ┐ │ >98% detection across all types    │
+│ 3. Precision of Redaction                │  20% ┴─┼─ 40% PRIVACY WEIGHT!               │
+│ 4. Client-Side Resource Utilization      │  20%   │ <350MB WebGPU RAM, <15% CPU load   │
+│ 5. Overall End-to-End Latency            │  15%   │ <1.2s total step round-trip        │
+└──────────────────────────────────────────┴────────┴────────────────────────────────────┘
+```
 
 ---
 
-## 4. Key Success Criteria for Winning SIH
+## 5. The Finale Generalization Mandate
 
-| Evaluation Criteria | Target Metric | Engineering Solution |
-|---|---|---|
-| **Autonomous Execution** | 100% End-to-end task completion | Natural language prompt → Downloaded GeoTIFF file |
-| **Inference Latency** | < 800 ms per reasoning step | Quantized INT4 VLM (SmolVLM / Qwen2.5-VL) on Metal/CUDA |
-| **Air-Gap Compliance** | 0 external network requests | Local Ollama/llama.cpp instance, verified by network inspector |
-| **Visual Canvas Precision**| > 95% bounding box IoU | Set-of-Marks (SoM) + Normalized Coordinate Mapper |
-| **Repetitive Speedup** | 45s (First run) → <8s (Cached run) | Deterministic Task-Graph Action Cache |
-| **Self-Healing** | Auto-recovery from modals/popups | Perceptual hash (pHash) state verifier + DOM fallback |
+The official portal confirms:
+> *"Use cases for evaluation will be provided during finale."*
+
+This is a critical rule: **Judges will evaluate solutions on live, arbitrary websites that teams have never seen before.**
+
+### Our Generalization Strategy:
+1. **Dynamic Heuristic & Vision Grounding:** No hardcoded CSS selectors or site-specific scrapers.
+2. **Universal DOM Sanitizer:** Recursively parses all form elements, standard input types (`password`, `email`, `tel`), ARIA labels, and text nodes.
+3. **Class-Agnostic Visual Redaction:** BlazeFace ONNX model detects any human face regardless of image dimensions, zoom level, or site theme.
+4. **Validation Suite:** During development, the pipeline is verified against 4 distinct test platforms: an e-commerce checkout flow, a government registration portal, a social media profile page, and a finance dashboard.

@@ -1,126 +1,151 @@
-# 03. On-Device VLM Inference Pipeline — SIH26171
+# 03. In-Browser Vision & Server VLM Pipeline — SIH26171
 
-## 1. Local Model Strategy & Tiering
+## 1. Pipeline Overview
 
-To guarantee air-gapped compliance on consumer hardware (< 16GB RAM / 4GB VRAM), we adopt a staged model approach:
+The perception and reasoning pipeline bridges client-side WebGPU visual processing with server-side multimodal reasoning:
 
 ```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                MODEL TIERING & SELECTION                               │
-├─────────────────┬──────────────┬─────────────┬────────────┬────────────────────────────┤
-│ Phase           │ Model        │ Params / Q  │ VRAM / RAM │ Role & Benchmarks          │
-├─────────────────┼──────────────┼─────────────┼────────────┼────────────────────────────┤
-│ 1. Prototype    │ SmolVLM-500M │ 0.5B (INT4) │ ~800 MB    │ Ultra-fast loop validation │
-│                 │              │             │            │ Step Latency: ~250-350ms   │
-├─────────────────┼──────────────┼─────────────┼────────────┼────────────────────────────┤
-│ 2. Production   │ SmolVLM-2.2B │ 2.2B (INT4) │ ~2.1 GB    │ Core workhorse for UI      │
-│    Standard     │              │             │            │ Step Latency: ~500-750ms   │
-├─────────────────┼──────────────┼─────────────┼────────────┼────────────────────────────┤
-│ 3. Complex Map  │ Qwen2.5-VL   │ 3.0B (INT4) │ ~3.2 GB    │ SOTA spatial grounding for │
-│    Stretch      │ 3B-Instruct  │             │            │ WebGL canvas region drag   │
-└─────────────────┴──────────────┴─────────────┴────────────┴────────────────────────────┘
-```
-
-> **Golden Rule:** Never start development on the heaviest model. Get the full loop (Planner ➔ DOM ➔ SoM ➔ VLM ➔ Playwright ➔ Cache) fully functional on SmolVLM-500M/2.2B first. A 500ms responsive agent is a winning demo; a 4-second stalling model loses hackathons.
-
----
-
-## 2. Local Inference Runtime Setup
-
-### Serving with Ollama (Metal & CUDA acceleration)
-Ollama provides zero-cloud local OpenAI-compatible endpoints on `http://127.0.0.1:11434`.
-
-```bash
-# Start local Ollama server
-ollama serve
-
-# Pull and run SmolVLM / Qwen2.5-VL
-ollama run qwen2.5-vl:3b-instruct-q4_K_M
-```
-
-### Direct Llama.cpp / Python llama-cpp-python (Air-Gapped Embedding)
-For standalone zero-dependency Python packages:
-```python
-from llama_cpp import Llama
-from llama_cpp.llama_chat_format import Llava15ChatHandler
-
-# Initialize local multimodal model with Metal acceleration (n_gpu_layers=-1)
-chat_handler = Llava15ChatHandler(clip_model_path="models/mmproj-model-f16.gguf")
-llm = Llama(
-    model_path="models/qwen2.5-vl-3b-instruct-q4_k_m.gguf",
-    chat_handler=chat_handler,
-    n_ctx=2048,
-    n_gpu_layers=-1, # Offloads 100% to Apple Metal or CUDA
-    verbose=False
-)
+[Raw Screen State] ──▶ [In-Browser WebGPU ViT/Face Detector] ──▶ [Canvas Blur & Blackout] 
+                             │
+                             ▼
+               [Sanitized Context (Zero PII)] ──▶ [Server VLM API] ──▶ [Structured Action JSON]
 ```
 
 ---
 
-## 3. Image Preprocessing & Resolution Budget
+## 2. Client-Side Vision & Privacy Engine (In-Browser WebGPU)
 
-High-resolution screenshots (1920x1080) explode VLM token counts and destroy sub-second latency targets.
+### A. ONNX Runtime Web Setup
+The extension runs in-browser ML inference inside a dedicated offscreen document with WebGPU acceleration:
 
-### The Dynamic Cropping / Downscaling Pipeline
-1. **Viewport Resolution:** Standardize browser viewport to `1280x720` or `1024x768`.
-2. **Downsampling:** Resize full-screen screenshots to max dimension `768px` before inference.
-3. **Region-of-Interest (ROI) Cropping:** When interacting with the WebGL map canvas, crop *only* the canvas bounding box, preserving pixel clarity for bounding box prediction without passing the entire browser window.
+```typescript
+import * as ort from 'onnxruntime-web/webgpu';
+
+// Configure WebGPU backend with WASM fallback
+ort.env.wasm.numThreads = 4;
+ort.env.wasm.simd = true;
+
+export async function initVisionSession() {
+  const session = await ort.InferenceSession.create('./models/blazeface_quant.onnx', {
+    executionProviders: ['webgpu', 'wasm'],
+    graphOptimizationLevel: 'all'
+  });
+  return session;
+}
+```
+
+### B. Lightweight Visual Face Detection (BlazeFace / MobileNet)
+- **Model Size:** ~1.2 MB quantized ONNX.
+- **Inference Time:** 20–35 ms on WebGPU.
+- **Output:** Bounding boxes `[ymin, xmin, ymax, xmax]` for every human face detected in the viewport.
+
+### C. DOM Sensitive Field Sanitization
+Content script inspects the active DOM tree and extracts bounding rectangles for sensitive input fields:
+```typescript
+export function getSensitiveElementBoxes(document: Document): DOMRect[] {
+  const sensitiveSelectors = [
+    'input[type="password"]',
+    'input[autocomplete*="cc-"]',
+    'input[name*="password" i]',
+    'input[name*="card" i]',
+    'input[name*="ssn" i]',
+    'input[name*="aadhaar" i]',
+    'input[name*="cvv" i]'
+  ];
+  
+  const elements = document.querySelectorAll(sensitiveSelectors.join(','));
+  return Array.from(elements).map(el => el.getBoundingClientRect());
+}
+```
+
+### D. Canvas Obfuscation Engine (Zero-Leakage Guarantee)
+Before any image data leaves the client, the canvas obfuscator paints over sensitive areas:
+```typescript
+export async function sanitizeScreenshot(
+  rawImageBitmap: ImageBitmap,
+  faceBoxes: BoundingBox[],
+  domBoxes: DOMRect[]
+): Promise<Blob> {
+  const canvas = new OffscreenCanvas(rawImageBitmap.width, rawImageBitmap.height);
+  const ctx = canvas.getContext('2d')!;
+  
+  // 1. Draw base raw screenshot
+  ctx.drawImage(rawImageBitmap, 0, 0);
+  
+  // 2. Apply Gaussian Blur over detected faces
+  for (const box of faceBoxes) {
+    ctx.filter = 'blur(16px)';
+    ctx.drawImage(canvas, box.x, box.y, box.width, box.height, box.x, box.y, box.width, box.height);
+    ctx.filter = 'none';
+  }
+  
+  // 3. Apply Solid Blackout Rectangles over sensitive DOM inputs
+  ctx.fillStyle = '#000000';
+  for (const box of domBoxes) {
+    ctx.fillRect(box.x, box.y, box.width, box.height);
+    // Draw visual badge confirming redaction
+    ctx.strokeStyle = '#EF4444';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(box.x, box.y, box.width, box.height);
+  }
+  
+  return await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+}
+```
 
 ---
 
-## 4. Structured Prompt Schema & JSON Contract
+## 3. Server-Side VLM Reasoning Engine
 
-The model must return deterministic, machine-parseable JSON actions without conversational fluff.
+### A. Centralized VLM Model Configuration
+- **Allowed Models:** `Qwen2.5-VL-7B/72B`, `Claude 3.5 Sonnet`, `Llama-3.2-Vision-11B`, `DeepSeek-VL`.
+- **Deployment:** Cloud API endpoint during SIH (fully permitted by official rules).
 
-### System Prompt
+### B. VLM System Prompt Schema
 ```text
-You are an autonomous browser agent navigating ISRO geospatial portals.
-You are given an image with numbered Set-of-Marks badges [1], [2], [3]...
-Your current subtask: "{{SUBTASK_DESCRIPTION}}"
+You are an autonomous browser agent assistant. You are given:
+1. A privacy-sanitized screenshot of the user's active browser viewport (passwords are blacked out, faces are blurred).
+2. An anonymized, structural DOM tree of interactive elements.
+3. The user's target workflow goal.
 
-Respond ONLY with a JSON object adhering to this schema:
-{
-  "thought": "Short explanation of target UI element",
-  "action": "click" | "type" | "select" | "canvas_drag" | "scroll" | "wait" | "done",
-  "target_mark_id": number | null,
-  "value": string | null,
-  "drag_coords": { "start_x": number, "start_y": number, "end_x": number, "end_y": number } | null
-}
-```
+Your task is to analyze the sanitized visual context and return the SINGLE next best UI action as strict JSON.
 
-### Sample Model Output
-```json
+JSON Schema:
 {
-  "thought": "Badge [6] corresponds to Cartosat-2 satellite option in the sensor selection dropdown.",
-  "action": "click",
-  "target_mark_id": 6,
-  "value": null,
-  "drag_coords": null
+  "thought": "Brief explanation of visual reasoning",
+  "action": "click" | "type" | "select" | "scroll" | "wait" | "finish",
+  "target_selector": "CSS selector for target element (if applicable)",
+  "target_coordinates": { "x": number, "y": number },
+  "input_text": "text to type (if action == 'type')",
+  "scroll_delta": { "dx": number, "dy": number }
 }
 ```
 
 ---
 
-## 5. Mock Model Server for Fast Teammate Development
+## 4. Local Development Mock Server
 
-During development, teammates working on Playwright scripts, frontend HUD, or cache logic do not need to wait for local GPU/model runs. They can run a deterministic mock server:
+To enable fast frontend development on the Lenovo IdeaPad without invoking cloud APIs, a lightweight FastAPI mock server is provided:
 
 ```python
-# mock_vlm_server.py
-from fastapi import FastAPI, UploadFile, Form
-import json
+from fastapi import FastAPI, UploadFile, File, Form
+from pydantic import BaseModel
 
-app = FastAPI()
+app = FastAPI(title="SIH26171 Reasoning Server")
 
-MOCK_RESPONSES = [
-    {"thought": "Clicking Cartosat dropdown", "action": "click", "target_mark_id": 2},
-    {"thought": "Selecting August 2024 date range", "action": "type", "target_mark_id": 5, "value": "01-08-2024 to 31-08-2024"},
-    {"thought": "Dragging region of interest across Assam", "action": "canvas_drag", "drag_coords": {"start_x": 420, "start_y": 310, "end_x": 580, "end_y": 440}},
-    {"thought": "Clicking download button", "action": "click", "target_mark_id": 9}
-]
-
-@app.post("/v1/agent/action")
-async def get_mock_action(step: int = Form(0)):
-    idx = min(step, len(MOCK_RESPONSES) - 1)
-    return MOCK_RESPONSES[idx]
+@app.post("/api/v1/reason")
+async def reason_step(
+    screenshot: UploadFile = File(...),
+    dom_tree: str = Form(...),
+    user_goal: str = Form(...)
+):
+    # Validates that incoming screenshot is received
+    return {
+        "thought": "Detected search bar in sanitized DOM tree; initiating query input",
+        "action": "type",
+        "target_selector": "input[name='q']",
+        "target_coordinates": {"x": 320, "y": 180},
+        "input_text": "ISRO space mission schedule 2026",
+        "step_id": 1
+    }
 ```

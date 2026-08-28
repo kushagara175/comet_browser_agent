@@ -1,61 +1,35 @@
 # 07. Team Workflow & Machine Role Split — SIH26171
 
-## 1. Hardware Split & Work Breakdown
+## 1. Hardware Overview & Feasibility
 
-To maximize velocity across team members without GPU contention, we decouple the AI inference engine from the browser automation and UI engineering:
+Unlike heavy, all-local architectures that demand massive local GPU VRAM, this hybrid architecture is lightweight and fully compatible with the team's existing laptops:
 
 ```
-┌────────────────────────────────────────┐     ┌────────────────────────────────────────┐
-│      MACHINE A: MACBOOK AIR M2         │     │      MACHINE B: LENOVO IDEAPAD 3       │
-│      (16GB Unified Memory / Metal)     │     │      (Windows / Linux / 8-16GB RAM)    │
-├────────────────────────────────────────┤     ├────────────────────────────────────────┤
-│ • Local VLM Host (Ollama / SmolVLM /   │     │ • Playwright Automation Scripts        │
-│   Qwen2.5-VL INT4)                     │     │ • Set-of-Marks In-DOM Injector         │
-│ • Quantized Model Benchmark Suite      │     │ • Task-Graph Planner Logic             │
-│ • Local LLM / Whisper Audio Service    │     │ • Action Memory Cache (SQLite)         │
-│ • Final Integration & Live Pitch Host  │     │ • React Mission Control HUD            │
-└───────────────────┬────────────────────┘     └───────────────────┬────────────────────┘
-                    │                                              │
-                    └─────────────── Local Wi-Fi / Hotspot ────────┘
-                                    REST & WebSocket API
-                                    (Or Local Mock Server)
+┌────────────────────────────────────────┬────────────────────────────────────────┐
+│ 💻 MacBook Air M2 (16GB Unified RAM)   │ 💻 Lenovo IdeaPad 3 (Standard Laptop)  │
+├────────────────────────────────────────┼────────────────────────────────────────┤
+│ • Primary Extension & WebGPU Dev       │ • Server API & DOM Redactor Dev        │
+│ • Apple Metal-accelerated WebGPU       │ • WebAssembly (WASM) fallback testing  │
+│ • React Mission Control HUD Side-Panel │ • FastAPI Gateway & Mock Server        │
+│ • Live Grand Finale Demo Machine       │ • Generalization test harness          │
+└────────────────────────────────────────┴────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. Decoupled Development Workflow
+## 2. Machine Role Split
 
-### Phase 1: Zero-Dependency Mocking on Machine B
-Teammates on the Lenovo laptop do **not** need to wait for Machine A's model server to be running.
-- Use `mock_vlm_server.py` (FastAPI) on Machine B to return instant deterministic JSON actions.
-- Build the entire Playwright script, dropdown navigation, canvas drag functions, and React HUD using the mock server.
-
-### Phase 2: LAN Integration
-When Machine A's local Ollama endpoint is ready:
-1. Connect both laptops to the same phone hotspot or offline router.
-2. Machine B configures: `VLM_ENDPOINT = "http://192.168.1.X:11434/v1"`
-3. Verify live visual perception over LAN.
-
-### Phase 3: Final Consolidation on Machine A (Demo Day)
-Before the Grand Finale:
-- Pull the completed Playwright scripts and React build directly onto the **MacBook Air M2**.
-- Run everything locally on `localhost` (MacBook M2 hosts both Ollama + Browser Agent + React UI).
-- Result: **100% single-laptop, sovereign, zero-network-dependency live demo.**
+| Machine | Assigned Tasks | Deliverables |
+| :--- | :--- | :--- |
+| **MacBook Air M2** | **In-Browser ML & Extension Core** | • Manifest V3 background worker & offscreen document.<br>• `ONNX Runtime Web` with WebGPU execution.<br>• BlazeFace face detection & Gaussian blur pipeline.<br>• React + Vite Mission Control HUD side-panel. |
+| **Lenovo IdeaPad 3** | **Server API & DOM Engine** | • FastAPI reasoning server gateway.<br>• DOM sensitive field selector engine & regex scrubber.<br>• Content script action executor (`click`, `type`, `scroll`).<br>• IndexedDB Action Cache implementation.<br>• Multi-site generalization test suite. |
+| **Cloud Endpoint (Free Tier)** | **Central Reasoning Model** | • Hosted VLM API (OpenAI / Anthropic / Groq / HuggingFace Inference).<br>• Fully compliant with official SIH rules allowing cloud models. |
 
 ---
 
-## 3. Git Repository Branching & Directory Strategy
+## 3. Collaboration & Mock-Server Workflow
 
-```
-SIH_26209/
-├── docs/                     # Modular documentation & architecture specs
-├── src/
-│   ├── core/                 # Orchestrator & Task Graph Planner
-│   ├── perception/           # Set-of-Marks, A11y pruner, VLM client
-│   ├── automation/           # Playwright browser controller & canvas drag
-│   ├── memory/               # SQLite Action Cache & pHash verifier
-│   └── ui/                   # React + Vite Mission Control HUD
-├── mocks/                    # Mock portal HARs & mock VLM response servers
-├── benchmarks/               # Latency, VRAM, and success rate scripts
-└── README.md
-```
+To ensure seamless parallel development without blocking each other:
+1. **Mock Server First:** The Lenovo IdeaPad develops against a mock server returning deterministic JSON actions (`/api/v1/reason`), validating client execution without calling cloud APIs.
+2. **Standardized JSON Contract:** Both machines adhere to the strict action JSON schema defined in `docs/03_VLM_INFERENCE_PIPELINE.md`.
+3. **Local Testing:** Both laptops can test the extension simultaneously in Chrome (`chrome://extensions`) and Firefox (`about:debugging`).

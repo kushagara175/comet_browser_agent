@@ -1,52 +1,50 @@
-# 08. 4-Week Sprint Roadmap & Execution Checklist — SIH26171
+# 08. 4-Week Sprint Roadmap & Checklists — SIH26171
 
-## 1. Timeline Overview & Milestones
-
-- **Start Date:** 23 August 2026
-- **Idea Submission Deadline:** **20 September 2026 (Hard Deadline)**
-- **Total Sprint Duration:** 4 Weeks
+## 📅 Timeline Overview (Aug 23 — Sep 20, 2026)
 
 ```
-  WEEK 1 (Aug 23 - Aug 30)   WEEK 2 (Sep 01 - Sep 07)   WEEK 3 (Sep 08 - Sep 14)   WEEK 4 (Sep 15 - Sep 20)
-┌───────────────────────────┬──────────────────────────┬──────────────────────────┬─────────────────────────┐
-│ • Playwright Portal Setup │ • Set-of-Marks In-DOM    │ • Canvas Drag (Assam Box)│ • React Mission Control │
-│ • Local Ollama on Mac M2  │ • DOM Pruner & A11y Tree │ • Task-Graph Planner     │ • Latency Benchmarking  │
-│ • Static Screenshot Test  │ • First Simple E2E Loop  │ • SQLite Action Cache    │ • Backup Video & Pitch  │
-│ • Mock VLM Server         │   (Sensor + Date Select) │ • Self-Healing pHash Diff│ • Idea PDF Submission   │
-└───────────────────────────┴──────────────────────────┴──────────────────────────┴─────────────────────────┘
+Week 1: Extension & WebGPU Scaffold ──▶ Week 2: Privacy & Redaction (40%) ──▶ Week 3: VLM & Generalization ──▶ Week 4: Benchmarks & Submission
 ```
 
 ---
 
-## 2. Weekly Actionable Checklists
+## Week 1: Foundation & Extension Scaffold (Aug 23 – Aug 30)
+- [ ] Initialize TypeScript repository with Manifest V3 extension boilerplate.
+- [ ] Configure `ONNX Runtime Web` with WebGPU in an offscreen document.
+- [ ] Implement active tab viewport capture via `chrome.tabs.captureVisibleTab`.
+- [ ] Stand up basic FastAPI server gateway and mock response endpoint.
+- [ ] **Milestone 1:** Extension captures screenshot and receives a mock action response.
 
-### Week 1 — Foundation & Environment Setup (Aug 23 – Aug 30)
-- [ ] Install Ollama and pull `SmolVLM-500M` & `SmolVLM-2.2B` on MacBook Air M2.
-- [ ] Benchmark local inference latency with Apple Silicon Metal acceleration (`<600ms` target).
-- [ ] Initialize Python Playwright project with headless/headed Chromium launch scripts.
-- [ ] Script automated login and navigation to `bhuvan.nrsc.gov.in` and `mosdac.gov.in`.
-- [ ] Record Playwright HAR archive of Bhuvan session for the offline fallback mock server.
-- [ ] Build `mock_vlm_server.py` on FastAPI for Machine B development.
+---
 
-### Week 2 — Perception & Simple E2E Loop (Sep 01 – Sep 07)
-- [ ] Implement `inject_som_badges.js` to overlay numbered badges on all interactable elements.
-- [ ] Build Semantic DOM pruner to extract accessibility trees and map badge IDs to DOM selectors.
-- [ ] Connect Playwright capture pipeline to local Ollama API endpoint.
-- [ ] Complete first full automated subtask: Natural language prompt ➔ Select "Cartosat-2" ➔ Apply Date Range.
-- [ ] Implement download event listener to capture and verify downloaded GeoTIFF files.
+## Week 2: Privacy & Redaction Pipeline — 40% Weight (Aug 31 – Sep 6)
+- [ ] Implement DOM-based sensitive field detector (passwords, credit cards, emails).
+- [ ] Integrate quantized BlazeFace ONNX model for WebGPU face detection.
+- [ ] Build canvas obfuscator: Gaussian blur for faces + solid black rectangles for passwords.
+- [ ] Implement text regex scrubber for PII tokens (phones, Aadhaar, SSN).
+- [ ] Build Dual-Pane HUD view: Raw screen vs Redacted screen side-by-side.
+- [ ] **Milestone 2:** Side-by-side proof of zero PII leakage demonstrated on test forms.
 
-### Week 3 — Spatial Canvas & Intelligence Layer (Sep 08 – Sep 14)
-- [ ] Implement multi-step smooth mouse drag for WebGL/Leaflet canvas region selection.
-- [ ] Build Task-Graph Planner to decompose natural language prompts into DAG subtasks.
-- [ ] Build SQLite Action Memory Cache to store successful selector and coordinate paths.
-- [ ] Implement pHash perceptual diffing to detect stalled pages and failed action dispatches.
-- [ ] Add auto-dismissal logic for modal dialogues and cookie banners.
-- [ ] Demonstrate repetitive task acceleration: 45s (Cold run) ➔ 8s (Cached run).
+---
 
-### Week 4 — UI Polish, Submission & Pitch Deck (Sep 15 – Sep 20)
-- [ ] Build React + Vite dual-pane Mission Control HUD with WebSocket live telemetry.
-- [ ] Integrate Whisper-tiny offline voice command transcription.
-- [ ] Run automated benchmark suite: Latency, VRAM consumption, task success rate over 50 runs.
-- [ ] Record a flawless 4K backup demo video with voiceover (safety buffer for jury presentation).
-- [ ] Draft and finalize the official SIH 2026 Idea Submission PDF presentation.
-- [ ] **Submit Idea on official SIH Portal before 20 September 2026, 23:59 IST.**
+## Week 3: Server Reasoning, Execution & Generalization (Sep 7 – Sep 13)
+- [ ] Connect sanitized payload to central VLM (Qwen2.5-VL / Claude 3.5 Sonnet).
+- [ ] Build content script DOM action executor (`click`, `type`, `select`, `scroll`).
+- [ ] Implement IndexedDB Action Memory Cache for fast-path subtask replay.
+- [ ] Implement closed-loop state verifier (pHash visual diffing).
+- [ ] **Multi-Site Generalization Check:** Test full end-to-end workflow on 4 arbitrary, unseen websites (e-commerce, government registration, news portal, finance dashboard).
+- [ ] **Milestone 3:** Autonomous end-to-end task execution working seamlessly across multiple sites.
+
+---
+
+## Week 4: Benchmarking, Polish & Submission (Sep 14 – Sep 20)
+- [ ] Benchmark and record all 5 official SIH evaluation metrics:
+  - Visual Context Accuracy (%)
+  - PII Detection Recall & Precision (%)
+  - Redaction Precision (%)
+  - Client-Side Resource Utilization (WebGPU RAM / CPU %)
+  - End-to-End Task Latency (ms)
+- [ ] Polish Mission Control HUD side-panel and privacy audit log exporter.
+- [ ] Record a high-definition backup demo video for the Grand Finale.
+- [ ] Write and submit official Idea PDF before **20 September 2026**.
+- [ ] **Milestone 4:** Full project submission completed.

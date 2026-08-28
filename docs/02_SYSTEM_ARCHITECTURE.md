@@ -1,50 +1,43 @@
 # 02. System Architecture & Core Modules — SIH26171
 
-## 1. Architectural Philosophy: The Hybrid Triad
+## 1. Architectural Philosophy: The Privacy-Preserving Client-Server Split
 
-Most competing teams attempt a simplistic reactive loop:
-`Screenshot ──▶ Cloud VLM ──▶ Coordinate Click ──▶ Repeat`
-
-This naive approach fails because:
-1. High token latency (2-5s per step on big models).
-2. Coordinate hallucinations on tiny UI buttons.
-3. Zero memory across repeated identical tasks.
-4. Total collapse when popups, modals, or slow network transitions occur.
-
-Our architecture implements a **Hybrid Triad**:
+Standard agentic web architectures send raw, sensitive screen data directly to cloud LLMs. Our architecture enforces a strict **Zero-Leakage Privacy Boundary** directly inside the user's browser:
 
 ```
-                       ┌──────────────────────────────────────────────┐
-                       │           USER COMMAND (VOICE/TEXT)          │
-                       │ "Cartosat-2, Brahmaputra Basin, Aug 2024"    │
-                       └──────────────────────┬───────────────────────┘
-                                              │
-                                              ▼
-                                 [1. Task-Graph Planner]
-                           (Decomposes into ordered subtasks)
-                                              │
-                                              ▼
-                             ┌───────────────────────────────────┐
-                             │    2. Action Cache Check (Hit?)   │
-                             └───┬───────────────────────────┬───┘
-                                 │ YES (Cache Hit)           │ NO (Cache Miss / Stale)
-                                 ▼                           ▼
-                        [Direct Fast-Path]          [3. Hybrid Perception]
-                        (Execute cached DOM/CDP)      ├── DOM/A11y Tree (Dropdowns)
-                                 │                    └── SoM + Local VLM (Canvas)
-                                 │                           │
-                                 └───────────┬───────────────┘
-                                             │
-                                             ▼
-                                 [4. Playwright Executor]
-                                 (Dispatches CDP actions)
-                                             │
-                                             ▼
-                                 [5. Closed-Loop Verifier]
-                                 (pHash Diff + Self-Healing)
-                                             │
-                                             ▼
-                                    [Next Subtask / Done]
+                      ┌────────────────────────────────────────────────────────┐
+                      │              USER PROMPT & ACTIVE BROWSER TAB          │
+                      │        "Search flights, autofill profile & submit"     │
+                      └───────────────────────────┬────────────────────────────┘
+                                                  │
+                                                  ▼
+                                     [1. Viewport & DOM Capture]
+                                                  │
+                                                  ▼
+                                   [2. In-Browser Privacy Engine]
+                                   (WebGPU ONNX + DOM + Regex Scrubber)
+                                                  │
+                                                  ▼
+                                 ┌─────────────────────────────────┐
+                                 │   3. Privacy-Sanitized Payload  │
+                                 │ (Redacted Pixels + Masked DOM)  │
+                                 └────────────────┬────────────────┘
+                                                  │
+                                                  ▼ (Secure HTTPS Request - Zero PII)
+                                   [4. Centralized Reasoning VLM]
+                                   (Qwen2.5-VL / Claude / DeepSeek)
+                                                  │
+                                                  ▼
+                                  [5. Action Command JSON Stream]
+                             {"action": "click", "target_selector": "#pay"}
+                                                  │
+                                                  ▼ (Return to Browser)
+                                    [6. Client Action Executor]
+                                    (Content Script DOM Dispatcher)
+                                                  │
+                                                  ▼
+                                   [7. Closed-Loop State Verifier]
+                                   (pHash Visual Diff & Action Cache)
 ```
 
 ---
@@ -53,45 +46,43 @@ Our architecture implements a **Hybrid Triad**:
 
 ```mermaid
 flowchart TD
-    UserPrompt([User Prompt: Voice / Text]) --> Orchestrator[Master Task Orchestrator]
+    UserTab[Active Browser Tab: Chrome / Firefox] --> CaptureEngine[Viewport Capture & DOM Parser]
 
-    subgraph Planner_Module [Task Decomposition & Memory]
-        Orchestrator --> TaskPlanner[Task-Graph Planner]
-        TaskPlanner --> SubtaskQueue[Subtask Action Queue]
-        SubtaskQueue --> CacheCheck{Action Cache Hit?}
-        CacheCheck -->|HIT: Replay Path| FastPathExec[Direct CDP Fast Replay]
-        CacheCheck -->|MISS: Reason Path| PerceptionRouter[Hybrid Perception Router]
+    subgraph Client_Extension_Sandbox ["Client Browser Extension (Manifest V3)"]
+        CaptureEngine --> OffscreenWorker[Offscreen WebGPU Worker]
+        
+        subgraph Privacy_Filter ["On-Device Privacy & Redaction Pipeline"]
+            OffscreenWorker --> BlazeFaceModel["BlazeFace ONNX (WebGPU Face Detection)"]
+            CaptureEngine --> DOMSanitizer["DOM Element Inspector (Password / CC / Tel)"]
+            CaptureEngine --> RegexEngine["Local Regex / NER Text Redactor"]
+            
+            BlazeFaceModel --> CanvasObfuscator["Canvas Pixel Obfuscator (Blur & Blackout)"]
+            DOMSanitizer --> CanvasObfuscator
+            RegexEngine --> CanvasObfuscator
+        end
+
+        CanvasObfuscator --> SanitizedArtifacts["Sanitized Context: Redacted Screenshot + Anonymized DOM"]
     end
 
-    subgraph Browser_Environment [Playwright Headed/Headless Chromium]
-        DOM[Accessibility Tree & Interactive Elements]
-        CanvasView[WebGL / Leaflet Canvas Viewport]
+    subgraph Server_Reasoning_Gateway ["Centralized Reasoning Server (FastAPI / Node)"]
+        SanitizedArtifacts -->|HTTPS Payload (No PII)| GatewayRouter[API Gateway & Prompt Formatter]
+        GatewayRouter --> CentralVLM["Server VLM (Qwen2.5-VL / Claude 3.5 Sonnet)"]
+        CentralVLM --> ActionParser["Structured Action Parser (JSON Schema Validator)"]
     end
 
-    subgraph Perception_Pipeline [On-Device Perception Layer]
-        PerceptionRouter --> IsDOMElement{Is Target in DOM?}
-        IsDOMElement -->|YES| DOMPruner[Semantic A11y Tree Pruner]
-        IsDOMElement -->|NO: Map/Canvas| SoMEngine[Set-of-Marks Injection Engine]
-        DOMPruner --> FastDOMAction[Direct Selector Resolution]
-        SoMEngine --> LocalVLM["Local Quantized VLM (SmolVLM / Qwen2.5-VL)"]
-        LocalVLM --> BoundingBoxResolver[Coordinate & Badge Matcher]
+    subgraph Client_Execution_Loop ["Client-Side Action Runner"]
+        ActionParser -->|Action JSON| ActionDispatcher[Content Script Action Runner]
+        ActionDispatcher --> UserTab
+        ActionDispatcher --> StateVerifier{State Transition Verified?}
+        StateVerifier -->|Success| ActionCache[IndexedDB Action Memory Cache]
+        StateVerifier -->|Stall / Modal Popup| SelfHealing[Autonomous Modal Dismissal Engine]
+        ActionCache --> NextSubtask[Trigger Next Interaction Step]
     end
 
-    subgraph Action_Execution [Action Dispatcher & Verification]
-        FastPathExec --> ActionDispatcher[Playwright CDP Action Dispatcher]
-        FastDOMAction --> ActionDispatcher
-        BoundingBoxResolver --> ActionDispatcher
-        ActionDispatcher --> Browser_Environment
-        ActionDispatcher --> StateVerifier{State Changed? (pHash/DOM)}
-        StateVerifier -->|Verified Success| CacheUpdate[Store In Action Cache]
-        StateVerifier -->|Failed / Popup Blocked| SelfHeal[Self-Healing & Popup Dismissal]
-        SelfHeal --> LocalVLM
-        CacheUpdate --> NextStep[Trigger Next Subtask]
-    end
-
-    subgraph HUD_Telemetry [Dual-Pane Mission Control UI]
-        Orchestrator --> HUD_Left[Thought Stream, Latency & Cache Telemetry]
-        Browser_Environment --> HUD_Right[Live Viewport Mirror with SoM Badges]
+    subgraph Visual_HUD ["Mission Control Telemetry HUD"]
+        CaptureEngine --> HUD_Left[Left View: Live Raw Viewport]
+        CanvasObfuscator --> HUD_Right[Right View: Sanitized Viewport with Redaction Overlays]
+        OffscreenWorker --> HUD_Metrics[Live Telemetry: WebGPU RAM, PII Recall, Latency ms]
     end
 ```
 
@@ -99,34 +90,30 @@ flowchart TD
 
 ## 3. Subsystem Breakdown
 
-### 1. Task-Graph Planner
-- Takes unstructured natural language input.
-- Validates parameters (satellite name, sensor type, bounding coordinates, date ranges, cloud cover thresholds).
-- Generates a deterministic DAG (Directed Acyclic Graph) of subtasks:
-  - `SUBTASK_1`: Portal Navigation & Authentication
-  - `SUBTASK_2`: Satellite & Sensor Category Selection
-  - `SUBTASK_3`: Temporal & Atmospheric Filter Application
-  - `SUBTASK_4`: Spatial Region Selection (Canvas Bounding Box)
-  - `SUBTASK_5`: Product Query & Output Download Trigger
+### Subsystem 1: Client Browser Extension (Manifest V3)
+- **Background Service Worker:** Orchestrates the extension lifecycle and bridges content scripts with the offscreen WebGPU worker.
+- **Content Script:** Injects into active webpage DOM to read structural layout, compute element bounding boxes, and dispatch synthetic user events (`click`, `input`, `scroll`).
+- **Offscreen Document:** Provides access to the HTML Canvas API and `WebGPU` compute shaders within Chrome's Manifest V3 security model.
 
-### 2. Semantic DOM & A11y Tree Pruner
-- Filters raw 10,000+ DOM nodes down to interactive accessibility nodes (role, name, value, bounding box).
-- Strips irrelevant SVGs, styling stylesheets, and hidden DOM branches.
-- Reduces token context size by ~90%, enabling sub-50ms rule-based element matching for standard HTML controls.
+### Subsystem 2: In-Browser Vision & Privacy Filter
+- **Face & Media Detection:** Runs a quantized BlazeFace model on WebGPU (`ONNX Runtime Web`), producing bounding boxes for all human faces in <30ms.
+- **DOM Attribute Sanitization:** Identifies and blanks out all `input[type="password"]`, `autocomplete="cc-number"`, and confidential form values.
+- **Canvas Obfuscator:** Applies Gaussian blur over detected face regions and draws solid blackout `#000000` rectangles over sensitive input fields.
 
-### 3. Set-of-Marks (SoM) Engine
-- Injects numbered colored bounding badges (`[1]`, `[2]`, `[3]`) directly into interactive DOM overlays or canvas elements.
-- When vision inference is required, the VLM responds with `{"action": "click", "mark_id": 4}` rather than generating raw floating-point pixel coordinates.
+### Subsystem 3: Centralized Server Reasoning Gateway
+- **FastAPI / Express Server:** Receives the sanitized screenshot and structural DOM tags via HTTPS.
+- **VLM Reasoning Prompt:** Formats the request for the central VLM with strict JSON schema instructions.
+- **Action Command Output:** Returns deterministic actions:
+  ```json
+  {
+    "action": "click",
+    "target_selector": "button#submit-application",
+    "target_coords": { "x": 450, "y": 720 },
+    "confidence": 0.98,
+    "thought": "Form fields are sanitized; clicking submission button"
+  }
+  ```
 
-### 4. Action Memory Cache
-- Maintains a signature-keyed persistent SQLite / JSON store of successful UI paths:
-  `Key: hash(portal_id + subtask_type + target_descriptor)`
-  `Value: { action_type, selector, normalized_coords, post_state_phash }`
-- First run latency: ~45s. Second run latency: **< 8s** (Demonstrating radical speedup).
-
-### 5. Perceptual Diff & Self-Healing Verifier
-- Calculates pre-action and post-action perceptual image hashes (`pHash`).
-- If hamming distance == 0 (no visual change after action), triggers self-healing:
-  1. Check for modal/overlay obstruction (`aria-modal="true"`, dialog divs).
-  2. Auto-dismiss banner or click 'Close'.
-  3. Re-attempt action with coordinate jitter or alternative selector.
+### Subsystem 4: Action Cache & Self-Healing
+- **Action Memory Cache (IndexedDB):** Caches successful selector and coordinate paths for recurring workflows to provide instantaneous execution.
+- **pHash State Verifier:** Verifies perceptual page state changes before and after each action to catch failed clicks or unexpected modal overlays.

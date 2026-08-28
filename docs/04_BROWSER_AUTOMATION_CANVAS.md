@@ -1,138 +1,140 @@
-# 04. Browser Automation & Canvas Interaction — SIH26171
+# 04. Browser Extension Architecture & Automation — SIH26171
 
-## 1. Playwright + Chrome DevTools Protocol (CDP) Architecture
+## 1. Extension Architecture (Manifest V3)
 
-Traditional Selenium scripts are slow, lack low-level input control, and cannot capture high-framerate accessibility trees. We use **Playwright (Python/TypeScript)** paired directly with **Chrome DevTools Protocol (CDP)** sessions for pixel-accurate viewport management and hardware-level mouse dispatching.
+The client agent is built as a cross-browser extension adhering to the **Chrome Manifest V3** and **Firefox WebExtensions** standard:
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        BROWSER CONTROL SUBSYSTEM                       │
-├──────────────────────────┬─────────────────────────────────────────────┤
-│ Component                │ Implementation Details                      │
-├──────────────────────────┼─────────────────────────────────────────────┤
-│ Engine                   │ Chromium Headed / Headless via Playwright   │
-│ Viewport Standard        │ 1280x720 (1.0 Device Scale Factor)          │
-│ CDP Session              │ `Page.accessibility.snapshot`, `Input.dispatch`│
-│ Download Interceptor     │ `page.on('download', ...)` to local dir     │
-│ Trace & Audit Recorder   │ Full CDP Screencast & Action Event Log      │
-└──────────────────────────┴─────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph Browser_Environment ["Browser Process Architecture"]
+        Popup["Popup / Side-Panel UI (Mission Control HUD)"]
+        Background["Background Service Worker (Orchestrator)"]
+        Offscreen["Offscreen Worker (WebGPU / ONNX Inference)"]
+        ContentScript["Content Script (DOM Parser & Action Executor)"]
+        LivePage["Active Tab Webpage"]
+    end
+
+    Popup <-->|chrome.runtime.connect| Background
+    Background <-->|chrome.offscreen.createDocument| Offscreen
+    Background <-->|chrome.tabs.sendMessage| ContentScript
+    ContentScript <-->|DOM Events / MutationObserver| LivePage
 ```
 
 ---
 
-## 2. In-DOM Set-of-Marks (SoM) Injection Engine
+## 2. Manifest V3 Configuration (`manifest.json`)
 
-Instead of running heavy OpenCV bounding box detections over raw screenshot bitmaps, we inject lightweight CSS badges directly into the webpage DOM before capturing the screenshot. This guarantees 100% mathematical alignment between badge IDs and DOM selectors.
-
-### JavaScript Injection Script
-```javascript
-// inject_som_badges.js
-(() => {
-  const interactiveSelectors = [
-    'button', 'a[href]', 'input', 'select', 'textarea',
-    '[role="button"]', '[role="checkbox"]', '[role="option"]',
-    '[onclick]', '.clickable', 'canvas'
-  ];
-
-  let idCounter = 1;
-  const elements = document.querySelectorAll(interactiveSelectors.join(','));
-  const elementMap = {};
-
-  // Remove existing badges
-  document.querySelectorAll('.sih-som-badge').forEach(el => el.remove());
-
-  elements.forEach(el => {
-    const rect = el.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0 && rect.top < window.innerHeight && rect.bottom > 0) {
-      const badge = document.createElement('div');
-      badge.className = 'sih-som-badge';
-      badge.innerText = `${idCounter}`;
-      badge.style.cssText = `
-        position: fixed;
-        left: ${rect.left}px;
-        top: ${rect.top}px;
-        background: #e11d48;
-        color: white;
-        font-size: 11px;
-        font-weight: bold;
-        padding: 2px 5px;
-        border-radius: 4px;
-        z-index: 2147483647;
-        pointer-events: none;
-        border: 1px solid #ffffff;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-      `;
-      document.body.appendChild(badge);
-
-      elementMap[idCounter] = {
-        tagName: el.tagName,
-        id: el.id,
-        className: el.className,
-        selector: el.id ? `#${el.id}` : el.tagName.toLowerCase(),
-        box: { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
-      };
-      idCounter++;
+```json
+{
+  "manifest_version": 3,
+  "name": "SIH26171 Privacy Browser Agent",
+  "version": "1.0.0",
+  "description": "On-device visual perception and privacy-preserving autonomous web agent.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "offscreen",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "dist/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/contentScript.js"],
+      "run_at": "document_idle"
     }
-  });
-
-  return elementMap;
-})();
+  ],
+  "side_panel": {
+    "default_path": "dist/sidepanel.html"
+  }
+}
 ```
 
 ---
 
-## 3. WebGL / Leaflet Canvas Drag Interaction
+## 3. DOM Action Executor (Content Script Engine)
 
-For portals like Bhuvan where geographic regions (e.g. Assam / Brahmaputra basin) must be drawn on a WebGL canvas:
+The content script executes the server's structured action commands directly in the active browser tab:
 
-```python
-async def execute_canvas_drag(page, start_x: float, start_y: float, end_x: float, end_y: float, steps: int = 15):
-    """
-    Executes a continuous smooth hardware mouse drag across a WebGL canvas.
-    Discrete jumps often fail to register on WebGL event listeners; smooth steps are essential.
-    """
-    # 1. Hover to start coordinate
-    await page.mouse.move(start_x, start_y)
-    await page.wait_for_timeout(100)
+```typescript
+export class DOMActionExecutor {
+  public static async execute(action: ActionCommand): Promise<boolean> {
+    switch (action.action) {
+      case 'click':
+        return this.handleClick(action);
+      case 'type':
+        return this.handleType(action);
+      case 'scroll':
+        return this.handleScroll(action);
+      case 'select':
+        return this.handleSelect(action);
+      default:
+        return false;
+    }
+  }
 
-    # 2. Press left mouse button down
-    await page.mouse.down(button="left")
-    await page.wait_for_timeout(100)
+  private static handleClick(action: ActionCommand): boolean {
+    let target: HTMLElement | null = null;
+    if (action.target_selector) {
+      target = document.querySelector(action.target_selector);
+    }
+    
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus();
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      return true;
+    } else if (action.target_coordinates) {
+      // Fallback coordinate click for canvas elements
+      const el = document.elementFromPoint(action.target_coordinates.x, action.target_coordinates.y);
+      if (el) {
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        return true;
+      }
+    }
+    return false;
+  }
 
-    # 3. Interpolate steps across the trajectory
-    for i in range(1, steps + 1):
-        curr_x = start_x + (end_x - start_x) * (i / steps)
-        curr_y = start_y + (end_y - start_y) * (i / steps)
-        await page.mouse.move(curr_x, curr_y)
-        await page.wait_for_timeout(20)
+  private static handleType(action: ActionCommand): boolean {
+    const input = document.querySelector(action.target_selector || 'input') as HTMLInputElement;
+    if (input) {
+      input.focus();
+      input.value = action.input_text || '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }
+    return false;
+  }
 
-    # 4. Release mouse
-    await page.wait_for_timeout(100)
-    await page.mouse.up(button="left")
+  private static handleScroll(action: ActionCommand): boolean {
+    const dy = action.scroll_delta?.dy || 300;
+    window.scrollBy({ top: dy, behavior: 'smooth' });
+    return true;
+  }
+
+  private static handleSelect(action: ActionCommand): boolean {
+    const select = document.querySelector(action.target_selector || 'select') as HTMLSelectElement;
+    if (select && action.input_text) {
+      select.value = action.input_text;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }
+    return false;
+  }
+}
 ```
 
 ---
 
-## 4. Offline Sandbox & Mock Portal (The Live Demo Safety Net)
+## 4. Generalization Across Arbitrary Web Interfaces
 
-To ensure zero risk during live presentations:
-1. **Playwright HAR Recording:** Record a live session on Bhuvan:
-   ```bash
-   npx playwright open https://bhuvan.nrsc.gov.in --save-har=bhuvan_session.har
-   ```
-2. **Local Replay Server:**
-   Serve the saved HAR / HTML bundle on `http://localhost:8080` when running in disconnected demo mode:
-   ```python
-   # offline_portal_server.py
-   from http.server import HTTPServer, SimpleHTTPRequestHandler
-   import os
-
-   class LocalPortalHandler(SimpleHTTPRequestHandler):
-       def __init__(self, *args, **kwargs):
-           super().__init__(*args, directory="mocks/bhuvan_static", **kwargs)
-
-   if __name__ == '__main__':
-       server = HTTPServer(('127.0.0.1', 8080), LocalPortalHandler)
-       print("🚀 Offline Mock Bhuvan Server running on http://127.0.0.1:8080")
-       server.serve_forever()
-   ```
+To fulfill ISRO's requirement that the agent dynamically handles **unseen use cases during the finale**:
+1. **Fallback Grounding:** If a CSS selector fails due to dynamic class obfuscation (e.g. styled-components / tailwind random hashes), the executor falls back to visual bounding box coordinates predicted by the VLM.
+2. **Shadow DOM Traversal:** Recursive query helper traverses open Shadow DOM roots in modern Web Components.
+3. **Iframe & Canvas Safety:** For non-standard canvas interfaces, the agent uses normalized $(x, y)$ coordinate interpolation to trigger drag and click events.

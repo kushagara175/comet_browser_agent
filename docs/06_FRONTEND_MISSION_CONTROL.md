@@ -1,96 +1,62 @@
-# 06. Frontend Mission Control HUD — SIH26171
+# 06. Mission Control HUD & Telemetry Dashboard — SIH26171
 
-## 1. UX Philosophy: Dual-Pane "Mission Control"
+## 1. UI/UX Design Philosophy
 
-Hackathon judges spend an average of **2-3 minutes** evaluating a prototype. A command-line script or invisible headless browser makes the AI look like a pre-baked static script. 
-
-To win first place, the UI must provide an unmistakable, visually stunning **Mission Control HUD** built with **React + Vite + Vanilla CSS** and **Lucide Icons**:
+The Mission Control HUD is packaged directly as an **Extension Side-Panel / Popup (React + Vite + TailwindCSS)**. It gives judges an immediate visual demonstration of on-device visual perception and privacy redaction in real time:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│  ISRO BhuvanBot — Autonomous Sovereign Browser Agent (100% Offline | Zero Cloud)      │
-├──────────────────────────────────────────┬─────────────────────────────────────────────┤
-│  LEFT PANE: AGENT BRAIN & TELEMETRY      │  RIGHT PANE: LIVE BROWSER VIEWPORT          │
-├──────────────────────────────────────────┼─────────────────────────────────────────────┤
-│ • Natural Language Task Input            │ • Real-time Playwright Chromium Mirror      │
-│   [🎤 Voice / ⌨️ Text Prompt]            │ • Set-of-Marks Badges Overlay [1] [2] [3]   │
-│                                          │ • Animated Laser Crosshair on Clicks        │
-│ • Subtask Graph Breakdown                │ • WebGL Canvas Bounding Box Highlight       │
-│   ├── [✓] Navigate to Bhuvan Portal      │                                             │
-│   ├── [✓] Select Sensor: Cartosat-2      │                                             │
-│   ├── [⚡ CACHE HIT] Date Range Applied  │                                             │
-│   └── [⏳ ACTIVE] Drag Region on Canvas   │                                             │
-│                                          │                                             │
-│ • Real-Time Telemetry Cards:             │                                             │
-│   ┌───────────────┬───────────────────┐  │                                             │
-│   │ Step Latency  │ Local VRAM Usage  │  │                                             │
-│   │  540 ms       │  2.8 GB / 16 GB   │  │                                             │
-│   ├───────────────┼───────────────────┤  │                                             │
-│   │ Model Status  │ Network Outbound  │  │                                             │
-│   │ SmolVLM INT4  │ 0.0 KB (Air-Gapped│  │                                             │
-│   └───────────────┴───────────────────┘  │                                             │
-└──────────────────────────────────────────┴─────────────────────────────────────────────┘
+│                        SIH26171 MISSION CONTROL HUD (SIDE-PANEL)                       │
+├───────────────────────────────────────────┬────────────────────────────────────────────┤
+│ 👁️ RAW VIEWPORT (CLIENT ONLY)              │ 🛡️ SANITIZED PAYLOAD (SENT TO SERVER)       │
+│                                           │                                            │
+│   ┌───────────────────────────────────┐   │   ┌───────────────────────────────────┐    │
+│   │ [User Photo]   Password: *******  │   │   │ [BLURRED FACE]  Password: ██████  │    │
+│   │ Card: 4532 **** **** 8921         │   │   │ Card: ████████████████            │    │
+│   └───────────────────────────────────┘   │   └───────────────────────────────────┘    │
+├───────────────────────────────────────────┴────────────────────────────────────────────┤
+│ 📊 LIVE TELEMETRY & OFFICIAL SIH BENCHMARK METRICS                                      │
+│ ├── WebGPU RAM: 218 MB (Target: <350MB)   ├── PII Detection Recall: 99.2%             │
+│ ├── Step Latency: 780 ms (Target: <1.2s)  ├── Redaction Precision:  98.8%             │
+│ └── Client CPU Load: 8.4% (WASM/GPU)      └── Privacy Audit Status: 100% VERIFIED ZERO │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. Frontend Component Architecture
+## 2. Core UI Components
+
+### A. Dual-Pane Viewport Mirror
+- **Left Mirror (Raw State):** Displays the unredacted tab view strictly inside local memory.
+- **Right Mirror (Sanitized State):** Shows the canvas with **blacked-out passwords, red bounding boxes, and blurred faces** in real time, proving that only anonymized pixels are dispatched over the wire.
+
+### B. Live Telemetry Metric Badges (Direct 1:1 Mapping to SIH Rubric)
+- **Visual Accuracy Badge (25% weight):** Displays current DOM parsing depth and bounding box IoU score.
+- **PII Recall & Redaction Precision (40% weight):** Live counter showing detected sensitive fields (e.g. `3 PII elements masked: [Password, Avatar Face, Email]`).
+- **Resource Monitor (20% weight):** Displays WebGPU buffer memory and JavaScript heap allocation.
+- **Latency Tracker (15% weight):** Step breakdown timer showing Client Sanitization Time (ms) vs Server VLM Reasoning Time (ms).
+
+### C. Agent Thought Stream
+Displays the real-time reasoning chain emitted by the central VLM:
+> `[00:01.240] Thinking: "Search input located. Redacted personal query tokens. Dispatching submit click."`
+
+---
+
+## 3. Technology Stack & Component Structure
+
+- **Framework:** React 18 + Vite + TypeScript.
+- **Styling:** Modern dark-mode glassmorphism with TailwindCSS.
+- **State Management:** Zustand store synced with `chrome.storage.local` and background message port.
+- **Icons:** `lucide-react` (Shield, Eye, Cpu, Zap, Activity, CheckCircle).
 
 ```
-src/
+src/sidepanel/
 ├── components/
-│   ├── HeaderBar.jsx         # System title, air-gapped status pill, live clock
-│   ├── LeftPane/
-│   │   ├── PromptInput.jsx   # Text input + Whisper voice mic trigger
-│   │   ├── TaskGraph.jsx     # Visual step progression with status icons
-│   │   ├── ThoughtStream.jsx # Real-time streaming reasoning tokens from local VLM
-│   │   └── TelemetryGrid.jsx # Latency gauge, VRAM usage, cache hit indicator
-│   └── RightPane/
-│       ├── ViewportMirror.jsx# Live canvas/MJPEG stream from Playwright CDP
-│       └── ActionOverlay.jsx # Laser crosshair & bounding box animation
-├── styles/
-│   └── mission_control.css   # Dark glassmorphism, glowing telemetry, neon accents
-└── App.jsx
-```
-
----
-
-## 3. WebSocket Real-Time Telemetry Protocol
-
-The agent backend broadcasts step events to the React frontend via local WebSocket (`ws://127.0.0.1:8000/ws`):
-
-```json
-{
-  "event": "STEP_UPDATE",
-  "subtaskId": "SUBTASK_3",
-  "subtaskName": "Spatial Region Drag (Assam Basin)",
-  "status": "RUNNING",
-  "isCacheHit": false,
-  "telemetry": {
-    "stepLatencyMs": 620,
-    "vramUsageMb": 2840,
-    "currentAction": "canvas_drag",
-    "coordinates": {"x1": 420, "y1": 310, "x2": 580, "y2": 440}
-  },
-  "thought": "Locating Brahmaputra flood plains on Bhuvan WebGL viewport via visual marks [4] and [8]."
-}
-```
-
----
-
-## 4. Design System Tokens (Dark Glassmorphic Theme)
-
-```css
-:root {
-  --bg-primary: #0a0e17;
-  --bg-surface: rgba(18, 26, 43, 0.85);
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --accent-cyan: #06b6d4;
-  --accent-emerald: #10b981;
-  --accent-rose: #f43f5e;
-  --accent-amber: #f59e0b;
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-}
+│   ├── DualPaneInspector.tsx   // Side-by-side Raw vs Sanitized canvas viewer
+│   ├── TelemetryDashboard.tsx  // Live meters for WebGPU RAM, CPU, Latency
+│   ├── ThoughtStream.tsx       // Real-time agent action logs
+│   └── AuditExportModal.tsx    // Export JSON/CSV privacy verification report
+├── store/
+│   └── useAgentStore.ts        // Global telemetry & execution state
+└── SidePanelApp.tsx            // Main layout container
 ```

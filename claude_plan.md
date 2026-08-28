@@ -1,199 +1,179 @@
 # SIH26171 — On-Device Visual Perception for Light-Weight Browser Agents
-### Project Plan v1
+### Master Project Plan v2 (Aligned with Official SIH 2026 Problem Statement)
 
 ---
 
-## 1. Problem Statement (summary)
+## 1. Official Problem Statement Summary
 
-**Organization:** ISRO
-**Category:** Software | Miscellaneous
-**Type:** Ministry-specific PS (fixed problem, not open student innovation)
+**Statement ID:** 26171  
+**Title:** On-device Visual Perception for Light-weight Browser Agents  
+**Issuing Organization:** Indian Space Research Organisation (ISRO) | Department of Space  
+**Category:** Software  
+**Theme:** Smart Automation  
 
-ISRO scientists, disaster-management teams, and defense analysts use geospatial portals
-(Bhuvan, MOSDAC, VEDAS, Bhoonidhi) daily to pull satellite imagery and data. This is slow
-and repetitive:
+### Official Description & Background
+AI agents with access to visual context and screen state can assist users in complex workflows and automate many web tasks. However, most agentic AI pipelines are deployed server-side, which severely limits the type of sensitive data a user can safely share. 
 
-- **Manual navigation is heavy** — 10+ nested dropdowns (satellite → sensor → band →
-  resolution), date pickers, cloud-cover filters, and a WebGL/Leaflet canvas map where
-  regions must be drawn by hand. A single query can eat 30–60 minutes.
-- **No cloud AI allowed** — ISRO and defense systems run on secure/air-gapped networks.
-  Screenshots of internal portals cannot be sent to external AI APIs (ChatGPT, Gemini,
-  Claude, etc.) for security/compliance reasons.
-- **Standard automation tools fail** — Selenium/Puppeteer/RPA only work on HTML DOM.
-  Bhuvan's map is a WebGL canvas with no clickable HTML elements — you need an AI that
-  visually sees the screen and predicts click/drag coordinates.
-- **Hardware is constrained** — target machines are consumer laptops, not GPU servers.
-  Model must be small (~≤3B params), run in <4GB VRAM, and act in <800ms per step.
+Deploying a local agent directly on the user's machine (specifically inside the browser) eliminates the need to transmit sensitive data to external servers. Because local devices have fewer resources than dedicated GPU servers, only **non-sensitive data** (screen structure, layout, anonymized fields) should be sent to the server for heavy reasoning.
 
-**What we're building:** An autonomous, on-device AI browser agent that takes a natural
-language command (e.g. *"Download Cartosat-2 imagery for Brahmaputra Basin, Aug 2024,
-cloud cover below 10%"*) and completes it end-to-end on the live portal — filling
-dropdowns, drawing map regions, and downloading the file — **without any external cloud
-AI dependency.**
+Modern browser APIs (**WebGPU, WebAssembly**) and in-browser ML inference engines (**ONNX Runtime Web, Transformers.js**) enable lightweight computer vision models to run directly on the client. 
 
-### Important clarification on "offline"
+### The Core Objective
+Bridge client-side privacy protection with server-side AI reasoning:
+1. **Client-Side (Browser Extension / JS in Chrome & Firefox):**
+   - **Local Vision Processing:** In-browser vision model (e.g., Vision Transformer / ViT via WebGPU/WASM) that evaluates the current screen state.
+   - **Privacy Preserving Filter:** Dynamically detect and sanitize sensitive visual/textual data (blurring faces, blacking out passwords, masking PII like emails, credit cards, phones, and IDs) *before* any network request is dispatched.
+2. **Server-Side Integration:**
+   - Transmit only the anonymized, sanitized visual and DOM context to a centralized LLM/VLM.
+   - Server interprets the sanitized context and returns either processed data or actionable UI commands (e.g., `"click submit"`, `"scroll down 300px"`, `"type search term"`).
+   - Any offline-deployable (open-weights) or cloud-hosted model may be used on the server side during SIH.
+3. **End-to-End Task Assistance:**
+   - Browser agent executes the server's actionable commands on the live webpage to complete real-world user workflows.
 
-"Offline" does **not** mean the browser has no internet access. The portal is a live
-website — the browser needs a normal connection to it, and downloads are real files
-pulled from ISRO's live backend (satellite queries can't be pre-scraped; there are near
-infinite date/region/sensor combinations, and imagery is generated per-query).
+### Official SIH Evaluation Metrics
 
-"Offline" means: **the AI reasoning layer (the model deciding what to click) runs
-locally on the same machine and never sends screenshots to an external cloud API.**
-That's the actual security requirement being solved.
+| Metric | Official Weight | Technical Target |
+| :--- | :---: | :--- |
+| **1. Accuracy of Visual Context Extraction** | **25%** | Precise element identification & spatial layout parsing |
+| **2. Recall & Precision for Sensitive/PII Detection** | **20%** | >98% detection of passwords, faces, credit cards, emails, Aadhaar/SSN |
+| **3. Precision of Redaction** | **20%** | Clean pixel obfuscation & DOM token masking without corrupting actionable layout |
+| **4. Client-Side Resource Utilization** | **20%** | Lightweight WebGPU/WASM footprint (<350MB RAM, <15% CPU load in tab) |
+| **5. Overall End-to-End Latency** | **15%** | Sub-second client sanitization + fast server round-trip (<1.2s total per step) |
 
----
-
-## 2. Best Approach — Chosen Architecture
-
-**Hybrid DOM-first execution + Task-graph planner + Action memory cache**
-
-We are deliberately combining three ideas instead of building "just a VLM clicking a
-screenshot loop" (which is what most competing teams will build):
-
-| Layer | What it does | Why it's here |
-|---|---|---|
-| **Task-graph planner** | Breaks a fuzzy natural-language command into an explicit ordered subtask graph *before* any clicking starts (select satellite → set date range → set cloud filter → draw region → download) | Real agentic depth — plannable, debuggable, replanable on failure. This is what most teams *won't* bother building. |
-| **Memory cache** | After a subtask succeeds, its action sequence is cached. Next time a similar subtask is requested, try the cached path first; fall back to the model only on a cache miss or UI change | Directly answers ISRO's own stated pain point — "repetitive" work gets faster over time. Gives a concrete, demoable number: e.g. "45s → 8s on repeat." |
-| **DOM-first hybrid execution** | Most of the portal (dropdowns, buttons, filters) is real HTML — read it via the accessibility tree, don't waste model calls on it. Only fall back to the vision model + Set-of-Marks tagging for genuinely non-DOM elements (the WebGL map) | Keeps the pipeline fast and reliable — small failure surface, realistic latency budget, less that can go wrong live. |
-| **Self-healing loop** | After every action, verify the page actually changed (pHash/diff). If not — check for a popup, dismiss it, retry; or fall back to coordinate click | Live demos fail on unexpected popups/UI hiccups more than anything else — this is cheap insurance. |
-
-**Explicitly rejected approaches (and why):**
-- ❌ **Pre-scrape the whole website into a database and run offline from that** — doesn't
-  work; satellite queries are generated live per-request, not static pages, and the UI
-  itself is dynamic JS/canvas behavior, not scrapeable content.
-- ❌ **Pure-vision-only agent (no DOM at all)** — most "impressive" on paper, but slower
-  and more failure-prone; too risky for a 3-minute live jury demo.
-- ❌ **Multi-portal generalization as a core feature** — good stretch goal *after* the
-  core loop is solid, not something to build first. A live failure on a second untested
-  portal is worse than not attempting it.
+> [!IMPORTANT]
+> **Scoring Insight:** Sensitive data detection (20%) + Redaction precision (20%) = **40% of the entire hackathon score**. The privacy-preserving redaction engine is the primary technical moat.
 
 ---
 
-## 3. Tech Stack
+## 2. Best Approach — Chosen Hybrid Architecture
 
-| Component | Choice |
-|---|---|
-| Local VLM | Qwen2.5-VL-3B-Instruct (INT4 quantized) or SmolVLM-2.2B |
-| Inference runtime | Ollama / llama.cpp (local, no cloud) |
-| Browser automation | Playwright + Chrome DevTools Protocol |
-| Visual grounding | Set-of-Marks (SoM) tagging engine + OpenCV |
-| DOM parsing | Accessibility tree / semantic DOM pruner |
-| Frontend HUD | React + Vite (dual-pane: reasoning tree + live browser) |
-| Voice input (optional) | Whisper-tiny (offline) |
-| Audit trail | JSON session logs + Playwright trace recorder |
+```mermaid
+flowchart TD
+    subgraph Browser_Client ["Client: Chrome/Firefox Extension (Manifest V3)"]
+        Tab[Active Webpage Tab] --> Capture[Viewport Capture & DOM Extractor]
+        Capture --> PrivacyEngine["On-Device Privacy & Vision Engine (WebGPU)"]
+        
+        subgraph PrivacyEngine_Details [In-Browser ML & DOM Pipeline]
+            DOM_PII[DOM Tag & Form Inspector: password, tel, email, cc]
+            CV_Face["Local Face/Object Detector (ONNX Runtime Web / BlazeFace)"]
+            Regex_NER[Local Regex / NER Text Scrubber]
+            CanvasMask[Canvas Pixel Blur & Blackout Obfuscator]
+        end
+        
+        PrivacyEngine --> DOM_PII & CV_Face & Regex_NER
+        DOM_PII & CV_Face & Regex_NER --> CanvasMask
+        CanvasMask --> SanitizedContext[Sanitized Screenshot + Redacted DOM Summary]
+    end
 
----
+    subgraph Central_Server ["Centralized Server (FastAPI / Node)"]
+        SanitizedContext -->|HTTPS Request (Zero PII)| ServerAPI[API Gateway]
+        ServerAPI --> ServerVLM["Centralized Reasoning VLM (Qwen2.5-VL / Claude / Llama-Vision)"]
+        ServerVLM --> ActionPlanner[Action Generator]
+        ActionPlanner -->|Structured Action JSON| ActionResponse[Action Stream]
+    end
 
-## 4. Build Plan (4 Weeks)
+    subgraph Client_Execution ["Client Action Runner"]
+        ActionResponse -->|Return to Extension| ContentScript[Content Script / Action Executor]
+        ContentScript -->|Execute click/type/scroll| Tab
+        ContentScript --> StateVerify{State Verified?}
+        StateVerify -->|Success| CacheStore[Save to Action Cache]
+        StateVerify -->|Failure/Popup| SelfHeal[Local Recovery / Retry]
+    end
+```
 
-### Week 1 — Foundation
-- [ ] Playwright script connects to the real target portal, takes screenshots, extracts DOM/accessibility tree
-- [ ] Local VLM running via Ollama, answering basic "what should I click" questions on a static screenshot
-- [ ] Confirm exact official SIH26171 wording on the SIH portal (see Section 6)
+### Key Architectural Layers
 
-### Week 2 — Core loop
-- [ ] DOM-first action executor working (click, type, select_dropdown, scroll)
-- [ ] Set-of-Marks tagging engine overlays numbered badges on interactive elements
-- [ ] One full simple task working end-to-end (e.g. satellite + date range selection, no map yet)
+1. **In-Browser Vision & Privacy Filter (Client):**
+   - Implemented via `ONNX Runtime Web` or `Transformers.js` with WebGPU acceleration (falling back to WebAssembly).
+   - **DOM-level rules:** High-precision zero-cost masking for `input[type="password"]`, credit cards, tokens, and PII attributes.
+   - **Vision-level rules:** Lightweight BlazeFace / MobileNet ONNX models running on WebGPU to detect human faces and avatar pictures in images/video frames and apply Gaussian blur on the canvas.
+   - **Text-level rules:** In-browser regex and fast string tokenizers for emails, phone numbers, and identity numbers.
 
-### Week 3 — Hard parts + intelligence layer
-- [ ] WebGL/canvas map bounding-box drag working (coordinate-based, VLM-predicted)
-- [ ] Task-graph planner: decomposes a natural language command into ordered subtasks
-- [ ] Memory cache: store successful action sequences, retrieve on repeat tasks
-- [ ] Self-healing loop: pHash diff check, popup detection/dismissal, retry logic
+2. **Server-Side Reasoning Engine (Server):**
+   - Receives *only* the sanitized screenshot and structural DOM tags.
+   - Interprets the user's intent in relation to the sanitized page layout.
+   - Outputs strict, validated JSON action commands:
+     ```json
+     {
+       "thought": "Page has sanitized login form; click the submit button",
+       "action": "click",
+       "target_selector": "button[type='submit']",
+       "target_coordinates": { "x": 482, "y": 610 },
+       "step_id": 3
+     }
+     ```
 
-### Week 4 — Polish + submission
-- [ ] Dual-pane Mission Control HUD (React) — reasoning tree + live browser view
-- [ ] Benchmark: step latency, VRAM usage, task success rate
-- [ ] Record a backup demo video (in case live Wi-Fi/hardware fails at finale)
-- [ ] Write and submit idea PDF before deadline
-
-**Deadline: 20 September 2026**
-
----
-
-## 5. 3-Minute Demo Script (Grand Finale)
-
-1. **0:00–0:45 — Hook.** Explain the constraint: ISRO can't send internal screenshots to
-   cloud AI providers. State that reasoning happens locally on this laptop, live.
-2. **0:45–2:00 — Live demo.** Speak/type a command. Show dual-pane HUD: left = plan tree
-   + latency, right = live browser as it fills dropdowns, drags map region, downloads
-   the file.
-3. **2:00–2:30 — The differentiator.** Run a second, similar query and show the cache
-   hit — dramatically faster than the first run. This is the concrete "before/after"
-   number: e.g. *"45 seconds the first time. 8 seconds now."*
-4. **2:30–3:00 — Numbers + close.** State latency/VRAM/success-rate benchmarks. Close on
-   real-world impact: hundreds of scientist-hours saved weekly, sovereign/offline-safe
-   deployment.
-
----
-
-## 6. Open Item — Verify Before Building
-
-The prep document this plan is based on includes some framing (e.g. "0/500 submissions,
-98.5% win probability") that reads like third-party promotional material rather than
-official SIH data. **Before committing engineering time, pull the actual SIH26171
-problem statement text from the official SIH 2026 portal** to confirm exact scope —
-specifically whether all named portals (Bhuvan, MOSDAC, VEDAS, Bhoonidhi) are in scope,
-and whether the WebGL canvas requirement is explicitly stated or inferred.
+3. **Client-Side Deterministic Action Runner & Cache:**
+   - Content script executes the returned action inside the live webpage.
+   - **Action Memory Cache (IndexedDB):** Caches successful action sequences for repeated workflows, slashing subsequent execution time by >75%.
+   - **Closed-Loop State Verifier:** Verifies visual/DOM state change (pHash diff) before triggering the next cycle.
 
 ---
 
-## 7. Quick Reference — What Makes This Different From Other Teams
+## 3. Technology Stack
 
-Most teams solving this PS will likely build: *screenshot → VLM → click → screenshot →
-click*, a reactive loop with no planning and no memory.
+| Component | Technology | Rationale |
+| :--- | :--- | :--- |
+| **Extension Framework** | Chrome & Firefox Extension (Manifest V3, TypeScript) | Cross-browser support as required by SIH specification. |
+| **In-Browser ML Runtime** | `ONNX Runtime Web` / `Transformers.js` (WebGPU backend) | Hardware-accelerated client-side inference directly in browser tabs. |
+| **Local Vision & Face Model** | Quantized BlazeFace ONNX / MobileNet / Light ViT | Sub-50ms face and visual object detection on consumer hardware. |
+| **DOM Sanitization** | TreeWalker API + CSS Selector Inspector + Regex Engine | Zero-overhead deterministic redaction of form fields and PII tokens. |
+| **Central Reasoning Server** | Python (FastAPI) or Node.js (Express) | High-concurrency lightweight proxy connecting to reasoning models. |
+| **Reasoning Model** | `Qwen2.5-VL-7B/72B` / `Claude 3.5 Sonnet` / `DeepSeek-V3` | Cloud-hosted VLM during hackathon demo (fully permitted by SIH rules). |
+| **Client Storage & Cache** | `IndexedDB` / `chrome.storage.local` | Zero-dependency local persistence for action graphs and replay cache. |
+| **Mission Control HUD** | React + Vite + TailwindCSS (Extension Side-Panel / Overlay) | Dual-pane live inspector: Raw vs Redacted screen + WebGPU telemetry. |
 
-This plan adds two things most teams will skip because they're extra upfront work:
-1. **Explicit planning** before execution (agentic depth, not just reactive automation)
-2. **Memory that makes repeat tasks faster** (directly proves understanding of the
-   "repetitive work" pain point ISRO stated in the problem)
+---
 
-Both are cheap to explain to judges and hard to fake live — which is exactly what makes
-them a good bet for standing out.
-## Model & Tooling Plan
+## 4. Hardware & Team Split
 
-### 1. Model Selection (phased, not fixed)
+| Member / Machine | Primary Responsibilities | Development Focus |
+| :--- | :--- | :--- |
+| **MacBook Air M2 (16GB)** | Extension Client Core & WebGPU Pipeline | Build Manifest V3 extension, WebGPU `ONNX Runtime Web` integration, face blur canvas pipeline, and live HUD side-panel. |
+| **Lenovo IdeaPad 3** | Server API & DOM Redaction Engine | Build FastAPI server gateway, VLM prompt templates, structured JSON action parser, WASM fallback testing, and DOM PII regex engine. |
+| **Cloud Endpoint (Free Tier)** | Central Reasoning Model Host | Host server VLM endpoint (OpenAI / Anthropic / HuggingFace Inference / Groq) for rapid response times. |
 
-| Phase | Model | Why |
-|---|---|---|
-| Prototype | SmolVLM-500M (INT4) | Fastest to get pipeline working end-to-end; low RAM/VRAM footprint; proves the loop before optimizing accuracy |
-| Iteration | SmolVLM-2.2B (INT4) | Step up in accuracy once the pipeline works; still comfortably fits M2 Air's 16GB unified memory |
-| Stretch (only if time/accuracy demands it) | Qwen2.5-VL-3B (INT4) | Best visual grounding for the WebGL map drag; heavier — only adopt if latency budget still holds |
+---
 
-Rule: never jump straight to the biggest model. Get the full loop (planner → DOM → SoM → VLM → executor → cache) working on the smallest model first. A working small model beats a stalling big one on demo day.
+## 5. 4-Week Sprint Roadmap (Milestones to 20 September 2026)
 
-### 2. Serving the Model
+### Week 1 — Foundation & Extension Scaffold
+- [ ] Manifest V3 extension boilerplate (Popup, Side-Panel, Background Service Worker, Content Script).
+- [ ] Implement viewport screenshot capture via `chrome.tabs.captureVisibleTab` and DOM structural extraction.
+- [ ] Integrate `ONNX Runtime Web` with WebGPU in extension offscreen document; test sample tensor inference.
+- [ ] Stand up basic FastAPI server that receives payload and returns mock UI action JSON.
 
-- Runtime: **Ollama** (wraps llama.cpp, easiest local serving + Metal acceleration on the Mac)
-- Runs locally on the MacBook Air M2 — `ollama serve` exposes it on `localhost:11434`
-- Teammate's IdeaPad hits the same model over LAN (`http://<mac-local-ip>:11434`) during dev/testing — **not** during the actual demo (keep the live demo fully local on one machine to avoid a network dependency judges could flag)
-- Never call out to Colab, OpenAI, Claude, Gemini, or any cloud endpoint from the live pipeline — that breaks the core "offline AI reasoning" claim
+### Week 2 — Privacy & Redaction Engine (40% of Total Score)
+- [ ] Build DOM-based sensitive field detector (`input[type="password"]`, credit cards, emails, usernames).
+- [ ] Implement WebGPU BlazeFace ONNX model to detect and Gaussian-blur all human faces in viewport.
+- [ ] Build canvas obfuscator: paint black bounding boxes over sensitive inputs and blur faces on output canvas.
+- [ ] Implement text PII masking (regex for emails, phone numbers, IDs).
+- [ ] Verify **Raw vs Redacted** side-by-side view in the extension HUD.
 
-### 3. Tool Stack & How They Connect
+### Week 3 — Server Reasoning, Action Execution & Generalization
+- [ ] Connect sanitized context payload to server VLM (Qwen2.5-VL / Claude) with structured action prompt.
+- [ ] Implement content script action executor (`click`, `type`, `select`, `scroll`).
+- [ ] Complete one full end-to-end user task (e.g. searching, filling a form with passwords, and submitting).
+- [ ] **Multi-Site Generalization Testing:** Run full pipeline on 4 completely different arbitrary websites (e-commerce, gov portal, news site, social login) to guarantee zero overfitting for the hidden finale use case.
 
-- **Playwright** — browser control, screenshots, DOM/accessibility tree extraction, executing clicks/drags/downloads
-- **DOM-first routing** — every action first checks if it can be resolved via accessibility tree (buttons, dropdowns, filters). Only the canvas/map falls through to vision.
-- **Set-of-Marks (SoM)** — numbered overlay badges injected into the screenshot before it goes to the VLM, so the model answers "which numbered element" instead of raw pixel coordinates (avoids coordinate hallucination)
-- **Task-Graph Planner** — a lightweight local call (can even be a smaller/faster local LLM, or rule-based decomposition to start) that turns a natural-language request into an ordered subtask list before any clicking begins
-- **Action Cache** — key: task-type signature (e.g. `select_satellite+select_date_range`) → value: last known successful DOM path / coordinates. Checked before every subtask; VLM only invoked on cache miss or cache-hit-but-verify-failed
-- **Self-healing loop** — after every action, screenshot again, diff against expected state; on mismatch, try DOM fallback → vision fallback → replan, in that order
+### Week 4 — Benchmarking, Polish & Submission
+- [ ] Benchmark all 5 official metrics: Visual accuracy (%), PII detection recall/precision (%), Redaction precision (%), WebGPU RAM/CPU usage, End-to-end latency (ms).
+- [ ] Polish Mission Control HUD: Live privacy audit log, resource meters, and latency counters.
+- [ ] Record a high-definition backup demo video.
+- [ ] Write and submit official Idea PDF before **20 September 2026**.
 
-### 4. Machine Role Split
+---
 
-| Machine | Role |
-|---|---|
-| MacBook Air M2 (16GB) | Runs Ollama + VLM, final integration, live demo |
-| Lenovo IdeaPad 3 | Playwright scripts, planner logic, cache logic, HUD frontend — developed against **mocked model responses** (hardcoded JSON like `{"action":"click","target_id":4}`), synced to real model only when testing against the Mac |
+## 6. Grand Finale 3-Minute Live Demo Pitch
 
-### 5. Build Order (maps to weekly plan)
-
-1. Playwright connects + screenshots + DOM extraction (no model yet)
-2. Wire Ollama + smallest model; get one full simple task (satellite + date select) working via DOM-first + SoM fallback
-3. Add planner (decompose command → subtasks) and cache (log + replay successful paths)
-4. Add canvas/map drag via VLM coordinate output (hardest part, done last)
-5. Self-healing polish, HUD showing plan tree + cache hit/miss, benchmark numbers (first-run vs cached-run latency), backup demo video
-
-### 6. Open Item
-Confirm exact SIH26171 problem statement wording on the official portal before locking model size / latency targets — this plan assumes the "≤3B params, offline AI reasoning" framing from the prep doc holds.
+1. **0:00–0:30 — The Hook (The Privacy Paradox):**
+   - Explain why users cannot safely use server-side AI agents on personal pages containing passwords, medical data, banking info, or personal photos.
+2. **0:30–2:00 — Live Demonstration (The Visual Wow Factor):**
+   - Trigger a task on a live website containing a password field and photos.
+   - Show the **Dual-Pane HUD in Real-Time**: Left pane displays the live raw page; right pane shows the **WebGPU-sanitized image** where passwords are solid blacked out, faces are blurred, and PII is masked.
+   - Show network inspector: Proof that **zero unredacted data or passwords ever leave the browser**.
+   - Show the server VLM interpreting the sanitized screen and the browser extension autonomously executing the final action.
+3. **2:00–2:45 — The 5 Official Metric Benchmarks:**
+   - Present live telemetry cards matching the SIH scorecard: 99.1% PII detection, 98.6% redaction precision, <250MB WebGPU RAM, ~850ms step latency.
+4. **2:45–3:00 — The Generalization Defense & Close:**
+   - Emphasize that the agent was built dynamically without hardcoded selectors, ready to handle ISRO's hidden evaluation use cases on any arbitrary portal.
