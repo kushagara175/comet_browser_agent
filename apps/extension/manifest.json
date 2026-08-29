@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "PrivaPilot — On-Device Privacy Browser Agent",
+  "version": "1.0.0",
+  "description": "Privacy-Preserving On-Device Visual Perception for Lightweight Browser Agents (SIH26171 | ISRO)",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage",
+    "scripting",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "dist/background/background-main.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content/content-main.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+  "action": {
+    "default_title": "Open PrivaPilot Mission Control",
+    "default_popup": "src/sidepanel/sidepanel.html"
+  }
+}

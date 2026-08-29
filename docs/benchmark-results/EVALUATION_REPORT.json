@@ -1,0 +1,96 @@
+{
+  "timestamp": "2026-08-28T14:05:49.939Z",
+  "fixturesEvaluated": 14,
+  "accuracy": {
+    "elementRecall": 100,
+    "elementPrecision": 100,
+    "roleAccuracy": 98.5,
+    "medianIoU": 0.94
+  },
+  "pii": {
+    "aggregateRecall": 100,
+    "aggregatePrecision": 100,
+    "categoryBreakdown": {
+      "password": {
+        "category": "password",
+        "truePositives": 3,
+        "falsePositives": 0,
+        "falseNegatives": 0,
+        "recall": 100,
+        "precision": 100
+      },
+      "email": {
+        "category": "email",
+        "truePositives": 2,
+        "falsePositives": 0,
+        "falseNegatives": 0,
+        "recall": 100,
+        "precision": 100
+      },
+      "phone": {
+        "category": "phone",
+        "truePositives": 1,
+        "falsePositives": 0,
+        "falseNegatives": 0,
+        "recall": 100,
+        "precision": 100
+      },
+      "credit_card": {
+        "category": "credit_card",
+        "truePositives": 1,
+        "falsePositives": 0,
+        "falseNegatives": 0,
+        "recall": 100,
+        "precision": 100
+      },
+      "cvv": {
+        "category": "cvv",
+        "truePositives": 0,
+        "falsePositives": 0,
+        "falseNegatives": 0,
+        "recall": 100,
+        "precision": 100
+      },
+      "national_id": {
+        "category": "national_id",
+        "truePositives": 3,
+        "falsePositives": 0,
+        "falseNegatives": 0,
+        "recall": 100,
+        "precision": 100
+      },
+      "face": {
+        "category": "face",
+        "truePositives": 1,
+        "falsePositives": 0,
+        "falseNegatives": 0,
+        "recall": 100,
+        "precision": 100
+      },
+      "high_risk_surface": {
+        "category": "high_risk_surface",
+        "truePositives": 3,
+        "falsePositives": 0,
+        "falseNegatives": 0,
+        "recall": 100,
+        "precision": 100
+      }
+    }
+  },
+  "redaction": {
+    "sensitiveRegionCoverage": 100,
+    "underMaskCount": 0,
+    "overMaskRatio": 1.05,
+    "safeElementPreservation": 100
+  },
+  "latency": {
+    "sampleCount": 42,
+    "p50TotalLatencyMs": 531,
+    "p95TotalLatencyMs": 565,
+    "p50ClientPerceptionMs": 161,
+    "p50ServerReasoningMs": 362,
+    "p50ActionExecutionMs": 45,
+    "estimatedMemoryFootprintMb": 62.4,
+    "estimatedCpuLoadPct": 5.8
+  }
+}

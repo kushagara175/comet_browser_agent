@@ -94,7 +94,7 @@ actual test.
 This also explains "Any open-source data can be used" — you're free to train/test your
 redaction and detection components on any public dataset (e.g. open face-detection
 datasets, synthetic PII form data) since there's no official ISRO-provided dataset to
-match against.
+match against.           
 
 **ISRO context itself was real** (unlike the invented Bhuvan/satellite specifics) — worth
 keeping in mind for problem framing (e.g. "ISRO staff interacting with various internal

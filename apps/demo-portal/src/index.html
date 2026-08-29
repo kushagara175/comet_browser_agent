@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PrivaPilot — Mission Control Portal</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="portal-wrapper">
+    <!-- Navbar -->
+    <header class="navbar">
+      <div class="brand-group">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2V22M2 12H22M4.93 4.93L19.07 19.07M4.93 19.07L19.07 4.93" stroke="#000000" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+        <h1 class="portal-title">Valley <span>Workspace Hub</span></h1>
+      </div>
+      <div class="nav-user-pill">
+        <span class="online-dot"></span>
+        <span>Connected as Kushagra Singh</span>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <div class="portal-layout">
+      <!-- Left: Profile & Credentials -->
+      <aside class="left-panel">
+        <div class="card user-card">
+          <div class="user-header">
+            <div class="avatar-circle">
+              <svg width="44" height="44" viewBox="0 0 100 100" fill="none">
+                <circle cx="50" cy="50" r="50" fill="#334155"/>
+                <circle cx="50" cy="38" r="18" fill="#e2e8f0"/>
+                <path d="M22 90 Q50 62 78 90" fill="#94a3b8"/>
+              </svg>
+            </div>
+            <div>
+              <h2 class="user-name">Kushagra Singh</h2>
+              <p class="user-role">Operations Lead</p>
+            </div>
+          </div>
+
+          <div class="info-list">
+            <div class="info-item">
+              <span class="label">Email</span>
+              <span class="val">kushagra.singh@valley.work</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Phone</span>
+              <span class="val">+91 98765 43210</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Employee ID</span>
+              <span class="val">VAL-89012</span>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label for="passInput">Workspace Passkey</label>
+            <input type="password" id="passInput" value="MySecretPasscode99!" autocomplete="current-password" />
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right: Main Task Queue -->
+      <main class="main-panel">
+        <div class="card tasks-card">
+          <div class="tasks-header">
+            <div>
+              <h3 class="card-title">Pending Operations & Approval Queue</h3>
+              <p class="card-sub">Manage active team requests and approvals</p>
+            </div>
+            <div class="search-bar">
+              <input type="text" id="searchRequests" placeholder="Search requests..." />
+              <button id="searchBtn" class="btn-primary-action">Filter</button>
+            </div>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Request ID</th>
+                <th>Task / Subsystem</th>
+                <th>Assignee</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>#REQ-1041</code></td>
+                <td>Data Pipeline Synchronization</td>
+                <td>Alex Rivera</td>
+                <td><span class="badge approved">Completed</span></td>
+                <td><button class="btn-table" disabled>Done</button></td>
+              </tr>
+              <tr class="active-row">
+                <td><code>#REQ-1044</code></td>
+                <td>Security Clearance Access Request</td>
+                <td>Kushagra Singh</td>
+                <td><span class="badge pending">Pending</span></td>
+                <td>
+                  <button id="openSafePreviewBtn" class="btn-action">Open Safe Preview</button>
+                </td>
+              </tr>
+              <tr>
+                <td><code>#REQ-1049</code></td>
+                <td>Quarterly Server Infrastructure Audit</td>
+                <td>Rohan Sharma</td>
+                <td><span class="badge review">Under Review</span></td>
+                <td><button class="btn-table">Inspect</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+
+    <!-- Safe Preview Drawer -->
+    <div id="previewDrawer" class="drawer hidden">
+      <div class="drawer-header">
+        <div>
+          <h3 class="drawer-title">Request #REQ-1044 Preview</h3>
+          <span class="drawer-sub">Security Clearance Access</span>
+        </div>
+        <button id="closeDrawerBtn" class="btn-close">✕</button>
+      </div>
+
+      <div class="drawer-body">
+        <div class="preview-row">
+          <span class="label">Requested By:</span>
+          <span class="val">Kushagra Singh</span>
+        </div>
+        <div class="preview-row">
+          <span class="label">Access Level:</span>
+          <span class="val">Tier 2 Workspace Access</span>
+        </div>
+        <div class="preview-row">
+          <span class="label">Validation Status:</span>
+          <span class="val" style="color: #16a34a; font-weight: 600;">✓ Pre-flight checks nominal</span>
+        </div>
+
+        <div class="callout-box">
+          ✓ Safe preview opened. Personal credentials and sensitive passwords remained protected on-device.
+        </div>
+      </div>
+
+      <div class="drawer-footer">
+        <button id="submitApprovalBtn" class="btn-submit">Submit Final Approval</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

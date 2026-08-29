@@ -1,0 +1,14 @@
+{
+  "name": "@privapilot/server",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@privapilot/protocol": "*",
+    "@privapilot/test-fixtures": "*"
+  }
+}

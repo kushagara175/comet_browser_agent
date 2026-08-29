@@ -1,0 +1,13 @@
+{
+  "name": "@privapilot/extension",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/background/background-main.js",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@privapilot/protocol": "*",
+    "@privapilot/pii-rules": "*"
+  }
+}
