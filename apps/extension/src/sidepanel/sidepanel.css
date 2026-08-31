@@ -567,12 +567,17 @@ body {
 /* Chat Messages */
 .ai-body {
   flex: 1;
-  padding: 12px 14px;
+  padding: 14px 14px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
   user-select: text;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background-image: radial-gradient(rgba(241, 245, 249, 0.85) 1.2px, transparent 0);
+  background-size: 8px 8px;
 }
 
 .ai-empty-state {
