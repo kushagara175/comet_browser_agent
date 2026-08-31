@@ -43,26 +43,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (backToConnectBtn) {
-    backToConnectBtn.addEventListener('click', () => {
-      aiWorkerView?.classList.add('hidden');
-      connectionView?.classList.remove('hidden');
-    });
-  }
-
-  if (copyTokenBtn) {
-    copyTokenBtn.addEventListener('click', () => {
-      const dummyToken = 'tok_privapilot_' + Math.random().toString(36).substring(2, 9);
-      navigator.clipboard.writeText(dummyToken).then(() => {
-        const span = copyTokenBtn.querySelector('span');
-        if (span) {
-          span.innerText = 'Copied!';
-          setTimeout(() => span.innerText = 'Token', 1500);
-        }
-      });
-    });
-  }
-
   // Tabs
   const tabChatBtn = document.getElementById('tabChatBtn');
   const tabInspectorBtn = document.getElementById('tabInspectorBtn');
