@@ -347,25 +347,23 @@ document.addEventListener('DOMContentLoaded', () => {
   // 10. Chat Form Submit & Dynamic Mic/Send Icon Handler
   if (chatForm && chatInput) {
     const sendBtn = document.getElementById('sendBtn');
-    const micIcon = sendBtn?.querySelector('.icon-mic');
-    const sendIcon = sendBtn?.querySelector('.icon-send');
 
     function updateSendBtnState() {
       const hasText = chatInput.value.trim().length > 0;
       if (hasText) {
-        micIcon?.classList.add('hidden');
-        sendIcon?.classList.remove('hidden');
         sendBtn?.classList.add('mode-send');
         sendBtn?.classList.remove('mode-mic');
       } else {
-        sendIcon?.classList.add('hidden');
-        micIcon?.classList.remove('hidden');
         sendBtn?.classList.add('mode-mic');
         sendBtn?.classList.remove('mode-send');
       }
     }
 
-    chatInput.addEventListener('input', updateSendBtnState);
+    ['input', 'keyup', 'change', 'paste', 'focus'].forEach(evt => {
+      chatInput.addEventListener(evt, updateSendBtnState);
+    });
+
+    updateSendBtnState();
 
     chatForm.addEventListener('submit', (e) => {
       e.preventDefault();

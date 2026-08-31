@@ -806,9 +806,9 @@ body {
 .send-btn {
   background: #0f172a;
   border: none;
-  border-radius: 6px;
-  width: 30px;
-  height: 30px;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -817,9 +817,22 @@ body {
   transition: all 0.15s ease;
 }
 
+.send-btn .icon-mic,
+.send-btn .icon-send {
+  display: none !important;
+}
+
+.send-btn.mode-mic .icon-mic {
+  display: block !important;
+}
+
+.send-btn.mode-send .icon-send {
+  display: block !important;
+}
+
 .send-btn:hover {
   background: #1e293b;
-  transform: scale(1.04);
+  transform: scale(1.05);
 }
 
 .send-btn.mode-send {
