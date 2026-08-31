@@ -31,14 +31,11 @@
         <path d="M100 0V200M0 100H200M29.29 29.29L170.71 170.71M29.29 170.71L170.71 29.29" stroke="#f1f5f9" stroke-width="12" stroke-linecap="round"/>
       </svg>
 
-      <!-- AI View Header with Status -->
+      <!-- Minimal Clean Top Header -->
       <div class="ai-header">
-        <button id="backToConnectBtn" class="back-btn" title="Reconnect / Reset">
-          <img src="../../assets/export.png" width="18" height="18" alt="Valley" />
+        <button id="backToConnectBtn" class="top-left-logo-btn" title="Reconnect / Reset">
+          <img src="../../assets/export.png" width="28" height="28" alt="Valley Logo" class="top-left-logo-img" />
         </button>
-        <div class="ai-title-wrap">
-          <span class="ai-title">PrivaPilot HUD</span>
-        </div>
         <div class="header-right-actions">
           <button id="toggleVoiceBtn" class="voice-toggle-btn" title="Toggle AI Voice Narration">
             <span class="voice-icon">🔊</span>
@@ -48,21 +45,7 @@
         </div>
       </div>
 
-      <!-- Navigation Tabs (Chat | Dual-Pane Inspector | Telemetry Audit) -->
-      <nav class="hud-tabs">
-        <button id="tabChatBtn" class="hud-tab-btn active">Agent Chat</button>
-        <button id="tabInspectorBtn" class="hud-tab-btn">Visual Redaction</button>
-        <button id="tabAuditBtn" class="hud-tab-btn">Telemetry</button>
-      </nav>
-
-      <!-- Live Privacy Firewall Banner -->
-      <div class="privacy-banner">
-        <span class="shield-icon">🛡️</span>
-        <span id="privacyStatusText">Zero Unredacted PII Leaves Client</span>
-        <span id="maskCountBadge" class="mask-badge">0 Masks</span>
-      </div>
-
-      <!-- TAB 1: Chat Stage -->
+      <!-- Single Main Chat Stage -->
       <div id="tabChatContent" class="tab-pane active">
         <div id="chatMessages" class="ai-body"></div>
 
