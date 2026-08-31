@@ -349,6 +349,31 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (_) {}
 
+    // Check if goal is an action command or a chat question
+    const actionKeywords = ['click', 'tap', 'press', 'type', 'fill', 'input', 'scroll', 'submit', 'select', 'login', 'navigate', 'search for', 'choose'];
+    const isAction = actionKeywords.some(kw => goalText.toLowerCase().includes(kw));
+
+    if (isAction && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      // Step-by-Step Privacy-Preserving Agent Execution
+      agentBubble.innerHTML = `
+        <div class="agent-step-list">
+          <div class="agent-step active">👁️ 1. Extracting DOM & layout on-device...</div>
+          <div class="agent-step">🛡️ 2. Redacting sensitive PII & masks...</div>
+          <div class="agent-step">🧠 3. Model reasoning on sanitized wire view...</div>
+          <div class="agent-step">⚡ 4. Executing browser action...</div>
+        </div>
+      `;
+
+      chrome.runtime.sendMessage({
+        type: 'START_AGENT_RUN',
+        goal: goalText
+      }, (res) => {
+        renderActionResult(agentBubble, res);
+      });
+      return;
+    }
+
+    // Conversational Page Analysis via /api/v1/chat
     try {
       const response = await fetch('http://localhost:4501/api/v1/chat', {
         method: 'POST',
