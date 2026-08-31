@@ -125,7 +125,7 @@ JSON Schema:
 
 ## 4. Local Development Mock Server
 
-To enable fast frontend development on the Lenovo IdeaPad without invoking cloud APIs, a lightweight FastAPI mock server is provided:
+To enable fast frontend development on any machine without invoking cloud APIs, a lightweight mock server is provided. The project already ships one in `apps/server/src/engines/mock-engine.ts`, which `VlmReasoningEngine` falls back to automatically when no endpoint is configured. The FastAPI sketch below is retained as a reference for a standalone equivalent:
 
 ```python
 from fastapi import FastAPI, UploadFile, File, Form

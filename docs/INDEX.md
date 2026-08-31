@@ -17,7 +17,7 @@ This repository contains the complete engineering specification, architecture bl
 | [04_BROWSER_AUTOMATION_CANVAS.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/04_BROWSER_AUTOMATION_CANVAS.md) | **Browser Extension Architecture** | Manifest V3 (Chrome/Firefox), offscreen WebGPU worker, DOM action executor, canvas masking. |
 | [05_ACTION_CACHE_SELF_HEALING.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/05_ACTION_CACHE_SELF_HEALING.md) | **Action Cache & Privacy Audit** | IndexedDB action cache, pHash visual verification, popup recovery, and cryptographic privacy audit trail. |
 | [06_FRONTEND_MISSION_CONTROL.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/06_FRONTEND_MISSION_CONTROL.md) | **Mission Control HUD** | React/Vite side-panel, live **Raw vs Redacted** side-by-side view, WebGPU telemetry, PII counter. |
-| [07_TEAM_WORKFLOW_HARDWARE_SPLIT.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/07_TEAM_WORKFLOW_HARDWARE_SPLIT.md) | **Team Workflow & Machine Roles** | MacBook Air M2 (WebGPU extension) vs Lenovo IdeaPad 3 (Server API & WASM fallback) split. |
+| [07_TEAM_WORKFLOW_HARDWARE_SPLIT.md](07_TEAM_WORKFLOW_HARDWARE_SPLIT.md) | **Team Workflow & Machine Roles** | Baseline machine requirements and the workstream split (client core / server & DOM / evidence). |
 | [08_SPRINT_ROADMAP_4WEEKS.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/08_SPRINT_ROADMAP_4WEEKS.md) | **4-Week Sprint Roadmap** | Weekly milestones from scaffold to multi-site generalization and official submission (Sep 20). |
 | [09_DEMO_PITCH_SCRIPT.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/09_DEMO_PITCH_SCRIPT.md) | **Grand Finale Pitch Script** | 3-minute jury pitch script, real-time redaction demo, 5-metric benchmark proof, FAQ defense. |
 

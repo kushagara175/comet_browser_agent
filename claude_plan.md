@@ -125,13 +125,18 @@ flowchart TD
 
 ---
 
-## 4. Hardware & Team Split
+## 4. Team Split
 
-| Member / Machine | Primary Responsibilities | Development Focus |
+Roles are assigned by workstream, not by machine — see `docs/07_TEAM_WORKFLOW_HARDWARE_SPLIT.md`
+for the baseline machine requirements. Any modern laptop with Node.js 20+ and a recent Chrome can
+run the entire client side; no discrete GPU is needed.
+
+| Workstream | Primary Responsibilities | Development Focus |
 | :--- | :--- | :--- |
-| **MacBook Air M2 (16GB)** | Extension Client Core & WebGPU Pipeline | Build Manifest V3 extension, WebGPU `ONNX Runtime Web` integration, face blur canvas pipeline, and live HUD side-panel. |
-| **Lenovo IdeaPad 3** | Server API & DOM Redaction Engine | Build FastAPI server gateway, VLM prompt templates, structured JSON action parser, WASM fallback testing, and DOM PII regex engine. |
-| **Cloud Endpoint (Free Tier)** | Central Reasoning Model Host | Host server VLM endpoint (OpenAI / Anthropic / HuggingFace Inference / Groq) for rapid response times. |
+| **A — Client core** | Extension & in-browser vision pipeline | Manifest V3 extension, `ONNX Runtime Web` with WebGPU → WASM fallback, face blur canvas pipeline, live HUD side-panel. |
+| **B — Server & DOM** | Reasoning API & deterministic redaction | Server gateway, VLM prompt templates, structured JSON action parser, DOM PII analyzer and regex engine. |
+| **C — Evidence** | Benchmarks & adversarial tests | Ground-truth corpus, benchmark harness, resource and latency measurement, playbook §8.3 suite. |
+| **Cloud endpoint** | Central reasoning model host | Hosted open-weights VLM (Qwen2.5-VL via Groq / Together / OpenRouter), permitted by SIH rules during the event. |
 
 ---
 

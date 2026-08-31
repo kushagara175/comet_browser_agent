@@ -183,20 +183,22 @@ target.
 
 ---
 
-## 6. Team Hardware — Where Things Actually Run Now
+## 6. Hardware — Where Things Actually Run Now
 
-Good news: this architecture is *lighter* on your hardware than the old plan, because
-the heavy model lives on the server (which can be cloud-hosted), not on either laptop.
+Good news: this architecture is *light* on the development machine, because the heavy
+model lives on the server (which can be cloud-hosted), not on any laptop.
 
-| Machine | Role |
-|---|---|
-| **MacBook Air M2 (16GB)** | Build/test the browser extension (client-side vision + redaction), runs fine — WebGPU is well supported on Apple Silicon in Chrome |
-| **Lenovo IdeaPad 3** | Also fine for extension development — the in-browser model is small (not a 3B VLM), so a GPU-less laptop can still run it via WASM fallback if WebGPU support is limited; also good for building the server API code |
-| **Either machine, or free tier cloud** | Server-side: can literally call a cloud LLM API for the SIH demo (per PS rules) — no local GPU inference required for this part at MVP stage |
+| Component | Where it runs | Requirement |
+|---|---|---|
+| **Browser extension** (client-side vision + redaction) | Any modern laptop | Node.js 20+, a recent Chrome, ~8 GB RAM. The in-browser model is a 1–2 MB quantized detector, not a 3B VLM |
+| **WebGPU acceleration** | Same machine | Optional — WASM is the correctness path, so a machine with limited or no WebGPU support can still run everything |
+| **Server reasoning model** | Cloud endpoint | A hosted open-weights VLM, permitted by the PS rules during SIH. **No local GPU inference required** |
 
-This means **Google Colab is even less necessary now** — you don't need to prototype a
-big local VLM at all for the MVP. If you want the "offline-deployable model" bonus
-later, Colab could help test that separately, but it's not on the critical path.
+No discrete GPU is needed anywhere, and **Google Colab is not on the critical path** — there
+is no big local VLM to prototype for the MVP. If the "offline-deployable model" claim needs
+demonstrating later, that can be verified separately.
+
+Baseline machine requirements are in `docs/07_TEAM_WORKFLOW_HARDWARE_SPLIT.md`.
 
 ---
 
@@ -206,7 +208,7 @@ later, Colab could help test that separately, but it's not on the critical path.
 - [ ] Minimal Chrome extension scaffold (Manifest V3) that captures DOM + screenshot of
       current tab
 - [ ] Get ONNX Runtime Web or Transformers.js running in the extension with a trivial
-      model, confirm WebGPU (or WASM fallback) works on both laptops
+      model, confirm WebGPU (or WASM fallback) works on every development machine
 - [ ] Stand up a minimal server endpoint that just echoes back a hardcoded action, to
       validate the client↔server round trip end-to-end
 
