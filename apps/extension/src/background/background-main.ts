@@ -8,6 +8,11 @@ declare const chrome: any;
 
 const coordinator = new RunCoordinator();
 
+// Open Chrome Side Panel on extension icon click
+if (typeof chrome !== 'undefined' && chrome.sidePanel && typeof chrome.sidePanel.setPanelBehavior === 'function') {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+}
+
 // Stream coordinator lifecycle events to Extension UI (Sidepanel/HUD)
 coordinator.setListeners({
   onStateChange: (state, message) => {

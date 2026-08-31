@@ -20,11 +20,10 @@
   padding: 0;
 }
 
-body {
-  width: 360px;
-  min-width: 360px;
-  max-width: 360px;
-  height: 580px;
+html, body {
+  width: 100%;
+  height: 100%;
+  min-width: 320px;
   margin: 0;
   padding: 0;
   background: var(--bg-main);
@@ -37,11 +36,13 @@ body {
 }
 
 .app-container {
-  width: 360px;
-  height: 580px;
+  width: 100%;
+  height: 100%;
   position: relative;
   background: var(--bg-main);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .hidden {
@@ -53,8 +54,8 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-  width: 360px;
-  height: 580px;
+  width: 100%;
+  height: 100%;
   background-image: url('../../assets/valley-bg.png');
   background-size: cover;
   background-position: center;
@@ -67,8 +68,8 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-  width: 360px;
-  height: 580px;
+  width: 100%;
+  height: 100%;
   z-index: 1;
   pointer-events: none;
   opacity: 0.65;
@@ -84,9 +85,8 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100vh;
-  min-height: 320px;
-  width: 360px;
+  height: 100%;
+  width: 100%;
   background: transparent;
   padding: 50px 24px;
   text-align: center;
@@ -147,8 +147,8 @@ body {
 
 .popup-wrapper {
   position: relative;
-  width: 360px;
-  height: 580px;
+  width: 100%;
+  height: 100%;
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -394,9 +394,14 @@ body {
 
 .ai-panel {
   position: relative;
-  width: 360px;
-  height: 580px;
+  width: 100%;
+  height: 100%;
   display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  z-index: 10;
+}
+
 /* Header Styles */
 .ai-header {
   display: flex;

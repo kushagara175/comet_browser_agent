@@ -16658,6 +16658,10 @@ var RunCoordinator = class {
 
 // src/background/background-main.ts
 var coordinator = new RunCoordinator();
+if (typeof chrome !== "undefined" && chrome.sidePanel && typeof chrome.sidePanel.setPanelBehavior === "function") {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {
+  });
+}
 coordinator.setListeners({
   onStateChange: (state, message) => {
     if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
