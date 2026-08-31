@@ -1,0 +1,1 @@
+{"version":3,"file":"canary-scanner.d.ts","sourceRoot":"","sources":["../../src/proxy/canary-scanner.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AAIH,qBAAa,kBAAkB;IAC7B,MAAM,CAAC,OAAO,CAAC,OAAO,EAAE,GAAG,EAAE,IAAI,GAAE,MAAyB,GAAG;QAAE,MAAM,EAAE,OAAO,CAAC;QAAC,SAAS,CAAC,EAAE,MAAM,CAAA;KAAE,CAWrG;CACF"}

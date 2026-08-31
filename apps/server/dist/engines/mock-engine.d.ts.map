@@ -1,0 +1,1 @@
+{"version":3,"file":"mock-engine.d.ts","sourceRoot":"","sources":["../../src/engines/mock-engine.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AAEH,OAAO,EAAE,uBAAuB,EAAE,cAAc,EAAE,MAAM,sBAAsB,CAAC;AAE/E,qBAAa,mBAAmB;IACxB,gBAAgB,CAAC,OAAO,EAAE,uBAAuB,GAAG,OAAO,CAAC,cAAc,CAAC,CA8FhF;CACF"}
