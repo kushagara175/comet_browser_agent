@@ -760,8 +760,8 @@ body {
 
 /* Bottom Chat Input Bar */
 .ai-footer {
-  padding: 10px 12px;
-  border-top: 1px solid rgba(226, 232, 240, 0.9);
+  padding: 10px 12px 14px 12px;
+  border-top: 1px solid rgba(226, 232, 240, 0.7);
   background-color: #f8fafc;
   background-image: url('../../assets/grain-texture.png');
   background-repeat: repeat;
@@ -771,20 +771,22 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 5px 6px 5px 12px;
+  border-radius: 18px;
+  padding: 8px 8px 8px 16px;
   width: 100%;
   box-sizing: border-box;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
 }
 
 .chat-bar:focus-within {
   border-color: #cbd5e1;
   background: #ffffff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
 }
 
 .chat-bar input {
@@ -792,8 +794,8 @@ body {
   border: none;
   background: transparent;
   outline: none;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 12.5px;
+  font-weight: 450;
   color: #0f172a;
 }
 
@@ -804,9 +806,9 @@ body {
 .send-btn {
   background: #0f172a;
   border: none;
-  border-radius: 6px;
-  width: 30px;
-  height: 30px;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -817,7 +819,7 @@ body {
 
 .send-btn:hover {
   background: #1e293b;
-  transform: scale(1.03);
+  transform: scale(1.05);
 }
 
 /* Dual-Pane Viewport Inspector */
