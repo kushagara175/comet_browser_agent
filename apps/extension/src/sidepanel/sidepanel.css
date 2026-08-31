@@ -406,8 +406,8 @@ body {
 .ai-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
+  justify-content: flex-start;
+  padding: 8px 12px;
   border-bottom: 1px solid #e2e8f0;
   background: #ffffff;
   z-index: 10;
@@ -425,13 +425,16 @@ body {
 }
 
 .top-left-logo-btn:hover {
-  transform: scale(1.06);
+  transform: scale(1.05);
 }
 
 .top-left-logo-img {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
+  display: block;
   filter: drop-shadow(0 2px 8px rgba(37, 99, 235, 0.45));
 }
 
