@@ -88,15 +88,20 @@ export class ActionExecutor {
 
       if (proposal.kind === 'type' && proposal.textToType !== undefined) {
         targetEl.focus();
+
+        // Dispatch initial keydown for focus/activation
+        targetEl.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Process' }));
+
         if ('value' in targetEl) {
           (targetEl as HTMLInputElement).value = proposal.textToType;
         } else {
           targetEl.innerText = proposal.textToType;
         }
 
-        // Dispatch input & change events for React/Vue state sync
-        targetEl.dispatchEvent(new Event('input', { bubbles: true }));
-        targetEl.dispatchEvent(new Event('change', { bubbles: true }));
+        // Dispatch input & change events for React/Vue/Angular state sync
+        targetEl.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+        targetEl.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+        targetEl.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key: 'Process' }));
 
         return {
           actionId: proposal.actionId,

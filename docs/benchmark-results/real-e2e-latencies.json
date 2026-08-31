@@ -1,0 +1,72 @@
+[
+  {
+    "runId": "e2e_measured_run_1",
+    "t0_start": 1788157308275,
+    "t1_captureComplete": 26,
+    "t2_detectionComplete": 62,
+    "t3_sanitizationValidated": 103,
+    "t4_reasoningReceived": 127,
+    "t5_actionValidated": 127,
+    "t6_actionExecuted": 148,
+    "t7_stateVerified": 163,
+    "totalLatencyMs": 163,
+    "clientLatencyMs": 139,
+    "serverLatencyMs": 24
+  },
+  {
+    "runId": "e2e_measured_run_2",
+    "t0_start": 1788157308439,
+    "t1_captureComplete": 26,
+    "t2_detectionComplete": 61,
+    "t3_sanitizationValidated": 102,
+    "t4_reasoningReceived": 105,
+    "t5_actionValidated": 105,
+    "t6_actionExecuted": 126,
+    "t7_stateVerified": 142,
+    "totalLatencyMs": 142,
+    "clientLatencyMs": 139,
+    "serverLatencyMs": 3
+  },
+  {
+    "runId": "e2e_measured_run_3",
+    "t0_start": 1788157308581,
+    "t1_captureComplete": 26,
+    "t2_detectionComplete": 62,
+    "t3_sanitizationValidated": 103,
+    "t4_reasoningReceived": 107,
+    "t5_actionValidated": 107,
+    "t6_actionExecuted": 128,
+    "t7_stateVerified": 144,
+    "totalLatencyMs": 144,
+    "clientLatencyMs": 140,
+    "serverLatencyMs": 4
+  },
+  {
+    "runId": "e2e_measured_run_4",
+    "t0_start": 1788157308725,
+    "t1_captureComplete": 26,
+    "t2_detectionComplete": 62,
+    "t3_sanitizationValidated": 103,
+    "t4_reasoningReceived": 105,
+    "t5_actionValidated": 105,
+    "t6_actionExecuted": 126,
+    "t7_stateVerified": 142,
+    "totalLatencyMs": 142,
+    "clientLatencyMs": 140,
+    "serverLatencyMs": 2
+  },
+  {
+    "runId": "e2e_measured_run_5",
+    "t0_start": 1788157308868,
+    "t1_captureComplete": 25,
+    "t2_detectionComplete": 61,
+    "t3_sanitizationValidated": 102,
+    "t4_reasoningReceived": 103,
+    "t5_actionValidated": 103,
+    "t6_actionExecuted": 124,
+    "t7_stateVerified": 140,
+    "totalLatencyMs": 140,
+    "clientLatencyMs": 139,
+    "serverLatencyMs": 1
+  }
+]
