@@ -95,18 +95,18 @@ body {
 }
 
 .loading-logo-wrap {
-  margin-bottom: 20px;
+  margin-bottom: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .export-logo-img {
-  width: 56px;
-  height: 56px;
+  width: 96px;
+  height: 96px;
   object-fit: contain;
   display: block;
-  filter: drop-shadow(0 4px 16px rgba(37, 99, 235, 0.45));
+  filter: drop-shadow(0 6px 24px rgba(37, 99, 235, 0.60));
 }
 
 .connecting-title {
