@@ -1,48 +1,61 @@
-# SIH26171 Master Documentation Index
+# Documentation Index — SIH26171 / PrivaPilot
 
-## 🛡️ Project: Privacy-Preserving On-Device Visual Perception Browser Agent
-### Organization: Indian Space Research Organisation (ISRO) | Smart Automation | SIH 2026
-
-This repository contains the complete engineering specification, architecture blueprints, sprint plans, and jury pitch strategy for **SIH26171**.
+Every project document lives in this folder. They form a deliberate hierarchy: when two documents
+disagree, the one higher in this list wins.
 
 ---
 
-## 📚 Modular Document Directory
+## Tier 1 — Authoritative
 
-| Document | Title & Focus Area | Key Highlights |
-|---|---|---|
-| [01_PROBLEM_ANALYSIS.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/01_PROBLEM_ANALYSIS.md) | **Problem & Domain Context** | Privacy paradox in web agents, official 5-metric scoring rubric, unseen finale use cases. |
-| [02_SYSTEM_ARCHITECTURE.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/02_SYSTEM_ARCHITECTURE.md) | **System Architecture** | Hybrid Client-Server Split: WebGPU Privacy Filter ➔ Sanitized Payload ➔ Server VLM ➔ Content Script. |
-| [03_VLM_INFERENCE_PIPELINE.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/03_VLM_INFERENCE_PIPELINE.md) | **Vision & Reasoning Pipeline** | `ONNX Runtime Web` on WebGPU, BlazeFace face blur, DOM PII masking, server VLM prompt schema. |
-| [04_BROWSER_AUTOMATION_CANVAS.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/04_BROWSER_AUTOMATION_CANVAS.md) | **Browser Extension Architecture** | Manifest V3 (Chrome/Firefox), offscreen WebGPU worker, DOM action executor, canvas masking. |
-| [05_ACTION_CACHE_SELF_HEALING.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/05_ACTION_CACHE_SELF_HEALING.md) | **Action Cache & Privacy Audit** | IndexedDB action cache, pHash visual verification, popup recovery, and cryptographic privacy audit trail. |
-| [06_FRONTEND_MISSION_CONTROL.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/06_FRONTEND_MISSION_CONTROL.md) | **Mission Control HUD** | React/Vite side-panel, live **Raw vs Redacted** side-by-side view, WebGPU telemetry, PII counter. |
-| [07_TEAM_WORKFLOW_HARDWARE_SPLIT.md](07_TEAM_WORKFLOW_HARDWARE_SPLIT.md) | **Team Workflow & Machine Roles** | Baseline machine requirements and the workstream split (client core / server & DOM / evidence). |
-| [08_SPRINT_ROADMAP_4WEEKS.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/08_SPRINT_ROADMAP_4WEEKS.md) | **4-Week Sprint Roadmap** | Weekly milestones from scaffold to multi-site generalization and official submission (Sep 20). |
-| [09_DEMO_PITCH_SCRIPT.md](file:///Users/kushagrasingh/dev/SIH_26209/docs/09_DEMO_PITCH_SCRIPT.md) | **Grand Finale Pitch Script** | 3-minute jury pitch script, real-time redaction demo, 5-metric benchmark proof, FAQ defense. |
+| # | Document | What it is |
+| :-: | :--- | :--- |
+| 00 | **[00_PROBLEM_STATEMENT.md](00_PROBLEM_STATEMENT.md)** | The official ISRO problem statement, verbatim, with metadata and the evaluation rubric. **Overrides every other document in this repository.** Includes the generalization requirement implied by *"use cases will be provided during finale."* |
+
+## Tier 2 — Operative (read these to work)
+
+| Document | What it is |
+| :--- | :--- |
+| **[EXECUTION_PLAN.md](EXECUTION_PLAN.md)** | Current state of the codebase from audit, the defects blocking each scored metric, and the phased plan to 20 Sep 2026 with an explicit cut order. **Start here to decide what to do next.** |
+| **[AGENT_RULES.md](AGENT_RULES.md)** | Binding rules for every coding session: privacy boundary, fail-closed policy, data classes, action safety, evidence-and-honesty rules, reuse table, definition of done. **Read before writing code.** |
+
+## Tier 3 — Design reference
+
+| Document | What it covers |
+| :--- | :--- |
+| **[SIH26171_WINNING_EXECUTION_PLAYBOOK.md](SIH26171_WINNING_EXECUTION_PLAYBOOK.md)** | The full design spec and source of truth for architectural decisions — privacy contract, detection and redaction design, reasoning and execution rules, benchmark strategy, adversarial cases, jury answers. |
+| [01_PROBLEM_ANALYSIS.md](01_PROBLEM_ANALYSIS.md) | Problem and domain context; the privacy paradox in web agents; why the finale use cases being unknown shapes the design. |
+| [02_SYSTEM_ARCHITECTURE.md](02_SYSTEM_ARCHITECTURE.md) | Client–server split and core module responsibilities. |
+| [03_VLM_INFERENCE_PIPELINE.md](03_VLM_INFERENCE_PIPELINE.md) | In-browser vision pipeline and the server VLM contract; prompt and action schema. |
+| [04_BROWSER_AUTOMATION_CANVAS.md](04_BROWSER_AUTOMATION_CANVAS.md) | Manifest V3 extension architecture, offscreen worker, DOM action executor, canvas masking. |
+| [05_ACTION_CACHE_SELF_HEALING.md](05_ACTION_CACHE_SELF_HEALING.md) | Action cache, state verification, and the privacy audit trail. |
+| [06_FRONTEND_MISSION_CONTROL.md](06_FRONTEND_MISSION_CONTROL.md) | Side-panel HUD: the raw-vs-redacted split view and live telemetry. |
+| [07_TEAM_WORKFLOW_HARDWARE_SPLIT.md](07_TEAM_WORKFLOW_HARDWARE_SPLIT.md) | Baseline machine requirements and the workstream split. |
+| [09_DEMO_PITCH_SCRIPT.md](09_DEMO_PITCH_SCRIPT.md) | Finale pitch and live demo script, plus prepared jury answers. |
+
+## Tier 4 — Evidence
+
+| Path | What it is |
+| :--- | :--- |
+| [benchmark-results/](benchmark-results/) | Output of `npm run benchmark`. Every stored result carries the command and commit that produced it. Nothing here is quotable until it comes from the rebuilt harness (see EXECUTION_PLAN Phase 4). |
+
+## Archive — superseded, do not build from
+
+| Path | Why it was superseded |
+| :--- | :--- |
+| [archive/PROJECT_PLAN_V2.md](archive/PROJECT_PLAN_V2.md) | Its problem-statement content is now `00_PROBLEM_STATEMENT.md`; its plan content is now `EXECUTION_PLAN.md`. |
+| [archive/claude_plan.md](archive/claude_plan.md) | Earlier plan, superseded by `EXECUTION_PLAN.md`. |
+| [archive/08_SPRINT_ROADMAP_4WEEKS.md](archive/08_SPRINT_ROADMAP_4WEEKS.md) | Its timeline began 23 Aug 2026 and has elapsed; replaced by the re-baselined phases in `EXECUTION_PLAN.md`. |
 
 ---
 
-## ⚡ Quick Architecture Overview
+## Reading order
 
-```
-[User Screen / Active Browser Tab]
-          │
-          ▼
-[1. Viewport Capture & DOM Extraction]
-          │
-          ▼
-[2. On-Device Privacy & Redaction Filter (WebGPU)]
-    ├── BlazeFace ONNX ──▶ Gaussian Blur on Faces
-    ├── DOM Inspector  ──▶ Solid Blackout on Passwords/Cards
-    └── Regex Engine   ──▶ Mask PII Text (Emails/Phones)
-          │
-          ▼
-[3. Sanitized Context Transmission (Zero Sensitive Data)]
-          │
-          ▼
-[4. Centralized Reasoning VLM (Server)] ──▶ Predicts Action JSON: {"action":"click", "target":"#submit"}
-          │
-          ▼
-[5. Client Content Script Executor] ────▶ Executes Action on Live Tab & Verifies State
-```
+**New to the project:** `00_PROBLEM_STATEMENT` → `EXECUTION_PLAN` (§1, current state) → `AGENT_RULES`.
+
+**About to write code:** `AGENT_RULES` → the `EXECUTION_PLAN` phase you are on → the playbook section
+it cites.
+
+**Designing a subsystem:** the playbook, then the matching `0x_` reference document.
+
+**Preparing the submission:** `00_PROBLEM_STATEMENT` §5 for the rubric, `benchmark-results/` for
+evidence, `09_DEMO_PITCH_SCRIPT` for the pitch.

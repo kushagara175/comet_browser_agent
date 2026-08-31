@@ -94,6 +94,22 @@ capture ID, sanitized-payload digest, and the allow/block decision.
   WebGPU being available.**
 - Do not display model chain-of-thought in the UI (playbook §9.5).
 
+## 5a. Generalization — the finale pages are unknown
+
+The official PS states: *"Use cases for evaluation will be provided during finale."* We will not see
+the evaluation site in advance, so **every part of the pipeline must work on pages it has never seen.**
+
+- **No site-specific selectors, hardcoded element IDs, or per-domain branches** in detection,
+  redaction, or execution. If a detector needs to know which site it is on, it is wrong.
+- Detect **semantically**: `input[type=password]`, `autocomplete` tokens, ARIA roles, regex over
+  visible text, and the vision model. Never "the field on page X".
+- Any fix that improves behavior on the demo portal at the cost of generality is **negative
+  progress**. The demo portal is a development fixture and a safety net, not the target.
+- On an unfamiliar page, **fail closed**. Over-masking and refusing to transmit is recoverable;
+  leaking PII is not.
+- Score the held-out corpus separately from the development corpus, and treat the held-out number
+  as the real one.
+
 ## 6. Per-task discipline — playbook §10.4
 
 Before starting any unit of work, state:

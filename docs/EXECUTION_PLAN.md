@@ -2,7 +2,9 @@
 
 **Deadline:** 20 September 2026, 23:59 IST · **Plan written:** 31 August 2026 · **Days remaining: 20**
 
-> Source of truth for design decisions remains [`SIH26171_WINNING_EXECUTION_PLAYBOOK.md`](SIH26171_WINNING_EXECUTION_PLAYBOOK.md).
+> Scope is defined by [`00_PROBLEM_STATEMENT.md`](00_PROBLEM_STATEMENT.md), which is authoritative and
+> overrides this document. Source of truth for design decisions is
+> [`SIH26171_WINNING_EXECUTION_PLAYBOOK.md`](SIH26171_WINNING_EXECUTION_PLAYBOOK.md).
 > Binding working rules are in [`AGENT_RULES.md`](AGENT_RULES.md) — read that before any coding session.
 
 ---
@@ -49,6 +51,26 @@ Genuinely strong assets to build on, not replace:
 | Client-side resource utilization | 20% | hardcoded fake numbers |
 | Overall end-to-end task latency | 15% | honestly measured; server is 94% of it |
 
+### The constraint that shapes everything: the finale pages are unknown
+
+> *"Use cases for evaluation will be provided during finale."* — official PS
+
+**We will not see the evaluation website before judging.** Generalization to arbitrary, unseen pages
+is therefore a hard requirement, not a stretch goal, and it constrains every phase below:
+
+- **No site-specific selectors, hardcoded IDs, or per-domain branches** anywhere in the detection,
+  redaction, or execution path. If a detector needs to know what site it is on, it is wrong.
+- Detectors stay **semantic and generic**: `input[type=password]`, `autocomplete` tokens, ARIA roles,
+  regex over visible text, and the vision model — never "the field on page X".
+- The benchmark corpus (Phase 4) must include page shapes the code was **not** developed against.
+  A harness that only scores the pages we wrote tells us nothing about finale performance.
+- Rehearsal (Phase 6) must include **at least one page nobody on the team has seen**, driven live.
+- On an unfamiliar page, **fail-closed is the correct outcome**. Over-masking and refusing to
+  transmit is recoverable in front of a jury; leaking PII is not.
+
+The demo portal is a development fixture and a safety net — **not the target**. Any work that makes
+the agent better on the demo portal specifically, at the cost of generality, is negative progress.
+
 ---
 
 ## 2. Phase 0 — Repo hygiene · Day 1 (~2h)
@@ -62,13 +84,17 @@ Cheap, unblocks everything.
 - [ ] `scripts/run-e2e-chrome.js` — `CHROME_PATH` is hardcoded to `/Applications/Google Chrome.app/…`,
       so it only runs on macOS. Resolve per-platform (macOS / Windows / Linux) with a `CHROME_PATH`
       environment-variable override.
-- [ ] `README.md` — every link points at `file:///Users/kushagrasingh/dev/SIH_26209/docs/…`: wrong PS
-      number, absolute macOS paths, broken everywhere. Convert to relative paths.
+- [x] ~~`README.md` — broken absolute macOS links, wrong PS number.~~ Rewritten as the project front
+      door with a documentation map and an honest status table.
 - [ ] Strip unmeasured claims: `README.md` (`<350MB VRAM`, `<15% CPU`, `>98% recall`, `<1.2s`) and
       `apps/extension/src/sidepanel/sidepanel.html:60` ("Face & avatar blur filters **enabled (WebGPU)**").
       Replace with "measured — see `docs/benchmark-results/`" until a real number exists.
 - [ ] Move `docs/benchmark-results/EVALUATION_REPORT.*` into `docs/benchmark-results/archive/`.
       These are not evidence and must never be cited.
+- [x] ~~Consolidate the five overlapping planning documents.~~ All documentation now lives in `docs/`
+      under one hierarchy — see [`INDEX.md`](INDEX.md). Superseded plans moved to `docs/archive/`.
+- [x] ~~Strip fabricated metrics from `09_DEMO_PITCH_SCRIPT.md`~~ (96.4% / 99.1% / 98.8% / <230MB /
+      ~820ms were all invented). Replaced with placeholders that must be filled from measured output.
 
 ---
 
@@ -169,6 +195,10 @@ output, so it cannot fail.
 
 - [ ] Ground truth comes **only** from `packages/test-fixtures/src/ground-truth.ts` (`GROUND_TRUTH_DATA`),
       which already has real annotations and is currently unused. Extend it to all 14 fixtures.
+- [ ] **Add a held-out corpus.** Annotate 4–6 pages the detectors were *not* developed against —
+      saved copies of real public pages with synthetic PII substituted in. Report scores on the
+      held-out set **separately** from the development set. The held-out number is the one that
+      predicts finale performance; the development number mostly measures overfitting.
 - [ ] Render each fixture in a **real browser** — extend the already-CDP-based `scripts/run-e2e-chrome.js`
       — and run the actual client pipeline against it. No string-matching on raw HTML.
 - [ ] **Visual context (25%)** — element recall/precision, role accuracy, median IoU against annotated
@@ -226,6 +256,10 @@ The PS requires "An end-to-end task assisting the user should be demonstrated."
 - [ ] **Demo task.** Extend the existing `apps/demo-portal` "Valley Workspace Hub" — it already carries a
       password, email, phone, employee ID and avatar — into a 3–4 step approval workflow. Do not build a
       new fixture from scratch.
+- [ ] **Rehearse on an unseen page.** The demo portal proves the story; it does not prove the claim.
+      Rehearse the same task on a public page nobody on the team has prepared, and be ready to invite
+      the jury to pick one. If that is too fragile to attempt live, that is a signal the pipeline is
+      overfitted — fix it rather than hiding it.
 
 ---
 
@@ -247,7 +281,9 @@ The PS requires "An end-to-end task assisting the user should be demonstrated."
 3. Action memory cache
 4. Multi-step loop beyond 3 steps
 
-**Never cut:** the offscreen sanitizer, the real face model, the honest benchmark.
+**Never cut:** the offscreen sanitizer, the real face model, the honest benchmark, or generic
+site-agnostic detection. The first three are what the rubric scores; the fourth is what makes the
+score survive contact with a page we have never seen.
 
 ---
 

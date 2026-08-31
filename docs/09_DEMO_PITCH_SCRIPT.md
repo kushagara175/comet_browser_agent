@@ -35,12 +35,20 @@
 ---
 
 ### 3. Minute 2:00 – 2:45: Official Benchmark Scorecard
-> *"Our solution directly excels across all 5 official SIH evaluation metrics:*
-> 1. * **Visual Context Accuracy (25%):** 96.4% element grounding precision.*
-> 2. * **PII Detection Recall & Precision (20%):** 99.1% recall across passwords, cards, emails, and faces.*
-> 3. * **Precision of Redaction (20%):** 98.8% clean pixel obfuscation without distorting actionable buttons.*
-> 4. * **Client Resource Utilization (20%):** Runs entirely within browser memory (<230MB WebGPU RAM, <10% CPU load).*
-> 5. * **End-to-End Latency (15%):** Sub-second round-trip (~820ms cold run, <150ms on cached repeat runs)."*
+> **⚠ Do not fill these in from memory or estimate them.** Every figure below is read from the
+> latest `docs/benchmark-results/` output, produced by `npm run benchmark` against the ground-truth
+> corpus. If a number has not been measured, it does not get spoken. See `AGENT_RULES.md` §5.
+
+> *"Our solution is measured against all 5 official SIH evaluation metrics:*
+> 1. * **Visual Context Accuracy (25%):** `<element recall / precision / median IoU>`*
+> 2. * **PII Detection Recall & Precision (20%):** `<aggregate recall / precision, per category>`*
+> 3. * **Precision of Redaction (20%):** `<coverage, over-mask ratio, safe-element preservation>`*
+> 4. * **Client Resource Utilization (20%):** `<measured peak memory / CPU during a run>`*
+> 5. * **End-to-End Latency (15%):** `<p50 / p95, split into client and server>`"*
+
+> **Presenting a genuine number that missed its target beats presenting an invented one that hit it.**
+> If a metric underperforms, say so and say what you would change — an ISRO jury will respect that far
+> more than a figure that collapses under one follow-up question.
 
 ---
 

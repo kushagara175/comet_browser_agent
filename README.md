@@ -1,49 +1,142 @@
-# SIH26171 — On-Device Visual Perception for Light-Weight Browser Agents
-### Privacy-Preserving In-Browser Vision Agent with Centralized Reasoning (ISRO | Smart Automation | SIH 2026)
+# PrivaPilot — SIH26171
+
+**Privacy-Preserving On-Device Visual Perception for Light-Weight Browser Agents**
+
+Indian Space Research Organisation (ISRO) · Software · Smart Automation · Smart India Hackathon 2026
 
 ---
 
-## 🚀 Quick Documentation Links
+A browser extension where a **local vision model reads the screen**, sensitive and personal data is
+**detected and redacted on the client**, and only sanitized context crosses the network to a server
+VLM that returns a single UI action for the client to execute.
 
-- 📖 **[Master Documentation Index](file:///Users/kushagrasingh/dev/SIH_26209/docs/INDEX.md)**
-- 📋 **[01. Problem Analysis & Official Evaluation Rubric](file:///Users/kushagrasingh/dev/SIH_26209/docs/01_PROBLEM_ANALYSIS.md)**
-- 🏗️ **[02. System Architecture & Core Modules](file:///Users/kushagrasingh/dev/SIH_26209/docs/02_SYSTEM_ARCHITECTURE.md)**
-- 🧠 **[03. In-Browser Vision & Server VLM Pipeline](file:///Users/kushagrasingh/dev/SIH_26209/docs/03_VLM_INFERENCE_PIPELINE.md)**
-- 🌐 **[04. Browser Extension Architecture & Automation](file:///Users/kushagrasingh/dev/SIH_26209/docs/04_BROWSER_AUTOMATION_CANVAS.md)**
-- ⚡ **[05. Action Memory Cache & Privacy Audit Trail](file:///Users/kushagrasingh/dev/SIH_26209/docs/05_ACTION_CACHE_SELF_HEALING.md)**
-- 🖥️ **[06. Mission Control HUD & Telemetry Dashboard](file:///Users/kushagrasingh/dev/SIH_26209/docs/06_FRONTEND_MISSION_CONTROL.md)**
-- 👥 **[07. Team Workflow & Machine Role Split](file:///Users/kushagrasingh/dev/SIH_26209/docs/07_TEAM_WORKFLOW_HARDWARE_SPLIT.md)**
-- 🗓️ **[08. 4-Week Sprint Roadmap & Checklists](file:///Users/kushagrasingh/dev/SIH_26209/docs/08_SPRINT_ROADMAP_4WEEKS.md)**
-- 🏆 **[09. Grand Finale Pitch & Demo Script](file:///Users/kushagrasingh/dev/SIH_26209/docs/09_DEMO_PITCH_SCRIPT.md)**
+The privacy boundary is the product. Nothing identifiable leaves the browser.
 
----
-
-## 📄 Source & Planning Documents
-
-- 📌 **[Official PS Source (Verified)](file:///Users/kushagrasingh/dev/SIH_26209/SIH26171_updateddddd%20.md)** — Official SIH 26171 problem statement text with verified metadata and corrected architecture plan
-- 🗺️ **[Master Project Plan v2](file:///Users/kushagrasingh/dev/SIH_26209/claude_plan.md)** — Detailed architecture, tech stack, hardware split, 4-week roadmap, and demo pitch.
-
----
-
-## ⚡ Core Technical Pillars (Winning Moat)
-
-1. **On-Device WebGPU Vision Engine:** In-browser inference via `ONNX Runtime Web` / `Transformers.js` accelerated by WebGPU (with WASM fallback) running lightweight models directly in the extension offscreen worker.
-2. **Dual-Layer Privacy Redaction (40% of SIH Score):**
-   - **DOM Layer:** Deterministic, zero-cost masking of passwords, credit cards, emails, and sensitive input fields.
-   - **Visual Layer:** Computer vision face detection (BlazeFace ONNX) applying Gaussian blur and canvas blackout bounding boxes before any screenshot leaves the client.
-3. **Hybrid Client-Server Reasoning:** Transmits only sanitized, unidentifiable visual and DOM context to a centralized VLM (Qwen2.5-VL / Claude) which returns structured UI action JSON.
-4. **Deterministic Action Runner:** Content scripts execute UI actions (`click`, `type`, `select`, `scroll`) on live webpages with closed-loop verification.
-5. **Action Memory Cache & Self-Healing:** Local IndexedDB cache replays repeated workflows in `<200ms` without redundant server calls.
-6. **Dual-Pane Mission Control HUD:** Real-time extension side-panel rendering **Raw Viewport vs Redacted Viewport** side-by-side with live WebGPU telemetry and privacy audit logs.
+```
+┌─ CLIENT (browser extension) ────────────────┐        ┌─ SERVER ──────────────┐
+│                                             │        │                       │
+│  capture ─▶ local vision + DOM detectors    │        │  open-weights VLM     │
+│               │                             │        │        │              │
+│               ▼                             │        │        ▼              │
+│           redact (mask / blur)              │        │   one action, by      │
+│               │                             │        │   local element ID    │
+│               ▼                             │        │                       │
+│      post-redaction verify ─── FAIL ─▶ block│        │                       │
+│               │                             │        │                       │
+│               └── SanitizedContext ─────────┼───────▶│                       │
+│                                             │        │                       │
+│  execute action ◀───────────────────────────┼────────┘                       │
+└─────────────────────────────────────────────┘        └───────────────────────┘
+```
 
 ---
 
-## 📊 Official SIH Evaluation Scorecard
+## Status
 
-| Evaluation Metric | Weight | Technical Implementation |
-| :--- | :---: | :--- |
-| **Accuracy of visual context from screen** | **25%** | Structured DOM tree + high-fidelity sanitized visual screenshot |
-| **Recall & precision for sensitive/PII detection** | **20%** | WebGPU face detection + DOM regex + input type analyzer (>98% recall) |
-| **Precision of redaction** | **20%** | Clean pixel blackout & Gaussian blur without distorting interactive UI layout |
-| **Client-side resource utilization** | **20%** | Lightweight WebGPU memory footprint (<350MB VRAM, <15% CPU load in tab) |
-| **Overall end-to-end task latency** | **15%** | Sub-second client sanitization + fast server round-trip (<1.2s total per step) |
+Honest state of the project. No metric appears here until it has been measured by
+`npm run benchmark` against ground truth.
+
+| Area | State |
+| :--- | :--- |
+| Monorepo build & test suite | ✅ Clean build, 16/16 tests passing |
+| Protocol & type-level privacy boundary | ✅ Implemented (`packages/protocol/`) |
+| Deterministic PII detectors (DOM + regex) | ✅ Implemented (`packages/pii-rules/`) |
+| Server gateway, closed schema, canary scanner | ✅ Implemented (`apps/server/`) |
+| **Pixel redaction actually running in-extension** | ⛔ Blocked — sanitizer runs in the MV3 service worker where canvas is unavailable |
+| **On-device vision model** | ⛔ Not implemented |
+| **Benchmark against real ground truth** | ⛔ Harness derives ground truth from detector output |
+| Multi-step agent loop | ⛔ Single step only |
+
+Fixing these is the subject of **[docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md)**, in that order.
+
+---
+
+## Evaluation rubric
+
+The official scoring, from **[docs/00_PROBLEM_STATEMENT.md](docs/00_PROBLEM_STATEMENT.md)**:
+
+| Metric | Weight |
+| :--- | :-: |
+| Accuracy of visual context from screen | 25% |
+| Recall and precision for detection of sensitive/PII data | 20% |
+| Precision of redaction | 20% |
+| Client-side resource utilization | 20% |
+| Overall end-to-end latency of the provided task | 15% |
+
+> **The evaluation use cases are revealed only at the finale.** Generalization to unseen pages is a
+> hard requirement, not a stretch goal. No site-specific selectors anywhere in the pipeline.
+
+---
+
+## Quick start
+
+```bash
+npm install
+npm run build          # builds all 6 workspace packages in dependency order
+npm test               # unit + adversarial test suite
+npm run dev:server     # reasoning gateway on :4501 (falls back to mock with no VLM configured)
+npm run dev:portal     # synthetic demo portal on :4500
+```
+
+Load the extension: `chrome://extensions` → Developer mode → **Load unpacked** → `apps/extension/`.
+
+To point the server at a real model, set `VLM_ENDPOINT`, `VLM_API_KEY`, and `VLM_MODEL`. With none
+set, `VlmReasoningEngine` auto-probes Ollama and LM Studio, then falls back to a deterministic mock —
+so the whole system is developable with no model at all.
+
+Requirements: Node.js 20+, a recent Chrome. No discrete GPU needed; WebGPU is an accelerator and
+WebAssembly is the correctness path.
+
+---
+
+## Documentation
+
+Start at **[docs/INDEX.md](docs/INDEX.md)**. The four documents that matter most:
+
+| Document | Read it when |
+| :--- | :--- |
+| **[docs/00_PROBLEM_STATEMENT.md](docs/00_PROBLEM_STATEMENT.md)** | Ever in doubt about scope — this is authoritative and overrides everything else |
+| **[docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md)** | Deciding what to work on next |
+| **[docs/AGENT_RULES.md](docs/AGENT_RULES.md)** | Before writing any code — binding rules, every session |
+| **[docs/SIH26171_WINNING_EXECUTION_PLAYBOOK.md](docs/SIH26171_WINNING_EXECUTION_PLAYBOOK.md)** | Designing a subsystem — the design source of truth |
+
+---
+
+## Repository layout
+
+```
+apps/
+  extension/      MV3 browser extension — capture, detect, redact, execute
+  server/         stateless reasoning gateway; closed schema + canary scanner
+  demo-portal/    synthetic portal with seeded PII, for development and demo
+packages/
+  protocol/       shared contracts; branded types enforce the privacy boundary
+  pii-rules/      DOM semantic analysis + regex detectors (Luhn-validated)
+  benchmark/      metric harness for the five official criteria
+  test-fixtures/  14 synthetic pages + ground-truth annotations
+scripts/          build, benchmarks, CDP-driven end-to-end runs
+tests/            unit and adversarial suites
+docs/             all project documentation (see docs/INDEX.md)
+```
+
+---
+
+## Non-negotiables
+
+Full detail in **[docs/AGENT_RULES.md](docs/AGENT_RULES.md)**.
+
+- The flow is `RawCapture → DetectionReport → SanitizedContext → NetworkPayload`. The HTTP client
+  accepts `SanitizedContext` only, enforced at compile time by branded types.
+- **Fail closed.** If redaction coverage is uncertain, no screenshot is transmitted. A failing
+  sanitizer must never degrade into permissive behavior.
+- The server addresses elements by **local ID only**. Any response containing a CSS selector,
+  XPath, JavaScript, or URL is rejected.
+- Protected actions (submit, pay, delete, send…) require explicit user confirmation. Password, OTP,
+  and CAPTCHA entry are hard-blocked.
+- **No unmeasured performance claim** goes in the code, the UI, the docs, or the pitch.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
