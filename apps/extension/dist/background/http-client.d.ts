@@ -10,6 +10,10 @@ export declare class ReasoningHttpClient {
     private readonly serverBaseUrl;
     constructor(serverBaseUrl?: string);
     /**
+     * Bounded fetch helper wrapping AbortController with deterministic timeouts.
+     */
+    private fetchWithTimeout;
+    /**
      * Transmits SanitizedContext to Reasoning Server and returns one ActionProposal.
      */
     requestReasoningAction(sanitized: SanitizedContext): Promise<ActionProposal>;

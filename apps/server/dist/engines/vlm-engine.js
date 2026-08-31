@@ -45,9 +45,12 @@ export class VlmReasoningEngine {
             };
             return this.cachedStatus;
         }
-        // 2. Auto-probe Ollama on default port (11434)
+        // 2. Auto-probe Ollama on default port (11434) with bounded timeout
         try {
-            const ollamaRes = await fetch('http://localhost:11434/api/tags');
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 1200);
+            const ollamaRes = await fetch('http://localhost:11434/api/tags', { signal: controller.signal });
+            clearTimeout(timeout);
             if (ollamaRes.ok) {
                 const data = await ollamaRes.json();
                 const models = data.models || [];
@@ -65,7 +68,7 @@ export class VlmReasoningEngine {
             }
         }
         catch {
-            // Ollama offline
+            // Ollama offline or timed out
         }
         // 3. Auto-probe LM Studio on default port (1234)
         const lmStudioOnline = await this.pingEndpoint('http://localhost:1234/v1/models');

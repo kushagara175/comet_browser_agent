@@ -198,11 +198,11 @@ export class WebExtensionAdapter implements BrowserAdapter {
 
       const correlationId = `san_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-      // 5000ms Bounded Timeout Promise
+      // 15000ms Bounded Timeout Promise (accommodates cold-start ONNX model initialization)
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => {
-          reject(new Error('Sanitization Host Timeout: Offscreen document did not respond within 5000ms'));
-        }, 5000);
+          reject(new Error('Sanitization Host Timeout: Offscreen document did not respond within 15000ms'));
+        }, 15000);
       });
 
       const messagePromise = new Promise<SanitizedContext>((resolve, reject) => {

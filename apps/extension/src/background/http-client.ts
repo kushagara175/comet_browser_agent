@@ -24,6 +24,33 @@ export class ReasoningHttpClient {
   }
 
   /**
+   * Bounded fetch helper wrapping AbortController with deterministic timeouts.
+   */
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    operation: string,
+    timeoutMs: number = 15000
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal
+      });
+    } catch (error: any) {
+      if (controller.signal.aborted) {
+        throw new Error(`${operation} timed out after ${timeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
    * Transmits SanitizedContext to Reasoning Server and returns one ActionProposal.
    */
   async requestReasoningAction(sanitized: SanitizedContext): Promise<ActionProposal> {
@@ -40,15 +67,20 @@ export class ReasoningHttpClient {
     // 2. Outgoing Canary Gate check
     assertNoCanaryLeak(payload, 'Outgoing HTTP Payload');
 
-    // 3. Make HTTP request
-    const response = await fetch(`${this.serverBaseUrl}/api/v1/reason`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-PrivaPilot-Version': '1.0'
+    // 3. Make HTTP request with 15s bounded timeout
+    const response = await this.fetchWithTimeout(
+      `${this.serverBaseUrl}/api/v1/reason`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-PrivaPilot-Version': '1.0'
+        },
+        body: JSON.stringify(payload)
       },
-      body: JSON.stringify(payload)
-    });
+      'Reasoning request',
+      15000
+    );
 
     if (!response.ok) {
       const errText = await response.text();
@@ -82,20 +114,25 @@ export class ReasoningHttpClient {
 
     assertNoCanaryLeak(payload, 'Outgoing Chat Payload');
 
-    const response = await fetch(`${this.serverBaseUrl}/api/v1/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-PrivaPilot-Version': '1.0'
+    const response = await this.fetchWithTimeout(
+      `${this.serverBaseUrl}/api/v1/chat`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-PrivaPilot-Version': '1.0'
+        },
+        body: JSON.stringify({
+          protocolVersion: payload.protocolVersion,
+          message: payload.message,
+          elements: payload.elements,
+          sanitizedTitle: payload.sanitizedTitle,
+          maskCount: payload.maskCount
+        })
       },
-      body: JSON.stringify({
-        protocolVersion: payload.protocolVersion,
-        message: payload.message,
-        elements: payload.elements,
-        sanitizedTitle: payload.sanitizedTitle,
-        maskCount: payload.maskCount
-      })
-    });
+      'Chat request',
+      15000
+    );
 
     if (!response.ok) {
       const errText = await response.text();
@@ -114,14 +151,19 @@ export class ReasoningHttpClient {
       message
     };
 
-    const response = await fetch(`${this.serverBaseUrl}/api/v1/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-PrivaPilot-Version': '1.0'
+    const response = await this.fetchWithTimeout(
+      `${this.serverBaseUrl}/api/v1/chat`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-PrivaPilot-Version': '1.0'
+        },
+        body: JSON.stringify(payload)
       },
-      body: JSON.stringify(payload)
-    });
+      'General chat request',
+      15000
+    );
 
     if (!response.ok) {
       const errText = await response.text();

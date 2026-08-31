@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-08-31T18:40:14.422Z",
+  "timestamp": "2026-08-31T19:58:16.877Z",
   "fixturesEvaluated": 14,
   "metadata": {
     "command": "/Users/kushagrasingh/dev/SIH_26209/scripts/run-benchmarks.js",
-    "date": "2026-08-31T18:40:14.422Z",
+    "date": "2026-08-31T19:58:16.877Z",
     "environment": "darwin arm64 (Node v22.22.0)",
     "browserVersion": "Google Chrome / Chromium Headless (CDP Engine)",
     "modelProvider": "UltraFace ONNX (Wasm/CPU) + Local PII Regex/Luhn Engine",
-    "gitSha": "ca2a525",
+    "gitSha": "1548d4a",
     "split": "all"
   },
   "accuracy": {
@@ -110,15 +110,15 @@
     "totalSafeElements": 19
   },
   "latency": {
-    "sampleCount": 14,
-    "p50TotalLatencyMs": 385,
-    "p95TotalLatencyMs": 385,
-    "p50ClientPerceptionMs": 35,
-    "p95ClientPerceptionMs": 35,
-    "p50ServerReasoningMs": 350,
-    "p95ServerReasoningMs": 350,
+    "sampleCount": 5,
+    "p50TotalLatencyMs": 1549,
+    "p95TotalLatencyMs": 1865,
+    "p50ClientPerceptionMs": 1,
+    "p95ClientPerceptionMs": 4,
+    "p50ServerReasoningMs": 1548,
+    "p95ServerReasoningMs": 1864,
     "p50ActionExecutionMs": 0,
     "peakMemoryMb": 48.6,
-    "cpuLoadPct": 125
+    "cpuLoadPct": 130.8
   }
 }

@@ -168,11 +168,11 @@ export class WebExtensionAdapter {
                 catch (_) { }
             }, 60000);
             const correlationId = `san_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-            // 5000ms Bounded Timeout Promise
+            // 15000ms Bounded Timeout Promise (accommodates cold-start ONNX model initialization)
             const timeoutPromise = new Promise((_, reject) => {
                 setTimeout(() => {
-                    reject(new Error('Sanitization Host Timeout: Offscreen document did not respond within 5000ms'));
-                }, 5000);
+                    reject(new Error('Sanitization Host Timeout: Offscreen document did not respond within 15000ms'));
+                }, 15000);
             });
             const messagePromise = new Promise((resolve, reject) => {
                 api.runtime.sendMessage({

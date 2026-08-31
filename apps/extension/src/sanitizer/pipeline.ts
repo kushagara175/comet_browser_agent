@@ -128,10 +128,10 @@ export class SanitizerPipeline {
     // 3. Scrub Interactive Elements (Map to localId, scrub names, compute coarse bounds)
     const sanitizedElements: SanitizedElement[] = snapshot.interactiveElements.map((el) => {
       const coarseBounds: [number, number, number, number] = [
-        Math.round((el.boundingBox.x / rawCapture.metadata.viewportWidth) * 100) / 100,
-        Math.round((el.boundingBox.y / rawCapture.metadata.viewportHeight) * 100) / 100,
-        Math.round((el.boundingBox.width / rawCapture.metadata.viewportWidth) * 100) / 100,
-        Math.round((el.boundingBox.height / rawCapture.metadata.viewportHeight) * 100) / 100
+        Math.max(0, Math.min(1, Math.round((el.boundingBox.x / rawCapture.metadata.viewportWidth) * 100) / 100)),
+        Math.max(0, Math.min(1, Math.round((el.boundingBox.y / rawCapture.metadata.viewportHeight) * 100) / 100)),
+        Math.max(0, Math.min(1, Math.round((el.boundingBox.width / rawCapture.metadata.viewportWidth) * 100) / 100)),
+        Math.max(0, Math.min(1, Math.round((el.boundingBox.height / rawCapture.metadata.viewportHeight) * 100) / 100))
       ];
 
       const sensitiveCategory = sensitiveDomElementsMap.get(el.localId);

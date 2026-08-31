@@ -39,13 +39,16 @@ export class ActionExecutor {
     static execute(proposal, elementMap) {
         const timestamp = Date.now();
         // 1. Non-targeted / page-level actions
-        if (proposal.kind === 'observe' || proposal.kind === 'wait' || proposal.kind === 'finish') {
+        if (proposal.kind === 'observe' ||
+            proposal.kind === 'wait' ||
+            proposal.kind === 'finish' ||
+            proposal.kind === 'request_user_confirmation') {
             return {
                 actionId: proposal.actionId,
                 success: true,
                 timestamp,
                 semanticOutcomeVerified: true,
-                message: 'Observation completed'
+                message: proposal.kind === 'request_user_confirmation' ? 'User confirmation requested' : 'Observation completed'
             };
         }
         if (proposal.kind === 'scroll') {

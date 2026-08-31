@@ -135,6 +135,16 @@ export class RunCoordinator {
      * Starts an automated bounded multi-step agent run for a specific user goal.
      */
     async startRun(goal, options) {
+        if (this.state !== 'idle' &&
+            this.state !== 'complete' &&
+            this.state !== 'failed-safe' &&
+            this.state !== 'blocked-local-only' &&
+            this.state !== 'awaiting-user-confirmation') {
+            const errorMsg = 'Cannot start new run: an agent run is already in progress';
+            const res = { success: false, state: this.state, error: errorMsg };
+            this.lastRunResult = res;
+            return res;
+        }
         this.currentGoal = goal;
         this.currentStep = 0;
         this.currentMaxSteps = Math.max(1, Math.min(options?.maxSteps ?? this.defaultMaxSteps, 20));

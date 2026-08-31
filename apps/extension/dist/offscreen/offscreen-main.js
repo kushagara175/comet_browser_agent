@@ -15149,10 +15149,10 @@ as ORT format: ${n}`);
       }
       const sanitizedElements = snapshot.interactiveElements.map((el2) => {
         const coarseBounds = [
-          Math.round(el2.boundingBox.x / rawCapture.metadata.viewportWidth * 100) / 100,
-          Math.round(el2.boundingBox.y / rawCapture.metadata.viewportHeight * 100) / 100,
-          Math.round(el2.boundingBox.width / rawCapture.metadata.viewportWidth * 100) / 100,
-          Math.round(el2.boundingBox.height / rawCapture.metadata.viewportHeight * 100) / 100
+          Math.max(0, Math.min(1, Math.round(el2.boundingBox.x / rawCapture.metadata.viewportWidth * 100) / 100)),
+          Math.max(0, Math.min(1, Math.round(el2.boundingBox.y / rawCapture.metadata.viewportHeight * 100) / 100)),
+          Math.max(0, Math.min(1, Math.round(el2.boundingBox.width / rawCapture.metadata.viewportWidth * 100) / 100)),
+          Math.max(0, Math.min(1, Math.round(el2.boundingBox.height / rawCapture.metadata.viewportHeight * 100) / 100))
         ];
         const sensitiveCategory = sensitiveDomElementsMap.get(el2.localId);
         let sanitizedName;

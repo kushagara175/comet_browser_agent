@@ -85,6 +85,22 @@ try {
   process.exit(1);
 }
 
+// 2c. Bundle Chrome MV3 Background Service Worker into standalone ESM module
+console.log('📦 Bundling Chrome MV3 background service worker (ESM)...');
+const backgroundEntry = path.join(extensionDir, 'src', 'background', 'background-main.ts');
+const backgroundOutfile = path.join(extensionDir, 'dist', 'background', 'background-main.js');
+
+try {
+  execSync(
+    `"${ESBUILD_BIN}" "${backgroundEntry}" --bundle --outfile="${backgroundOutfile}" --format=esm --platform=browser --target=es2022`,
+    { cwd: extensionDir, stdio: 'inherit' }
+  );
+  console.log('✓ apps/extension background service worker bundled successfully as standalone ESM.\n');
+} catch (err) {
+  console.error('❌ Failed to bundle apps/extension background service worker with esbuild');
+  process.exit(1);
+}
+
 // 3. Validate All Required Production Build Artifacts
 console.log('🔍 Validating production build artifacts...');
 
@@ -130,6 +146,14 @@ if (hasOffscreenUnresolvedImports) {
   process.exit(1);
 }
 
-console.log('✓ All 9 production build artifacts verified and ready for deployment.\n');
+// Verify background worker has zero unresolved workspace import statements
+const backgroundBundle = fs.readFileSync(backgroundOutfile, 'utf-8');
+const hasBackgroundUnresolvedImports = /from\s+['"]@privapilot\//.test(backgroundBundle);
+if (hasBackgroundUnresolvedImports) {
+  console.error('❌ Build Validation Failed: apps/extension/dist/background/background-main.js contains unresolved @privapilot package imports!');
+  process.exit(1);
+}
+
+console.log('✓ All 10 production build artifacts verified and ready for deployment.\n');
 console.log('🎉 [PrivaPilot] Full monorepo build completed successfully!');
 

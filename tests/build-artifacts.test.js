@@ -76,10 +76,18 @@ test('Chrome MV3 Content Script: dist/content/content-main.js is a bundled IIFE 
   assert.ok(content.length > 500, 'Content script bundle should contain bundled logic');
 });
 
-test('Chrome MV3 Background Worker: dist/background/background-main.js is a valid ES module', () => {
+test('Chrome MV3 Background Worker: dist/background/background-main.js is a valid bundled ES module', () => {
   const bgWorkerPath = path.join(ROOT_DIR, 'apps/extension/dist/background/background-main.js');
   assert.strictEqual(fs.existsSync(bgWorkerPath), true, 'background-main.js must exist');
 
   const content = fs.readFileSync(bgWorkerPath, 'utf-8');
   assert.ok(content.length > 100, 'Background service worker must have content');
+
+  // Must not contain unresolved workspace package imports
+  const hasWorkspaceImports = /from\s+['"]@privapilot\//.test(content);
+  assert.strictEqual(
+    hasWorkspaceImports,
+    false,
+    'Background service worker bundle must not contain unresolved @privapilot package imports'
+  );
 });
