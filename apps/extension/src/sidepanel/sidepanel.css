@@ -568,10 +568,9 @@ body {
   flex-direction: column;
   gap: 10px;
   user-select: text;
-  background: #fbfbfc;
-  background-image: 
-    linear-gradient(rgba(255, 255, 255, 0.90), rgba(255, 255, 255, 0.90)),
-    repeating-radial-gradient(circle at 0 0, rgba(15, 23, 42, 0.02) 0, transparent 2px, rgba(15, 23, 42, 0.02) 4px);
+  background-color: #f8fafc;
+  background-image: url('../../assets/grain-texture.png');
+  background-repeat: repeat;
 }
 
 .ai-empty-state {
@@ -761,26 +760,31 @@ body {
 
 /* Bottom Chat Input Bar */
 .ai-footer {
-  padding: 0;
-  border-top: 1px solid #e2e8f0;
-  background: #fcfcfd;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+  background-color: #f8fafc;
+  background-image: url('../../assets/grain-texture.png');
+  background-repeat: repeat;
 }
 
 .chat-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #ffffff;
-  border: none;
-  border-radius: 0;
-  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 5px 6px 5px 12px;
   width: 100%;
   box-sizing: border-box;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
 }
 
 .chat-bar:focus-within {
+  border-color: #cbd5e1;
   background: #ffffff;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .chat-bar input {
@@ -801,8 +805,8 @@ body {
   background: #0f172a;
   border: none;
   border-radius: 6px;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -812,8 +816,8 @@ body {
 }
 
 .send-btn:hover {
-  background: #2563eb;
-  transform: scale(1.04);
+  background: #1e293b;
+  transform: scale(1.03);
 }
 
 /* Dual-Pane Viewport Inspector */
