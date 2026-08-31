@@ -101,9 +101,12 @@ body {
   justify-content: center;
 }
 
-.valley-vector-logo {
-  filter: drop-shadow(0 2px 12px rgba(0, 0, 0, 0.45));
+.export-logo-img {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
   display: block;
+  filter: drop-shadow(0 4px 16px rgba(37, 99, 235, 0.45));
 }
 
 .connecting-title {
