@@ -122,18 +122,44 @@ export function createServer(): http.Server {
       return;
     }
 
-    // 3. Direct Conversational Chat Endpoint
+    // 3. Direct Conversational Chat Endpoint (with live page context)
     if (req.method === 'POST' && url === '/api/v1/chat') {
       let bodyStr = '';
       req.on('data', (chunk: Buffer | string) => { bodyStr += chunk.toString(); });
       req.on('end', async () => {
         try {
-          const { message } = JSON.parse(bodyStr);
+          const body = JSON.parse(bodyStr);
+          const { message, pageUrl, pageTitle, pageText } = body;
+
           if (!message || typeof message !== 'string') {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Missing message field' }));
             return;
           }
+
+          // Build a rich, page-aware system prompt
+          let systemPrompt = `You are PrivaPilot, an intelligent privacy-first browser AI assistant embedded directly in the user's browser as a Chrome extension sidepanel.
+
+Your job is to:
+- Analyze the CURRENT web page the user is viewing and answer questions about it.
+- Help users understand the content, forms, and actions on their screen.
+- Detect potential privacy risks or suspicious elements on the page.
+- Assist with browser tasks related to the current page.
+
+Be concise, direct, and specific to the page context. Do not give generic advice unless there is no page context.`;
+
+          // Append live page context if available
+          if (pageTitle || pageUrl) {
+            systemPrompt += `\n\n--- CURRENT PAGE CONTEXT ---`;
+            if (pageTitle) systemPrompt += `\nPage Title: ${pageTitle}`;
+            if (pageUrl) systemPrompt += `\nPage URL: ${pageUrl}`;
+          }
+
+          if (pageText && pageText.trim().length > 0) {
+            systemPrompt += `\n\nVisible Page Content (DOM snapshot excerpt):\n${pageText.slice(0, 1200)}`;
+          }
+
+          systemPrompt += `\n---\n\nRespond specifically about what is on this page. If you see form fields, buttons, or content, mention them by name.`;
 
           // Auto-detect active model
           const engineStatus = await engine.getStatus();
@@ -146,25 +172,44 @@ export function createServer(): http.Server {
               body: JSON.stringify({
                 model: engineStatus.modelName,
                 messages: [
-                  {
-                    role: 'system',
-                    content: 'You are PrivaPilot, a smart privacy-first browser AI assistant. Be concise, helpful, and friendly. You help users understand what is happening on their current web page, protect their privacy, and automate browser tasks safely.'
-                  },
+                  { role: 'system', content: systemPrompt },
                   { role: 'user', content: message }
                 ],
                 stream: false,
-                options: { temperature: 0.7 }
+                options: { temperature: 0.5 }
               })
             });
             if (ollamaRes.ok) {
               const data: any = await ollamaRes.json();
               reply = data.message?.content || 'No response from model.';
             } else {
-              reply = 'Model is busy. Please try again.';
+              const errText = await ollamaRes.text();
+              reply = `Model error (${ollamaRes.status}): ${errText.slice(0, 200)}`;
+            }
+          } else if (engineStatus.provider === 'lm-studio') {
+            const lmRes = await fetch(engineStatus.endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: engineStatus.modelName,
+                messages: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: message }
+                ],
+                temperature: 0.5
+              })
+            });
+            if (lmRes.ok) {
+              const data: any = await lmRes.json();
+              reply = data.choices?.[0]?.message?.content || 'No response.';
+            } else {
+              reply = 'LM Studio model error. Please retry.';
             }
           } else {
-            // Fallback: echo with mock response
-            reply = `PrivaPilot is analyzing your page. You asked: "${message}". The privacy firewall is active and monitoring all network traffic.`;
+            // Mock fallback — page-aware
+            reply = pageTitle
+              ? `I can see you are on "${pageTitle}"${pageUrl ? ` (${pageUrl})` : ''}. ${message ? `You asked: "${message}". ` : ''}The PrivaPilot privacy firewall is scanning this page actively.`
+              : `PrivaPilot privacy firewall is active. No model backend detected — start Ollama with \`ollama serve\` and run a model.`;
           }
 
           res.writeHead(200, { 'Content-Type': 'application/json' });

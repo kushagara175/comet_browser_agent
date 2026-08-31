@@ -283,7 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // 9. Execute Goal via Backend Chat API
+  // 9. Execute Goal via Backend Chat API (with live page context)
   async function executeGoal(goalText) {
     if (!goalText) return;
 
@@ -305,17 +305,60 @@ document.addEventListener('DOMContentLoaded', () => {
     agentBubble.innerHTML = `
       <div style="display: flex; align-items: center; gap: 6px;">
         <span style="font-size: 14px;">⚡</span>
-        <em>Thinking...</em>
+        <em>Reading page &amp; thinking...</em>
       </div>
     `;
     chatMessages.appendChild(agentBubble);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
+    // Collect live page context from the active tab
+    let pageUrl = '';
+    let pageTitle = '';
+    let pageText = '';
+
+    try {
+      if (typeof chrome !== 'undefined' && chrome.tabs) {
+        const tabs = await new Promise(resolve =>
+          chrome.tabs.query({ active: true, currentWindow: true }, resolve)
+        );
+        if (tabs && tabs[0]) {
+          pageUrl = tabs[0].url || '';
+          pageTitle = tabs[0].title || '';
+        }
+      }
+
+      // Try to extract visible DOM text via content script
+      if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query) {
+        const tabs = await new Promise(resolve =>
+          chrome.tabs.query({ active: true, currentWindow: true }, resolve)
+        );
+        if (tabs && tabs[0]?.id) {
+          try {
+            const domResponse = await new Promise(resolve =>
+              chrome.tabs.sendMessage(tabs[0].id, { type: 'EXTRACT_DOM_SNAPSHOT' }, resolve)
+            );
+            if (domResponse && domResponse.snapshot) {
+              // Compact summary: take first 1500 chars of DOM text
+              const raw = JSON.stringify(domResponse.snapshot);
+              pageText = raw.slice(0, 1500);
+            }
+          } catch (_) {
+            // Content script may not be injected on this page, skip
+          }
+        }
+      }
+    } catch (_) {}
+
     try {
       const response = await fetch('http://localhost:4501/api/v1/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: goalText })
+        body: JSON.stringify({
+          message: goalText,
+          pageUrl,
+          pageTitle,
+          pageText
+        })
       });
 
       if (response.ok) {
