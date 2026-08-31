@@ -1,102 +1,56 @@
-# 05. Action Memory Cache & Privacy Audit Trail — SIH26171
+# 05. Action Execution, Verification & Privacy Audit Trail — SIH26171
 
 ## 1. Subsystem Architecture
 
-The Action Memory Cache and State Verifier optimize client execution latency (15% metric) and provide cryptographic proof of zero PII leakage:
+The perception loop combines bounded multi-step execution with explicit semantic verification and local privacy audit logging:
 
 ```
-[Server UI Action] ──▶ [IndexedDB Action Cache] ──▶ [Content Script Executor] ──▶ [pHash State Verifier]
-                              ▲                                                          │
-                              └──────────────── Store Verified Action ───────────────────┘
+[Server UI Action Proposal] ──▶ [Action Policy Check] ──▶ [Content Script Executor] ──▶ [Semantic State Verifier]
+                                          │                                                      │
+                                          ▼                                                      ▼
+                             [Confirm if Protected]                             [Explicit Postcondition Match]
 ```
 
 ---
 
-## 2. IndexedDB Action Cache Schema
+## 2. Explicit Bounded Postcondition Verification (`verifier.ts`)
 
-Recurring user workflows (e.g. repeated portal navigation, filtering, or logins) are stored locally in the browser's `IndexedDB`:
-
-```typescript
-export interface CachedActionPath {
-  taskSignature: string;      // e.g. "portal.isro.gov.in#search_satellite_imagery"
-  stepIndex: number;          // 0, 1, 2...
-  sanitizedDOMHash: string;   // Structural hash of non-sensitive DOM tree
-  action: {
-    type: 'click' | 'type' | 'select' | 'scroll';
-    selector: string;
-    coordinates?: { x: number; y: number };
-  };
-  lastSuccessTimestamp: number;
-  hitCount: number;
-}
-```
-
-### Fast-Path Latency Advantage
-- **Cold Run (Server VLM Reasoning):** ~850–1200 ms per step.
-- **Warm Run (IndexedDB Cache Hit):** **<150 ms** deterministic replay.
-- Directly optimizes the **15% End-to-End Latency** metric while reducing server compute costs.
-
----
-
-## 3. Closed-Loop State Verification & Self-Healing
-
-After executing any UI action, the agent captures the subsequent viewport and verifies state transitions:
+Instead of generic visual differences or assuming immediate completion, the agent enforces explicit postcondition checking:
 
 ```typescript
-export class StateVerifier {
-  public static async verifyTransition(
-    beforeBlob: Blob,
-    afterBlob: Blob
-  ): Promise<boolean> {
-    const hashBefore = await this.computePerceptualHash(beforeBlob);
-    const hashAfter = await this.computePerceptualHash(afterBlob);
-    
-    const hammingDistance = this.calculateHammingDistance(hashBefore, hashAfter);
-    // Hamming distance > 4 indicates significant visual page update
-    return hammingDistance >= 4;
-  }
-
-  public static async handleStallOrModal(document: Document): Promise<boolean> {
-    // Detect common modal backdrop or cookie/consent banners
-    const modalCloseSelectors = [
-      'button[aria-label*="close" i]',
-      'button[class*="modal-close" i]',
-      'button[class*="cookie-accept" i]',
-      '.modal .close',
-      '#dismiss-button'
-    ];
-    
-    for (const selector of modalCloseSelectors) {
-      const btn = document.querySelector(selector) as HTMLElement;
-      if (btn && btn.offsetParent !== null) {
-        btn.click();
-        return true;
-      }
-    }
-    return false;
+export class SemanticStateVerifier {
+  public static async verifyOutcome(
+    preSnapshot: SafePreActionSnapshot,
+    proposal: ActionProposal,
+    timeoutMs: number = 150
+  ): Promise<VerificationOutcome> {
+    // 1. Verify expectedLandmark (main, nav, dialog)
+    // 2. Verify targetStateChanges (disabled, checked, aria-expanded)
+    // 3. Verify modalDrawerVisibility (aria-modal, role=dialog)
+    // 4. Verify safeNavigation (path or hash change without exposing query tokens)
+    // 5. Verify statusRegionUpdates (role=status, aria-live)
   }
 }
 ```
 
+*Note on Historical Design Exploration:* An IndexedDB action cache was explored in early drafts for static replays. The production implementation prioritizes live re-perception and fresh ephemeral local IDs per cycle to guarantee correctness on dynamic single-page applications.
+
 ---
 
-## 4. Cryptographic Privacy Audit Trail
+## 3. Privacy Audit Trail
 
-To empirically demonstrate compliance with the **40% PII & Redaction** scoring criteria to SIH judges, the extension generates a real-time cryptographic audit log:
+The extension generates real-time telemetry and audit records without storing plaintext secrets:
 
 ```typescript
 export interface PrivacyAuditRecord {
   stepId: number;
   timestamp: string;
   urlHost: string;
-  detectedSensitiveElements: {
-    category: 'PASSWORD' | 'FACE' | 'CREDIT_CARD' | 'EMAIL' | 'PHONE' | 'AADHAAR';
-    redactionMethod: 'SOLID_BLACKOUT' | 'GAUSSIAN_BLUR' | 'TEXT_MASK';
-    elementBounds: { x: number; y: number; width: number; height: number };
-    sha256Digest: string; // Hash of raw data proving detection without storing plaintext
-  }[];
+  detectedCategories: Array<'password' | 'face' | 'credit_card' | 'email' | 'phone' | 'national_id'>;
+  maskCount: number;
   networkPayloadVerifiedClean: boolean;
 }
 ```
 
-Judges can click **"Export Privacy Audit Log"** in the HUD to download a JSON/CSV verification report validating that 0 unredacted secrets were transmitted.
+*Note on Privacy Principles:* Audit records store bounding boxes and categories, **never raw secrets or reversible hashes of secrets**.
+

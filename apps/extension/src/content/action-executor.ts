@@ -5,6 +5,31 @@
  */
 
 import { ActionProposal, ActionExecutionResult } from '@privapilot/protocol';
+import { analyzeDomElementSensitivity, DomElementDescriptor } from '@privapilot/pii-rules';
+
+function getAssociatedLabelText(el: HTMLElement): string {
+  const doc = el.ownerDocument;
+  if (!doc) return '';
+  if (el.id) {
+    try {
+      const escapedId = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(el.id) : el.id;
+      const labelEl = doc.querySelector?.(`label[for="${escapedId}"]`);
+      if (labelEl) return (labelEl as HTMLElement).innerText?.trim() || (labelEl as HTMLElement).textContent?.trim() || '';
+    } catch (_) {}
+  }
+  const parentLabel = el.closest?.('label');
+  if (parentLabel) {
+    return (parentLabel as HTMLElement).innerText?.trim() || (parentLabel as HTMLElement).textContent?.trim() || '';
+  }
+  const labelledBy = el.getAttribute?.('aria-labelledby');
+  if (labelledBy) {
+    try {
+      const labelEl = doc.getElementById?.(labelledBy);
+      if (labelEl) return (labelEl as HTMLElement).innerText?.trim() || (labelEl as HTMLElement).textContent?.trim() || '';
+    } catch (_) {}
+  }
+  return '';
+}
 
 export class ActionExecutor {
   /**
@@ -16,7 +41,8 @@ export class ActionExecutor {
   ): ActionExecutionResult {
     const timestamp = Date.now();
 
-    if (proposal.kind === 'observe' || proposal.kind === 'wait') {
+    // 1. Non-targeted / page-level actions
+    if (proposal.kind === 'observe' || proposal.kind === 'wait' || proposal.kind === 'finish') {
       return {
         actionId: proposal.actionId,
         success: true,
@@ -27,14 +53,16 @@ export class ActionExecutor {
     }
 
     if (proposal.kind === 'scroll') {
-      if (proposal.scrollDirection === 'down') {
-        window.scrollBy({ top: 400, behavior: 'smooth' });
-      } else if (proposal.scrollDirection === 'up') {
-        window.scrollBy({ top: -400, behavior: 'smooth' });
-      } else if (proposal.scrollDirection === 'top') {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      } else {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      if (typeof window !== 'undefined') {
+        if (proposal.scrollDirection === 'down') {
+          window.scrollBy({ top: 400, behavior: 'smooth' });
+        } else if (proposal.scrollDirection === 'up') {
+          window.scrollBy({ top: -400, behavior: 'smooth' });
+        } else if (proposal.scrollDirection === 'top') {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          window.scrollTo({ top: document.body?.scrollHeight || 1000, behavior: 'smooth' });
+        }
       }
 
       return {
@@ -46,6 +74,18 @@ export class ActionExecutor {
       };
     }
 
+    // 2. Risk check
+    if (proposal.risk === 'blocked') {
+      return {
+        actionId: proposal.actionId,
+        success: false,
+        timestamp,
+        semanticOutcomeVerified: false,
+        message: `Action blocked by client safety policy: ${proposal.rationale || 'blocked action'}`
+      };
+    }
+
+    // 3. Stale / missing targetLocalId validation
     if (!proposal.targetLocalId) {
       return {
         actionId: proposal.actionId,
@@ -63,19 +103,100 @@ export class ActionExecutor {
         success: false,
         timestamp,
         semanticOutcomeVerified: false,
+        staleTarget: true,
         message: `Target element '${proposal.targetLocalId}' is stale or not found in DOM`
       };
     }
 
-    // Scroll into view if needed
-    targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // 4. Detached target validation
+    const isConnected = targetEl.isConnected ?? (targetEl.ownerDocument && targetEl.ownerDocument.contains(targetEl));
+    if (isConnected === false || (targetEl.ownerDocument && typeof targetEl.ownerDocument.contains === 'function' && !targetEl.ownerDocument.contains(targetEl))) {
+      return {
+        actionId: proposal.actionId,
+        success: false,
+        timestamp,
+        semanticOutcomeVerified: false,
+        staleTarget: true,
+        message: `Target element '${proposal.targetLocalId}' is detached from the DOM`
+      };
+    }
+
+    // 5. Hidden / invisible target validation
+    let isHidden = false;
+    if (targetEl.hidden || targetEl.getAttribute?.('aria-hidden') === 'true') {
+      isHidden = true;
+    } else {
+      const win = targetEl.ownerDocument?.defaultView || (typeof window !== 'undefined' ? window : null);
+      if (win && typeof win.getComputedStyle === 'function') {
+        try {
+          const style = win.getComputedStyle(targetEl);
+          if (
+            style.display === 'none' ||
+            style.visibility === 'hidden' ||
+            style.visibility === 'collapse' ||
+            style.opacity === '0'
+          ) {
+            isHidden = true;
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (isHidden) {
+      return {
+        actionId: proposal.actionId,
+        success: false,
+        timestamp,
+        semanticOutcomeVerified: false,
+        message: `Target element '${proposal.targetLocalId}' is hidden or invisible`
+      };
+    }
+
+    // 6. Disabled target validation
+    const isDisabled =
+      (targetEl as any).disabled === true ||
+      targetEl.hasAttribute?.('disabled') ||
+      targetEl.getAttribute?.('aria-disabled') === 'true';
+
+    if (isDisabled) {
+      return {
+        actionId: proposal.actionId,
+        success: false,
+        timestamp,
+        semanticOutcomeVerified: false,
+        message: `Target element '${proposal.targetLocalId}' is disabled`
+      };
+    }
+
+    // Scroll into view if supported
+    if (typeof targetEl.scrollIntoView === 'function') {
+      try {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (_) {}
+    }
+
+    const win = targetEl.ownerDocument?.defaultView || (typeof window !== 'undefined' ? window : null);
+    const KeyboardEventCtor = win?.KeyboardEvent || (typeof KeyboardEvent !== 'undefined' ? KeyboardEvent : null);
+    const EventCtor = win?.Event || (typeof Event !== 'undefined' ? Event : null);
+    const InputEventCtor = win?.InputEvent || (typeof InputEvent !== 'undefined' ? InputEvent : null);
+    const MouseEventCtor = win?.MouseEvent || (typeof MouseEvent !== 'undefined' ? MouseEvent : null);
 
     try {
+      // CLICK ACTION
       if (proposal.kind === 'click') {
-        targetEl.focus();
-        targetEl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-        targetEl.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-        targetEl.click();
+        if (typeof targetEl.focus === 'function') {
+          targetEl.focus();
+        }
+
+        if (MouseEventCtor) {
+          targetEl.dispatchEvent(new MouseEventCtor('mousedown', { bubbles: true, cancelable: true, composed: true }));
+          targetEl.dispatchEvent(new MouseEventCtor('mouseup', { bubbles: true, cancelable: true, composed: true }));
+        }
+        if (typeof targetEl.click === 'function') {
+          targetEl.click();
+        } else if (EventCtor) {
+          targetEl.dispatchEvent(new EventCtor('click', { bubbles: true, cancelable: true, composed: true }));
+        }
 
         return {
           actionId: proposal.actionId,
@@ -86,22 +207,176 @@ export class ActionExecutor {
         };
       }
 
+      // TYPE ACTION
       if (proposal.kind === 'type' && proposal.textToType !== undefined) {
-        targetEl.focus();
+        const tag = targetEl.tagName.toLowerCase();
+        const isInputOrTextArea = tag === 'input' || tag === 'textarea';
+        const isContentEditable =
+          (targetEl as HTMLElement).isContentEditable ||
+          targetEl.getAttribute?.('contenteditable') === 'true' ||
+          targetEl.getAttribute?.('role') === 'textbox';
 
-        // Dispatch initial keydown for focus/activation
-        targetEl.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Process' }));
-
-        if ('value' in targetEl) {
-          (targetEl as HTMLInputElement).value = proposal.textToType;
-        } else {
-          targetEl.innerText = proposal.textToType;
+        // Reject semantically changed / non-editable targets
+        if (!isInputOrTextArea && !isContentEditable) {
+          return {
+            actionId: proposal.actionId,
+            success: false,
+            timestamp,
+            semanticOutcomeVerified: false,
+            message: `Target element '${proposal.targetLocalId}' has semantically changed and does not support typing`
+          };
         }
 
-        // Dispatch input & change events for React/Vue/Angular state sync
-        targetEl.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-        targetEl.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-        targetEl.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key: 'Process' }));
+        if (tag === 'input') {
+          const inputType = (targetEl.getAttribute?.('type') || 'text').toLowerCase();
+          const nonTextTypes = ['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'file', 'hidden'];
+          if (nonTextTypes.includes(inputType)) {
+            return {
+              actionId: proposal.actionId,
+              success: false,
+              timestamp,
+              semanticOutcomeVerified: false,
+              message: `Target element '${proposal.targetLocalId}' is input type '${inputType}' and does not support text input`
+            };
+          }
+        }
+
+        // Readonly validation
+        const isReadOnly =
+          (targetEl as any).readOnly === true ||
+          targetEl.hasAttribute?.('readonly') ||
+          targetEl.getAttribute?.('aria-readonly') === 'true';
+
+        if (isReadOnly) {
+          return {
+            actionId: proposal.actionId,
+            success: false,
+            timestamp,
+            semanticOutcomeVerified: false,
+            message: `Target element '${proposal.targetLocalId}' is read-only`
+          };
+        }
+
+        // Sensitive field safety policy enforcement
+        const descriptor: DomElementDescriptor = {
+          tagName: tag,
+          type: targetEl.getAttribute?.('type') || undefined,
+          name: targetEl.getAttribute?.('name') || undefined,
+          id: targetEl.id || undefined,
+          autocomplete: targetEl.getAttribute?.('autocomplete') || undefined,
+          inputmode: targetEl.getAttribute?.('inputmode') || undefined,
+          placeholder: targetEl.getAttribute?.('placeholder') || undefined,
+          ariaLabel: targetEl.getAttribute?.('aria-label') || undefined,
+          associatedLabelText: getAssociatedLabelText(targetEl) || undefined
+        };
+
+        const sensitivity = analyzeDomElementSensitivity(descriptor);
+        if (sensitivity.isSensitive) {
+          return {
+            actionId: proposal.actionId,
+            success: false,
+            timestamp,
+            semanticOutcomeVerified: false,
+            message: `Action blocked: Typing into sensitive field '${proposal.targetLocalId}' (${sensitivity.reason || sensitivity.category || 'sensitive'}) is prohibited by safety policy`
+          };
+        }
+
+        // Preserve focus behavior: focus the element before typing
+        if (typeof targetEl.focus === 'function') {
+          targetEl.focus();
+        }
+
+        // Dispatch keydown
+        if (KeyboardEventCtor) {
+          targetEl.dispatchEvent(
+            new KeyboardEventCtor('keydown', {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              key: 'Process'
+            })
+          );
+        }
+
+        const textToType = proposal.textToType;
+
+        // Apply native prototype value setter
+        if (tag === 'input') {
+          const inputProto =
+            win?.HTMLInputElement?.prototype ||
+            (typeof HTMLInputElement !== 'undefined' ? HTMLInputElement.prototype : Object.getPrototypeOf(targetEl));
+          const descriptor = inputProto ? Object.getOwnPropertyDescriptor(inputProto, 'value') : undefined;
+          if (descriptor && descriptor.set) {
+            descriptor.set.call(targetEl, textToType);
+          } else if ('value' in targetEl) {
+            (targetEl as HTMLInputElement).value = textToType;
+          }
+        } else if (tag === 'textarea') {
+          const textAreaProto =
+            win?.HTMLTextAreaElement?.prototype ||
+            (typeof HTMLTextAreaElement !== 'undefined' ? HTMLTextAreaElement.prototype : Object.getPrototypeOf(targetEl));
+          const descriptor = textAreaProto ? Object.getOwnPropertyDescriptor(textAreaProto, 'value') : undefined;
+          if (descriptor && descriptor.set) {
+            descriptor.set.call(targetEl, textToType);
+          } else if ('value' in targetEl) {
+            (targetEl as HTMLTextAreaElement).value = textToType;
+          }
+        } else if ('value' in targetEl) {
+          (targetEl as any).value = textToType;
+        } else {
+          targetEl.textContent = textToType;
+        }
+
+        // Dispatch input event with proper bubbling and composition
+        let inputDispatched = false;
+        if (InputEventCtor) {
+          try {
+            targetEl.dispatchEvent(
+              new InputEventCtor('input', {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                inputType: 'insertText',
+                data: textToType
+              })
+            );
+            inputDispatched = true;
+          } catch (_) {
+            inputDispatched = false;
+          }
+        }
+
+        if (!inputDispatched && EventCtor) {
+          targetEl.dispatchEvent(
+            new EventCtor('input', {
+              bubbles: true,
+              cancelable: true,
+              composed: true
+            })
+          );
+        }
+
+        // Dispatch change event with bubbling
+        if (EventCtor) {
+          targetEl.dispatchEvent(
+            new EventCtor('change', {
+              bubbles: true,
+              cancelable: true
+            })
+          );
+        }
+
+        // Dispatch keyup
+        if (KeyboardEventCtor) {
+          targetEl.dispatchEvent(
+            new KeyboardEventCtor('keyup', {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              key: 'Process'
+            })
+          );
+        }
 
         return {
           actionId: proposal.actionId,
@@ -112,18 +387,44 @@ export class ActionExecutor {
         };
       }
 
+      // SELECT ACTION
       if (proposal.kind === 'select' && proposal.selectOptionValue !== undefined) {
-        if (targetEl.tagName.toLowerCase() === 'select') {
-          (targetEl as HTMLSelectElement).value = proposal.selectOptionValue;
-          targetEl.dispatchEvent(new Event('change', { bubbles: true }));
+        if (targetEl.tagName.toLowerCase() !== 'select') {
           return {
             actionId: proposal.actionId,
-            success: true,
+            success: false,
             timestamp,
-            semanticOutcomeVerified: true,
-            message: `Selected option '${proposal.selectOptionValue}'`
+            semanticOutcomeVerified: false,
+            message: `Target element '${proposal.targetLocalId}' has semantically changed or is not a select element`
           };
         }
+
+        if (typeof targetEl.focus === 'function') {
+          targetEl.focus();
+        }
+
+        const selectProto =
+          win?.HTMLSelectElement?.prototype ||
+          (typeof HTMLSelectElement !== 'undefined' ? HTMLSelectElement.prototype : Object.getPrototypeOf(targetEl));
+        const descriptor = selectProto ? Object.getOwnPropertyDescriptor(selectProto, 'value') : undefined;
+        if (descriptor && descriptor.set) {
+          descriptor.set.call(targetEl, proposal.selectOptionValue);
+        } else {
+          (targetEl as HTMLSelectElement).value = proposal.selectOptionValue;
+        }
+
+        if (EventCtor) {
+          targetEl.dispatchEvent(new EventCtor('input', { bubbles: true, cancelable: true, composed: true }));
+          targetEl.dispatchEvent(new EventCtor('change', { bubbles: true, cancelable: true }));
+        }
+
+        return {
+          actionId: proposal.actionId,
+          success: true,
+          timestamp,
+          semanticOutcomeVerified: true,
+          message: `Selected option '${proposal.selectOptionValue}'`
+        };
       }
 
       return {

@@ -37,9 +37,9 @@ Autonomous web agents that perceive screens and execute browser actions have the
 ---
 
 ## 3. The Solution: Hybrid Client-Server Privacy Architecture
-
+ 
 The problem statement mandates bridging **on-device client privacy** with **centralized server reasoning**:
-
+ 
 ```
   ┌──────────────────────────────────────────────────────────────────────────────────┐
   │                         CLIENT VS SERVER RESPONSIBILITY SPLIT                    │
@@ -47,9 +47,10 @@ The problem statement mandates bridging **on-device client privacy** with **cent
   │ Client-Side (Browser Extension / JS)    │ Server-Side (Centralized VLM / LLM)    │
   ├─────────────────────────────────────────┼────────────────────────────────────────┤
   │ • Captures local viewport and DOM       │ • Receives ONLY sanitized context      │
-  │ • Runs WebGPU ViT & Face Detection      │ • Understands high-level task intent   │
+  │ • Runs Wasm/WebGPU Face Detection       │ • Understands high-level task intent   │
   │ • Redacts passwords, faces, & PII       │ • Generates structured UI action JSON  │
-  │ • Executes returned action in DOM       │ • Returns command to extension         │
+  │ • Executes returned action by local ID  │ • Returns command to extension         │
+  │ • Verifies postconditions fail-closed   │ • Zero raw DOM or selector reception   │
   └─────────────────────────────────────────┴────────────────────────────────────────┘
 ```
 

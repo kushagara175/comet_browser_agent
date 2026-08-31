@@ -4,6 +4,7 @@
 
 import { SensitiveCategory } from '@privapilot/protocol';
 import { isValidLuhn } from './luhn.js';
+import { isValidAadhaar } from './verhoeff.js';
 
 export interface TextMatch {
   readonly category: SensitiveCategory;
@@ -14,6 +15,12 @@ export interface TextMatch {
 }
 
 export const CANARY_SECRET = 'SECRET_CANARY_SIH26171_DO_NOT_TRANSMIT';
+
+// Canary patterns
+const CANARY_REGEX = /\b(?:SECRET_CANARY[A-Za-z0-9_]*|CANARY_PRIVAPILOT[A-Za-z0-9_]*)\b/g;
+
+// Medical notes & sensitive health markers
+const MEDICAL_REGEX = /\b(?:medical note|clinical diagnosis|prescription info|patient record|doctor note)\b[^\n.,;]*/gi;
 
 // Email: Standard RFC-compliant safe pattern
 const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
@@ -49,17 +56,30 @@ export function scanTextForPII(text: string): TextMatch[] {
 
   const matches: TextMatch[] = [];
 
-  // 1. Canary check
-  let canaryIdx = text.indexOf(CANARY_SECRET);
-  while (canaryIdx !== -1) {
-    matches.push({
-      category: 'token',
-      startIndex: canaryIdx,
-      endIndex: canaryIdx + CANARY_SECRET.length,
-      matchedLength: CANARY_SECRET.length,
-      confidence: 1.0
-    });
-    canaryIdx = text.indexOf(CANARY_SECRET, canaryIdx + CANARY_SECRET.length);
+  // 1. Canary pattern check
+  for (const match of text.matchAll(CANARY_REGEX)) {
+    if (match.index !== undefined) {
+      matches.push({
+        category: 'token',
+        startIndex: match.index,
+        endIndex: match.index + match[0].length,
+        matchedLength: match[0].length,
+        confidence: 1.0
+      });
+    }
+  }
+
+  // 1b. Medical pattern check
+  for (const match of text.matchAll(MEDICAL_REGEX)) {
+    if (match.index !== undefined) {
+      matches.push({
+        category: 'uninspectable',
+        startIndex: match.index,
+        endIndex: match.index + match[0].length,
+        matchedLength: match[0].length,
+        confidence: 0.95
+      });
+    }
   }
 
   // 2. Email
@@ -88,17 +108,16 @@ export function scanTextForPII(text: string): TextMatch[] {
     }
   }
 
-  // 4. Aadhaar
+  // 4. Aadhaar (12 digits, first digit in 2-9, valid Verhoeff checksum)
   for (const match of text.matchAll(AADHAAR_REGEX)) {
     if (match.index !== undefined) {
-      const clean = match[0].replace(/[\s-]/g, '');
-      if (clean.length === 12) {
+      if (isValidAadhaar(match[0])) {
         matches.push({
           category: 'national_id',
           startIndex: match.index,
           endIndex: match.index + match[0].length,
           matchedLength: match[0].length,
-          confidence: 0.95
+          confidence: 0.99
         });
       }
     }

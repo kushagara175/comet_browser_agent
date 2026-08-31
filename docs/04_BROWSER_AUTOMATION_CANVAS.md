@@ -2,19 +2,19 @@
 
 ## 1. Extension Architecture (Manifest V3)
 
-The client agent is built as a cross-browser extension adhering to the **Chrome Manifest V3** and **Firefox WebExtensions** standard:
+The client agent is built as a browser extension adhering to the **Chrome Manifest V3** standard (with Firefox Manifest V3 architecture ready):
 
 ```mermaid
 flowchart TD
     subgraph Browser_Environment ["Browser Process Architecture"]
-        Popup["Popup / Side-Panel UI (Mission Control HUD)"]
-        Background["Background Service Worker (Orchestrator)"]
-        Offscreen["Offscreen Worker (WebGPU / ONNX Inference)"]
+        Popup["Side-Panel HUD (Mission Control HUD)"]
+        Background["Background Service Worker (Coordinator & Policy Engine)"]
+        Offscreen["Offscreen Host (Canvas & ONNX Inference)"]
         ContentScript["Content Script (DOM Parser & Action Executor)"]
         LivePage["Active Tab Webpage"]
     end
 
-    Popup <-->|chrome.runtime.connect| Background
+    Popup <-->|chrome.runtime.connect / sendMessage| Background
     Background <-->|chrome.offscreen.createDocument| Offscreen
     Background <-->|chrome.tabs.sendMessage| ContentScript
     ContentScript <-->|DOM Events / MutationObserver| LivePage
@@ -40,17 +40,17 @@ flowchart TD
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "dist/background.js"
+    "service_worker": "dist/background/background-main.js"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["dist/contentScript.js"],
+      "js": ["dist/content/content-main.js"],
       "run_at": "document_idle"
     }
   ],
   "side_panel": {
-    "default_path": "dist/sidepanel.html"
+    "default_path": "src/sidepanel/sidepanel.html"
   }
 }
 ```
@@ -59,73 +59,39 @@ flowchart TD
 
 ## 3. DOM Action Executor (Content Script Engine)
 
-The content script executes the server's structured action commands directly in the active browser tab:
+The content script executes proposed actions addressed by **ephemeral local IDs** using native prototype setters and standard bubbling events:
 
 ```typescript
-export class DOMActionExecutor {
-  public static async execute(action: ActionCommand): Promise<boolean> {
-    switch (action.action) {
-      case 'click':
-        return this.handleClick(action);
-      case 'type':
-        return this.handleType(action);
-      case 'scroll':
-        return this.handleScroll(action);
-      case 'select':
-        return this.handleSelect(action);
-      default:
-        return false;
-    }
-  }
-
-  private static handleClick(action: ActionCommand): boolean {
-    let target: HTMLElement | null = null;
-    if (action.target_selector) {
-      target = document.querySelector(action.target_selector);
-    }
+export class ActionExecutor {
+  public static async executeAction(
+    proposal: ActionProposal,
+    elementMap: Map<string, HTMLElement>
+  ): Promise<ActionExecutionResult> {
+    const target = proposal.targetLocalId ? elementMap.get(proposal.targetLocalId) : null;
     
-    if (target) {
+    if (proposal.kind === 'click' && target) {
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
       target.focus();
       target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      return true;
-    } else if (action.target_coordinates) {
-      // Fallback coordinate click for canvas elements
-      const el = document.elementFromPoint(action.target_coordinates.x, action.target_coordinates.y);
-      if (el) {
-        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        return true;
+      return { success: true, actionId: proposal.actionId };
+    }
+
+    if (proposal.kind === 'type' && target) {
+      target.focus();
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype, 'value'
+      )?.set;
+      if (nativeSetter) {
+        nativeSetter.call(target, proposal.textToType || '');
+      } else {
+        (target as HTMLInputElement).value = proposal.textToType || '';
       }
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+      return { success: true, actionId: proposal.actionId };
     }
-    return false;
-  }
 
-  private static handleType(action: ActionCommand): boolean {
-    const input = document.querySelector(action.target_selector || 'input') as HTMLInputElement;
-    if (input) {
-      input.focus();
-      input.value = action.input_text || '';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      return true;
-    }
-    return false;
-  }
-
-  private static handleScroll(action: ActionCommand): boolean {
-    const dy = action.scroll_delta?.dy || 300;
-    window.scrollBy({ top: dy, behavior: 'smooth' });
-    return true;
-  }
-
-  private static handleSelect(action: ActionCommand): boolean {
-    const select = document.querySelector(action.target_selector || 'select') as HTMLSelectElement;
-    if (select && action.input_text) {
-      select.value = action.input_text;
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      return true;
-    }
-    return false;
+    return { success: false, actionId: proposal.actionId, message: 'Invalid target or unsupported action' };
   }
 }
 ```
@@ -135,6 +101,8 @@ export class DOMActionExecutor {
 ## 4. Generalization Across Arbitrary Web Interfaces
 
 To fulfill ISRO's requirement that the agent dynamically handles **unseen use cases during the finale**:
-1. **Fallback Grounding:** If a CSS selector fails due to dynamic class obfuscation (e.g. styled-components / tailwind random hashes), the executor falls back to visual bounding box coordinates predicted by the VLM.
-2. **Shadow DOM Traversal:** Recursive query helper traverses open Shadow DOM roots in modern Web Components.
-3. **Iframe & Canvas Safety:** For non-standard canvas interfaces, the agent uses normalized $(x, y)$ coordinate interpolation to trigger drag and click events.
+1. **Dynamic Ephemeral Local IDs:** Elements are assigned ephemeral IDs per perception cycle based on semantic roles and accessibility properties.
+2. **Framework Compatibility:** Dispatches standard DOM events and uses native prototype value setters to trigger state updates across React, Vue, Angular, and vanilla DOM.
+3. **Controlled Inputs & Shadow DOM:** Supports controlled framework inputs and traverses open Shadow DOM roots without site-specific logic.
+4. **Experimental Coordinate Fallback:** Coordinate-based clicking is treated as an experimental fallback only when an ungrounded region requires interaction.
+

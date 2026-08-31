@@ -4,10 +4,11 @@
   "type": "module",
   "main": "./dist/background/background-main.js",
   "scripts": {
-    "build": "tsc && npx esbuild src/content/content-main.ts --bundle --outfile=dist/content/content-main.js --format=iife --target=es2022"
+    "build": "tsc && esbuild src/content/content-main.ts --bundle --outfile=dist/content/content-main.js --format=iife --target=es2022"
   },
   "dependencies": {
+    "@privapilot/pii-rules": "*",
     "@privapilot/protocol": "*",
-    "@privapilot/pii-rules": "*"
+    "onnxruntime-web": "^1.19.2"
   }
 }

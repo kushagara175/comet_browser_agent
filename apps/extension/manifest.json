@@ -8,7 +8,8 @@
     "tabs",
     "storage",
     "scripting",
-    "sidePanel"
+    "sidePanel",
+    "offscreen"
   ],
   "host_permissions": [
     "http://localhost:*/*",
@@ -42,5 +43,17 @@
       "48": "assets/icon48.png",
       "128": "assets/icon128.png"
     }
-  }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/models/*",
+        "assets/wasm/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

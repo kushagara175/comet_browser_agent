@@ -95,19 +95,18 @@ Honest state, updated as work lands. **No performance number appears in this rep
 
 | Component | State |
 | :--- | :--- |
-| Monorepo build & test suite | ✅ Clean build, 16/16 tests passing |
+| Monorepo build & test suite | ✅ Clean build, 149/149 unit & integration tests passing |
 | Protocol & type-enforced privacy boundary | ✅ `packages/protocol/` |
-| Deterministic PII detectors (DOM + regex + Luhn) | ✅ `packages/pii-rules/` |
+| Deterministic PII detectors (DOM + regex + Luhn + Verhoeff) | ✅ `packages/pii-rules/` |
 | Server gateway, closed schema, canary scanner | ✅ `apps/server/` |
 | Action risk policy & confirmation gate | ✅ `packages/protocol/src/action.ts` |
-| Pixel redaction running inside the extension | 🚧 Sanitizer runs in the MV3 service worker, where canvas is unavailable |
-| On-device vision model | 🚧 Not implemented |
-| Benchmark against real ground truth | 🚧 Harness currently derives ground truth from detector output |
-| Multi-step agent loop | 🚧 Single step only |
-| Firefox support | 📋 Planned |
+| Pixel redaction running inside extension | ✅ Offscreen document canvas host (`apps/extension/src/offscreen/`) |
+| On-device vision face model | ✅ UltraFace ONNX (Wasm/CPU with WebGPU fallback) (`packages/pii-rules/src/face-onnx.ts`) |
+| Benchmark against authored ground truth | ✅ Non-circular benchmark with dev & held-out splits (`packages/benchmark/`) |
+| Bounded multi-step agent loop | ✅ Bounded agent loop with stale recovery and protected pause (`apps/extension/src/background/coordinator.ts`) |
+| Browser compatibility | ✅ Chrome Manifest V3 active; Firefox MV3 architecture ready |
 
-Every 🚧 is a numbered phase in **[docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md)**, ordered by
-scoring weight.
+Detailed benchmark metrics and test outcomes are tracked in **[`docs/benchmark-results/`](docs/benchmark-results/EVALUATION_REPORT.md)**.
 
 ---
 
@@ -214,9 +213,10 @@ interface SanitizedContext { readonly _brand: 'SanitizedContext_Verified'; /* ..
 in CSS pixels onto a device-pixel buffer misses its target on any HiDPI screen. `ScreenshotPixelBox`,
 `ViewportCssPixelBox`, and `DocumentCssPixelBox` cannot be mixed by accident.
 
-**The server never gets a selector.** Actions are addressed by ephemeral local IDs. A response
+**The server never gets a selector.** Actions are addressed by ephemeral local IDs (`el_btn_1`). A response
 containing a CSS selector, XPath, JavaScript, or URL is rejected before it reaches the executor — so
-a compromised or prompt-injected model cannot point the client at arbitrary targets.
+a compromised or prompt-injected model cannot point the client at arbitrary targets. Coordinate-based
+actions are treated as experimental fallbacks.
 
 **Uninspectable means unsafe.** Cross-origin iframes, canvas, video, and PDF surfaces are masked
 wholesale. Absence of readable DOM text is not evidence that a region is safe.
@@ -226,9 +226,9 @@ wholesale. Absence of readable DOM text is not evidence that a region is safe.
 ## Testing
 
 ```bash
-npm test             # 16 unit + adversarial tests
+npm test             # 149 unit, integration & adversarial tests
 npm run test:canary  # asserts a planted secret never appears in any outbound payload
-npm run benchmark    # the five official metrics against ground truth
+npm run benchmark    # the five official metrics against authored ground truth
 npm run test:e2e     # real Chrome via CDP, measured latencies
 ```
 

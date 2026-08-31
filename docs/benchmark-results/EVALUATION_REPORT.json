@@ -1,23 +1,40 @@
 {
-  "timestamp": "2026-08-31T06:57:46.810Z",
+  "timestamp": "2026-08-31T18:40:14.422Z",
   "fixturesEvaluated": 14,
+  "metadata": {
+    "command": "/Users/kushagrasingh/dev/SIH_26209/scripts/run-benchmarks.js",
+    "date": "2026-08-31T18:40:14.422Z",
+    "environment": "darwin arm64 (Node v22.22.0)",
+    "browserVersion": "Google Chrome / Chromium Headless (CDP Engine)",
+    "modelProvider": "UltraFace ONNX (Wasm/CPU) + Local PII Regex/Luhn Engine",
+    "gitSha": "ca2a525",
+    "split": "all"
+  },
   "accuracy": {
-    "elementRecall": 100,
-    "elementPrecision": 100,
-    "roleAccuracy": 98.5,
-    "medianIoU": 0.94
+    "elementRecall": 82.1,
+    "elementPrecision": 76.7,
+    "roleAccuracy": 100,
+    "medianIoU": 1,
+    "truePositives": 23,
+    "falsePositives": 7,
+    "falseNegatives": 5
   },
   "pii": {
-    "aggregateRecall": 100,
-    "aggregatePrecision": 100,
+    "aggregateRecall": 72.2,
+    "aggregatePrecision": 81.3,
+    "aggregateF1": 76.5,
+    "totalTruePositives": 13,
+    "totalFalsePositives": 3,
+    "totalFalseNegatives": 5,
     "categoryBreakdown": {
       "password": {
         "category": "password",
-        "truePositives": 3,
-        "falsePositives": 0,
-        "falseNegatives": 0,
-        "recall": 100,
-        "precision": 100
+        "truePositives": 1,
+        "falsePositives": 2,
+        "falseNegatives": 2,
+        "recall": 33.3,
+        "precision": 33.3,
+        "f1Score": 33.3
       },
       "email": {
         "category": "email",
@@ -25,7 +42,8 @@
         "falsePositives": 0,
         "falseNegatives": 0,
         "recall": 100,
-        "precision": 100
+        "precision": 100,
+        "f1Score": 100
       },
       "phone": {
         "category": "phone",
@@ -33,39 +51,44 @@
         "falsePositives": 0,
         "falseNegatives": 0,
         "recall": 100,
-        "precision": 100
+        "precision": 100,
+        "f1Score": 100
       },
       "credit_card": {
         "category": "credit_card",
         "truePositives": 1,
-        "falsePositives": 0,
+        "falsePositives": 1,
         "falseNegatives": 0,
         "recall": 100,
-        "precision": 100
+        "precision": 50,
+        "f1Score": 66.7
       },
       "cvv": {
         "category": "cvv",
-        "truePositives": 0,
-        "falsePositives": 0,
-        "falseNegatives": 0,
-        "recall": 100,
-        "precision": 100
-      },
-      "national_id": {
-        "category": "national_id",
-        "truePositives": 3,
-        "falsePositives": 0,
-        "falseNegatives": 0,
-        "recall": 100,
-        "precision": 100
-      },
-      "face": {
-        "category": "face",
         "truePositives": 1,
         "falsePositives": 0,
         "falseNegatives": 0,
         "recall": 100,
-        "precision": 100
+        "precision": 100,
+        "f1Score": 100
+      },
+      "national_id": {
+        "category": "national_id",
+        "truePositives": 2,
+        "falsePositives": 0,
+        "falseNegatives": 3,
+        "recall": 40,
+        "precision": 100,
+        "f1Score": 57.1
+      },
+      "face": {
+        "category": "face",
+        "truePositives": 2,
+        "falsePositives": 0,
+        "falseNegatives": 0,
+        "recall": 100,
+        "precision": 100,
+        "f1Score": 100
       },
       "high_risk_surface": {
         "category": "high_risk_surface",
@@ -73,24 +96,29 @@
         "falsePositives": 0,
         "falseNegatives": 0,
         "recall": 100,
-        "precision": 100
+        "precision": 100,
+        "f1Score": 100
       }
     }
   },
   "redaction": {
-    "sensitiveRegionCoverage": 100,
-    "underMaskCount": 0,
-    "overMaskRatio": 1.05,
-    "safeElementPreservation": 100
+    "sensitiveRegionCoverage": 88.9,
+    "underMaskCount": 2,
+    "overMaskRatio": 1.06,
+    "safeElementPreservation": 100,
+    "safeElementsPreserved": 19,
+    "totalSafeElements": 19
   },
   "latency": {
-    "sampleCount": 5,
-    "p50TotalLatencyMs": 2292,
-    "p95TotalLatencyMs": 2995,
-    "p50ClientPerceptionMs": 141,
-    "p50ServerReasoningMs": 2149,
-    "p50ActionExecutionMs": 45,
-    "estimatedMemoryFootprintMb": 62.4,
-    "estimatedCpuLoadPct": 5.8
+    "sampleCount": 14,
+    "p50TotalLatencyMs": 385,
+    "p95TotalLatencyMs": 385,
+    "p50ClientPerceptionMs": 35,
+    "p95ClientPerceptionMs": 35,
+    "p50ServerReasoningMs": 350,
+    "p95ServerReasoningMs": 350,
+    "p50ActionExecutionMs": 0,
+    "peakMemoryMb": 48.6,
+    "cpuLoadPct": 125
   }
 }

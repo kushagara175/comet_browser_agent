@@ -13,12 +13,15 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const OUTPUT_DIR = path.join(ROOT_DIR, 'docs', 'benchmark-results');
 
 async function main() {
-  console.log('⚡ [PrivaPilot] Running Benchmark Evaluation Suite across 14 Fixtures...\n');
+  const splitArg = process.argv.find(a => a.startsWith('--split='));
+  const split = splitArg ? splitArg.split('=')[1] : 'all';
+
+  console.log(`⚡ [PrivaPilot] Running Benchmark Evaluation Suite (Split: ${split})...\n`);
 
   // Dynamic import of built benchmark package
   const { BenchmarkRunner, BenchmarkReporter } = await import('../packages/benchmark/dist/index.js');
 
-  const results = BenchmarkRunner.runAll();
+  const results = BenchmarkRunner.runAll({ split });
   const markdownReport = BenchmarkReporter.formatMarkdownReport(results);
 
   if (!fs.existsSync(OUTPUT_DIR)) {

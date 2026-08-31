@@ -1,43 +1,43 @@
-# 03. In-Browser Vision & Server VLM Pipeline — SIH26171
+# 03. In-Browser Vision & Server Reasoning Pipeline — SIH26171
 
 ## 1. Pipeline Overview
 
-The perception and reasoning pipeline bridges client-side WebGPU visual processing with server-side multimodal reasoning:
+The perception and reasoning pipeline bridges client-side visual processing with server-side multimodal reasoning:
 
 ```
-[Raw Screen State] ──▶ [In-Browser WebGPU ViT/Face Detector] ──▶ [Canvas Blur & Blackout] 
+[Raw Screen State] ──▶ [In-Browser ONNX UltraFace Detector] ──▶ [Canvas Blur & Blackout] 
                              │
                              ▼
-               [Sanitized Context (Zero PII)] ──▶ [Server VLM API] ──▶ [Structured Action JSON]
+               [Sanitized Context (No Plaintext PII)] ──▶ [Server Reasoning API] ──▶ [Structured Action Proposal JSON]
 ```
 
 ---
 
-## 2. Client-Side Vision & Privacy Engine (In-Browser WebGPU)
+## 2. Client-Side Vision & Privacy Engine (In-Browser Offscreen Host)
 
 ### A. ONNX Runtime Web Setup
-The extension runs in-browser ML inference inside a dedicated offscreen document with WebGPU acceleration:
+The extension runs in-browser ML inference inside an isolated offscreen document using WebAssembly SIMD (with WebGPU execution provider fallback where supported):
 
 ```typescript
-import * as ort from 'onnxruntime-web/webgpu';
+import * as ort from 'onnxruntime-web';
 
-// Configure WebGPU backend with WASM fallback
+// Configure Wasm multi-threading and SIMD
 ort.env.wasm.numThreads = 4;
 ort.env.wasm.simd = true;
 
-export async function initVisionSession() {
-  const session = await ort.InferenceSession.create('./models/blazeface_quant.onnx', {
-    executionProviders: ['webgpu', 'wasm'],
+export async function initVisionSession(modelBytes: Uint8Array) {
+  const session = await ort.InferenceSession.create(modelBytes, {
+    executionProviders: ['wasm', 'webgpu'],
     graphOptimizationLevel: 'all'
   });
   return session;
 }
 ```
 
-### B. Lightweight Visual Face Detection (BlazeFace / MobileNet)
+### B. Lightweight Visual Face Detection (UltraFace ONNX)
 - **Model Size:** ~1.2 MB quantized ONNX.
-- **Inference Time:** 20–35 ms on WebGPU.
-- **Output:** Bounding boxes `[ymin, xmin, ymax, xmax]` for every human face detected in the viewport.
+- **Backend:** ONNX Runtime Web (Wasm / WebGPU provider).
+- **Output:** Bounding boxes `[ymin, xmin, ymax, xmax]` for human faces detected in the viewport.
 
 ### C. DOM Sensitive Field Sanitization
 Content script inspects the active DOM tree and extracts bounding rectangles for sensitive input fields:
@@ -58,94 +58,62 @@ export function getSensitiveElementBoxes(document: Document): DOMRect[] {
 }
 ```
 
-### D. Canvas Obfuscation Engine (Zero-Leakage Guarantee)
+### D. Canvas Obfuscation Engine (Fail-Closed Privacy Sanitization)
 Before any image data leaves the client, the canvas obfuscator paints over sensitive areas:
 ```typescript
 export async function sanitizeScreenshot(
-  rawImageBitmap: ImageBitmap,
+  rawCanvas: HTMLCanvasElement,
   faceBoxes: BoundingBox[],
   domBoxes: DOMRect[]
-): Promise<Blob> {
-  const canvas = new OffscreenCanvas(rawImageBitmap.width, rawImageBitmap.height);
-  const ctx = canvas.getContext('2d')!;
+): Promise<string> {
+  const ctx = rawCanvas.getContext('2d')!;
   
-  // 1. Draw base raw screenshot
-  ctx.drawImage(rawImageBitmap, 0, 0);
-  
-  // 2. Apply Gaussian Blur over detected faces
+  // 1. Apply Gaussian Blur over detected faces
   for (const box of faceBoxes) {
     ctx.filter = 'blur(16px)';
-    ctx.drawImage(canvas, box.x, box.y, box.width, box.height, box.x, box.y, box.width, box.height);
+    ctx.drawImage(rawCanvas, box.x, box.y, box.width, box.height, box.x, box.y, box.width, box.height);
     ctx.filter = 'none';
   }
   
-  // 3. Apply Solid Blackout Rectangles over sensitive DOM inputs
+  // 2. Apply Solid Blackout Rectangles over sensitive DOM inputs
   ctx.fillStyle = '#000000';
   for (const box of domBoxes) {
     ctx.fillRect(box.x, box.y, box.width, box.height);
-    // Draw visual badge confirming redaction
-    ctx.strokeStyle = '#EF4444';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(box.x, box.y, box.width, box.height);
   }
   
-  return await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+  return rawCanvas.toDataURL('image/png');
 }
 ```
 
 ---
 
-## 3. Server-Side VLM Reasoning Engine
+## 3. Server-Side Reasoning Engine
 
-### A. Centralized VLM Model Configuration
-- **Allowed Models:** `Qwen2.5-VL-7B/72B`, `Claude 3.5 Sonnet`, `Llama-3.2-Vision-11B`, `DeepSeek-VL`.
-- **Deployment:** Cloud API endpoint during SIH (fully permitted by official rules).
+### A. Centralized Reasoning Model Configuration
+- **Supported Engines:** `Qwen2.5-VL`, `Claude 3.5 Sonnet`, `Llama-3.2-Vision`, or local Ollama / LM Studio instances.
+- **Deployment:** Centralized server gateway during SIH (fully permitted by official rules).
 
-### B. VLM System Prompt Schema
+### B. Reasoning System Prompt Schema
 ```text
 You are an autonomous browser agent assistant. You are given:
-1. A privacy-sanitized screenshot of the user's active browser viewport (passwords are blacked out, faces are blurred).
-2. An anonymized, structural DOM tree of interactive elements.
+1. A privacy-sanitized screenshot of the user's active browser viewport (passwords blacked out, faces blurred).
+2. An anonymized list of interactive elements with ephemeral local IDs (e.g. "el_btn_1", "el_input_2").
 3. The user's target workflow goal.
 
 Your task is to analyze the sanitized visual context and return the SINGLE next best UI action as strict JSON.
 
 JSON Schema:
 {
-  "thought": "Brief explanation of visual reasoning",
-  "action": "click" | "type" | "select" | "scroll" | "wait" | "finish",
-  "target_selector": "CSS selector for target element (if applicable)",
-  "target_coordinates": { "x": number, "y": number },
-  "input_text": "text to type (if action == 'type')",
-  "scroll_delta": { "dx": number, "dy": number }
+  "actionId": "string",
+  "kind": "click" | "type" | "select" | "scroll" | "wait" | "finish",
+  "targetLocalId": "ephemeral local ID of target element (e.g. el_btn_1)",
+  "textToType": "string (if kind == 'type')",
+  "confidence": number (0.0 to 1.0),
+  "risk": "safe" | "protected" | "blocked",
+  "rationale": "Brief explanation of proposed action",
+  "expectedState": "Expected semantic postcondition description"
 }
 ```
 
----
+*Note:* CSS selectors and raw script execution are strictly prohibited and rejected by the client coordinator. Coordinate clicking is experimental.
 
-## 4. Local Development Mock Server
-
-To enable fast frontend development on any machine without invoking cloud APIs, a lightweight mock server is provided. The project already ships one in `apps/server/src/engines/mock-engine.ts`, which `VlmReasoningEngine` falls back to automatically when no endpoint is configured. The FastAPI sketch below is retained as a reference for a standalone equivalent:
-
-```python
-from fastapi import FastAPI, UploadFile, File, Form
-from pydantic import BaseModel
-
-app = FastAPI(title="SIH26171 Reasoning Server")
-
-@app.post("/api/v1/reason")
-async def reason_step(
-    screenshot: UploadFile = File(...),
-    dom_tree: str = Form(...),
-    user_goal: str = Form(...)
-):
-    # Validates that incoming screenshot is received
-    return {
-        "thought": "Detected search bar in sanitized DOM tree; initiating query input",
-        "action": "type",
-        "target_selector": "input[name='q']",
-        "target_coordinates": {"x": 320, "y": 180},
-        "input_text": "ISRO space mission schedule 2026",
-        "step_id": 1
-    }
-```

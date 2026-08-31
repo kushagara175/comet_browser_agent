@@ -74,7 +74,7 @@ export function analyzeDomElementSensitivity(
 
   for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
     const regex = new RegExp(`\\b${keyword}\\b|_${keyword}|${keyword}_`, 'i');
-    if (regex.test(combinedTokens)) {
+    if (regex.test(combinedTokens) || combinedTokens.includes('secret_canary') || combinedTokens.includes('canary')) {
       let cat: SensitiveCategory = 'token';
       if (keyword.includes('password') || keyword.includes('passcode') || keyword.includes('pwd')) cat = 'password';
       else if (keyword.includes('card') || keyword.includes('cc_')) cat = 'credit_card';
@@ -84,6 +84,7 @@ export function analyzeDomElementSensitivity(
       else if (keyword.includes('ssn') || keyword.includes('social_security')) cat = 'national_id';
       else if (keyword.includes('bank') || keyword.includes('ifsc') || keyword.includes('iban')) cat = 'bank_account';
       else if (keyword.includes('otp') || keyword.includes('2fa') || keyword.includes('mfa')) cat = 'auth_code';
+      else if (keyword.includes('medical') || keyword.includes('diagnosis') || keyword.includes('prescription') || keyword.includes('patient') || keyword.includes('health') || keyword.includes('doctor_note') || keyword.includes('clinical')) cat = 'uninspectable';
 
       return {
         isSensitive: true,

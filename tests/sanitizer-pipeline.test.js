@@ -66,10 +66,22 @@ test('Sanitizer Pipeline - Produces Verified SanitizedContext and Redacts PII', 
     pageTitle: 'Mission Portal Dashboard'
   };
 
+  const testCanvas = {
+    getContext: () => ({
+      save: () => {},
+      restore: () => {},
+      fillRect: () => {},
+      strokeRect: () => {},
+      fillText: () => {}
+    }),
+    toDataURL: () => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+  };
+
   const sanitized = await SanitizerPipeline.sanitize(
     rawCapture,
     snapshot,
-    'Find pending request and preview'
+    'Find pending request and preview',
+    testCanvas
   );
 
   assert.strictEqual(sanitized._brand, 'SanitizedContext_Verified');

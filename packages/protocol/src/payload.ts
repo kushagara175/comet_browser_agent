@@ -120,3 +120,24 @@ export interface SanitizedNetworkPayload {
   readonly elements: ReadonlyArray<SanitizedElement>;
   readonly pageState: SanitizedPageState;
 }
+
+/**
+ * Closed Page-Aware Chat Payload schema. Derived strictly from SanitizedContext.
+ */
+export interface SanitizedChatPayload {
+  readonly _brand: 'SanitizedChatPayload_Verified';
+  readonly protocolVersion: '1.0';
+  readonly message: string;
+  readonly elements: ReadonlyArray<SanitizedElement>;
+  readonly sanitizedTitle: string;
+  readonly maskCount: number;
+}
+
+/**
+ * Contextless General Chat Payload schema. Zero browser/page state.
+ */
+export interface GeneralChatPayload {
+  readonly protocolVersion: '1.0';
+  readonly message: string;
+}
+

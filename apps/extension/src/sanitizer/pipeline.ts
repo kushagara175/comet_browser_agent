@@ -10,7 +10,8 @@ import {
   DetectionReport,
   SanitizedContext,
   SanitizedElement,
-  SensitiveRegion
+  SensitiveRegion,
+  SensitiveCategory
 } from '@privapilot/protocol';
 import { sanitizeElementName } from '@privapilot/pii-rules';
 import { CoordinateTransformer } from './coordinate-transformer.js';
@@ -20,6 +21,7 @@ import { detectFaceRegions, RawImageElementCapture } from './face-detector.js';
 import { detectHighRiskSurfaces, RawSurfaceCapture } from './surface-detector.js';
 import { MaskRenderer } from './mask-renderer.js';
 import { PostRedactionVerifier } from './post-redaction-verifier.js';
+import { UltraFaceModelRunner, DetectedFace } from '../vision/face-model.js';
 
 export interface LocalDomSnapshot {
   readonly domElements: ReadonlyArray<RawDomElementCapture>;
@@ -49,10 +51,21 @@ export class SanitizerPipeline {
   ): Promise<SanitizedContext> {
     const transformer = new CoordinateTransformer(rawCapture.metadata);
 
+    // 0. Run on-device ONNX vision model inference on screenshot canvas if available
+    let modelFaces: ReadonlyArray<DetectedFace> = [];
+    if (imageCanvas) {
+      try {
+        const visionResult = await UltraFaceModelRunner.detectFaces(imageCanvas, transformer);
+        modelFaces = visionResult.faces;
+      } catch {
+        // Fall back to DOM avatar heuristics on model initialization/inference failure
+      }
+    }
+
     // 1. Run all multi-layer detectors
     const domRegions = detectDomSensitiveRegions(snapshot.domElements, transformer);
     const textRegions = detectTextSensitiveRegions(snapshot.textNodes, transformer);
-    const faceRegions = detectFaceRegions(snapshot.imageElements, transformer);
+    const faceRegions = detectFaceRegions(snapshot.imageElements, transformer, modelFaces);
     const surfaceRegions = detectHighRiskSurfaces(snapshot.surfaces, transformer);
 
     // Fusion: Union of all detected sensitive regions
@@ -71,7 +84,7 @@ export class SanitizerPipeline {
       requiresFailClosedBlock: false
     };
 
-    // 2. Render Redaction Masks onto Canvas
+    // 2. Render Redaction Masks onto Canvas (Strictly Fail-Closed: Zero 1x1 or permissive fallbacks)
     let sanitizedDataUrl: string;
     let renderedCount = 0;
 
@@ -80,34 +93,36 @@ export class SanitizerPipeline {
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
     } else if (typeof document !== 'undefined' && rawCapture.rawScreenshotDataUrl && rawCapture.rawScreenshotDataUrl.startsWith('data:image')) {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = rawCapture.metadata.screenshotWidth;
-        canvas.height = rawCapture.metadata.screenshotHeight;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          const img = new Image();
-          await new Promise<void>((resolve, reject) => {
-            img.onload = () => resolve();
-            img.onerror = () => reject(new Error('Failed to load raw screenshot for masking'));
-            img.src = rawCapture.rawScreenshotDataUrl;
-          });
-          ctx.drawImage(img, 0, 0);
-          const renderResult = MaskRenderer.renderMasks(canvas, allRegions);
-          sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
-          renderedCount = renderResult.renderedMaskCount;
-        } else {
-          sanitizedDataUrl = rawCapture.rawScreenshotDataUrl;
-          renderedCount = allRegions.length;
-        }
-      } catch {
-        sanitizedDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-        renderedCount = allRegions.length;
+      const canvas = document.createElement('canvas');
+      canvas.width = rawCapture.metadata.screenshotWidth;
+      canvas.height = rawCapture.metadata.screenshotHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('Sanitization Blocked: Canvas 2D context unavailable in host document');
       }
+
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Sanitization Blocked: Failed to decode raw screenshot image'));
+        img.src = rawCapture.rawScreenshotDataUrl;
+      });
+
+      ctx.drawImage(img, 0, 0);
+      const renderResult = MaskRenderer.renderMasks(canvas, allRegions);
+      sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
+      renderedCount = renderResult.renderedMaskCount;
     } else {
-      // Offline/Test Canvas Simulator
-      sanitizedDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-      renderedCount = allRegions.length;
+      throw new Error('Sanitization Blocked: No canvas host available. Rendering must execute in an offscreen document with DOM access.');
+    }
+
+    // Map of localId -> sensitive category from DOM detector
+    const sensitiveDomElementsMap = new Map<string, SensitiveCategory>();
+    for (const region of domRegions) {
+      if (region.id.startsWith('dom_sens_')) {
+        const localId = region.id.replace('dom_sens_', '');
+        sensitiveDomElementsMap.set(localId, region.category);
+      }
     }
 
     // 3. Scrub Interactive Elements (Map to localId, scrub names, compute coarse bounds)
@@ -119,13 +134,55 @@ export class SanitizerPipeline {
         Math.round((el.boundingBox.height / rawCapture.metadata.viewportHeight) * 100) / 100
       ];
 
+      const sensitiveCategory = sensitiveDomElementsMap.get(el.localId);
+      let sanitizedName: string;
+      let actionCapabilities = [...el.actionCapabilities];
+
+      if (sensitiveCategory) {
+        // Category-safe label for sensitive controls (Requirement 5)
+        switch (sensitiveCategory) {
+          case 'password':
+            sanitizedName = '[PASSWORD FIELD]';
+            break;
+          case 'auth_code':
+            sanitizedName = '[OTP FIELD]';
+            break;
+          case 'credit_card':
+          case 'cvv':
+          case 'bank_account':
+            sanitizedName = '[PAYMENT FIELD]';
+            break;
+          case 'national_id':
+            sanitizedName = '[NATIONAL ID FIELD]';
+            break;
+          case 'email':
+            sanitizedName = '[EMAIL FIELD]';
+            break;
+          case 'phone':
+            sanitizedName = '[PHONE FIELD]';
+            break;
+          case 'token':
+            sanitizedName = '[TOKEN/KEY FIELD]';
+            break;
+          default:
+            sanitizedName = '[SENSITIVE FIELD]';
+            break;
+        }
+
+        // Restrict unsafe action capabilities for sensitive controls (Requirement 6)
+        // Remote server must NOT type into password, OTP, payment, token, or sensitive fields
+        actionCapabilities = actionCapabilities.filter((cap) => cap !== 'type');
+      } else {
+        sanitizedName = sanitizeElementName(el.rawName);
+      }
+
       return {
         localId: el.localId,
         role: el.role,
-        sanitizedName: sanitizeElementName(el.rawName),
+        sanitizedName,
         coarseBounds,
         state: el.state,
-        actionCapabilities: el.actionCapabilities
+        actionCapabilities
       };
     });
 

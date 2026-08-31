@@ -8,7 +8,7 @@
  * - Auto-probing of local model instances with graceful fallback to MockReasoningEngine.
  */
 
-import { SanitizedNetworkPayload, ActionProposal } from '@privapilot/protocol';
+import { SanitizedNetworkPayload, ActionProposal, validateActionProposal } from '@privapilot/protocol';
 import { MockReasoningEngine } from './mock-engine.js';
 
 export interface VlmConfig {
@@ -121,7 +121,18 @@ export class VlmReasoningEngine {
     const status = await this.getStatus();
 
     if (status.provider === 'mock' || !status.isOnline) {
-      return this.mockFallback.decideNextAction(payload);
+      const fallbackProposal = await this.mockFallback.decideNextAction(payload);
+      const validation = validateActionProposal(fallbackProposal, payload.elements);
+      if (!validation.isValid || !validation.proposal) {
+        return {
+          actionId: `act_error_${Date.now()}`,
+          kind: 'blocked',
+          confidence: 0,
+          risk: 'blocked',
+          rationale: 'Fallback reasoning proposal failed validation'
+        };
+      }
+      return validation.proposal;
     }
 
     try {
@@ -131,13 +142,19 @@ export class VlmReasoningEngine {
         return await this.callOpenAICompatible(payload, status.endpoint, status.modelName);
       }
     } catch (err: any) {
-      console.warn(`[PrivaPilot:VLM] Model reasoning failed (${err.message}). Falling back to deterministic engine.`);
-      return this.mockFallback.decideNextAction(payload);
+      console.warn(`[PrivaPilot:VLM] Model reasoning failed (${err.message}). Returning safe blocked error.`);
+      return {
+        actionId: `act_error_${Date.now()}`,
+        kind: 'blocked',
+        confidence: 0,
+        risk: 'blocked',
+        rationale: `Reasoning proposal failed closed validation: ${err.message}`
+      };
     }
   }
 
   /**
-   * Handles Ollama native format (/api/chat).
+   * Handles Ollama native format (/api/chat) with at most one schema-repair attempt.
    */
   private async callOllama(
     payload: SanitizedNetworkPayload,
@@ -206,14 +223,50 @@ export class VlmReasoningEngine {
 
       const data: any = await response.json();
       const content = data.message?.content || '';
-      return this.parseActionProposal(content, payload);
+
+      try {
+        return this.parseActionProposal(content, payload);
+      } catch (firstErr: any) {
+        // At most ONE schema repair attempt
+        console.warn(`[PrivaPilot:VLM] Attempting schema repair after validation error: ${firstErr.message}`);
+        const repairResponse = await fetch(`${baseUrl.replace(/\/$/, '')}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: modelName,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              userMessage,
+              { role: 'assistant', content },
+              {
+                role: 'user',
+                content: `Your previous response failed schema validation: ${firstErr.message}\nReturn ONLY corrected valid JSON for one action proposal according to the schema.`
+              }
+            ],
+            format: 'json',
+            stream: false,
+            options: {
+              temperature: 0.05
+            }
+          }),
+          signal: controller.signal
+        });
+
+        if (!repairResponse.ok) {
+          throw new Error(`Schema repair failed: Ollama returned status ${repairResponse.status}`);
+        }
+
+        const repairData: any = await repairResponse.json();
+        const repairContent = repairData.message?.content || '';
+        return this.parseActionProposal(repairContent, payload);
+      }
     } finally {
       clearTimeout(timeout);
     }
   }
 
   /**
-   * Handles standard OpenAI-compatible format (/v1/chat/completions).
+   * Handles standard OpenAI-compatible format (/v1/chat/completions) with at most one schema-repair attempt.
    */
   private async callOpenAICompatible(
     payload: SanitizedNetworkPayload,
@@ -246,15 +299,17 @@ export class VlmReasoningEngine {
     }
 
     try {
+      const messages: any[] = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: contentArray }
+      ];
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify({
           model: modelName,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: contentArray }
-          ],
+          messages,
           response_format: { type: 'json_object' },
           temperature: 0.1
         }),
@@ -267,7 +322,39 @@ export class VlmReasoningEngine {
 
       const data: any = await response.json();
       const content = data.choices?.[0]?.message?.content || '';
-      return this.parseActionProposal(content, payload);
+
+      try {
+        return this.parseActionProposal(content, payload);
+      } catch (firstErr: any) {
+        // At most ONE schema repair attempt
+        console.warn(`[PrivaPilot:VLM] Attempting schema repair after validation error: ${firstErr.message}`);
+        const repairResponse = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: modelName,
+            messages: [
+              ...messages,
+              { role: 'assistant', content },
+              {
+                role: 'user',
+                content: `Your previous response failed schema validation: ${firstErr.message}\nReturn ONLY corrected valid JSON for one action proposal according to the schema.`
+              }
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.05
+          }),
+          signal: controller.signal
+        });
+
+        if (!repairResponse.ok) {
+          throw new Error(`Schema repair failed: Endpoint returned status ${repairResponse.status}`);
+        }
+
+        const repairData: any = await repairResponse.json();
+        const repairContent = repairData.choices?.[0]?.message?.content || '';
+        return this.parseActionProposal(repairContent, payload);
+      }
     } finally {
       clearTimeout(timeout);
     }
@@ -291,33 +378,20 @@ export class VlmReasoningEngine {
       cleanJson = cleanJson.slice(jsonStart, jsonEnd + 1);
     }
 
-    const parsed = JSON.parse(cleanJson);
-
-    // 3. Normalize fields to protocol specification
-    const validKinds = ['click', 'type', 'select', 'scroll', 'wait', 'finish'];
-    const kind = validKinds.includes(parsed.kind) ? parsed.kind : 'click';
-    const risk = parsed.risk === 'protected' || parsed.risk === 'blocked' ? parsed.risk : 'safe';
-
-    // Verify targetLocalId exists in elements list if supplied
-    let targetLocalId = parsed.targetLocalId;
-    if (targetLocalId && !payload.elements.some(e => e.localId === targetLocalId)) {
-      // Find matching element by role or name if ID hallucinated
-      const candidate = payload.elements.find(e =>
-        e.sanitizedName && parsed.rationale && parsed.rationale.toLowerCase().includes(e.sanitizedName.toLowerCase())
-      );
-      targetLocalId = candidate ? candidate.localId : payload.elements[0]?.localId;
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleanJson);
+    } catch {
+      throw new Error('Model output could not be parsed as JSON');
     }
 
-    return {
-      actionId: parsed.actionId || `act_${Date.now()}`,
-      kind: kind as any,
-      targetLocalId,
-      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.9,
-      risk,
-      textToType: parsed.textToType || parsed.input_text,
-      rationale: parsed.rationale || `Model chose ${kind} on ${targetLocalId || 'target'}`,
-      expectedState: parsed.expectedState || 'State updated'
-    };
+    // 3. Strict Closed Validation against current context elements
+    const validation = validateActionProposal(parsed, payload.elements);
+    if (!validation.isValid || !validation.proposal) {
+      throw new Error(validation.errorMessage || 'Invalid action proposal schema');
+    }
+
+    return validation.proposal;
   }
 
   private buildSystemPrompt(): string {

@@ -105,7 +105,7 @@ export const TEST_FIXTURES: Record<string, TestFixture> = {
           <p>Email: <span>rohan.sharma@isro.gov.in.synthetic</span></p>
           <p>Phone: <span>+91 98765 43210</span></p>
           <p>PAN: <span>ABCDE1234F</span></p>
-          <p>Aadhaar: <span>4532 8901 2345</span></p>
+          <p>Aadhaar: <span>4532 8901 2342</span></p>
           <p>DOB: <span>14-08-1988</span></p>
           <button id="viewRecordsBtn">View Safe Records</button>
           <button id="editProfileBtn">Edit Profile</button>

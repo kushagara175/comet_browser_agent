@@ -6,7 +6,14 @@
  * It is impossible to pass `RawCapture` to this client.
  */
 
-import { SanitizedContext, SanitizedNetworkPayload, ActionProposal } from '@privapilot/protocol';
+import {
+  SanitizedContext,
+  SanitizedNetworkPayload,
+  SanitizedChatPayload,
+  GeneralChatPayload,
+  ActionProposal,
+  validateActionProposal
+} from '@privapilot/protocol';
 import { assertNoCanaryLeak } from '@privapilot/test-fixtures';
 
 export class ReasoningHttpClient {
@@ -48,7 +55,80 @@ export class ReasoningHttpClient {
       throw new Error(`Reasoning Server Error (${response.status}): ${errText}`);
     }
 
-    const action: ActionProposal = await response.json();
-    return action;
+    const actionRaw: any = await response.json();
+
+    // 4. Zero-Trust Client-Side Validation: Never trust server output blindly
+    const validation = validateActionProposal(actionRaw, sanitized.elements);
+    if (!validation.isValid || !validation.proposal) {
+      throw new Error(`Reasoning Server Response Invalid: ${validation.errorMessage || 'Invalid action proposal'}`);
+    }
+
+    return validation.proposal;
+  }
+
+  /**
+   * Transmits sanitized page-aware context projection to Chat endpoint.
+   * Strictly accepts SanitizedContext only (never raw captures or URLs).
+   */
+  async requestChat(sanitized: SanitizedContext, message: string): Promise<{ reply: string }> {
+    const payload: SanitizedChatPayload = {
+      _brand: 'SanitizedChatPayload_Verified',
+      protocolVersion: '1.0',
+      message,
+      elements: sanitized.elements,
+      sanitizedTitle: sanitized.pageState.title,
+      maskCount: sanitized.maskCount
+    };
+
+    assertNoCanaryLeak(payload, 'Outgoing Chat Payload');
+
+    const response = await fetch(`${this.serverBaseUrl}/api/v1/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-PrivaPilot-Version': '1.0'
+      },
+      body: JSON.stringify({
+        protocolVersion: payload.protocolVersion,
+        message: payload.message,
+        elements: payload.elements,
+        sanitizedTitle: payload.sanitizedTitle,
+        maskCount: payload.maskCount
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Chat Server Error (${response.status}): ${errText}`);
+    }
+
+    return await response.json();
+  }
+
+  /**
+   * Transmits contextless general query (zero page or browser state).
+   */
+  async requestGeneralChat(message: string): Promise<{ reply: string }> {
+    const payload: GeneralChatPayload = {
+      protocolVersion: '1.0',
+      message
+    };
+
+    const response = await fetch(`${this.serverBaseUrl}/api/v1/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-PrivaPilot-Version': '1.0'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Chat Server Error (${response.status}): ${errText}`);
+    }
+
+    return await response.json();
   }
 }
+

@@ -64,6 +64,25 @@ export function viewportToScreenshotBox(
 }
 
 /**
+ * Converts a ScreenshotPixelBox to ViewportCssPixelBox.
+ */
+export function screenshotToViewportBox(
+  box: ScreenshotPixelBox,
+  meta: ViewportMetadata
+): ViewportCssPixelBox {
+  const scaleX = meta.screenshotWidth / meta.viewportWidth;
+  const scaleY = meta.screenshotHeight / meta.viewportHeight;
+
+  return {
+    space: 'viewportCssPixel',
+    x: Math.round(box.x / scaleX),
+    y: Math.round(box.y / scaleY),
+    width: Math.round(box.width / scaleX),
+    height: Math.round(box.height / scaleY)
+  };
+}
+
+/**
  * Converts a DocumentCssPixelBox to ViewportCssPixelBox.
  */
 export function documentToViewportBox(

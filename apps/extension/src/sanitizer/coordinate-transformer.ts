@@ -7,6 +7,7 @@ import {
   ViewportCssPixelBox,
   ScreenshotPixelBox,
   viewportToScreenshotBox,
+  screenshotToViewportBox,
   mergeBoundingBoxes
 } from '@privapilot/protocol';
 
@@ -19,6 +20,10 @@ export class CoordinateTransformer {
 
   toScreenshotBox(box: ViewportCssPixelBox, paddingPx: number = 6): ScreenshotPixelBox {
     return viewportToScreenshotBox(box, this.metadata, paddingPx);
+  }
+
+  toViewportBox(box: ScreenshotPixelBox): ViewportCssPixelBox {
+    return screenshotToViewportBox(box, this.metadata);
   }
 
   mergeBoxes(boxes: ReadonlyArray<ScreenshotPixelBox>): ScreenshotPixelBox[] {

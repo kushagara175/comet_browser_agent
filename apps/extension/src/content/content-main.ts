@@ -12,6 +12,7 @@ declare const chrome: any;
 
 const extractor = new ElementExtractor();
 const overlay = new OverlayRenderer();
+let currentCaptureId: string | null = null;
 let currentElementMap = new Map<string, HTMLElement>();
 
 // Listen for messages from background coordinator
@@ -27,10 +28,13 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 export async function handleMessage(message: any): Promise<any> {
   if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
     const extracted = extractor.extractSnapshot(document);
+    const captureId = message.captureId || `cap_${Date.now()}`;
+    currentCaptureId = captureId;
     currentElementMap = extracted.elementMap;
 
     return {
       success: true,
+      captureId,
       snapshot: extracted.snapshot,
       viewport: {
         viewportWidth: window.innerWidth,
@@ -48,22 +52,50 @@ export async function handleMessage(message: any): Promise<any> {
   if (message.type === 'EXECUTE_ACTION') {
     const proposal: ActionProposal = message.proposal;
 
-    // Highlight target if present
-    if (proposal.targetLocalId) {
-      const targetEl = currentElementMap.get(proposal.targetLocalId);
-      if (targetEl) {
-        overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase());
-      }
+    // 1. Guard against executing on an element map from a different capture
+    if (message.captureId && currentCaptureId && message.captureId !== currentCaptureId) {
+      return {
+        success: false,
+        actionId: proposal.actionId,
+        semanticOutcomeVerified: false,
+        staleTarget: true,
+        message: 'Stale target: element map is from a different capture'
+      };
     }
 
+    const targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;
+
+    // 2. Highlight target if present
+    if (targetEl) {
+      overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase());
+    }
+
+    // Capture safe pre-action semantic snapshot BEFORE execution
+    const preSnapshot = SemanticStateVerifier.captureSnapshot(targetEl, document);
+
+    // 3. Dispatch synthetic DOM action
     const execResult = ActionExecutor.execute(proposal, currentElementMap);
-    const verified = await SemanticStateVerifier.verifyOutcome(proposal.expectedState);
+    if (!execResult.success) {
+      return {
+        success: false,
+        actionId: proposal.actionId,
+        semanticOutcomeVerified: false,
+        staleTarget: execResult.staleTarget ?? (!targetEl && Boolean(proposal.targetLocalId)),
+        message: execResult.message || 'Action execution failed',
+        reasonCode: execResult.reasonCode || 'EXECUTION_FAILED'
+      };
+    }
+
+    // 4. Semantically verify post-action state with explicit bounded postconditions
+    const verification = await SemanticStateVerifier.verifyOutcome(proposal, targetEl, preSnapshot);
+    const isSuccess = execResult.success && verification.verified;
 
     return {
-      success: execResult.success,
+      success: isSuccess,
       actionId: proposal.actionId,
-      semanticOutcomeVerified: verified,
-      message: execResult.message
+      semanticOutcomeVerified: verification.verified,
+      reasonCode: verification.reasonCode,
+      message: isSuccess ? execResult.message : verification.message
     };
   }
 

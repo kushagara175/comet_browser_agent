@@ -6,6 +6,9 @@ import test from 'node:test';
 import assert from 'node:assert';
 import {
   isValidLuhn,
+  isValidVerhoeff,
+  calculateVerhoeffChecksum,
+  isValidAadhaar,
   scanTextForPII,
   analyzeDomElementSensitivity,
   scrubText,
@@ -23,10 +26,33 @@ test('Luhn Algorithm - Accurately Validates Real vs Fake Card Numbers', () => {
   assert.strictEqual(isValidLuhn('1234567890123456'), false);
 });
 
+test('Verhoeff Algorithm - Accurately Validates Synthetic Aadhaar vs False Positives', () => {
+  // Valid synthetic 12-digit Aadhaar numbers with correct Verhoeff checksum
+  assert.strictEqual(isValidAadhaar('453289012342'), true);
+  assert.strictEqual(isValidAadhaar('4532 8901 2342'), true);
+  assert.strictEqual(isValidAadhaar('4532-8901-2342'), true);
+  assert.strictEqual(isValidAadhaar('9876 5432 1096'), true); // 98765432109 -> check digit 6
+  assert.strictEqual(isValidAadhaar('2345 6789 0124'), true); // 23456789012 -> check digit 4
+
+  // Invalid near-misses (transposed digits or altered check digit)
+  assert.strictEqual(isValidAadhaar('4532 8901 2345'), false, 'Wrong check digit must fail');
+  assert.strictEqual(isValidAadhaar('4532 8901 2324'), false, 'Transposed digits must fail');
+  assert.strictEqual(isValidAadhaar('9876 5432 1098'), false, 'Near-miss check digit must fail');
+
+  // Invalid first digit (0 or 1 cannot be first digit of Aadhaar)
+  assert.strictEqual(isValidAadhaar('0123 4567 8901'), false, 'Cannot start with 0');
+  assert.strictEqual(isValidAadhaar('1234 5678 9012'), false, 'Cannot start with 1');
+
+  // Arbitrary 12-digit order numbers / invoice references must NOT pass as Aadhaar
+  assert.strictEqual(isValidAadhaar('202608311205'), false);
+  assert.strictEqual(isValidAadhaar('999999999999'), false);
+  assert.strictEqual(isValidAadhaar('234567890128'), false);
+});
+
 test('Text PII Scanner - Detects Indian & Global Formats', () => {
   const sample = `
     Contact Dr. Sharma at rohan.sharma@isro.ops.local or call +91 98765 43210.
-    Identity: PAN ABCDE1234F, Aadhaar 4532 8901 2345.
+    Identity: PAN ABCDE1234F, Aadhaar 4532 8901 2342.
     Card: 4532 0150 1234 5671 with CVV: 892.
   `;
 

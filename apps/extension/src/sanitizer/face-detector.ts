@@ -1,15 +1,15 @@
 /**
- * @privapilot/extension - On-Device Face & Avatar Vision Detector
+ * @privapilot/extension - On-Device Face & Avatar Perception Subsystem
  *
- * Implements lightweight in-browser facial perception with:
- * 1. Native Shape Detection API (window.FaceDetector) if available in browser
- * 2. DOM Avatar & Profile Graphic heuristics
- * 3. Aspect-ratio & portrait dimension classification
- * 4. Generous 12px bounding box padding to prevent peripheral facial leak
+ * Merges:
+ * 1. UltraFace-320 ONNX vision model inferences from screenshot pixels.
+ * 2. Explicit DOM avatar / profile image signals as union fallback.
+ * (Generic aspect-ratio heuristics are completely removed).
  */
 
 import { SensitiveRegion } from '@privapilot/protocol';
 import { CoordinateTransformer } from './coordinate-transformer.js';
+import { DetectedFace } from '../vision/face-model.js';
 
 export interface RawImageElementCapture {
   readonly id: string;
@@ -24,48 +24,74 @@ export interface RawImageElementCapture {
   };
 }
 
-declare const window: any;
-
+/**
+ * Combines ONNX vision model face detections with explicit DOM avatar signals.
+ */
 export function detectFaceRegions(
   images: ReadonlyArray<RawImageElementCapture>,
-  transformer: CoordinateTransformer
+  transformer: CoordinateTransformer,
+  modelFaces: ReadonlyArray<DetectedFace> = []
 ): SensitiveRegion[] {
   const regions: SensitiveRegion[] = [];
 
+  // 1. Add ONNX Vision Model Detections
+  for (const face of modelFaces) {
+    regions.push({
+      id: face.id,
+      category: 'face',
+      viewportBox: face.viewportBox,
+      screenshotBox: face.screenshotBox,
+      detectorSource: 'face_model',
+      method: 'gaussian_blur',
+      label: `HUMAN_FACE_MODEL_${Math.round(face.confidence * 100)}%`
+    });
+  }
+
+  // 2. Add Explicit DOM Avatar/Profile Fallback Signals (Only explicit class/attribute matches)
   for (const img of images) {
+    if (!img.isProfilePhotoOrAvatar) continue;
+
     const w = img.boundingClientRect.width;
     const h = img.boundingClientRect.height;
     if (w < 16 || h < 16) continue;
 
-    // Aspect ratio check for portrait/square photos (0.6 to 1.4)
-    const aspectRatio = w / h;
-    const isPortraitOrSquare = aspectRatio >= 0.6 && aspectRatio <= 1.4;
+    const viewportBox = {
+      space: 'viewportCssPixel' as const,
+      x: img.boundingClientRect.x,
+      y: img.boundingClientRect.y,
+      width: w,
+      height: h
+    };
 
-    // Classify as face/avatar if explicit class or portrait image container
-    const isLikelyFace =
-      img.isProfilePhotoOrAvatar ||
-      (isPortraitOrSquare && w >= 32 && w <= 500 && h >= 32 && h <= 500);
+    // Conservative 12px padding for avatar regions
+    const screenshotBox = transformer.toScreenshotBox(viewportBox, 12);
 
-    if (isLikelyFace) {
-      const viewportBox = {
-        space: 'viewportCssPixel' as const,
-        x: img.boundingClientRect.x,
-        y: img.boundingClientRect.y,
-        width: w,
-        height: h
-      };
+    // Deduplicate if already covered by an ONNX model box
+    let alreadyCovered = false;
+    for (const modelFace of modelFaces) {
+      const mb = modelFace.screenshotBox;
+      const xA = Math.max(screenshotBox.x, mb.x);
+      const yA = Math.max(screenshotBox.y, mb.y);
+      const xB = Math.min(screenshotBox.x + screenshotBox.width, mb.x + mb.width);
+      const yB = Math.min(screenshotBox.y + screenshotBox.height, mb.y + mb.height);
 
-      // Generous 12px padding for faces to prevent peripheral facial feature leakage
-      const screenshotBox = transformer.toScreenshotBox(viewportBox, 12);
+      const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+      const domArea = screenshotBox.width * screenshotBox.height;
+      if (domArea > 0 && interArea / domArea > 0.5) {
+        alreadyCovered = true;
+        break;
+      }
+    }
 
+    if (!alreadyCovered) {
       regions.push({
-        id: `face_${img.id}`,
+        id: `face_dom_${img.id}`,
         category: 'face',
         viewportBox,
         screenshotBox,
-        detectorSource: 'face_model',
+        detectorSource: 'dom_semantic',
         method: 'gaussian_blur',
-        label: 'HUMAN_FACE_OR_AVATAR'
+        label: 'DOM_AVATAR_SIGNAL'
       });
     }
   }

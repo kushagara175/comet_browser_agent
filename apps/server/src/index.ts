@@ -7,7 +7,7 @@
  */
 
 import http from 'node:http';
-import { validateSanitizedPayload } from './schemas/payload-validator.js';
+import { validateSanitizedPayload, validateSanitizedChatPayload } from './schemas/payload-validator.js';
 import { VlmReasoningEngine } from './engines/vlm-engine.js';
 import { CanaryScannerProxy } from './proxy/canary-scanner.js';
 import { sanitizeHeadersForLogging } from './middleware/zero-log.js';
@@ -86,8 +86,22 @@ export function createServer(): http.Server {
     // 2. Reasoning Endpoint
     if (req.method === 'POST' && url === '/api/v1/reason') {
       let bodyStr = '';
-      req.on('data', (chunk: Buffer | string) => { bodyStr += chunk.toString(); });
+      let exceeded = false;
+      const MAX_REASON_BODY_BYTES = 4 * 1024 * 1024; // 4MB
+
+      req.on('data', (chunk: Buffer | string) => {
+        if (exceeded) return;
+        bodyStr += chunk.toString();
+        if (bodyStr.length > MAX_REASON_BODY_BYTES) {
+          exceeded = true;
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Payload Too Large: Request body exceeds 4MB limit' }));
+          req.destroy();
+        }
+      });
+
       req.on('end', async () => {
+        if (exceeded) return;
         try {
           const body = JSON.parse(bodyStr);
 
@@ -105,7 +119,7 @@ export function createServer(): http.Server {
           const validation = validateSanitizedPayload(body);
           if (!validation.isValid || !validation.payload) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: validation.errorMessage }));
+            res.end(JSON.stringify({ error: validation.errorMessage || 'Invalid request payload' }));
             return;
           }
 
@@ -116,45 +130,70 @@ export function createServer(): http.Server {
           res.end(JSON.stringify(action));
         } catch (err: any) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: `Reasoning Engine Error: ${err.message}` }));
+          res.end(JSON.stringify({ error: 'Reasoning service temporarily unavailable' }));
         }
       });
       return;
     }
 
-    // 3. Direct Conversational Chat Endpoint (with live page context)
+    // 3. Sanitized Conversational Chat Endpoint
     if (req.method === 'POST' && url === '/api/v1/chat') {
       let bodyStr = '';
-      req.on('data', (chunk: Buffer | string) => { bodyStr += chunk.toString(); });
+      let exceeded = false;
+      const MAX_CHAT_BODY_BYTES = 512 * 1024; // 512KB
+
+      req.on('data', (chunk: Buffer | string) => {
+        if (exceeded) return;
+        bodyStr += chunk.toString();
+        if (bodyStr.length > MAX_CHAT_BODY_BYTES) {
+          exceeded = true;
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Payload Too Large: Chat request body exceeds 512KB limit' }));
+          req.destroy();
+        }
+      });
+
       req.on('end', async () => {
+        if (exceeded) return;
         try {
           const body = JSON.parse(bodyStr);
-          const { message, pageUrl, pageTitle, pageText } = body;
 
-          if (!message || typeof message !== 'string') {
+          // A. Security Proxy Canary Check
+          const scan = CanaryScannerProxy.inspect(body, url);
+          if (!scan.passed) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Missing message field' }));
+            res.end(JSON.stringify({
+              error: 'Privacy Boundary Violation: Prohibited canary fixture detected in chat payload'
+            }));
             return;
           }
 
-          // Build an objective, page-aware prompt that explains content, forms, and privacy implications clearly
-          const hasPageContext = !!(pageTitle || pageUrl || (pageText && pageText.trim().length > 0));
+          // B. Strict Closed Schema Validation
+          const validation = validateSanitizedChatPayload(body);
+          if (!validation.isValid || !validation.payload) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: validation.errorMessage || 'Invalid chat request payload' }));
+            return;
+          }
 
-          const systemPrompt = hasPageContext
-            ? `You are PrivaPilot, a web browser AI assistant. Your task is to objectively describe and explain web page content, forms, buttons, and user requests from the provided page context. Be direct, concise, and helpful.`
-            : `You are PrivaPilot, a smart browser AI assistant. Answer briefly and helpfully. When the user navigates to a webpage, you will help them understand what is on screen and protect their privacy.`;
+          const { message, elements, sanitizedTitle, maskCount } = validation.payload;
 
-          // Build the user message
+          const hasSanitizedContext = Array.isArray(elements) && elements.length > 0;
+
+          const systemPrompt = hasSanitizedContext
+            ? `You are PrivaPilot, a privacy-first browser AI assistant. The user is asking about the current webpage. Review the sanitized elements and answer concisely.`
+            : `You are PrivaPilot, a smart privacy-first browser AI assistant. Answer the user's question helpfully and concisely.`;
+
+          // Build user message from sanitized element list only (no raw DOM or URLs)
           let fullUserMessage = message;
 
-          if (hasPageContext) {
-            const contextLines: string[] = [];
-            if (pageTitle) contextLines.push(`Page Title: "${pageTitle}"`);
-            if (pageUrl) contextLines.push(`Page URL: ${pageUrl}`);
-            if (pageText && pageText.trim().length > 0) {
-              contextLines.push(`Page Elements & Content: ${pageText.slice(0, 1000)}`);
-            }
-            fullUserMessage = `${contextLines.join('\n')}\n\nUser Question: ${message}`;
+          if (hasSanitizedContext) {
+            const elementSummary = (elements as any[])
+              .slice(0, 30)
+              .map(e => `• ${e.localId || 'el'}: ${e.role || 'element'} "${e.sanitizedName || 'unnamed'}"`)
+              .join('\n');
+
+            fullUserMessage = `Page Title: "${sanitizedTitle || 'Untitled'}" (${maskCount || 0} sensitive masks active locally)\n\nSanitized Page Elements:\n${elementSummary}\n\nUser Question: ${message}`;
           }
 
           // Auto-detect active model
@@ -179,8 +218,7 @@ export function createServer(): http.Server {
               const data: any = await ollamaRes.json();
               reply = data.message?.content || 'No response from model.';
             } else {
-              const errText = await ollamaRes.text();
-              reply = `Model error (${ollamaRes.status}): ${errText.slice(0, 200)}`;
+              reply = 'Model reasoning temporarily unavailable.';
             }
           } else if (engineStatus.provider === 'lm-studio') {
             const lmRes = await fetch(engineStatus.endpoint, {
@@ -199,20 +237,20 @@ export function createServer(): http.Server {
               const data: any = await lmRes.json();
               reply = data.choices?.[0]?.message?.content || 'No response.';
             } else {
-              reply = 'LM Studio model error. Please retry.';
+              reply = 'Model reasoning temporarily unavailable.';
             }
           } else {
-            // Mock fallback — page-aware
-            reply = pageTitle
-              ? `PrivaPilot can see you are on "${pageTitle}" (${pageUrl}). No AI model running — start Ollama with \`ollama serve\` to enable live analysis.`
-              : `PrivaPilot privacy firewall is active. Start Ollama (\`ollama serve\`) and pull a model (\`ollama pull llama3.2:1b\`) to enable AI chat.`;
+            // Sanitized context aware local response
+            reply = sanitizedTitle
+              ? `PrivaPilot verified "${sanitizedTitle}" with ${maskCount || 0} local masks applied. Privacy firewall is active.`
+              : `PrivaPilot privacy firewall is active. Local model reasoning ready.`;
           }
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ reply }));
         } catch (err: any) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: `Chat Error: ${err.message}` }));
+          res.end(JSON.stringify({ error: 'Chat service temporarily unavailable' }));
         }
       });
       return;

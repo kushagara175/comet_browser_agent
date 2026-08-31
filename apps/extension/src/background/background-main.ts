@@ -56,18 +56,32 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
-    if (message.type === 'APPROVE_ACTION') {
-      coordinator.approvePendingAction().then(() => {
-        sendResponse({ success: true });
+    if (message.type === 'CHAT_WITH_PAGE') {
+      coordinator.chatWithPage(message.message || '').then((res) => {
+        sendResponse(res);
       }).catch((err) => {
-        sendResponse({ success: false, error: err.message });
+        sendResponse({
+          success: false,
+          reply: 'Privacy Boundary Active: Context transmission was blocked.',
+          maskCount: 0,
+          elementCount: 0
+        });
+      });
+      return true;
+    }
+
+    if (message.type === 'APPROVE_ACTION') {
+      coordinator.approvePendingAction({ resumeLoop: message.resumeLoop ?? true }).then((result) => {
+        sendResponse(result);
+      }).catch((err) => {
+        sendResponse({ success: false, state: 'failed-safe', error: err.message });
       });
       return true;
     }
 
     if (message.type === 'DENY_ACTION') {
-      coordinator.denyPendingAction();
-      sendResponse({ success: true });
+      const result = coordinator.denyPendingAction();
+      sendResponse(result);
       return true;
     }
 

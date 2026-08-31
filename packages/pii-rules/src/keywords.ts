@@ -35,7 +35,14 @@ export const SENSITIVE_FIELD_KEYWORDS = [
   'otp',
   'one_time_password',
   '2fa',
-  'mfa'
+  'mfa',
+  'medical',
+  'diagnosis',
+  'prescription',
+  'patient',
+  'health',
+  'doctor_note',
+  'clinical'
 ] as const;
 
 export const SENSITIVE_AUTOCOMPLETE_VALUES = [

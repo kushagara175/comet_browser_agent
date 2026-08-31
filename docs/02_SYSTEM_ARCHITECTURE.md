@@ -2,7 +2,7 @@
 
 ## 1. Architectural Philosophy: The Privacy-Preserving Client-Server Split
 
-Standard agentic web architectures send raw, sensitive screen data directly to cloud LLMs. Our architecture enforces a strict **Zero-Leakage Privacy Boundary** directly inside the user's browser:
+Standard agentic web architectures send raw, sensitive screen data directly to cloud LLMs. Our architecture enforces a strict **Fail-Closed Privacy Boundary** directly inside the user's browser:
 
 ```
                       ┌────────────────────────────────────────────────────────┐
@@ -15,21 +15,21 @@ Standard agentic web architectures send raw, sensitive screen data directly to c
                                                   │
                                                   ▼
                                    [2. In-Browser Privacy Engine]
-                                   (WebGPU ONNX + DOM + Regex Scrubber)
+                                   (Wasm/WebGPU ONNX + DOM + Regex)
                                                   │
                                                   ▼
                                  ┌─────────────────────────────────┐
                                  │   3. Privacy-Sanitized Payload  │
-                                 │ (Redacted Pixels + Masked DOM)  │
+                                 │ (Redacted Pixels + Ephemeral IDs)│
                                  └────────────────┬────────────────┘
                                                   │
-                                                  ▼ (Secure HTTPS Request - Zero PII)
+                                                  ▼ (Secure HTTPS Request - No Plaintext PII)
                                    [4. Centralized Reasoning VLM]
                                    (Qwen2.5-VL / Claude / DeepSeek)
                                                   │
                                                   ▼
                                   [5. Action Command JSON Stream]
-                             {"action": "click", "target_selector": "#pay"}
+                             {"kind": "click", "targetLocalId": "el_btn_1"}
                                                   │
                                                   ▼ (Return to Browser)
                                     [6. Client Action Executor]
@@ -37,7 +37,7 @@ Standard agentic web architectures send raw, sensitive screen data directly to c
                                                   │
                                                   ▼
                                    [7. Closed-Loop State Verifier]
-                                   (pHash Visual Diff & Action Cache)
+                                   (Explicit Postcondition Checks)
 ```
 
 ---
@@ -46,43 +46,42 @@ Standard agentic web architectures send raw, sensitive screen data directly to c
 
 ```mermaid
 flowchart TD
-    UserTab[Active Browser Tab: Chrome / Firefox] --> CaptureEngine[Viewport Capture & DOM Parser]
+    UserTab[Active Browser Tab: Chrome MV3 Active / Firefox Ready] --> CaptureEngine[Viewport Capture & DOM Parser]
 
     subgraph Client_Extension_Sandbox ["Client Browser Extension (Manifest V3)"]
-        CaptureEngine --> OffscreenWorker[Offscreen WebGPU Worker]
+        CaptureEngine --> OffscreenWorker[Offscreen Document Canvas Host]
         
         subgraph Privacy_Filter ["On-Device Privacy & Redaction Pipeline"]
-            OffscreenWorker --> BlazeFaceModel["BlazeFace ONNX (WebGPU Face Detection)"]
+            OffscreenWorker --> UltraFaceModel["UltraFace ONNX (Wasm / WebGPU Fallback)"]
             CaptureEngine --> DOMSanitizer["DOM Element Inspector (Password / CC / Tel)"]
-            CaptureEngine --> RegexEngine["Local Regex / NER Text Redactor"]
+            CaptureEngine --> RegexEngine["Local Regex / Luhn / Verhoeff Redactor"]
             
-            BlazeFaceModel --> CanvasObfuscator["Canvas Pixel Obfuscator (Blur & Blackout)"]
+            UltraFaceModel --> CanvasObfuscator["Canvas Pixel Obfuscator (Blur & Blackout)"]
             DOMSanitizer --> CanvasObfuscator
             RegexEngine --> CanvasObfuscator
         end
 
-        CanvasObfuscator --> SanitizedArtifacts["Sanitized Context: Redacted Screenshot + Anonymized DOM"]
+        CanvasObfuscator --> SanitizedArtifacts["Sanitized Context: Redacted Screenshot + Ephemeral Local IDs"]
     end
 
-    subgraph Server_Reasoning_Gateway ["Centralized Reasoning Server (FastAPI / Node)"]
-        SanitizedArtifacts -->|HTTPS Payload (No PII)| GatewayRouter[API Gateway & Prompt Formatter]
-        GatewayRouter --> CentralVLM["Server VLM (Qwen2.5-VL / Claude 3.5 Sonnet)"]
-        CentralVLM --> ActionParser["Structured Action Parser (JSON Schema Validator)"]
+    subgraph Server_Reasoning_Gateway ["Centralized Reasoning Server (Node / Express)"]
+        SanitizedArtifacts -->|HTTPS Payload (No Raw PII)| GatewayRouter[API Gateway & Prompt Formatter]
+        GatewayRouter --> CentralVLM["Server Reasoning Engine (VLM / LLM)"]
+        CentralVLM --> ActionParser["Closed-Schema Action Proposal Validator"]
     end
 
     subgraph Client_Execution_Loop ["Client-Side Action Runner"]
-        ActionParser -->|Action JSON| ActionDispatcher[Content Script Action Runner]
+        ActionParser -->|Action Proposal JSON| ActionDispatcher[Content Script Action Runner]
         ActionDispatcher --> UserTab
-        ActionDispatcher --> StateVerifier{State Transition Verified?}
-        StateVerifier -->|Success| ActionCache[IndexedDB Action Memory Cache]
-        StateVerifier -->|Stall / Modal Popup| SelfHealing[Autonomous Modal Dismissal Engine]
-        ActionCache --> NextSubtask[Trigger Next Interaction Step]
+        ActionDispatcher --> StateVerifier{Semantic Postcondition Verified?}
+        StateVerifier -->|Success| MultiStepLoop[Coordinator Multi-Step Loop]
+        StateVerifier -->|Stale Target / Failure| SafeRecovery[Bounded Re-perception Retry / Fail-Safe]
     end
 
     subgraph Visual_HUD ["Mission Control Telemetry HUD"]
-        CaptureEngine --> HUD_Left[Left View: Live Raw Viewport]
-        CanvasObfuscator --> HUD_Right[Right View: Sanitized Viewport with Redaction Overlays]
-        OffscreenWorker --> HUD_Metrics[Live Telemetry: WebGPU RAM, PII Recall, Latency ms]
+        CaptureEngine --> HUD_Left[Left View: Live Raw Viewport (Local Only)]
+        CanvasObfuscator --> HUD_Right[Right View: Sanitized Viewport with Redaction Masks]
+        OffscreenWorker --> HUD_Metrics[Live Telemetry: Measured Latencies, PII Categories]
     end
 ```
 
@@ -91,29 +90,32 @@ flowchart TD
 ## 3. Subsystem Breakdown
 
 ### Subsystem 1: Client Browser Extension (Manifest V3)
-- **Background Service Worker:** Orchestrates the extension lifecycle and bridges content scripts with the offscreen WebGPU worker.
-- **Content Script:** Injects into active webpage DOM to read structural layout, compute element bounding boxes, and dispatch synthetic user events (`click`, `input`, `scroll`).
-- **Offscreen Document:** Provides access to the HTML Canvas API and `WebGPU` compute shaders within Chrome's Manifest V3 security model.
+- **Background Service Worker (`coordinator.ts`):** Orchestrates the multi-step perception loop, manages ephemeral local IDs, enforces client safety policy, and coordinates user confirmation for protected actions.
+- **Content Script (`action-executor.ts`, `verifier.ts`):** Injects into active webpage DOM to read structural layout, compute element bounding boxes, dispatch synthetic user events using native prototype setters, and verify explicit semantic postconditions.
+- **Offscreen Document (`offscreen-main.ts`):** Hosts the HTML5 Canvas API and ONNX Runtime Web environment within Chrome's Manifest V3 security model.
 
 ### Subsystem 2: In-Browser Vision & Privacy Filter
-- **Face & Media Detection:** Runs a quantized BlazeFace model on WebGPU (`ONNX Runtime Web`), producing bounding boxes for all human faces in <30ms.
+- **Face & Media Detection:** Runs a quantized UltraFace ONNX model on WebAssembly (with WebGPU execution provider fallback where supported), detecting human faces locally.
 - **DOM Attribute Sanitization:** Identifies and blanks out all `input[type="password"]`, `autocomplete="cc-number"`, and confidential form values.
-- **Canvas Obfuscator:** Applies Gaussian blur over detected face regions and draws solid blackout `#000000` rectangles over sensitive input fields.
+- **Canvas Obfuscator:** Applies solid blackout `#000000` rectangles over sensitive input fields and blur masks over detected face regions.
 
 ### Subsystem 3: Centralized Server Reasoning Gateway
-- **FastAPI / Express Server:** Receives the sanitized screenshot and structural DOM tags via HTTPS.
-- **VLM Reasoning Prompt:** Formats the request for the central VLM with strict JSON schema instructions.
-- **Action Command Output:** Returns deterministic actions:
+- **Express Server Gateway:** Receives the sanitized screenshot and structural DOM elements via HTTPS with closed JSON schema validation and canary scanning.
+- **Action Command Output:** Returns deterministic actions addressed strictly by ephemeral local IDs:
   ```json
   {
-    "action": "click",
-    "target_selector": "button#submit-application",
-    "target_coords": { "x": 450, "y": 720 },
+    "actionId": "act_101",
+    "kind": "click",
+    "targetLocalId": "el_btn_submit",
     "confidence": 0.98,
-    "thought": "Form fields are sanitized; clicking submission button"
+    "risk": "protected",
+    "rationale": "Form fields are sanitized; proposing submission click",
+    "expectedState": "Confirmation dialog becomes visible"
   }
   ```
+- *Note:* Actions are addressed by ephemeral local IDs. Raw CSS selectors and arbitrary code execution are rejected at the client boundary. Coordinate clicking is experimental and used only as an ungrounded fallback.
 
-### Subsystem 4: Action Cache & Self-Healing
-- **Action Memory Cache (IndexedDB):** Caches successful selector and coordinate paths for recurring workflows to provide instantaneous execution.
-- **pHash State Verifier:** Verifies perceptual page state changes before and after each action to catch failed clicks or unexpected modal overlays.
+### Subsystem 4: Closed-Loop State Verifier & Safety Matrix
+- **Semantic State Verifier:** Verifies explicit postconditions (modal visibility, navigation changes, landmark mutations, input value updates) with `MutationObserver` timeout.
+- **Client Risk Classifier:** Automatically pauses on `protected` actions (`submit`, `pay`, `delete`) and blocks `blocked` actions (`type` into credentials).
+

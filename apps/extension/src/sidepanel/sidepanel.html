@@ -3,44 +3,73 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PrivaPilot — Privacy AI Copilot</title>
+  <title>PrivaPilot — Privacy Mission Control HUD</title>
   <link rel="stylesheet" href="sidepanel.css" />
 </head>
 <body>
   <div class="app-container">
-    <!-- Valley Landscape Background Image (image1.png) -->
+    <!-- Background Canvas & Layer -->
     <div class="valley-img-bg"></div>
-
-    <!-- Live WebGL Shader Waves Overlay Canvas -->
     <canvas id="shaderCanvas" class="shader-bg-canvas"></canvas>
 
-    <!-- VIEW 0: Connect to Valley (Live WebGL Shader Background) -->
+    <!-- VIEW 0: Loading Splash -->
     <div id="loadingView" class="loading-wrapper">
       <div class="loading-logo-wrap">
-        <img src="../../assets/export.png" width="96" height="96" alt="Valley Logo" class="export-logo-img" />
+        <img src="../../assets/export.png" width="80" height="80" alt="PrivaPilot Logo" class="export-logo-img" />
       </div>
       <div class="spinner-wrap">
         <div class="clean-spinner"></div>
       </div>
     </div>
 
-    <!-- VIEW 2: AI Mission Control HUD (Direct Stream) -->
+    <!-- VIEW 1: AI Mission Control HUD -->
     <div id="aiWorkerView" class="ai-panel hidden">
-      <!-- Watermark Background -->
-      <svg class="watermark-bg" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M100 0V200M0 100H200M29.29 29.29L170.71 170.71M29.29 170.71L170.71 29.29" stroke="#f1f5f9" stroke-width="12" stroke-linecap="round"/>
-      </svg>
-
-      <!-- Minimal Clean Top Header -->
+      <!-- Top Header & Status Bar -->
       <div class="ai-header">
-        <button id="backToConnectBtn" class="top-left-logo-btn" title="Reconnect / Reset">
-          <img src="../../assets/export.png" width="32" height="32" alt="Valley Logo" class="top-left-logo-img" />
-        </button>
+        <div class="header-left">
+          <button id="backToConnectBtn" class="top-left-logo-btn" title="PrivaPilot Reset / Reconnect">
+            <img src="../../assets/export.png" width="26" height="26" alt="PrivaPilot Logo" class="top-left-logo-img" />
+          </button>
+          <div class="header-title-col">
+            <span class="brand-title">PrivaPilot</span>
+            <span id="activeTabUrl" class="active-url-text" title="Current Tab">Loading tab...</span>
+          </div>
+        </div>
+        <div class="header-right-badges">
+          <!-- Vision Execution Provider Badge -->
+          <span id="visionProviderBadge" class="provider-pill provider-wasm" title="On-Device Vision Execution Provider">
+            <span class="provider-dot"></span>
+            <span id="visionProviderText">Vision: WASM</span>
+          </span>
+          <!-- Agent Lifecycle Status Badge -->
+          <span id="agentStatusBadge" class="status-pill status-idle">IDLE</span>
+        </div>
       </div>
 
-      <!-- Single Main Chat Stage -->
+      <!-- Navigation Tabs -->
+      <div class="hud-tabs">
+        <button id="tabChatBtn" class="hud-tab-btn active">Chat</button>
+        <button id="tabInspectorBtn" class="hud-tab-btn">Inspector</button>
+        <button id="tabPayloadBtn" class="hud-tab-btn">Wire Payload</button>
+        <button id="tabAuditBtn" class="hud-tab-btn">Telemetry</button>
+      </div>
+
+      <!-- TAB 1: Chat & Execution Stage -->
       <div id="tabChatContent" class="tab-pane active">
-        <div id="chatMessages" class="ai-body"></div>
+        <div id="chatMessages" class="ai-body">
+          <div class="welcome-card">
+            <div class="welcome-header">🛡️ On-Device Privacy Boundary Active</div>
+            <p class="welcome-desc">
+              Perception and redaction run on your device. Only sanitized, unidentifiable visual tokens reach the reasoning engine.
+            </p>
+            <div class="quick-goals-title">Sample Goals:</div>
+            <div class="sample-goals">
+              <button class="sample-goal-btn" data-goal="Log in with my credentials and submit">Fill login form &amp; submit</button>
+              <button class="sample-goal-btn" data-goal="Find the checkout button and proceed">Find checkout &amp; proceed</button>
+              <button class="sample-goal-btn" data-goal="Search for documentation on privacy architecture">Search privacy documentation</button>
+            </div>
+          </div>
+        </div>
 
         <!-- Bottom Chat Input Bar -->
         <div class="ai-footer">
@@ -51,15 +80,13 @@
               placeholder="Ask PrivaPilot on this page..."
               autocomplete="off"
             />
-            <button type="submit" id="sendBtn" class="send-btn mode-mic" title="Voice dictation / Send instruction">
-              <!-- Mic Icon (Default when empty) -->
-              <svg class="icon-mic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <button type="submit" id="sendBtn" class="send-btn mode-mic" title="Send Instruction">
+              <svg class="icon-mic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
                 <line x1="12" y1="19" x2="12" y2="22"/>
               </svg>
-              <!-- Upward Send Arrow Icon (When typing) -->
-              <svg class="icon-send" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <svg class="icon-send" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 19V5M5 12l7-7 7 7"/>
               </svg>
             </button>
@@ -67,44 +94,90 @@
         </div>
       </div>
 
-      <!-- TAB 2: Dual-Pane Live Inspector -->
+      <!-- TAB 2: Side-by-Side Dual-Pane Inspector -->
       <div id="tabInspectorContent" class="tab-pane hidden">
         <div class="inspector-wrapper">
           <div class="inspector-controls">
             <span class="inspector-label">Viewport Inspector</span>
             <div class="view-toggle-btns">
-              <button id="toggleRedactedBtn" class="toggle-btn active">Sanitized (Wire)</button>
-              <button id="toggleRawBtn" class="toggle-btn">Raw (Local Only)</button>
+              <button id="viewSideBySideBtn" class="toggle-btn active">Side-by-Side</button>
+              <button id="toggleRedactedBtn" class="toggle-btn">Sanitized Only</button>
+              <button id="toggleRawBtn" class="toggle-btn">Raw Only</button>
             </div>
           </div>
 
-          <div class="screen-preview-container">
-            <img id="inspectorImage" class="inspector-img" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='200'><rect width='100%' height='100%' fill='%230f172a'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%2338bdf8' font-family='sans-serif' font-size='12'>Execute an action to view sanitized viewport</text></svg>" alt="Live Viewport Redaction" />
-            <div id="redactionOverlayBadge" class="overlay-watermark-badge">Sanitized Wire View</div>
+          <!-- Dual Viewport Comparative Layout -->
+          <div id="inspectorDualView" class="dual-viewport-grid">
+            <!-- Left: Raw Local Viewport -->
+            <div class="viewport-box raw-box">
+              <div class="viewport-header header-raw">
+                <span class="lock-icon">🔒</span>
+                <span class="viewport-title">Local Only — Never Transmitted</span>
+              </div>
+              <div class="screen-preview-container">
+                <img id="inspectorRawImage" class="inspector-img" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='100'><rect width='100%' height='100%' fill='%231e293b'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23ef4444' font-family='sans-serif' font-size='9'>Local Raw Capture</text></svg>" alt="Local Raw Screenshot" />
+              </div>
+            </div>
+
+            <!-- Right: Sanitized Wire Viewport -->
+            <div class="viewport-box sanitized-box">
+              <div class="viewport-header header-sanitized">
+                <span class="shield-icon">🛡️</span>
+                <span class="viewport-title">Outgoing Wire Payload</span>
+              </div>
+              <div class="screen-preview-container">
+                <img id="inspectorSanitizedImage" class="inspector-img" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='100'><rect width='100%' height='100%' fill='%230f172a'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%2338bdf8' font-family='sans-serif' font-size='9'>Sanitized Wire View</text></svg>" alt="Sanitized Wire Screenshot" />
+              </div>
+            </div>
           </div>
 
+          <!-- Summary Metric Cards -->
           <div class="inspector-stats-row">
             <div class="stat-box">
               <span class="stat-label">DOM Elements</span>
               <span id="statElementsCount" class="stat-value">0</span>
             </div>
             <div class="stat-box">
-              <span class="stat-label">PII Redactions</span>
+              <span class="stat-label">PII Masks</span>
               <span id="statMasksCount" class="stat-value">0</span>
             </div>
             <div class="stat-box">
               <span class="stat-label">Canary Check</span>
-              <span class="stat-value text-green">100% Passed</span>
+              <span id="statCanaryStatus" class="stat-value text-green">Verified Clean</span>
+            </div>
+          </div>
+
+          <!-- Mask Category Breakdown (Counts Only, Zero Raw PII Values) -->
+          <div class="mask-breakdown-card">
+            <div class="breakdown-header">Mask Category Distribution (No Sensitive Values)</div>
+            <div id="maskBreakdownList" class="breakdown-chips">
+              <span class="empty-breakdown-hint">No masks applied yet. Run an action to inspect redaction.</span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- TAB 3: Telemetry & Audit Log -->
+      <!-- TAB 3: Minimized Outgoing Wire Payload -->
+      <div id="tabPayloadContent" class="tab-pane hidden">
+        <div class="payload-wrapper">
+          <div class="payload-header-row">
+            <span class="payload-title">Exact Minimized Wire Payload (JSON)</span>
+            <button id="copyPayloadBtn" class="btn-copy-payload">Copy JSON</button>
+          </div>
+          <p class="payload-desc">
+            This represents the exact JSON dispatched over HTTPS. Internal variables, raw screenshots, cookies, tokens, and raw DOM trees are strictly excluded.
+          </p>
+          <div class="payload-code-container">
+            <pre id="wirePayloadJson" class="payload-json-block"><code>{\n  "status": "Awaiting initial perception cycle"\n}</code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: Telemetry & Audit Log -->
       <div id="tabAuditContent" class="tab-pane hidden">
         <div class="telemetry-wrapper">
           <div class="telemetry-card">
-            <div class="telemetry-header">Official SIH Telemetry Meters</div>
+            <div class="telemetry-header">Official Measured Latency Breakdown</div>
             <div class="metric-row">
               <span>Client Perception (t0-t3):</span>
               <strong id="meterClientLatency">-- ms</strong>
@@ -112,6 +185,10 @@
             <div class="metric-row">
               <span>Server Reasoning (t3-t4):</span>
               <strong id="meterServerLatency">-- ms</strong>
+            </div>
+            <div class="metric-row">
+              <span>Client Action &amp; Verification (t5-t7):</span>
+              <strong id="meterActionLatency">-- ms</strong>
             </div>
             <div class="metric-row">
               <span>Total Round-Trip:</span>
@@ -141,11 +218,12 @@
           </div>
           <p id="confirmRationale" class="confirm-text">The reasoning agent has proposed a state-altering protected action.</p>
           <div class="confirm-details">
-            <div><strong>Action:</strong> <span id="confirmActionKind">click</span></div>
-            <div><strong>Target:</strong> <span id="confirmTargetName">Submit Request</span></div>
+            <div><strong>Action:</strong> <span id="confirmActionKind">CLICK</span></div>
+            <div><strong>Target ID:</strong> <code id="confirmTargetId">el_1</code></div>
+            <div><strong>Target Label:</strong> <span id="confirmTargetName">Submit Application</span></div>
           </div>
           <div class="confirm-actions">
-            <button id="approveActionBtn" class="btn-approve">✓ Approve & Execute</button>
+            <button id="approveActionBtn" class="btn-approve">✓ Approve &amp; Execute</button>
             <button id="denyActionBtn" class="btn-deny">✕ Deny</button>
           </div>
         </div>

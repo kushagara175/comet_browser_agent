@@ -34,4 +34,6 @@ export interface RunTelemetry {
   readonly totalLatencyMs: number;
   readonly clientLatencyMs: number;
   readonly serverLatencyMs: number;
+  readonly stepCount?: number;
+  readonly stepsCompleted?: number;
 }
