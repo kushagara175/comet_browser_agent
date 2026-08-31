@@ -137,29 +137,25 @@ export function createServer(): http.Server {
             return;
           }
 
-          // Build a rich, page-aware system prompt
-          let systemPrompt = `You are PrivaPilot, an intelligent privacy-first browser AI assistant embedded directly in the user's browser as a Chrome extension sidepanel.
+          // Build an objective, page-aware prompt that explains content, forms, and privacy implications clearly
+          const hasPageContext = !!(pageTitle || pageUrl || (pageText && pageText.trim().length > 0));
 
-Your job is to:
-- Analyze the CURRENT web page the user is viewing and answer questions about it.
-- Help users understand the content, forms, and actions on their screen.
-- Detect potential privacy risks or suspicious elements on the page.
-- Assist with browser tasks related to the current page.
+          const systemPrompt = hasPageContext
+            ? `You are PrivaPilot, a web browser AI assistant. Your task is to objectively describe and explain web page content, forms, buttons, and user requests from the provided page context. Be direct, concise, and helpful.`
+            : `You are PrivaPilot, a smart browser AI assistant. Answer briefly and helpfully. When the user navigates to a webpage, you will help them understand what is on screen and protect their privacy.`;
 
-Be concise, direct, and specific to the page context. Do not give generic advice unless there is no page context.`;
+          // Build the user message
+          let fullUserMessage = message;
 
-          // Append live page context if available
-          if (pageTitle || pageUrl) {
-            systemPrompt += `\n\n--- CURRENT PAGE CONTEXT ---`;
-            if (pageTitle) systemPrompt += `\nPage Title: ${pageTitle}`;
-            if (pageUrl) systemPrompt += `\nPage URL: ${pageUrl}`;
+          if (hasPageContext) {
+            const contextLines: string[] = [];
+            if (pageTitle) contextLines.push(`Page Title: "${pageTitle}"`);
+            if (pageUrl) contextLines.push(`Page URL: ${pageUrl}`);
+            if (pageText && pageText.trim().length > 0) {
+              contextLines.push(`Page Elements & Content: ${pageText.slice(0, 1000)}`);
+            }
+            fullUserMessage = `${contextLines.join('\n')}\n\nUser Question: ${message}`;
           }
-
-          if (pageText && pageText.trim().length > 0) {
-            systemPrompt += `\n\nVisible Page Content (DOM snapshot excerpt):\n${pageText.slice(0, 1200)}`;
-          }
-
-          systemPrompt += `\n---\n\nRespond specifically about what is on this page. If you see form fields, buttons, or content, mention them by name.`;
 
           // Auto-detect active model
           const engineStatus = await engine.getStatus();
@@ -173,10 +169,10 @@ Be concise, direct, and specific to the page context. Do not give generic advice
                 model: engineStatus.modelName,
                 messages: [
                   { role: 'system', content: systemPrompt },
-                  { role: 'user', content: message }
+                  { role: 'user', content: fullUserMessage }
                 ],
                 stream: false,
-                options: { temperature: 0.5 }
+                options: { temperature: 0.4 }
               })
             });
             if (ollamaRes.ok) {
@@ -194,9 +190,9 @@ Be concise, direct, and specific to the page context. Do not give generic advice
                 model: engineStatus.modelName,
                 messages: [
                   { role: 'system', content: systemPrompt },
-                  { role: 'user', content: message }
+                  { role: 'user', content: fullUserMessage }
                 ],
-                temperature: 0.5
+                temperature: 0.4
               })
             });
             if (lmRes.ok) {
@@ -208,8 +204,8 @@ Be concise, direct, and specific to the page context. Do not give generic advice
           } else {
             // Mock fallback — page-aware
             reply = pageTitle
-              ? `I can see you are on "${pageTitle}"${pageUrl ? ` (${pageUrl})` : ''}. ${message ? `You asked: "${message}". ` : ''}The PrivaPilot privacy firewall is scanning this page actively.`
-              : `PrivaPilot privacy firewall is active. No model backend detected — start Ollama with \`ollama serve\` and run a model.`;
+              ? `PrivaPilot can see you are on "${pageTitle}" (${pageUrl}). No AI model running — start Ollama with \`ollama serve\` to enable live analysis.`
+              : `PrivaPilot privacy firewall is active. Start Ollama (\`ollama serve\`) and pull a model (\`ollama pull llama3.2:1b\`) to enable AI chat.`;
           }
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
