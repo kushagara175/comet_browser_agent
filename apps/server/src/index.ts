@@ -34,9 +34,43 @@ export function createServer(): http.Server {
 
     const url = req.url || '/';
 
-    // 1. Healthcheck
-    if (req.method === 'GET' && url === '/health') {
+    // 1. Healthcheck & Root Dashboard
+    if (req.method === 'GET' && (url === '/health' || url === '/')) {
       const engineStatus = await engine.getStatus();
+      
+      // If browser request on '/', return a friendly HTML status page
+      if (url === '/' && req.headers['accept']?.includes('text/html')) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>PrivaPilot Reasoning Server (:4501)</title>
+              <style>
+                body { font-family: -apple-system, system-ui, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; }
+                .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 24px; max-width: 600px; margin: 0 auto; }
+                h1 { font-size: 20px; color: #38bdf8; margin-top: 0; }
+                p { font-size: 14px; line-height: 1.6; color: #cbd5e1; }
+                .pill { display: inline-block; background: #065f46; color: #6ee7b7; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 12px; }
+                .btn { display: inline-block; background: #2563eb; color: #fff; text-decoration: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 13px; margin-top: 10px; }
+                .btn:hover { background: #1d4ed8; }
+                pre { background: #0f172a; padding: 12px; border-radius: 8px; font-size: 12px; color: #94a3b8; overflow-x: auto; }
+              </style>
+            </head>
+            <body>
+              <div class="card">
+                <h1>🛡️ PrivaPilot Reasoning Server (:4501)</h1>
+                <p><span class="pill">🟢 Server Active</span> &nbsp; Model: <strong>${engineStatus.modelName}</strong> (${engineStatus.provider})</p>
+                <p>This is the <strong>AI API Gateway</strong>. To interact with the simulated web app & extension:</p>
+                <a class="btn" href="http://localhost:4500" target="_blank">👉 Open Mission Control Portal (:4500)</a>
+                <p style="margin-top: 20px; font-size: 12px; color: #94a3b8;">Active Endpoints: <code>GET /health</code> | <code>POST /api/v1/reason</code></p>
+              </div>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'healthy',

@@ -32,6 +32,17 @@ export interface CoordinatorListeners {
   onTelemetryUpdated?(telemetry: RunTelemetry): void;
 }
 
+export interface CoordinatorRunResult {
+  readonly success: boolean;
+  readonly state: AgentState;
+  readonly message?: string;
+  readonly error?: string;
+  readonly sanitized?: SanitizedContext;
+  readonly rawCapture?: RawCapture;
+  readonly proposal?: ActionProposal;
+  readonly telemetry?: RunTelemetry;
+}
+
 export class RunCoordinator {
   private state: AgentState = 'idle';
   private readonly browser: BrowserAdapter;
@@ -41,6 +52,7 @@ export class RunCoordinator {
 
   private pendingAction: ActionProposal | null = null;
   private currentSanitizedContext: SanitizedContext | null = null;
+  private lastRunResult: CoordinatorRunResult | null = null;
 
   constructor(
     browser: BrowserAdapter = new WebExtensionAdapter(),
@@ -60,6 +72,10 @@ export class RunCoordinator {
     return this.state;
   }
 
+  getLastResult(): CoordinatorRunResult | null {
+    return this.lastRunResult;
+  }
+
   private transition(next: AgentState, msg?: string): void {
     this.state = next;
     if (this.listeners.onStateChange) {
@@ -68,9 +84,9 @@ export class RunCoordinator {
   }
 
   /**
-   * Starts an automated agent run for a specific user goal.
+   * Starts an automated agent run for a specific user goal and returns full run result.
    */
-  async startRun(goal: string): Promise<void> {
+  async startRun(goal: string): Promise<CoordinatorRunResult> {
     const runId = `run_${Date.now()}`;
     const t0 = Date.now();
 
@@ -133,23 +149,60 @@ export class RunCoordinator {
       const riskLevel = classifyActionRisk(proposal, targetElement?.sanitizedName);
 
       if (riskLevel === 'blocked') {
-        this.transition('failed-safe', `Action blocked by client safety policy: ${proposal.rationale}`);
-        return;
+        const errorMsg = `Action blocked by client safety policy: ${proposal.rationale}`;
+        this.transition('failed-safe', errorMsg);
+        this.lastRunResult = {
+          success: false,
+          state: 'failed-safe',
+          error: errorMsg,
+          sanitized,
+          rawCapture,
+          proposal
+        };
+        return this.lastRunResult;
       }
 
       if (riskLevel === 'protected') {
         this.pendingAction = proposal;
-        this.transition('awaiting-user-confirmation', `Protected action requires user consent: ${proposal.rationale}`);
+        const msg = `Protected action requires user consent: ${proposal.rationale}`;
+        this.transition('awaiting-user-confirmation', msg);
         if (this.listeners.onActionConfirmedRequired) {
           this.listeners.onActionConfirmedRequired(proposal);
         }
-        return;
+        this.lastRunResult = {
+          success: true,
+          state: 'awaiting-user-confirmation',
+          message: msg,
+          sanitized,
+          rawCapture,
+          proposal
+        };
+        return this.lastRunResult;
       }
 
       // Step 5: Execute Safe Action
-      await this.executeAction(proposal, activeTab.id, t0, t1, t2, t3, t4, t5);
+      const telemetry = await this.executeAction(proposal, activeTab.id, t0, t1, t2, t3, t4, t5);
+      
+      this.lastRunResult = {
+        success: true,
+        state: 'complete',
+        message: proposal.rationale,
+        sanitized,
+        rawCapture,
+        proposal,
+        telemetry
+      };
+
+      return this.lastRunResult;
     } catch (err: any) {
-      this.transition('failed-safe', `Safe fallback triggered: ${err.message}`);
+      const errMsg = `Safe fallback triggered: ${err.message}`;
+      this.transition('failed-safe', errMsg);
+      this.lastRunResult = {
+        success: false,
+        state: 'failed-safe',
+        error: errMsg
+      };
+      return this.lastRunResult;
     }
   }
 
@@ -182,7 +235,7 @@ export class RunCoordinator {
     t3: number,
     t4: number,
     t5: number
-  ): Promise<void> {
+  ): Promise<RunTelemetry> {
     if (this.listeners.onActionProposed) {
       this.listeners.onActionProposed(proposal);
     }
@@ -207,7 +260,7 @@ export class RunCoordinator {
         this.listeners.onTelemetryUpdated(telemetry);
       }
       this.transition('complete', `Task completed: ${proposal.rationale}`);
-      return;
+      return telemetry;
     }
 
     this.transition('executing', `Executing action '${proposal.kind}' on ${proposal.targetLocalId || 'page'}`);
@@ -246,5 +299,7 @@ export class RunCoordinator {
     } else {
       this.transition('failed-safe', `Execution failed: ${execResponse?.message || 'Unknown error'}`);
     }
+
+    return telemetry;
   }
 }

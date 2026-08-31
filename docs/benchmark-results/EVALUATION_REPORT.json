@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-08-31T06:21:49.219Z",
+  "timestamp": "2026-08-31T06:57:46.810Z",
   "fixturesEvaluated": 14,
   "accuracy": {
     "elementRecall": 100,
@@ -85,10 +85,10 @@
   },
   "latency": {
     "sampleCount": 5,
-    "p50TotalLatencyMs": 142,
-    "p95TotalLatencyMs": 163,
-    "p50ClientPerceptionMs": 139,
-    "p50ServerReasoningMs": 3,
+    "p50TotalLatencyMs": 2292,
+    "p95TotalLatencyMs": 2995,
+    "p50ClientPerceptionMs": 141,
+    "p50ServerReasoningMs": 2149,
     "p50ActionExecutionMs": 45,
     "estimatedMemoryFootprintMb": 62.4,
     "estimatedCpuLoadPct": 5.8

@@ -155,14 +155,19 @@ export class VlmReasoningEngine {
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs || 15000);
 
     try {
-      const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/chat`, {
+      const userMessage: any = { role: 'user', content: userPrompt };
+      if (images.length > 0) {
+        userMessage.images = images;
+      }
+
+      let response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: modelName,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt, images }
+            userMessage
           ],
           format: 'json',
           stream: false,
@@ -172,6 +177,28 @@ export class VlmReasoningEngine {
         }),
         signal: controller.signal
       });
+
+      // If Ollama rejects images because the local model is text-only (e.g. llama3.2:1b), retry without images
+      if (!response.ok && images.length > 0 && response.status === 400) {
+        delete userMessage.images;
+        response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: modelName,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              userMessage
+            ],
+            format: 'json',
+            stream: false,
+            options: {
+              temperature: 0.1
+            }
+          }),
+          signal: controller.signal
+        });
+      }
 
       if (!response.ok) {
         throw new Error(`Ollama returned status ${response.status}`);

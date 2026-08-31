@@ -3,13 +3,27 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PrivaPilot — Mission Control HUD</title>
+  <title>PrivaPilot — Privacy AI Copilot</title>
   <link rel="stylesheet" href="sidepanel.css" />
 </head>
 <body>
   <div class="app-container">
-    <!-- VIEW 1: Connection & Onboarding Card -->
-    <div id="connectionView" class="popup-wrapper">
+    <!-- Live WebGL Shader Waves Background Canvas -->
+    <canvas id="shaderCanvas" class="shader-bg-canvas"></canvas>
+
+    <!-- VIEW 0: Connect to Valley (Pixel-Perfect Match to UI Image) -->
+    <div id="loadingView" class="loading-wrapper">
+      <div class="loading-logo-wrap">
+        <img src="../../assets/logo.png" width="44" height="44" alt="Valley Logo" class="png-logo" />
+      </div>
+      <h1 class="connecting-title">Connect to Valley</h1>
+      <div class="spinner-wrap">
+        <div class="clean-spinner"></div>
+      </div>
+    </div>
+
+    <!-- VIEW 1: Connection & Hero Onboarding Card -->
+    <div id="connectionView" class="popup-wrapper hidden">
       <!-- Background Watermark Starburst -->
       <svg class="watermark-bg" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M100 0V200M0 100H200M29.29 29.29L170.71 170.71M29.29 170.71L170.71 29.29" stroke="#f1f5f9" stroke-width="12" stroke-linecap="round"/>
@@ -17,9 +31,7 @@
 
       <!-- Top Logo Icon -->
       <div class="logo-container">
-        <svg class="starburst-logo" width="34" height="34" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2V22M2 12H22M4.93 4.93L19.07 19.07M4.93 19.07L19.07 4.93" stroke="#000000" stroke-width="2.5" stroke-linecap="round"/>
-        </svg>
+        <img src="../../assets/logo.png" width="34" height="34" alt="Valley Logo" class="png-logo" />
       </div>
 
       <!-- Title -->
@@ -148,14 +160,20 @@
           </svg>
           <span class="ai-title">PrivaPilot HUD</span>
         </div>
-        <div id="agentStatusBadge" class="status-indicator-idle">Idle</div>
+        <div class="header-right-actions">
+          <button id="toggleVoiceBtn" class="voice-toggle-btn" title="Toggle AI Voice Narration">
+            <span class="voice-icon">🔊</span>
+            <span class="voice-label">Voice</span>
+          </button>
+          <div id="agentStatusBadge" class="status-indicator-idle">Ready</div>
+        </div>
       </div>
 
       <!-- Navigation Tabs (Chat | Dual-Pane Inspector | Telemetry Audit) -->
       <nav class="hud-tabs">
         <button id="tabChatBtn" class="hud-tab-btn active">Agent Chat</button>
-        <button id="tabInspectorBtn" class="hud-tab-btn">Dual-Pane HUD</button>
-        <button id="tabAuditBtn" class="hud-tab-btn">Audit & Telemetry</button>
+        <button id="tabInspectorBtn" class="hud-tab-btn">Visual Redaction</button>
+        <button id="tabAuditBtn" class="hud-tab-btn">Telemetry</button>
       </nav>
 
       <!-- Live Privacy Firewall Banner -->
@@ -174,10 +192,32 @@
             </svg>
             <p class="empty-hint">Enter your workflow goal. PrivaPilot scans the DOM, blackouts passwords & faces locally, and commands browser actions safely.</p>
             <div class="sample-goals">
-              <button class="sample-goal-btn" data-goal="Find the pending telemetry request and open its safe preview drawer">"Open pending request safe preview"</button>
-              <button class="sample-goal-btn" data-goal="Filter requests for subsystem telemetry">"Filter subsystem telemetry"</button>
+              <button class="sample-goal-btn" data-goal="Find the pending telemetry request and open its safe preview drawer">
+                ⚡ Open pending request safe preview
+              </button>
+              <button class="sample-goal-btn" data-goal="Filter requests for subsystem telemetry">
+                🔍 Filter subsystem telemetry
+              </button>
             </div>
           </div>
+        </div>
+
+        <!-- Bottom Chat Input Bar -->
+        <div class="ai-footer">
+          <form id="chatForm" class="chat-bar">
+            <input
+              type="text"
+              id="chatInput"
+              placeholder="Ask PrivaPilot on this page..."
+              autocomplete="off"
+            />
+            <button type="submit" id="sendBtn" class="send-btn" title="Send instruction">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </form>
         </div>
       </div>
 
@@ -193,8 +233,8 @@
           </div>
 
           <div class="screen-preview-container">
-            <img id="inspectorImage" class="inspector-img" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='200'><rect width='100%' height='100%' fill='%23f1f5f9'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%2394a3b8' font-family='sans-serif' font-size='12'>Run agent to view sanitized viewport</text></svg>" alt="Live Viewport Redaction" />
-            <div id="redactionOverlayBadge" class="overlay-watermark-badge">Opaque Masks Applied</div>
+            <img id="inspectorImage" class="inspector-img" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='200'><rect width='100%' height='100%' fill='%230f172a'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%2338bdf8' font-family='sans-serif' font-size='12'>Execute an action to view sanitized viewport</text></svg>" alt="Live Viewport Redaction" />
+            <div id="redactionOverlayBadge" class="overlay-watermark-badge">Sanitized Wire View</div>
           </div>
 
           <div class="inspector-stats-row">
@@ -207,7 +247,7 @@
               <span id="statMasksCount" class="stat-value">0</span>
             </div>
             <div class="stat-box">
-              <span class="stat-label">Canary Leak Check</span>
+              <span class="stat-label">Canary Check</span>
               <span class="stat-value text-green">100% Passed</span>
             </div>
           </div>
@@ -230,10 +270,6 @@
             <div class="metric-row">
               <span>Total Round-Trip:</span>
               <strong id="meterTotalLatency" class="text-blue">-- ms</strong>
-            </div>
-            <div class="metric-row">
-              <span>WebGPU Footprint:</span>
-              <strong class="text-green">&lt; 65 MB RAM</strong>
             </div>
           </div>
 
@@ -268,27 +304,12 @@
           </div>
         </div>
       </div>
-
-      <!-- Bottom Chat Input Bar -->
-      <div class="ai-footer">
-        <form id="chatForm" class="chat-bar">
-          <input
-            type="text"
-            id="chatInput"
-            placeholder="Ask PrivaPilot on this page..."
-            autocomplete="off"
-          />
-          <button type="submit" id="sendBtn" class="send-btn" title="Send instruction">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </svg>
-          </button>
-        </form>
-      </div>
     </div>
   </div>
 
+  <script src="waves-shader.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>
+
+

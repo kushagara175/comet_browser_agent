@@ -48,10 +48,10 @@ coordinator.setListeners({
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((message: any, _sender: any, sendResponse: (res: any) => void) => {
     if (message.type === 'START_AGENT_RUN') {
-      coordinator.startRun(message.goal || 'Safe assistance').then(() => {
-        sendResponse({ success: true, state: coordinator.getState() });
+      coordinator.startRun(message.goal || 'Safe assistance').then((result) => {
+        sendResponse(result);
       }).catch((err) => {
-        sendResponse({ success: false, error: err.message });
+        sendResponse({ success: false, state: 'failed-safe', error: err.message });
       });
       return true;
     }
