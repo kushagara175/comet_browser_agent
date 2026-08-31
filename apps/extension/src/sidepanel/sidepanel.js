@@ -9,22 +9,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // Elements
   const shaderCanvas = document.getElementById('shaderCanvas');
   const loadingView = document.getElementById('loadingView');
-  const connectionView = document.getElementById('connectionView');
   const aiWorkerView = document.getElementById('aiWorkerView');
-  const continueBtn = document.getElementById('continueBtn');
   const backToConnectBtn = document.getElementById('backToConnectBtn');
-  const copyTokenBtn = document.getElementById('copyTokenBtn');
 
   // Initialize WebGL Waves Shader Background
   if (shaderCanvas && typeof window.initWavesShader === 'function') {
     window.initWavesShader(shaderCanvas);
   }
 
-  // Auto transition from View 0 (Connect to Valley Loading) -> View 1 (Account Connected) after exactly 3 seconds
-  if (loadingView && connectionView) {
+  // Auto transition from View 0 (Connect to Valley Loading) -> AI WorkerView (HUD Chat) after 3 seconds
+  if (loadingView && aiWorkerView) {
     setTimeout(() => {
       loadingView.classList.add('hidden');
-      connectionView.classList.remove('hidden');
+      aiWorkerView.classList.remove('hidden');
+      setTimeout(() => chatInput?.focus(), 80);
     }, 3000);
   }
 
@@ -34,12 +32,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const maskCountText = document.getElementById('maskCountText');
   const toggleVoiceBtn = document.getElementById('toggleVoiceBtn');
 
-  // View 1 <-> View 2 Transitions
-  if (continueBtn) {
-    continueBtn.addEventListener('click', () => {
-      connectionView?.classList.add('hidden');
-      aiWorkerView?.classList.remove('hidden');
-      setTimeout(() => chatInput?.focus(), 80);
+  if (backToConnectBtn) {
+    backToConnectBtn.addEventListener('click', () => {
+      aiWorkerView?.classList.add('hidden');
+      loadingView?.classList.remove('hidden');
+      setTimeout(() => {
+        loadingView?.classList.add('hidden');
+        aiWorkerView?.classList.remove('hidden');
+      }, 1500);
     });
   }
 

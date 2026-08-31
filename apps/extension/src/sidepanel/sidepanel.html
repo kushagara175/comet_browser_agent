@@ -14,7 +14,7 @@
     <!-- VIEW 0: Connect to Valley (Live WebGL Shader Background) -->
     <div id="loadingView" class="loading-wrapper">
       <div class="loading-logo-wrap">
-        <img src="../../assets/logo.png" width="44" height="44" alt="Valley Logo" class="png-logo logo-white" />
+        <img src="../../assets/logo.png" width="48" height="48" alt="Valley Logo" class="png-logo logo-white" />
       </div>
       <h1 class="connecting-title">Connect to Valley</h1>
       <div class="spinner-wrap">
@@ -22,125 +22,7 @@
       </div>
     </div>
 
-    <!-- VIEW 1: Connection & Hero Onboarding Card -->
-    <div id="connectionView" class="popup-wrapper hidden">
-      <!-- Background Watermark Starburst -->
-      <svg class="watermark-bg" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M100 0V200M0 100H200M29.29 29.29L170.71 170.71M29.29 170.71L170.71 29.29" stroke="#f1f5f9" stroke-width="12" stroke-linecap="round"/>
-      </svg>
-
-      <!-- Top Logo Icon -->
-      <div class="logo-container">
-        <img src="../../assets/logo.png" width="34" height="34" alt="Valley Logo" class="png-logo" />
-      </div>
-
-      <!-- Title -->
-      <h1 class="main-title">Account Connected</h1>
-
-      <!-- Checklist Card -->
-      <div class="checklist-card">
-        <div class="checklist-header">Privacy Firewall Checklist &darr;</div>
-        <ul class="checklist-items">
-          <li class="checklist-item">
-            <span class="icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <path d="M9 12l2 2 4-4"></path>
-              </svg>
-            </span>
-            <span class="text">On-device privacy firewall is <strong>active & ready</strong></span>
-          </li>
-          <li class="checklist-item">
-            <span class="icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <path d="M9 12l2 2 4-4"></path>
-              </svg>
-            </span>
-            <span class="text">Face & avatar blur filters <strong>enabled (WebGPU)</strong></span>
-          </li>
-          <li class="checklist-item">
-            <span class="icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <path d="M9 12l2 2 4-4"></path>
-              </svg>
-            </span>
-            <span class="text">PII, Passwords & Luhn Cards masked locally</span>
-          </li>
-          <li class="checklist-item">
-            <span class="icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <path d="M9 12l2 2 4-4"></path>
-              </svg>
-            </span>
-            <span class="text">Autonomous browser agent initialized</span>
-          </li>
-        </ul>
-      </div>
-
-      <!-- Account Details Card -->
-      <div class="account-card">
-        <div class="account-header-row">
-          <div class="token-group">
-            <svg class="chrome-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <circle cx="12" cy="12" r="4"></circle>
-              <line x1="21.17" y1="8" x2="12" y2="8"></line>
-              <line x1="3.95" y1="6.06" x2="8.54" y2="14"></line>
-              <line x1="10.88" y1="21.94" x2="15.46" y2="14"></line>
-            </svg>
-            <button id="copyTokenBtn" class="token-btn" title="Copy Session Token">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
-              <span>Token</span>
-            </button>
-          </div>
-
-          <div id="statusPill" class="status-pill-connected">
-            <span class="green-dot-halo">
-              <span class="green-dot"></span>
-            </span>
-            <span id="statusLabel">Protected</span>
-          </div>
-        </div>
-
-        <div class="user-profile-row">
-          <div class="avatar-container">
-            <img
-              id="userAvatar"
-              src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%23475569'/><stop offset='100%25' stop-color='%231e293b'/></linearGradient></defs><circle cx='50' cy='50' r='50' fill='url(%23g)'/><circle cx='50' cy='38' r='20' fill='%23d1d5db'/><path d='M20 90 Q50 65 80 90' fill='%2394a3b8'/></svg>"
-              alt="Kushagra Singh"
-              class="user-avatar"
-            />
-          </div>
-          <div class="user-info">
-            <div class="user-name">Kushagra Singh</div>
-            <a
-              id="activeTabUrl"
-              href="#"
-              target="_blank"
-              class="user-link"
-              title="Current active page"
-            >
-              http://localhost:4500/
-            </a>
-          </div>
-        </div>
-
-        <button id="continueBtn" class="continue-btn">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2V22M2 12H22M4.93 4.93L19.07 19.07M4.93 19.07L19.07 4.93" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
-          </svg>
-          <span>Launch PrivaPilot HUD</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- VIEW 2: AI Mission Control HUD -->
+    <!-- VIEW 2: AI Mission Control HUD (Direct Stream) -->
     <div id="aiWorkerView" class="ai-panel hidden">
       <!-- Watermark Background -->
       <svg class="watermark-bg" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -149,15 +31,11 @@
 
       <!-- AI View Header with Status -->
       <div class="ai-header">
-        <button id="backToConnectBtn" class="back-btn" title="Back to account">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="15 18 9 12 15 6"></polyline>
-          </svg>
+        <button id="backToConnectBtn" class="back-btn" title="Reconnect / Reset">
+          <img src="../../assets/logo.png" width="16" height="16" alt="Valley" />
         </button>
         <div class="ai-title-wrap">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2V22M2 12H22M4.93 4.93L19.07 19.07M4.93 19.07L19.07 4.93" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round"/>
-          </svg>
+          <img src="../../assets/logo.png" width="16" height="16" alt="Valley Logo" />
           <span class="ai-title">PrivaPilot HUD</span>
         </div>
         <div class="header-right-actions">
