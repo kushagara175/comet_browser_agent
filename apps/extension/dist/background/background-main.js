@@ -15467,13 +15467,43 @@ var WebExtensionAdapter = class {
       return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
     }
     return new Promise((resolve, reject) => {
-      api.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {
-        if (api.runtime.lastError) {
-          reject(new Error(api.runtime.lastError.message));
-        } else {
-          resolve(dataUrl);
+      try {
+        api.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {
+          if (api.runtime.lastError) {
+            try {
+              api.tabs.captureVisibleTab({ format: "png" }, (fallbackDataUrl) => {
+                if (api.runtime.lastError) {
+                  reject(new Error(api.runtime.lastError.message));
+                } else if (!fallbackDataUrl) {
+                  reject(new Error("Tab capture returned empty data"));
+                } else {
+                  resolve(fallbackDataUrl);
+                }
+              });
+            } catch (err) {
+              reject(new Error(err.message || api.runtime.lastError.message));
+            }
+          } else if (!dataUrl) {
+            reject(new Error("Tab capture returned empty data"));
+          } else {
+            resolve(dataUrl);
+          }
+        });
+      } catch (err) {
+        try {
+          api.tabs.captureVisibleTab({ format: "png" }, (dataUrl) => {
+            if (api.runtime.lastError) {
+              reject(new Error(api.runtime.lastError.message));
+            } else if (!dataUrl) {
+              reject(new Error("Tab capture returned empty data"));
+            } else {
+              resolve(dataUrl);
+            }
+          });
+        } catch (e) {
+          reject(new Error(e.message || err.message));
         }
-      });
+      }
     });
   }
   async sendMessageToTab(tabId, message) {
@@ -16296,12 +16326,14 @@ var RunCoordinator = class {
         return res2;
       }
       const captureId = `cap_${Date.now()}_${step}`;
-      const domResponse = await this.browser.sendMessageToTab(activeTab.id, {
-        type: "EXTRACT_DOM_SNAPSHOT",
-        captureId
-      });
-      if (!domResponse || !domResponse.success) {
-        const errorMsg2 = "Failed to extract DOM snapshot from content script";
+      let domResponse;
+      try {
+        domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+          type: "EXTRACT_DOM_SNAPSHOT",
+          captureId
+        });
+      } catch (err) {
+        const errorMsg2 = "Could not connect to webpage. Please reload the target tab (Cmd+R / F5) so the extension content script attaches.";
         this.transition("failed-safe", errorMsg2);
         const res2 = {
           success: false,
@@ -16312,7 +16344,33 @@ var RunCoordinator = class {
         this.lastRunResult = res2;
         return res2;
       }
-      const screenshotDataUrl = await this.browser.captureVisibleTab();
+      if (!domResponse || !domResponse.success) {
+        const errorMsg2 = "Failed to extract DOM snapshot from content script. Please reload the tab.";
+        this.transition("failed-safe", errorMsg2);
+        const res2 = {
+          success: false,
+          state: "failed-safe",
+          error: errorMsg2,
+          stepCount: step
+        };
+        this.lastRunResult = res2;
+        return res2;
+      }
+      let screenshotDataUrl;
+      try {
+        screenshotDataUrl = await this.browser.captureVisibleTab();
+      } catch (err) {
+        const errorMsg2 = `Screenshot capture failed: ${err.message || "Permission denied or restricted tab"}`;
+        this.transition("failed-safe", errorMsg2);
+        const res2 = {
+          success: false,
+          state: "failed-safe",
+          error: errorMsg2,
+          stepCount: step
+        };
+        this.lastRunResult = res2;
+        return res2;
+      }
       const t1_captureComplete = Date.now();
       const rawCapture = {
         _brand: "RawCapture_InternalOnly",

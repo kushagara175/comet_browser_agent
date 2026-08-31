@@ -276,13 +276,14 @@ export class RunCoordinator {
       }
 
       const captureId = `cap_${Date.now()}_${step}`;
-      const domResponse = await this.browser.sendMessageToTab(activeTab.id, {
-        type: 'EXTRACT_DOM_SNAPSHOT',
-        captureId
-      });
-
-      if (!domResponse || !domResponse.success) {
-        const errorMsg = 'Failed to extract DOM snapshot from content script';
+      let domResponse: any;
+      try {
+        domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+          type: 'EXTRACT_DOM_SNAPSHOT',
+          captureId
+        });
+      } catch (err: any) {
+        const errorMsg = 'Could not connect to webpage. Please reload the target tab (Cmd+R / F5) so the extension content script attaches.';
         this.transition('failed-safe', errorMsg);
         const res: CoordinatorRunResult = {
           success: false,
@@ -294,7 +295,34 @@ export class RunCoordinator {
         return res;
       }
 
-      const screenshotDataUrl = await this.browser.captureVisibleTab();
+      if (!domResponse || !domResponse.success) {
+        const errorMsg = 'Failed to extract DOM snapshot from content script. Please reload the tab.';
+        this.transition('failed-safe', errorMsg);
+        const res: CoordinatorRunResult = {
+          success: false,
+          state: 'failed-safe',
+          error: errorMsg,
+          stepCount: step
+        };
+        this.lastRunResult = res;
+        return res;
+      }
+
+      let screenshotDataUrl: string;
+      try {
+        screenshotDataUrl = await this.browser.captureVisibleTab();
+      } catch (err: any) {
+        const errorMsg = `Screenshot capture failed: ${err.message || 'Permission denied or restricted tab'}`;
+        this.transition('failed-safe', errorMsg);
+        const res: CoordinatorRunResult = {
+          success: false,
+          state: 'failed-safe',
+          error: errorMsg,
+          stepCount: step
+        };
+        this.lastRunResult = res;
+        return res;
+      }
       const t1_captureComplete = Date.now();
 
       // Ephemeral raw capture - strictly scoped to this cycle, never persisted
