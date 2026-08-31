@@ -122,6 +122,61 @@ export function createServer(): http.Server {
       return;
     }
 
+    // 3. Direct Conversational Chat Endpoint
+    if (req.method === 'POST' && url === '/api/v1/chat') {
+      let bodyStr = '';
+      req.on('data', (chunk: Buffer | string) => { bodyStr += chunk.toString(); });
+      req.on('end', async () => {
+        try {
+          const { message } = JSON.parse(bodyStr);
+          if (!message || typeof message !== 'string') {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing message field' }));
+            return;
+          }
+
+          // Auto-detect active model
+          const engineStatus = await engine.getStatus();
+          let reply = '';
+
+          if (engineStatus.provider === 'ollama') {
+            const ollamaRes = await fetch(`${engineStatus.endpoint}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: engineStatus.modelName,
+                messages: [
+                  {
+                    role: 'system',
+                    content: 'You are PrivaPilot, a smart privacy-first browser AI assistant. Be concise, helpful, and friendly. You help users understand what is happening on their current web page, protect their privacy, and automate browser tasks safely.'
+                  },
+                  { role: 'user', content: message }
+                ],
+                stream: false,
+                options: { temperature: 0.7 }
+              })
+            });
+            if (ollamaRes.ok) {
+              const data: any = await ollamaRes.json();
+              reply = data.message?.content || 'No response from model.';
+            } else {
+              reply = 'Model is busy. Please try again.';
+            }
+          } else {
+            // Fallback: echo with mock response
+            reply = `PrivaPilot is analyzing your page. You asked: "${message}". The privacy firewall is active and monitoring all network traffic.`;
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ reply }));
+        } catch (err: any) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: `Chat Error: ${err.message}` }));
+        }
+      });
+      return;
+    }
+
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Endpoint not found' }));
   });

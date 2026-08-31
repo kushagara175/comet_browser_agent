@@ -283,8 +283,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // 9. Execute Goal via Background Coordinator
-  function executeGoal(goalText) {
+  // 9. Execute Goal via Backend Chat API
+  async function executeGoal(goalText) {
     if (!goalText) return;
 
     // Clean welcome box
@@ -305,23 +305,33 @@ document.addEventListener('DOMContentLoaded', () => {
     agentBubble.innerHTML = `
       <div style="display: flex; align-items: center; gap: 6px;">
         <span style="font-size: 14px;">⚡</span>
-        <em>Scanning DOM & reasoning over privacy boundary...</em>
+        <em>Thinking...</em>
       </div>
     `;
     chatMessages.appendChild(agentBubble);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
-    setAgentStatus('running', 'Thinking...');
-    addAuditEntry('RUN', `Agent goal: "${goalText}"`, 'mask');
-
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage({
-        type: 'START_AGENT_RUN',
-        goal: goalText
-      }, (res) => {
-        renderActionResult(agentBubble, res);
+    try {
+      const response = await fetch('http://localhost:4501/api/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: goalText })
       });
+
+      if (response.ok) {
+        const data = await response.json();
+        agentBubble.innerHTML = '';
+        agentBubble.innerText = data.reply || 'No response.';
+      } else {
+        agentBubble.innerHTML = '';
+        agentBubble.innerText = '⚠️ Server error. Please try again.';
+      }
+    } catch (err) {
+      agentBubble.innerHTML = '';
+      agentBubble.innerText = '⚠️ Cannot reach server. Is it running on localhost:4501?';
     }
+
+    chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 
   // 10. Chat Form Submit & Dynamic Mic/Send Icon Handler
