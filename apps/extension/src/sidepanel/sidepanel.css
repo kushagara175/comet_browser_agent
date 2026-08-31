@@ -48,6 +48,19 @@ body {
   display: none !important;
 }
 
+/* Valley Landscape Background Image (image1.png) */
+.valley-img-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 360px;
+  height: 580px;
+  background-image: url('../../assets/valley-bg.png');
+  background-size: cover;
+  background-position: center;
+  z-index: 0;
+}
+
 /* WebGL Shader Background Canvas */
 .shader-bg-canvas {
   position: absolute;
@@ -55,9 +68,10 @@ body {
   left: 0;
   width: 360px;
   height: 580px;
-  z-index: 0;
+  z-index: 1;
   pointer-events: none;
-  opacity: 1.0;
+  opacity: 0.65;
+  mix-blend-mode: overlay;
 }
 
 /* ========================================= */
