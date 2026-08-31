@@ -1,7 +1,7 @@
 # PrivaPilot — Benchmark Evaluation Report
 **Problem Statement:** ISRO | Software | SIH26171  
 **Product:** PrivaPilot Privacy-Preserving Browser Agent  
-**Generated:** 2026-08-28T14:05:49.939Z  
+**Generated:** 2026-08-31T06:03:47.178Z  
 **Fixtures Evaluated:** 14 Synthetic Web Scenarios  
 
 ---
@@ -14,7 +14,7 @@
 | **PII & Sensitive Data Recall** | **20%** | **100% Recall (100% Precision)** | > 98% | ✅ PASSED |
 | **Redaction Precision** | **20%** | **100% Coverage (0 Under-Masks)** | 100% Coverage | ✅ PASSED |
 | **Client Resource Utilization** | **20%** | **~62.4 MB Memory / 5.8% CPU** | < 350 MB / < 15% | ✅ PASSED |
-| **End-to-End Task Latency** | **15%** | **531 ms (p50) / 565 ms (p95)** | < 1200 ms | ✅ PASSED |
+| **End-to-End Task Latency** | **15%** | **524 ms (p50) / 566 ms (p95)** | < 1200 ms | ✅ PASSED |
 
 ---
 
@@ -36,10 +36,10 @@
 ## ⏱️ Step Latency Profile ($t_0 dots t_7$)
 
 - **Client In-Browser Perception ($t_0 dots t_3$):** 161 ms
-- **Server Centralized Reasoning ($t_3 dots t_4$):** 362 ms
+- **Server Centralized Reasoning ($t_3 dots t_4$):** 357 ms
 - **Client DOM Action & Verification ($t_5 dots t_7$):** 45 ms
-- **Total Step Round-Trip (p50):** 531 ms
-- **Total Step Round-Trip (p95):** 565 ms
+- **Total Step Round-Trip (p50):** 524 ms
+- **Total Step Round-Trip (p95):** 566 ms
 
 ---
 

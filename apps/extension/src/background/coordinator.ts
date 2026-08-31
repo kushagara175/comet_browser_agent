@@ -183,11 +183,34 @@ export class RunCoordinator {
     t4: number,
     t5: number
   ): Promise<void> {
-    this.transition('executing', `Executing action '${proposal.kind}' on ${proposal.targetLocalId || 'page'}`);
-
     if (this.listeners.onActionProposed) {
       this.listeners.onActionProposed(proposal);
     }
+
+    if (proposal.kind === 'finish') {
+      const tFin = Date.now();
+      const telemetry: RunTelemetry = {
+        runId: `run_${Date.now()}`,
+        t0_start: t0,
+        t1_captureComplete: t1,
+        t2_detectionComplete: t2,
+        t3_sanitizationValidated: t3,
+        t4_reasoningReceived: t4,
+        t5_actionValidated: t5,
+        t6_actionExecuted: tFin,
+        t7_stateVerified: tFin,
+        totalLatencyMs: tFin - t0,
+        clientLatencyMs: (t3 - t0) + (tFin - t5),
+        serverLatencyMs: t4 - t3
+      };
+      if (this.listeners.onTelemetryUpdated) {
+        this.listeners.onTelemetryUpdated(telemetry);
+      }
+      this.transition('complete', `Task completed: ${proposal.rationale}`);
+      return;
+    }
+
+    this.transition('executing', `Executing action '${proposal.kind}' on ${proposal.targetLocalId || 'page'}`);
 
     const execResponse = await this.browser.sendMessageToTab(tabId, {
       type: 'EXECUTE_ACTION',

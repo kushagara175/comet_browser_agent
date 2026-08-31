@@ -79,6 +79,31 @@ export class SanitizerPipeline {
       const renderResult = MaskRenderer.renderMasks(imageCanvas, allRegions);
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
+    } else if (typeof document !== 'undefined' && rawCapture.rawScreenshotDataUrl && rawCapture.rawScreenshotDataUrl.startsWith('data:image')) {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = rawCapture.metadata.screenshotWidth;
+        canvas.height = rawCapture.metadata.screenshotHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          const img = new Image();
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = () => reject(new Error('Failed to load raw screenshot for masking'));
+            img.src = rawCapture.rawScreenshotDataUrl;
+          });
+          ctx.drawImage(img, 0, 0);
+          const renderResult = MaskRenderer.renderMasks(canvas, allRegions);
+          sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
+          renderedCount = renderResult.renderedMaskCount;
+        } else {
+          sanitizedDataUrl = rawCapture.rawScreenshotDataUrl;
+          renderedCount = allRegions.length;
+        }
+      } catch {
+        sanitizedDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+        renderedCount = allRegions.length;
+      }
     } else {
       // Offline/Test Canvas Simulator
       sanitizedDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
