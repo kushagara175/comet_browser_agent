@@ -126,19 +126,39 @@ export class WebExtensionAdapter implements BrowserAdapter {
       return { id: 1, url: 'https://app.example.local/', title: 'Workspace' };
     }
 
-    return new Promise((resolve, reject) => {
-      api.tabs.query({ active: true, currentWindow: true }, (tabs: any[]) => {
-        if (api.runtime.lastError) {
-          reject(new Error(api.runtime.lastError.message));
-        } else if (tabs.length === 0) {
-          reject(new Error('No active tab found'));
-        } else {
-          resolve({
+    return new Promise((resolve) => {
+      // 1. Try lastFocusedWindow (active web tab behind popup/sidepanel)
+      api.tabs.query({ active: true, lastFocusedWindow: true }, (tabs: any[]) => {
+        if (!api.runtime.lastError && tabs && tabs.length > 0) {
+          return resolve({
             id: tabs[0].id,
             url: tabs[0].url || '',
             title: tabs[0].title || ''
           });
         }
+
+        // 2. Try currentWindow
+        api.tabs.query({ active: true, currentWindow: true }, (currentTabs: any[]) => {
+          if (!api.runtime.lastError && currentTabs && currentTabs.length > 0) {
+            return resolve({
+              id: currentTabs[0].id,
+              url: currentTabs[0].url || '',
+              title: currentTabs[0].title || ''
+            });
+          }
+
+          // 3. Fallback to any active tab
+          api.tabs.query({ active: true }, (anyTabs: any[]) => {
+            if (!api.runtime.lastError && anyTabs && anyTabs.length > 0) {
+              return resolve({
+                id: anyTabs[0].id,
+                url: anyTabs[0].url || '',
+                title: anyTabs[0].title || ''
+              });
+            }
+            resolve({ id: 0, url: '', title: '' });
+          });
+        });
       });
     });
   }
