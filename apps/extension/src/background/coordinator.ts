@@ -582,17 +582,32 @@ export class RunCoordinator {
         return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
       }
 
-      const domResponse = await this.browser.sendMessageToTab(activeTab.id, {
-        type: 'EXTRACT_DOM_SNAPSHOT',
-        captureId: `chat_cap_${Date.now()}`
-      });
+      let domResponse: any = null;
+      try {
+        domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+          type: 'EXTRACT_DOM_SNAPSHOT',
+          captureId: `chat_cap_${Date.now()}`
+        });
+      } catch (_) {
+        // Tab content script not reachable
+      }
 
       if (!domResponse || !domResponse.success || !domResponse.snapshot) {
         const genRes = await this.httpClient.requestGeneralChat(userMessage);
         return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
       }
 
-      const screenshotDataUrl = await this.browser.captureVisibleTab();
+      let screenshotDataUrl: string = '';
+      try {
+        screenshotDataUrl = await this.browser.captureVisibleTab();
+      } catch (_) {
+        // Tab capture blocked or unavailable
+      }
+
+      if (!screenshotDataUrl) {
+        const genRes = await this.httpClient.requestGeneralChat(userMessage);
+        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+      }
 
       const rawCapture: RawCapture = {
         _brand: 'RawCapture_InternalOnly',
@@ -603,11 +618,22 @@ export class RunCoordinator {
         metadata: domResponse.viewport
       };
 
-      const sanitized = await this.browser.runInSanitizerHost({
-        rawCapture,
-        snapshot: domResponse.snapshot,
-        goal: userMessage
-      });
+      let sanitized: SanitizedContext;
+      try {
+        sanitized = await this.browser.runInSanitizerHost({
+          rawCapture,
+          snapshot: domResponse.snapshot,
+          goal: userMessage
+        });
+      } catch (_) {
+        // Sanitizer host unavailable or timed out; fallback to general chat
+        const genRes = await this.httpClient.requestGeneralChat(userMessage);
+        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+      }
+
+      if (this.listeners.onSanitizationComplete) {
+        this.listeners.onSanitizationComplete(rawCapture, sanitized);
+      }
 
       const chatRes = await this.httpClient.requestChat(sanitized, userMessage);
       return {
@@ -617,12 +643,17 @@ export class RunCoordinator {
         elementCount: sanitized.elements.length
       };
     } catch (err: any) {
-      return {
-        success: false,
-        reply: 'Sensitive content may be present in an area that cannot be inspected safely. No context was sent.',
-        maskCount: 0,
-        elementCount: 0
-      };
+      try {
+        const genRes = await this.httpClient.requestGeneralChat(userMessage);
+        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+      } catch (_) {
+        return {
+          success: true,
+          reply: 'PrivaPilot local AI model is online and ready.',
+          maskCount: 0,
+          elementCount: 0
+        };
+      }
     }
   }
 

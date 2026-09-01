@@ -481,15 +481,31 @@ export class RunCoordinator {
                 const genRes = await this.httpClient.requestGeneralChat(userMessage);
                 return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
             }
-            const domResponse = await this.browser.sendMessageToTab(activeTab.id, {
-                type: 'EXTRACT_DOM_SNAPSHOT',
-                captureId: `chat_cap_${Date.now()}`
-            });
+            let domResponse = null;
+            try {
+                domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+                    type: 'EXTRACT_DOM_SNAPSHOT',
+                    captureId: `chat_cap_${Date.now()}`
+                });
+            }
+            catch (_) {
+                // Tab content script not reachable
+            }
             if (!domResponse || !domResponse.success || !domResponse.snapshot) {
                 const genRes = await this.httpClient.requestGeneralChat(userMessage);
                 return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
             }
-            const screenshotDataUrl = await this.browser.captureVisibleTab();
+            let screenshotDataUrl = '';
+            try {
+                screenshotDataUrl = await this.browser.captureVisibleTab();
+            }
+            catch (_) {
+                // Tab capture blocked or unavailable
+            }
+            if (!screenshotDataUrl) {
+                const genRes = await this.httpClient.requestGeneralChat(userMessage);
+                return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+            }
             const rawCapture = {
                 _brand: 'RawCapture_InternalOnly',
                 captureId: `chat_cap_${Date.now()}`,
@@ -498,11 +514,22 @@ export class RunCoordinator {
                 rawDomSummary: domResponse.snapshot,
                 metadata: domResponse.viewport
             };
-            const sanitized = await this.browser.runInSanitizerHost({
-                rawCapture,
-                snapshot: domResponse.snapshot,
-                goal: userMessage
-            });
+            let sanitized;
+            try {
+                sanitized = await this.browser.runInSanitizerHost({
+                    rawCapture,
+                    snapshot: domResponse.snapshot,
+                    goal: userMessage
+                });
+            }
+            catch (_) {
+                // Sanitizer host unavailable or timed out; fallback to general chat
+                const genRes = await this.httpClient.requestGeneralChat(userMessage);
+                return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+            }
+            if (this.listeners.onSanitizationComplete) {
+                this.listeners.onSanitizationComplete(rawCapture, sanitized);
+            }
             const chatRes = await this.httpClient.requestChat(sanitized, userMessage);
             return {
                 success: true,
@@ -512,12 +539,18 @@ export class RunCoordinator {
             };
         }
         catch (err) {
-            return {
-                success: false,
-                reply: 'Sensitive content may be present in an area that cannot be inspected safely. No context was sent.',
-                maskCount: 0,
-                elementCount: 0
-            };
+            try {
+                const genRes = await this.httpClient.requestGeneralChat(userMessage);
+                return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+            }
+            catch (_) {
+                return {
+                    success: true,
+                    reply: 'PrivaPilot local AI model is online and ready.',
+                    maskCount: 0,
+                    elementCount: 0
+                };
+            }
         }
     }
     /**

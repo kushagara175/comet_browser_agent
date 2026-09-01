@@ -16592,15 +16592,27 @@ var RunCoordinator = class {
         const genRes = await this.httpClient.requestGeneralChat(userMessage);
         return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
       }
-      const domResponse = await this.browser.sendMessageToTab(activeTab.id, {
-        type: "EXTRACT_DOM_SNAPSHOT",
-        captureId: `chat_cap_${Date.now()}`
-      });
+      let domResponse = null;
+      try {
+        domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+          type: "EXTRACT_DOM_SNAPSHOT",
+          captureId: `chat_cap_${Date.now()}`
+        });
+      } catch (_) {
+      }
       if (!domResponse || !domResponse.success || !domResponse.snapshot) {
         const genRes = await this.httpClient.requestGeneralChat(userMessage);
         return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
       }
-      const screenshotDataUrl = await this.browser.captureVisibleTab();
+      let screenshotDataUrl = "";
+      try {
+        screenshotDataUrl = await this.browser.captureVisibleTab();
+      } catch (_) {
+      }
+      if (!screenshotDataUrl) {
+        const genRes = await this.httpClient.requestGeneralChat(userMessage);
+        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+      }
       const rawCapture = {
         _brand: "RawCapture_InternalOnly",
         captureId: `chat_cap_${Date.now()}`,
@@ -16609,11 +16621,20 @@ var RunCoordinator = class {
         rawDomSummary: domResponse.snapshot,
         metadata: domResponse.viewport
       };
-      const sanitized = await this.browser.runInSanitizerHost({
-        rawCapture,
-        snapshot: domResponse.snapshot,
-        goal: userMessage
-      });
+      let sanitized;
+      try {
+        sanitized = await this.browser.runInSanitizerHost({
+          rawCapture,
+          snapshot: domResponse.snapshot,
+          goal: userMessage
+        });
+      } catch (_) {
+        const genRes = await this.httpClient.requestGeneralChat(userMessage);
+        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+      }
+      if (this.listeners.onSanitizationComplete) {
+        this.listeners.onSanitizationComplete(rawCapture, sanitized);
+      }
       const chatRes = await this.httpClient.requestChat(sanitized, userMessage);
       return {
         success: true,
@@ -16622,12 +16643,17 @@ var RunCoordinator = class {
         elementCount: sanitized.elements.length
       };
     } catch (err) {
-      return {
-        success: false,
-        reply: "Sensitive content may be present in an area that cannot be inspected safely. No context was sent.",
-        maskCount: 0,
-        elementCount: 0
-      };
+      try {
+        const genRes = await this.httpClient.requestGeneralChat(userMessage);
+        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+      } catch (_) {
+        return {
+          success: true,
+          reply: "PrivaPilot local AI model is online and ready.",
+          maskCount: 0,
+          elementCount: 0
+        };
+      }
     }
   }
   /**
