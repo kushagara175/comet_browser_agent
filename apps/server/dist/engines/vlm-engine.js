@@ -54,15 +54,23 @@ export class VlmReasoningEngine {
             if (ollamaRes.ok) {
                 const data = await ollamaRes.json();
                 const models = data.models || [];
-                const detectedModel = this.config.modelName && this.config.modelName !== 'qwen2.5-vl'
-                    ? this.config.modelName
-                    : (models[0]?.name || 'llama3.2-vision');
+                const visionModel = models.find((m) => m.capabilities?.includes('vision') ||
+                    m.name?.includes('vision') ||
+                    m.name?.includes('vl') ||
+                    m.name?.includes('llava'));
+                const selectedModel = this.config.modelName && this.config.modelName !== 'qwen2.5-vl'
+                    ? (models.find((m) => m.name === this.config.modelName) || { name: this.config.modelName })
+                    : (visionModel || models[0] || { name: 'llama3.2:1b' });
+                const isMultimodal = Boolean(selectedModel.capabilities?.includes('vision') ||
+                    selectedModel.name?.includes('vision') ||
+                    selectedModel.name?.includes('vl') ||
+                    selectedModel.name?.includes('llava'));
                 this.cachedStatus = {
                     provider: 'ollama',
                     endpoint: 'http://localhost:11434',
-                    modelName: detectedModel,
+                    modelName: selectedModel.name,
                     isOnline: true,
-                    isMultimodal: true
+                    isMultimodal
                 };
                 return this.cachedStatus;
             }
@@ -143,7 +151,7 @@ export class VlmReasoningEngine {
         const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs || 15000);
         try {
             const userMessage = { role: 'user', content: userPrompt };
-            if (images.length > 0) {
+            if (this.cachedStatus?.isMultimodal && images.length > 0) {
                 userMessage.images = images;
             }
             let response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/chat`, {
@@ -163,8 +171,8 @@ export class VlmReasoningEngine {
                 }),
                 signal: controller.signal
             });
-            // If Ollama rejects images because the local model is text-only (e.g. llama3.2:1b), retry without images
-            if (!response.ok && images.length > 0 && response.status === 400) {
+            if (!response.ok && userMessage.images) {
+                // Fallback: Retry text-only if model does not accept images
                 delete userMessage.images;
                 response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/chat`, {
                     method: 'POST',

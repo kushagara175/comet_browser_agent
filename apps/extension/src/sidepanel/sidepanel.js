@@ -456,6 +456,24 @@ if (typeof document !== 'undefined') {
         return;
       }
 
+      // 0. Conversational Model Reply (from Chat Endpoint / Local Model)
+      if (res && res.reply) {
+        const maskCount = res.maskCount ?? 0;
+        const elementCount = res.elementCount ?? 0;
+        agentBubble.innerHTML = `
+          ${maskCount > 0 || elementCount > 0 ? `
+            <div class="perception-badge-row">
+              <span class="perception-pill pill-shield">🛡️ ${maskCount} Masks Applied</span>
+              <span class="perception-pill">🔍 ${elementCount} Interactive Elements</span>
+            </div>
+          ` : ''}
+          <div style="font-size: 11.5px; color: #0f172a; line-height: 1.5; white-space: pre-wrap; user-select: text;">${escapeHtml(res.reply)}</div>
+        `;
+        setAgentStatus('idle');
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        return;
+      }
+
       // 2. Denied / Cancelled Action
       if (res && (res.state === 'idle' || res.message?.includes('cancelled') || res.message?.includes('denied'))) {
         agentBubble.innerHTML = `
@@ -552,7 +570,7 @@ if (typeof document !== 'undefined') {
       addAuditEntry('ACT', `${(action.kind || 'ACTION').toUpperCase()} on ${action.targetLocalId || 'page'}`, 'pass');
     }
 
-    // Execute Goal
+    // Execute Goal or Conversational Query
     async function executeGoal(goalText) {
       if (!goalText) return;
       currentGoalText = goalText;
@@ -574,7 +592,7 @@ if (typeof document !== 'undefined') {
       agentBubble.innerHTML = `
         <div style="display: flex; align-items: center; gap: 6px;">
           <span class="clean-spinner" style="width: 14px; height: 14px; border-width: 2px; border-top-color: #2563eb; border-right-color: #93c5fd;"></span>
-          <em>Analyzing page &amp; planning action...</em>
+          <em>Reasoning with local model...</em>
         </div>
       `;
       chatMessages.appendChild(agentBubble);
@@ -582,13 +600,20 @@ if (typeof document !== 'undefined') {
 
       setAgentStatus('capturing');
 
+      // Detect if user input is an explicit UI action vs conversational query
+      const lower = goalText.toLowerCase().trim();
+      const isExplicitAction = /^(click|type|fill|press|select|scroll|submit|login|log in|buy|checkout|find and click|go to|search for and click)\b/.test(lower);
+
+      const messageType = isExplicitAction ? 'START_AGENT_RUN' : 'CHAT_WITH_PAGE';
+      const payloadKey = isExplicitAction ? 'goal' : 'message';
+
       if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         chrome.runtime.sendMessage({
-          type: 'START_AGENT_RUN',
-          goal: goalText
+          type: messageType,
+          [payloadKey]: goalText
         }, (res) => {
           if (chrome.runtime.lastError) {
-            agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">⚠️ Background service worker unreachable. Local privacy boundary active.</div>`;
+            agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">⚠️ Background service worker unreachable: ${escapeHtml(chrome.runtime.lastError.message)}</div>`;
             setAgentStatus('failed-safe');
             return;
           }
