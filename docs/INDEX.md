@@ -15,7 +15,8 @@ disagree, the one higher in this list wins.
 
 | Document | What it is |
 | :--- | :--- |
-| **[EXECUTION_PLAN.md](EXECUTION_PLAN.md)** | Current state of the codebase from audit, the defects blocking each scored metric, and the phased plan to 20 Sep 2026 with an explicit cut order. **Start here to decide what to do next.** |
+| **[EXECUTION_PLAN.md](EXECUTION_PLAN.md)** | Strategy: where we stand, what actually decides selection, the four things we can prove that competitors cannot, the demo, and the risk register. **Start here to understand the bet.** |
+| **[PHASES.md](PHASES.md)** | The task board — phases R0–R8 ordered by which problem-statement clause each satisfies, every one with an exit gate. **Start here to decide what to do next.** |
 | **[AGENT_RULES.md](AGENT_RULES.md)** | Binding rules for every coding session: privacy boundary, fail-closed policy, data classes, action safety, evidence-and-honesty rules, reuse table, definition of done. **Read before writing code.** |
 | **[AUDIT_LOCAL_VS_DEFERRED.md](AUDIT_LOCAL_VS_DEFERRED.md)** | What is actually measured by executing code versus what is still unverified, and why. Records the benchmark-harness rebuild, the real bugs it exposed, and every ground-truth correction with its justification. **Read before quoting any metric.** |
 
@@ -37,7 +38,7 @@ disagree, the one higher in this list wins.
 
 | Path | What it is |
 | :--- | :--- |
-| [benchmark-results/](benchmark-results/) | Output of `npm run benchmark`. Every stored result carries the command and commit that produced it. Nothing here is quotable until it comes from the rebuilt harness (see EXECUTION_PLAN Phase 4). |
+| [benchmark-results/](benchmark-results/) | Output of `npm run benchmark`. Every stored result carries the command and commit that produced it. Two harnesses write here: `npm run benchmark` (Node, detector-level) and `npm run benchmark:browser` (real Chrome). Prefer the browser report; see AUDIT_LOCAL_VS_DEFERRED for what each can and cannot measure. |
 
 ## Archive — superseded, do not build from
 
@@ -51,9 +52,9 @@ disagree, the one higher in this list wins.
 
 ## Reading order
 
-**New to the project:** `00_PROBLEM_STATEMENT` → `EXECUTION_PLAN` (§1, current state) → `AGENT_RULES`.
+**New to the project:** `00_PROBLEM_STATEMENT` → `EXECUTION_PLAN` (§1, current state) → `AUDIT_LOCAL_VS_DEFERRED` → `AGENT_RULES`.
 
-**About to write code:** `AGENT_RULES` → the `EXECUTION_PLAN` phase you are on → the playbook section
+**About to write code:** `AGENT_RULES` → the `PHASES.md` phase you are on → the playbook section
 it cites.
 
 **Designing a subsystem:** the playbook, then the matching `0x_` reference document.
