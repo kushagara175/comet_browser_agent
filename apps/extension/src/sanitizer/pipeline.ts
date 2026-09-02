@@ -87,11 +87,17 @@ export class SanitizerPipeline {
     // 2. Render Redaction Masks onto Canvas (Strictly Fail-Closed: Zero 1x1 or permissive fallbacks)
     let sanitizedDataUrl: string;
     let renderedCount = 0;
+    // Canvas the masks were actually drawn on, kept so coverage can be verified
+    // against real pixels rather than against a mask count.
+    let maskedCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
+    let preMaskDetail: Map<string, number> = new Map();
 
     if (imageCanvas) {
+      preMaskDetail = PostRedactionVerifier.measurePreMaskDetail(imageCanvas, allRegions);
       const renderResult = MaskRenderer.renderMasks(imageCanvas, allRegions);
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
+      maskedCanvas = imageCanvas;
     } else if (typeof document !== 'undefined' && rawCapture.rawScreenshotDataUrl && rawCapture.rawScreenshotDataUrl.startsWith('data:image')) {
       const canvas = document.createElement('canvas');
       canvas.width = rawCapture.metadata.screenshotWidth;
@@ -109,9 +115,11 @@ export class SanitizerPipeline {
       });
 
       ctx.drawImage(img, 0, 0);
+      preMaskDetail = PostRedactionVerifier.measurePreMaskDetail(canvas, allRegions);
       const renderResult = MaskRenderer.renderMasks(canvas, allRegions);
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
+      maskedCanvas = canvas;
     } else {
       throw new Error('Sanitization Blocked: No canvas host available. Rendering must execute in an offscreen document with DOM access.');
     }
@@ -198,6 +206,20 @@ export class SanitizerPipeline {
 
     if (!verification.isValid) {
       throw new Error(`Sanitization Blocked: ${verification.reason}`);
+    }
+
+    // 4b. Pixel-true coverage. The count check above passes even when a mask is
+    // drawn at the wrong coordinates - the mask exists, the count matches, and the
+    // secret is still readable. This reads the output pixels and fails closed.
+    if (maskedCanvas) {
+      const pixelVerification = PostRedactionVerifier.verifyPixelCoverage(
+        maskedCanvas,
+        allRegions,
+        preMaskDetail
+      );
+      if (!pixelVerification.isValid) {
+        throw new Error(`Sanitization Blocked: ${pixelVerification.reason}`);
+      }
     }
 
     // Simple SHA-256 simulation for payload digest

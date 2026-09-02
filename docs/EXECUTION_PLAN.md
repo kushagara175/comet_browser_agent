@@ -20,14 +20,20 @@ The pipeline is built and, as of 2 Sep, genuinely measured for the first time.
 
 | | |
 | :--- | :--- |
-| **Real** | Offscreen sanitizer, UltraFace ONNX executing, multi-step agent loop, hosted + local model backends, 160/160 tests |
-| **Measured in real Chrome** | Redaction 83.3% pixel-verified · safe controls 100% preserved · visual context 78.6% · client perception 55 ms p50 · heap 3.94 MB |
-| **Known broken** | Face masks render in the wrong place (0/2 covered) · `PostRedactionVerifier` cannot detect a displaced mask · server reasoning 6–7 s |
+| **Real** | Offscreen sanitizer, UltraFace ONNX **verified executing** (`wasm`), multi-step agent loop, hosted + local model backends, 160/160 tests |
+| **Measured in real Chrome** | Redaction **100%** pixel-verified (18/18) · safe controls 100% preserved · visual context 78.6% · client perception 503 ms p50 (**19 ms warm inference**) · heap 8.99 MB |
+| **Known broken** | Server reasoning 6–7 s · face-detection recall still unmeasured (model finds 0 faces in synthetic SVG avatars) |
 | **Structurally missing** | No ViT · vision does not drive decisions · every step transmits · the server is not told what was redacted |
 
 The honest summary: **we built the privacy boundary extremely well and the
 perception layer only halfway.** The PS asks for a Vision Transformer that reads
 the screen and decides; ours is a CNN face detector wired to redaction only.
+
+R0 closed the redaction metric and, in doing so, found that the vision model had
+**never executed in any measurement** — its asset path 404'd outside the extension
+and the error was swallowed into a `heuristic_fallback`. Latency and heap therefore
+went *up* when the defect was fixed. Those are the first numbers that describe the
+real pipeline.
 
 ---
 
@@ -40,10 +46,10 @@ Two things, and only one of them is the rubric.
 | Metric | Weight | Where we are | Phase |
 | :--- | :---: | :--- | :--- |
 | Accuracy of visual context from screen | **25%** | 78.6%, answered from the **DOM, not vision** | R3, R4 |
-| PII detection recall / precision | **20%** | 100%/100% detector-level, face unmeasured | R0, R4 |
-| Precision of redaction | **20%** | 83.3% pixel-verified, 3 under-masked | R0 |
-| Client resource utilization | **20%** | 3.94 MB heap, no governance | R6 |
-| End-to-end latency | **15%** | 6–7 s server, 55 ms client | R2, R5 |
+| PII detection recall / precision | **20%** | 100%/100% detector-level, face recall unmeasured | R7, R4 |
+| Precision of redaction | **20%** | **100%** pixel-verified (18/18), 0 under-masked | ✅ R0 |
+| Client resource utilization | **20%** | 8.99 MB heap with the model loaded, no governance | R6 |
+| End-to-end latency | **15%** | 6–7 s server · 503 ms client cold, 19 ms warm inference | R2, R5 |
 
 ### 2.2 The part that is not on the scoresheet
 

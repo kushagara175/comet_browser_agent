@@ -63,7 +63,7 @@ untransmittable, sanitization fails closed, the canary gate blocks on leak.
 | :-- | :--- | :-- |
 | **0** | Repo hygiene, workspace-local `tsc`, cross-platform Chrome resolution, docs consolidated under `docs/` | ✅ |
 | **1** | Privacy boundary made real — offscreen document for canvas masking, permissive fallback deleted, fail-closed verification | ✅ `apps/extension/src/offscreen/` |
-| **2** | On-device vision model — UltraFace ONNX bundled locally (1.27 MB) with its WASM runtime, WebGPU → WASM fallback, no CDN fetch | ✅ executes; accuracy still unknown, see **R0** |
+| **2** | On-device vision model — UltraFace ONNX bundled locally (1.27 MB) with its WASM runtime, WebGPU → WASM fallback, no CDN fetch | ✅ **verified executing** (`wasm`) after R0; face recall still unmeasured, see **R7** |
 | **3** | Redaction precision — per-`Range` text geometry, Verhoeff for Aadhaar, Luhn for cards, overlap merging | ✅ `packages/pii-rules/` |
 | **4** | Bounded multi-step agent loop — step budget, re-perceive per step, stale-ID recovery, `classifyActionRisk()` confirmation gate | ✅ `coordinator.ts` |
 | **5** | Model connection — loopback probing on both `127.0.0.1` and `localhost`, graceful degradation, embedding-model exclusion, `num_ctx` for local Ollama | ✅ hosted Qwen2.5-VL and local Ollama both work |
@@ -79,37 +79,111 @@ untransmittable, sanitization fails closed, the canary gate blocks on leak.
 
 ## Measured — real Chrome, shipped pipeline
 
-| Metric | Weight | Measured | Command |
-| :--- | :---: | :--- | :--- |
-| Redaction precision, **pixel-verified** | 20% | **83.3%** (15/18), 3 under-masked | `benchmark:browser` |
-| Safe-control preservation | — | **100%** (18/18) | `benchmark:browser` |
-| Visual context accuracy | 25% | 78.6% / 78.6% — **DOM-sourced** | `benchmark:browser` |
-| Client perception latency | part of 15% | **55 ms p50** harness · **~1.2 s** full extension | `benchmark:browser` · `test:e2e` |
-| Client heap | part of 20% | 3.94 MB peak | `benchmark:browser` |
-| PII detection (detector-level) | 20% | 100% / 100%, face excluded | `benchmark` |
-| Server reasoning | part of 15% | **6–7 s** typical with full payload | `test:e2e` |
+Re-measured after **R0**. Three numbers moved, and two of them moved the wrong way
+for an honest reason: the vision model had never actually executed before.
+
+| Metric | Weight | Measured | Was | Command |
+| :--- | :---: | :--- | :--- | :--- |
+| Redaction precision, **pixel-verified** | 20% | **100%** (18/18) | 83.3% | `benchmark:browser` |
+| Safe-control preservation | — | **100%** (18/18) | 100% | `benchmark:browser` |
+| Visual context accuracy | 25% | 78.6% / 78.6% — **DOM-sourced** | same | `benchmark:browser` |
+| Client perception latency | part of 15% | **503 ms p50**, 609 ms p95 | 55 ms | `benchmark:browser` |
+| ├ extraction | | 2.3 ms p50 | | `benchmark:browser` |
+| └ ONNX inference, **warm** | | **19 ms p50** (17–29 ms) | never ran | `benchmark:browser` |
+| Client heap | part of 20% | **8.99 MB** peak | 3.94 MB | `benchmark:browser` |
+| Vision model execution | — | **wasm × 14 fixtures** | `heuristic_fallback` × 14 | `benchmark:browser` |
+| Faces detected by the model | — | **0** — see below | unmeasurable | `benchmark:browser` |
+| PII detection (detector-level) | 20% | 100% / 100%, face excluded | same | `benchmark` |
+| Server reasoning | part of 15% | 6–7 s typical with full payload | same | `test:e2e` |
+
+**Why latency and heap got worse.** They did not. The model was never loading: outside
+the extension there is no `chrome.runtime.getURL`, the fallback model path resolved
+against the *page* URL, the fetch 404'd, and `detectFaces` swallowed the error and
+returned `heuristic_fallback` with an empty face list. Every previous run measured a
+pipeline with no vision model in it. The 55 ms and 3.94 MB were real measurements of
+the wrong thing.
+
+**The 503 ms is dominated by one-time session creation**, which the harness pays on
+every fixture because each one gets a fresh page. Warm inference is **19 ms**. The
+shipped offscreen document is persistent, so it pays the session cost once per
+browser session, not once per step — but that has not been measured end-to-end yet
+and must not be quoted as if it had.
+
+**0 faces detected is a real result, and face recall is still unmeasured.** The model
+now runs and reports honestly; it finds no faces in the fixtures because the fixture
+avatars are drawn SVG, not photographs. Face redaction in `face-gallery` passes on the
+DOM avatar signal, not on the model. Measuring face recall needs real face imagery and
+belongs to the held-out corpus in **R7**.
 
 Tests: **160/160**. Nothing above may be updated from memory — re-run the command.
-
----
 
 ## Remaining — ordered by problem-statement alignment
 
 Each phase names the PS clause it satisfies. Every phase has an **exit gate**; do
 not advance past a gate that has not been demonstrated.
 
-### R0 · Close the measured defects
+### R0 · Close the measured defects — ✅ **DELIVERED**
 **Satisfies:** correctness of everything already claimed.
 
-Face masks render but land in the wrong place — 0/2 covered, overlay 5–7%. That is
-the first-ever measurement of face redaction and it is a live privacy hole, not a
-scoring detail. Give `PostRedactionVerifier` the harness's pixel check so a mask
-drawn at the wrong coordinates **fails closed** instead of passing a count
-comparison. Fix the `image-pii` fixture, which is a 1×1 PNG and cannot be
-assessed. Investigate the semantic-verification failure on the demo-portal e2e.
+**The premise of this phase was wrong, and the investigation is the finding.** The
+board recorded "face masks render in the wrong place". They do not. Faces are
+redacted by **block pixelation**, and the verifier only recognised opaque fill, so a
+correctly pixelated region scored as under-masked. Four real defects came out of
+chasing that:
 
-**Exit gate:** the browser harness reports **18/18 regions covered**, and a
-deliberately displaced mask makes the product itself fail closed.
+1. **The verifier could not assess pixelation.** Block pixelation replaces each block
+   with its own mean, which *preserves* between-block variance and destroys only
+   within-block variance — so `1 - residual/raw` barely moves and could not reach the
+   0.8 the check demanded. Replaced with **local luminance gradient**, which does
+   move, and which ignores the renderer's own `[FACE BLUR]` badge rather than
+   counting the label as surviving page detail.
+2. **A layout container was being treated as a human face.** The avatar selector
+   included `[class*="profile"]`, which matched `<div class="profile-card">` — so the
+   whole card was pixelated, destroying both safe buttons inside it. Face candidates
+   are now restricted to nodes that actually render picture content.
+3. **The ONNX model had never executed, anywhere.** Outside the extension there is no
+   `chrome.runtime.getURL`; the fallback path resolved against the page URL, 404'd,
+   and `detectFaces` swallowed the error and returned `heuristic_fallback`. Every
+   "vision" number before this measured a pipeline with no model in it. The runner
+   now accepts an explicit asset base, the fixture server serves the model and the ORT
+   wasm, and the benchmark **reports the provider it actually got**.
+4. **Two fixtures were unassessable by construction.** `face-gallery`'s avatars were
+   flat SVG circles carrying no detail to destroy, and `image-pii` was a 1×1 PNG.
+   Both replaced with deterministic high-frequency content; `image-pii` now renders
+   its PII as pixels only, which no DOM rule can read.
+
+Also: the `image_text` surface rule matched only `class`, and missed
+`class="scanned-id"` entirely. It now matches the same concept vocabulary against
+`alt` and `aria-label` too — where an author describes what an image *depicts* —
+which is a better signal than a CSS naming convention, though still a word list and
+still not a substitute for reading the pixels.
+
+A region whose raw pixels carry no detail is now reported **unassessable** and left
+out of the denominator, rather than being scored as a pass. Masking a featureless
+area is indistinguishable from leaving it alone, and the old code called that
+covered.
+
+**Exit gate — met.** `benchmark:browser` reports **18/18 regions covered** with
+**18/18 safe controls preserved**, and `verify:redaction` demonstrates the *product*
+rejecting a mask displaced 180 px from its region:
+
+```
+=== fail-closed on displaced mask ===
+  correct placement  accepted : true
+  displaced mask     rejected : true
+    reason: Region 'probe_region' (national_id) is not covered by its mask:
+            overlay 12.2%, detail removed 51.5%. A mask was rendered but did
+            not land on the region.
+```
+
+`PostRedactionVerifier` now samples each region **before** masks are drawn and
+re-reads it after, so coverage is judged against what was actually there. It shares
+`pixel-probe.ts` with the harness — the product enforces the same measurement the
+benchmark scores it on.
+
+**Still open, and deliberately not claimed:** face-detection recall. The model runs
+and reports truthfully, and finds **0 faces** across all 14 fixtures because the
+avatars are drawn SVG rather than photographs. Real face imagery belongs to **R7**.
 
 ### R1 · Redaction manifest in the protocol
 **Satisfies:** *"the central server … should be **aware for this redaction scheme**
@@ -316,8 +390,8 @@ demo video.
 
 ## Sequencing notes
 
-- **R0 before everything.** Measuring then optimising is the whole point of the M
-  phase, and the face defect is a live privacy hole.
+- **R0 is done.** It also removed the reason to distrust the instrument: the model
+  now really runs, and the provider is reported rather than assumed.
 - **R2 before R3/R4.** The decision tier is where vision-sourced perception gets
   consumed; building the router first gives the ViT somewhere to land.
 - **R3 before R4**, obviously — but keep them separate. R3 can be demonstrated the

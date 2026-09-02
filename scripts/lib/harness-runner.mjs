@@ -41,7 +41,8 @@ export async function runFixture(client, url, {
   viewport = { width: 1280, height: 800 },
   groundTruthSelectors = [],
   bundleSource = null,
-  freeze = true
+  freeze = true,
+  visionAssetBase = null
 } = {}) {
   const source = bundleSource || readHarnessBundle();
 
@@ -67,6 +68,12 @@ export async function runFixture(client, url, {
 
     if (freeze) {
       await page.evaluate('__privapilot.freezeAnimations(), true', { awaitPromise: false });
+    }
+
+    // Without an explicit base the ONNX model and the ORT wasm resolve against the
+    // page URL, 404, and detectFaces reports heuristic_fallback with no error.
+    if (visionAssetBase) {
+      await page.evaluate(`__privapilot.configureVisionAssets(${lit(visionAssetBase)}), true`, { awaitPromise: false });
     }
 
     // 1. Real element extraction against real layout
@@ -97,6 +104,17 @@ export async function runFixture(client, url, {
     const sanitizeJson = await page.evaluate(sanitizeExpr, { timeoutMs: 120000 });
     const sanitizeResult = JSON.parse(sanitizeJson);
 
+    // 4b. What the vision model actually did, reported rather than assumed
+    let faceModel = null;
+    try {
+      faceModel = JSON.parse(await page.evaluate(
+        `__privapilot.detectFaces(${lit(rawScreenshot)}, ${lit(extract.viewport)}).then(r => JSON.stringify(r))`,
+        { timeoutMs: 120000 }
+      ));
+    } catch (err) {
+      faceModel = { providerUsed: 'harness_error', durationMs: 0, faces: [], error: String(err && err.message ? err.message : err) };
+    }
+
     // 5. Pixel-true redaction verification against the ground-truth regions
     let redactionVerdicts = [];
     const probes = resolvedGroundTruth
@@ -122,6 +140,7 @@ export async function runFixture(client, url, {
         viewport: extract.viewport
       },
       groundTruth: resolvedGroundTruth,
+      faceModel,
       sanitize: {
         blocked: sanitizeResult.blocked,
         blockReason: sanitizeResult.blockReason,

@@ -93,9 +93,11 @@ async function main() {
   let coveredCount = 0;
   let assessableCount = 0;
   let underMasked = [];
+  let unassessable = [];
   let safePreserved = 0;
   let safeTotal = 0;
   let blockedFixtures = [];
+  const visionProviders = [];
 
   for (const fixture of Object.values(TEST_FIXTURES)) {
     const gt = GROUND_TRUTH_DATA[fixture.id];
@@ -115,6 +117,7 @@ async function main() {
       goal: 'Inspect the page and identify the next safe action',
       viewport: VIEWPORT,
       bundleSource: bundle,
+      visionAssetBase: `http://127.0.0.1:${PORTAL_PORT}/ext-assets`,
       groundTruthSelectors: [...sensitiveProbes, ...safeProbes].map((p) => ({ id: p.id, selector: p.selector, token: p.token }))
     });
 
@@ -145,9 +148,19 @@ async function main() {
     for (const probe of sensitiveProbes) {
       const box = resolved.get(probe.id);
       if (!box || !isInViewport(box)) continue;
+      const v = verdictById.get(probe.id);
+
+      // A region whose raw pixels carried no detail cannot be judged by any pixel
+      // test - masking a featureless area is indistinguishable from leaving it
+      // alone. Scoring it either way would be a fabricated number, so it leaves the
+      // denominator and is reported separately.
+      if (v && v.assessable === false) {
+        unassessable.push({ fixture: fixture.id, region: probe.id, rawDetail: v.rawDetail });
+        continue;
+      }
+
       fixtureAssessable++;
       assessableCount++;
-      const v = verdictById.get(probe.id);
       if (v && v.covered) {
         fixtureCovered++;
         coveredCount++;
@@ -167,6 +180,15 @@ async function main() {
     }
 
     if (result.sanitize.blocked) blockedFixtures.push({ id: fixture.id, reason: result.sanitize.blockReason });
+
+    if (result.faceModel) {
+      visionProviders.push({
+        fixture: fixture.id,
+        providerUsed: result.faceModel.providerUsed,
+        durationMs: result.faceModel.durationMs,
+        faceCount: (result.faceModel.faces || []).length
+      });
+    }
 
     const clientMs = result.extract.extractMs + result.sanitize.sanitizeMs;
     clientLatencies.push(clientMs);
@@ -225,6 +247,8 @@ async function main() {
       sensitiveRegionCoverage: Math.round(coverage * 10) / 10,
       underMaskCount: underMasked.length,
       underMasked,
+      unassessableCount: unassessable.length,
+      unassessable,
       safeElementPreservation: Math.round(safePreservation * 10) / 10,
       safeElementsPreserved: safePreserved,
       totalSafeElements: safeTotal
@@ -238,6 +262,14 @@ async function main() {
       peakHeapMb: Math.max(0, ...perFixture.map((f) => f.heapUsedMb)),
       medianHeapMb: Math.round(median(perFixture.map((f) => f.heapUsedMb)) * 100) / 100,
       medianTaskDurationSec: Math.round(median(perFixture.map((f) => f.taskDurationSec)) * 1000) / 1000
+    },
+    vision: {
+      // heuristic_fallback here means the ONNX session failed to create and the
+      // model did not run at all - the number of faces is then meaningless.
+      providers: visionProviders,
+      modelExecuted: visionProviders.filter((v) => v.providerUsed === 'webgpu' || v.providerUsed === 'wasm').length,
+      fixturesProbed: visionProviders.length,
+      totalFacesDetected: visionProviders.reduce((n, v) => n + v.faceCount, 0)
     },
     blockedFixtures,
     perFixture
@@ -256,6 +288,10 @@ async function main() {
   console.log(`Visual context recall / precision   : ${accuracy.elementRecall}% / ${accuracy.elementPrecision}%`);
   console.log(`Client perception latency           : ${results.clientLatency.p50Ms}ms p50, ${results.clientLatency.p95Ms}ms p95`);
   console.log(`Peak heap                           : ${results.resources.peakHeapMb}MB`);
+  const provTally = visionProviders.reduce((m, v) => { m[v.providerUsed] = (m[v.providerUsed] || 0) + 1; return m; }, {});
+  console.log(`Vision model provider               : ${Object.entries(provTally).map(([k, n]) => `${k} x${n}`).join(', ') || 'not probed'}` +
+              ` (${visionProviders.reduce((n, v) => n + v.faceCount, 0)} faces detected)`);
+
   if (blockedFixtures.length) {
     console.log(`Fail-closed blocks                  : ${blockedFixtures.map((b) => b.id).join(', ')}`);
   }

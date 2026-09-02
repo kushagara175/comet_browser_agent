@@ -15,6 +15,10 @@
 
 import { ElementExtractor } from '../content/element-extractor.js';
 import { SanitizerPipeline } from '../sanitizer/pipeline.js';
+import { CoordinateTransformer } from '../sanitizer/coordinate-transformer.js';
+import { MaskRenderer } from '../sanitizer/mask-renderer.js';
+import { PostRedactionVerifier } from '../sanitizer/post-redaction-verifier.js';
+import { UltraFaceModelRunner } from '../vision/face-model.js';
 import { RawCapture, SanitizedContext, ViewportMetadata } from '@privapilot/protocol';
 
 /**
@@ -139,6 +143,119 @@ export async function sanitize(
   }
 }
 
+export interface FailClosedProbe {
+  readonly correctPlacement: { isValid: boolean; reason?: string };
+  readonly displacedPlacement: { isValid: boolean; reason?: string };
+  /** True only when a correct mask passes AND a displaced one is rejected. */
+  readonly passed: boolean;
+}
+
+/**
+ * Proves the SHIPPED verifier fails closed when a mask misses its region.
+ *
+ * Renders a real mask through MaskRenderer twice - once on the region and once
+ * offset away from it - and runs PostRedactionVerifier over both. The second case
+ * is the one the old count-based check waved through: a mask was rendered, the
+ * count matched, and the secret was still legible underneath.
+ */
+export function probeDisplacedMaskFailsClosed(): FailClosedProbe {
+  const W = 400;
+  const H = 200;
+  const box = { x: 50, y: 50, width: 140, height: 34 };
+
+  const build = (): HTMLCanvasElement => {
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+    // Deterministic high-frequency content, so "detail destroyed" is measurable.
+    ctx.fillStyle = '#101820';
+    ctx.font = 'bold 22px monospace';
+    for (let i = 0; i < 6; i++) ctx.fillText('4532 8901 2342', 8, 30 + i * 30);
+    return c;
+  };
+
+  const region: any = {
+    id: 'probe_region',
+    category: 'national_id',
+    viewportBox: { space: 'viewportCssPixel', ...box },
+    screenshotBox: { space: 'screenshotPixel', ...box },
+    detectorSource: 'text_regex',
+    method: 'opaque_mask',
+    label: 'PROBE'
+  };
+
+  const onTarget = build();
+  const detail = PostRedactionVerifier.measurePreMaskDetail(onTarget, [region]);
+  MaskRenderer.renderMasks(onTarget, [region]);
+  const correctPlacement = PostRedactionVerifier.verifyPixelCoverage(onTarget, [region], detail);
+
+  // Same mask, drawn 180px to the right of where the secret actually is.
+  const displaced = build();
+  const displacedRegion = {
+    ...region,
+    screenshotBox: { ...region.screenshotBox, x: box.x + 180 }
+  };
+  MaskRenderer.renderMasks(displaced, [displacedRegion]);
+  const displacedPlacement = PostRedactionVerifier.verifyPixelCoverage(displaced, [region], detail);
+
+  return {
+    correctPlacement,
+    displacedPlacement,
+    passed: correctPlacement.isValid && !displacedPlacement.isValid
+  };
+}
+
+/**
+ * Points the vision model at an HTTP asset base. Required outside the extension,
+ * where `chrome.runtime.getURL` does not exist.
+ */
+export function configureVisionAssets(assetBase: string | null): void {
+  UltraFaceModelRunner.configure(assetBase);
+}
+
+export interface HarnessFaceResult {
+  readonly providerUsed: string;
+  readonly durationMs: number;
+  readonly faces: ReadonlyArray<{
+    readonly confidence: number;
+    readonly box: readonly [number, number, number, number];
+    readonly areaFraction: number;
+  }>;
+}
+
+/**
+ * Runs ONLY the ONNX face model and reports what it returned.
+ *
+ * Face detection had no instrument at all: the model's output reached the mask
+ * renderer and nothing else, so a false positive was invisible unless it happened
+ * to land on a ground-truth box. Exposing the raw detections is what makes face
+ * behaviour - and `providerUsed`, which silently degrades to `heuristic_fallback`
+ * on any error - measurable rather than assumed.
+ */
+export async function detectFaces(
+  screenshotDataUrl: string,
+  viewport: HarnessViewport
+): Promise<HarnessFaceResult> {
+  const canvas = await decodeToCanvas(screenshotDataUrl, viewport.screenshotWidth, viewport.screenshotHeight);
+  const transformer = new CoordinateTransformer(viewport as any);
+  const result = await UltraFaceModelRunner.detectFaces(canvas, transformer);
+  const total = viewport.screenshotWidth * viewport.screenshotHeight;
+
+  return {
+    providerUsed: result.providerUsed,
+    durationMs: result.durationMs,
+    faces: result.faces.map((f) => ({
+      confidence: Math.round(f.confidence * 1000) / 1000,
+      box: [f.screenshotBox.x, f.screenshotBox.y, f.screenshotBox.width, f.screenshotBox.height] as const,
+      areaFraction:
+        Math.round(((f.screenshotBox.width * f.screenshotBox.height) / Math.max(1, total)) * 10000) / 10000
+    }))
+  };
+}
+
 export interface RegionProbe {
   readonly id: string;
   readonly normX: number;
@@ -150,11 +267,18 @@ export interface RegionProbe {
 export interface RegionVerdict {
   readonly id: string;
   readonly covered: boolean;
+  /** False when the raw region carried too little detail for any pixel test to judge it. */
+  readonly assessable: boolean;
   readonly opaqueFraction: number;
   readonly overlayFraction: number;
   readonly residualVariance: number;
   readonly rawVariance: number;
   readonly varianceReduction: number;
+  /** Mean local luminance gradient in the raw region. */
+  readonly rawDetail: number;
+  /** The same, in the sanitized region, ignoring redaction chrome. */
+  readonly residualDetail: number;
+  readonly detailRemoved: number;
   readonly sampledPixels: number;
 }
 
@@ -223,6 +347,79 @@ function overlayFractionOf(data: Uint8ClampedArray, tolerance = 30): number {
 }
 
 /**
+ * Mean absolute luminance gradient between adjacent pixels - "how much fine detail
+ * is left here".
+ *
+ * This is the measure that matters for the pixelation path, and global variance is
+ * NOT. MaskRenderer redacts faces by replacing each 8-24px block with its own mean
+ * colour, which by construction *preserves* the between-block variance and destroys
+ * only the variance within a block. On a region whose detail is mostly large-scale,
+ * global variance therefore barely moves, and `1 - residual/raw` never reaches the
+ * 0.8 the old check demanded - so a correctly pixelated face scored as under-masked.
+ *
+ * Local gradient does move: after pixelation, neighbouring pixels are identical
+ * everywhere except on block seams.
+ *
+ * `skipOverlay` excludes pixels belonging to the redaction chrome. The renderer
+ * stamps a 1px border and a "[FACE BLUR]" badge over the pixelated area, and that
+ * text is high-contrast - counting it would report the mask's own label as surviving
+ * page detail.
+ */
+function localDetailOf(
+  data: Uint8ClampedArray,
+  w: number,
+  h: number,
+  skipOverlay = false
+): number {
+  if (w < 2 || h < 2) return 0;
+
+  const lum = new Float32Array(w * h);
+  const usable = new Uint8Array(w * h);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    lum[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    usable[p] = skipOverlay && isOverlayPixel(data[i], data[i + 1], data[i + 2]) ? 0 : 1;
+  }
+
+  let sum = 0;
+  let pairs = 0;
+  for (let yy = 0; yy < h; yy++) {
+    for (let xx = 0; xx < w; xx++) {
+      const p = yy * w + xx;
+      if (!usable[p]) continue;
+      if (xx + 1 < w && usable[p + 1]) {
+        sum += Math.abs(lum[p] - lum[p + 1]);
+        pairs++;
+      }
+      if (yy + 1 < h && usable[p + w]) {
+        sum += Math.abs(lum[p] - lum[p + w]);
+        pairs++;
+      }
+    }
+  }
+
+  return pairs === 0 ? 0 : sum / pairs;
+}
+
+/** True when a pixel lies on the fill-to-chrome line of the redaction palette. */
+function isOverlayPixel(r: number, g: number, b: number, tolerance = 30): boolean {
+  const dg = MASK_CHROME[1] - MASK_FILL[1];
+  const t = Math.max(0, Math.min(1, (g - MASK_FILL[1]) / dg));
+  return (
+    Math.abs(r - (MASK_FILL[0] + t * (MASK_CHROME[0] - MASK_FILL[0]))) <= tolerance &&
+    Math.abs(g - (MASK_FILL[1] + t * dg)) <= tolerance &&
+    Math.abs(b - (MASK_FILL[2] + t * (MASK_CHROME[2] - MASK_FILL[2]))) <= tolerance
+  );
+}
+
+/**
+ * Minimum local detail a raw region must carry before its redaction can be judged
+ * at all. Below this the region is featureless, destroying it is a no-op, and no
+ * pixel test can tell a masked flat area from an untouched one - so it is reported
+ * unassessable rather than being scored either way.
+ */
+const MIN_RAW_DETAIL = 3.0;
+
+/**
  * Pixel-true redaction check.
  *
  * The shipped PostRedactionVerifier only compares detected-region count to
@@ -230,8 +427,8 @@ function overlayFractionOf(data: Uint8ClampedArray, tolerance = 30): number {
  * coordinates passes it. This reads the actual output image and asks the question
  * the rubric asks: is this region genuinely destroyed?
  *
- * A region counts as covered if it is painted with the opaque mask fill, or if
- * most of its original detail is gone relative to the raw capture (the blur path).
+ * A region counts as covered if it is painted with the opaque mask fill, or if the
+ * fine detail that was there has been destroyed (the pixelation path).
  */
 export async function verifyRedaction(
   rawDataUrl: string,
@@ -269,30 +466,34 @@ export async function verifyRedaction(
     const overlayFraction = overlayFractionOf(sData);
     const residualVariance = varianceOf(sData);
     const rawVariance = varianceOf(rData);
-    // A featureless region carries no detail to destroy, so variance says nothing
-    // about whether it was masked. Reporting 1.0 there let an unmasked flat region
-    // pass as covered. Only the overlay test is meaningful in that case.
-    const rawHasDetail = rawVariance >= 5;
-    const varianceReduction = rawHasDetail ? 1 - residualVariance / rawVariance : 0;
+    const varianceReduction = rawVariance >= 5 ? 1 - residualVariance / rawVariance : 0;
 
-    // Covered when essentially every pixel belongs to the redaction overlay, or when
-    // the blur path has destroyed the detail that was there (faces are pixelated, not
-    // filled, so they never match the overlay palette).
-    // Covered when essentially every pixel belongs to the redaction overlay, or when
-    // the blur path destroyed real detail that was present (faces are pixelated, not
-    // filled, so they never match the overlay palette).
-    const covered =
-      overlayFraction >= 0.98 ||
-      (rawHasDetail && varianceReduction >= 0.8 && residualVariance < 150);
+    const rawDetail = localDetailOf(rData, w, h);
+    const residualDetail = localDetailOf(sData, w, h, true);
+    const detailRemoved = rawDetail >= MIN_RAW_DETAIL ? Math.max(0, 1 - residualDetail / rawDetail) : 0;
+
+    // Fully painted over: settled, whatever the source looked like.
+    const paintedOver = overlayFraction >= 0.98;
+
+    // Otherwise the verdict depends on destroying detail that actually existed. A
+    // featureless source carries none, so nothing can be proven either way and the
+    // region is excluded from the score rather than counted as a pass - this is the
+    // same trap that once let an untouched flat region report as covered.
+    const assessable = paintedOver || rawDetail >= MIN_RAW_DETAIL;
+    const covered = paintedOver || (assessable && detailRemoved >= 0.7);
 
     return {
       id: region.id,
       covered,
+      assessable,
       opaqueFraction: Math.round(opaqueFraction * 1000) / 1000,
       overlayFraction: Math.round(overlayFraction * 1000) / 1000,
       residualVariance: Math.round(residualVariance * 10) / 10,
       rawVariance: Math.round(rawVariance * 10) / 10,
       varianceReduction: Math.round(varianceReduction * 1000) / 1000,
+      rawDetail: Math.round(rawDetail * 100) / 100,
+      residualDetail: Math.round(residualDetail * 100) / 100,
+      detailRemoved: Math.round(detailRemoved * 1000) / 1000,
       sampledPixels: w * h
     };
   });

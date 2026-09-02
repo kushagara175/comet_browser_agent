@@ -17,6 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PORT = parseInt(process.env.PORT || '4500', 10);
 const PUBLIC_DIR = path.join(__dirname, 'src');
+const EXT_ASSETS_DIR = path.resolve(__dirname, '..', 'extension', 'assets');
 
 const MIME_TYPES = {
   '.html': 'text/html',
@@ -24,7 +25,10 @@ const MIME_TYPES = {
   '.js': 'application/javascript',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
-  '.json': 'application/json'
+  '.json': 'application/json',
+  '.wasm': 'application/wasm',
+  '.mjs': 'text/javascript',
+  '.onnx': 'application/octet-stream'
 };
 
 // Loaded lazily: the portal must still start if the workspace has not been built.
@@ -75,6 +79,29 @@ const server = http.createServer(async (req, res) => {
       return res.end(`Unknown fixture: ${id}`);
     }
     return sendHtml(res, fixture.html);
+  }
+
+  // Extension assets (ONNX model + ORT wasm), so the benchmark harness can load the
+  // vision model. Outside the extension there is no chrome.runtime.getURL, and
+  // without this route the model 404s and silently degrades to heuristic_fallback.
+  if (pathname.startsWith('/ext-assets/')) {
+    const rel = pathname.slice('/ext-assets/'.length);
+    const assetPath = path.resolve(EXT_ASSETS_DIR, rel);
+    if (assetPath !== EXT_ASSETS_DIR && !assetPath.startsWith(EXT_ASSETS_DIR + path.sep)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      return res.end('403 Forbidden');
+    }
+    return fs.readFile(assetPath, (err, content) => {
+      if (err) {
+        res.writeHead(err.code === 'ENOENT' ? 404 : 500, { 'Content-Type': 'text/plain' });
+        return res.end('404 Not Found');
+      }
+      res.writeHead(200, {
+        'Content-Type': MIME_TYPES[path.extname(assetPath)] || 'application/octet-stream',
+        'Cache-Control': 'no-store'
+      });
+      res.end(content);
+    });
   }
 
   // Static files, confined to PUBLIC_DIR

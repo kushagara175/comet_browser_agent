@@ -97,6 +97,32 @@ try {
     }
   }
 
+  // The property the whole redaction claim rests on: a mask that misses its region
+  // must be rejected BY THE PRODUCT, not merely noticed by the benchmark.
+  {
+    const { CdpPage } = await import('./lib/cdp-client.mjs');
+    const { sessionId, targetId } = await client.newPage('about:blank');
+    const page = new CdpPage(client, sessionId, targetId);
+    await page.enableDomains();
+    await page.evaluate(bundle, { awaitPromise: false });
+    const probe = JSON.parse(
+      await page.evaluate('JSON.stringify(__privapilot.probeDisplacedMaskFailsClosed())', { awaitPromise: false })
+    );
+    await page.close();
+
+    console.log('');
+    console.log('=== fail-closed on displaced mask ===');
+    console.log(`  correct placement  accepted : ${probe.correctPlacement.isValid}`);
+    console.log(`  displaced mask     rejected : ${!probe.displacedPlacement.isValid}`);
+    if (probe.displacedPlacement.reason) console.log(`    reason: ${probe.displacedPlacement.reason}`);
+    if (!probe.passed) {
+      failures++;
+      console.log('  FAIL  the shipped verifier does not fail closed on a displaced mask');
+    } else {
+      console.log('  PASS');
+    }
+  }
+
   client.close();
   console.log(failures === 0 ? '\nPIXEL VERIFICATION: PASS' : `\nPIXEL VERIFICATION: ${failures} FAILURE(S)`);
   if (failures) process.exitCode = 1;

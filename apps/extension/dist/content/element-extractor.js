@@ -281,11 +281,30 @@ export class ElementExtractor {
                 }
             }
             // 3. Extract Images / Avatars for Face Detection
-            const images = currentDoc.querySelectorAll('img, svg, .avatar, [class*="avatar"], [class*="profile"]');
+            //
+            // Only nodes that actually render picture content are candidates. The class
+            // hints stay, but they no longer admit an element on their own: `[class*=
+            // "profile"]` matched `<div class="profile-card">`, so an entire layout
+            // container was treated as a human face and pixelated - destroying every
+            // control inside it. A face can only appear where pixels of a person are
+            // drawn, which is an image/media node or an element with a background image.
+            const IMAGE_BEARING_TAGS = new Set(['IMG', 'SVG', 'CANVAS', 'VIDEO', 'PICTURE', 'OBJECT']);
+            const isImageBearing = (el) => {
+                if (IMAGE_BEARING_TAGS.has(el.tagName ? el.tagName.toUpperCase() : ''))
+                    return true;
+                try {
+                    const bg = el.ownerDocument?.defaultView?.getComputedStyle(el)?.backgroundImage;
+                    return !!bg && bg !== 'none';
+                }
+                catch {
+                    return false;
+                }
+            };
+            const images = currentDoc.querySelectorAll('img, svg, canvas, video, picture, .avatar, [class*="avatar"], [class*="profile"]');
             images.forEach((img, idx) => {
                 const el = img;
                 const rect = el.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) {
+                if (rect.width > 0 && rect.height > 0 && isImageBearing(el)) {
                     // On SVG elements `className` is an SVGAnimatedString, not a string, so
                     // calling toLowerCase() on it throws and aborts the whole snapshot. This
                     // selector explicitly includes `svg`, so that is not a rare edge case - it
@@ -379,7 +398,28 @@ export class ElementExtractor {
                 }
             });
             // 4e. Images Likely to Contain Sensitive Text
-            const textImages = currentDoc.querySelectorAll('img[class*="receipt"], img[class*="invoice"], img[class*="document"], img[class*="statement"], img[class*="card"], [data-has-text="true"]');
+            //
+            // The concept vocabulary is matched against alt text and ARIA labels as well as
+            // class and id. `class` alone is a CSS naming convention and a poor signal - it
+            // missed `class="scanned-id"` entirely - whereas alt/aria-label are where an
+            // author describes what the image actually depicts, which is the thing being
+            // asked about. Still a word list, and still not a substitute for reading the
+            // pixels; the general answer is a vision pass over image surfaces.
+            const DOC_IMAGE_CONCEPTS = [
+                'receipt', 'invoice', 'document', 'statement', 'card', 'scan',
+                'passport', 'licence', 'license', 'aadhaar', 'identity', 'id-proof'
+            ];
+            const textImages = Array.from(currentDoc.querySelectorAll('img, [data-has-text="true"]')).filter((el) => {
+                if (el.getAttribute('data-has-text') === 'true')
+                    return true;
+                const haystack = [
+                    el.getAttribute('class'),
+                    el.getAttribute('id'),
+                    el.getAttribute('alt'),
+                    el.getAttribute('aria-label')
+                ].filter(Boolean).join(' ').toLowerCase();
+                return DOC_IMAGE_CONCEPTS.some((concept) => haystack.includes(concept));
+            });
             textImages.forEach((img) => {
                 const rect = img.getBoundingClientRect();
                 if (rect.width > 0 && rect.height > 0) {

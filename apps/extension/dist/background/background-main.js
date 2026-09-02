@@ -15029,7 +15029,90 @@ var MaskRenderer = class {
   }
 };
 
+// src/sanitizer/pixel-probe.ts
+var MASK_FILL = [15, 23, 42];
+var MASK_CHROME = [56, 189, 248];
+var MAX_SAMPLES = 2e4;
+function isOverlayPixel(r, g, b, tolerance = 30) {
+  const dg2 = MASK_CHROME[1] - MASK_FILL[1];
+  const t = Math.max(0, Math.min(1, (g - MASK_FILL[1]) / dg2));
+  return Math.abs(r - (MASK_FILL[0] + t * (MASK_CHROME[0] - MASK_FILL[0]))) <= tolerance && Math.abs(g - (MASK_FILL[1] + t * dg2)) <= tolerance && Math.abs(b - (MASK_FILL[2] + t * (MASK_CHROME[2] - MASK_FILL[2]))) <= tolerance;
+}
+function overlayFractionOf(data) {
+  const n = data.length / 4;
+  if (n === 0) return 0;
+  let hits = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (isOverlayPixel(data[i], data[i + 1], data[i + 2])) hits++;
+  }
+  return hits / n;
+}
+function localDetailOf(data, w, h, skipOverlay = false) {
+  if (w < 2 || h < 2) return 0;
+  const lum = new Float32Array(w * h);
+  const usable = new Uint8Array(w * h);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    lum[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    usable[p] = skipOverlay && isOverlayPixel(data[i], data[i + 1], data[i + 2]) ? 0 : 1;
+  }
+  let sum = 0;
+  let pairs = 0;
+  for (let yy = 0; yy < h; yy++) {
+    for (let xx = 0; xx < w; xx++) {
+      const p = yy * w + xx;
+      if (!usable[p]) continue;
+      if (xx + 1 < w && usable[p + 1]) {
+        sum += Math.abs(lum[p] - lum[p + 1]);
+        pairs++;
+      }
+      if (yy + 1 < h && usable[p + w]) {
+        sum += Math.abs(lum[p] - lum[p + w]);
+        pairs++;
+      }
+    }
+  }
+  return pairs === 0 ? 0 : sum / pairs;
+}
+function sampleRegion(canvas, box) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx || typeof ctx.getImageData !== "function") return null;
+  const cw = canvas.width;
+  const ch = canvas.height;
+  const x = Math.max(0, Math.min(cw - 1, Math.floor(box.x)));
+  const y = Math.max(0, Math.min(ch - 1, Math.floor(box.y)));
+  const w = Math.max(1, Math.min(cw - x, Math.ceil(box.width)));
+  const h = Math.max(1, Math.min(ch - y, Math.ceil(box.height)));
+  if (w < 2 || h < 2) return null;
+  try {
+    const imgData = ctx.getImageData(x, y, w, h);
+    if (w * h <= MAX_SAMPLES) {
+      return { data: imgData.data, width: w, height: h };
+    }
+    const stride = Math.ceil(Math.sqrt(w * h / MAX_SAMPLES));
+    const sw = Math.floor(w / stride);
+    const sh = Math.floor(h / stride);
+    if (sw < 2 || sh < 2) return { data: imgData.data, width: w, height: h };
+    const out = new Uint8ClampedArray(sw * sh * 4);
+    for (let yy = 0; yy < sh; yy++) {
+      for (let xx = 0; xx < sw; xx++) {
+        const src = (yy * stride * w + xx * stride) * 4;
+        const dst = (yy * sw + xx) * 4;
+        out[dst] = imgData.data[src];
+        out[dst + 1] = imgData.data[src + 1];
+        out[dst + 2] = imgData.data[src + 2];
+        out[dst + 3] = imgData.data[src + 3];
+      }
+    }
+    return { data: out, width: sw, height: sh };
+  } catch {
+    return null;
+  }
+}
+
 // src/sanitizer/post-redaction-verifier.ts
+var MIN_OVERLAY_FRACTION = 0.9;
+var MIN_DETAIL_REMOVED = 0.6;
+var MIN_ASSESSABLE_DETAIL = 3;
 var PostRedactionVerifier = class {
   /**
    * Runs local post-redaction assertions.
@@ -15059,6 +15142,49 @@ var PostRedactionVerifier = class {
         return {
           isValid: false,
           reason: `Residual unredacted PII (${residualPii[0].category}) found in element '${el2.localId}'.`
+        };
+      }
+    }
+    return { isValid: true };
+  }
+  /**
+   * Samples the region BEFORE masks are drawn, so coverage can be judged against
+   * what was actually there rather than against an absolute threshold.
+   */
+  static measurePreMaskDetail(canvas, regions) {
+    const detail = /* @__PURE__ */ new Map();
+    for (const region of regions) {
+      const sample = sampleRegion(canvas, region.screenshotBox);
+      if (sample) {
+        detail.set(region.id, localDetailOf(sample.data, sample.width, sample.height));
+      }
+    }
+    return detail;
+  }
+  /**
+   * Reads the masked pixels and asserts every sensitive region was actually
+   * destroyed.
+   *
+   * The count comparison in `verify()` cannot catch a mask drawn at the wrong
+   * coordinates: the mask exists, the count matches, and the secret is still
+   * legible. This is the check that closes that hole, and it is deliberately the
+   * same measurement the browser benchmark scores redaction with, so the product
+   * enforces the metric rather than merely being graded on it.
+   */
+  static verifyPixelCoverage(canvas, regions, preMaskDetail) {
+    for (const region of regions) {
+      const sample = sampleRegion(canvas, region.screenshotBox);
+      if (!sample) continue;
+      const overlay = overlayFractionOf(sample.data);
+      if (overlay >= MIN_OVERLAY_FRACTION) continue;
+      const rawDetail = preMaskDetail.get(region.id);
+      if (rawDetail === void 0 || rawDetail < MIN_ASSESSABLE_DETAIL) continue;
+      const residual = localDetailOf(sample.data, sample.width, sample.height, true);
+      const removed = 1 - residual / rawDetail;
+      if (removed < MIN_DETAIL_REMOVED) {
+        return {
+          isValid: false,
+          reason: `Region '${region.id}' (${region.category}) is not covered by its mask: overlay ${(overlay * 100).toFixed(1)}%, detail removed ${(removed * 100).toFixed(1)}%. A mask was rendered but did not land on the region.`
         };
       }
     }
@@ -15202,6 +15328,25 @@ var UltraFaceModelRunner = class {
   static session = null;
   static providerUsed = "wasm";
   static initPromise = null;
+  static assetBase = null;
+  /**
+   * Points the runner at an explicit asset base instead of `chrome.runtime`.
+   *
+   * Outside the extension there is no `chrome.runtime.getURL`, and the relative
+   * fallback path resolves against the *page* URL - so in the benchmark harness the
+   * model and the ORT wasm both 404, `create()` threw, and `detectFaces` reported
+   * `heuristic_fallback` with an empty list. Every fixture silently scored as
+   * "no faces found" while appearing to run the model. Giving the harness a real
+   * base URL is what lets the model actually execute outside Chrome's extension
+   * origin, and therefore what makes any face number measurable at all.
+   */
+  static configure(assetBase) {
+    if (assetBase !== this.assetBase) {
+      this.session = null;
+      this.initPromise = null;
+    }
+    this.assetBase = assetBase ? assetBase.replace(/\/+$/, "") : null;
+  }
   /**
    * Initializes the ONNX session once per offscreen document lifecycle.
    */
@@ -15215,12 +15360,15 @@ var UltraFaceModelRunner = class {
     }
     this.initPromise = (async () => {
       const ort = await Promise.resolve().then(() => (init_ort_bundle_min(), ort_bundle_min_exports));
-      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
+      const hasChromeRuntime = typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL;
+      if (this.assetBase) {
+        ort.env.wasm.wasmPaths = `${this.assetBase}/wasm/`;
+      } else if (hasChromeRuntime) {
         ort.env.wasm.wasmPaths = chrome.runtime.getURL("assets/wasm/");
       }
       ort.env.wasm.numThreads = 1;
       ort.env.wasm.simd = true;
-      const modelPath = typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL ? chrome.runtime.getURL("assets/models/version-RFB-320.onnx") : "./apps/extension/assets/models/version-RFB-320.onnx";
+      const modelPath = this.assetBase ? `${this.assetBase}/models/version-RFB-320.onnx` : hasChromeRuntime ? chrome.runtime.getURL("assets/models/version-RFB-320.onnx") : "./apps/extension/assets/models/version-RFB-320.onnx";
       if (typeof navigator !== "undefined" && navigator.gpu) {
         try {
           this.session = await ort.InferenceSession.create(modelPath, {
@@ -15339,10 +15487,14 @@ var SanitizerPipeline = class {
     };
     let sanitizedDataUrl;
     let renderedCount = 0;
+    let maskedCanvas = null;
+    let preMaskDetail = /* @__PURE__ */ new Map();
     if (imageCanvas) {
+      preMaskDetail = PostRedactionVerifier.measurePreMaskDetail(imageCanvas, allRegions);
       const renderResult = MaskRenderer.renderMasks(imageCanvas, allRegions);
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
+      maskedCanvas = imageCanvas;
     } else if (typeof document !== "undefined" && rawCapture.rawScreenshotDataUrl && rawCapture.rawScreenshotDataUrl.startsWith("data:image")) {
       const canvas = document.createElement("canvas");
       canvas.width = rawCapture.metadata.screenshotWidth;
@@ -15358,9 +15510,11 @@ var SanitizerPipeline = class {
         img.src = rawCapture.rawScreenshotDataUrl;
       });
       ctx.drawImage(img, 0, 0);
+      preMaskDetail = PostRedactionVerifier.measurePreMaskDetail(canvas, allRegions);
       const renderResult = MaskRenderer.renderMasks(canvas, allRegions);
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
+      maskedCanvas = canvas;
     } else {
       throw new Error("Sanitization Blocked: No canvas host available. Rendering must execute in an offscreen document with DOM access.");
     }
@@ -15432,6 +15586,16 @@ var SanitizerPipeline = class {
     );
     if (!verification.isValid) {
       throw new Error(`Sanitization Blocked: ${verification.reason}`);
+    }
+    if (maskedCanvas) {
+      const pixelVerification = PostRedactionVerifier.verifyPixelCoverage(
+        maskedCanvas,
+        allRegions,
+        preMaskDetail
+      );
+      if (!pixelVerification.isValid) {
+        throw new Error(`Sanitization Blocked: ${pixelVerification.reason}`);
+      }
     }
     const digestStr = `${rawCapture.captureId}:${allRegions.length}:${sanitizedElements.length}`;
     const payloadDigestSha256 = `sha256_${Math.abs(digestStr.split("").reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0))}`;
@@ -15809,8 +15973,8 @@ var TEST_FIXTURES = {
       <head><title>Team Directory</title></head>
       <body>
         <div class="gallery">
-          <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='40' fill='%23ffcc99'/></svg>" class="face-avatar" alt="Avatar 1" />
-          <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='40' fill='%23ffcc99'/></svg>" class="face-avatar" alt="Avatar 2" />
+          <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><defs><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='11'/></filter><filter id='s'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='4'/><feComposite operator='in' in2='SourceGraphic'/></filter></defs><rect width='100' height='100' fill='%23c8b49a'/><rect width='100' height='100' filter='url(%23g)' opacity='0.85'/><circle cx='50' cy='46' r='30' fill='%23ffcc99'/><circle cx='50' cy='46' r='30' filter='url(%23s)' opacity='0.55'/><ellipse cx='39' cy='40' rx='5' ry='3' fill='%23402a1c'/><ellipse cx='61' cy='40' rx='5' ry='3' fill='%23402a1c'/><path d='M38 60 Q50 69 62 60' stroke='%23703d2a' stroke-width='3' fill='none'/><path d='M22 34 Q50 6 78 34' stroke='%233a2416' stroke-width='9' fill='none'/></svg>" class="face-avatar" alt="Avatar 1" />
+          <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><defs><filter id='g2'><feTurbulence type='fractalNoise' baseFrequency='0.62' numOctaves='4' seed='23'/></filter><filter id='s2'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='3' seed='9'/><feComposite operator='in' in2='SourceGraphic'/></filter></defs><rect width='100' height='100' fill='%23a9b6c4'/><rect width='100' height='100' filter='url(%23g2)' opacity='0.85'/><circle cx='50' cy='48' r='29' fill='%23e8b487'/><circle cx='50' cy='48' r='29' filter='url(%23s2)' opacity='0.55'/><ellipse cx='40' cy='43' rx='4' ry='3' fill='%232e1f14'/><ellipse cx='60' cy='43' rx='4' ry='3' fill='%232e1f14'/><path d='M40 62 Q50 70 60 62' stroke='%23824a33' stroke-width='3' fill='none'/><path d='M24 37 Q50 10 76 37' stroke='%23241a12' stroke-width='8' fill='none'/></svg>" class="face-avatar" alt="Avatar 2" />
           <button id="loadMoreBtn">Load More</button>
         </div>
       </body>
@@ -15829,7 +15993,7 @@ var TEST_FIXTURES = {
       <head><title>Scanned Docs</title></head>
       <body>
         <div class="doc-viewer">
-          <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" class="scanned-id" alt="Scanned Document with sensitive text" />
+          <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='420' height='260'><defs><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' seed='17'/><feColorMatrix values='0 0 0 0 0.86 0 0 0 0 0.84 0 0 0 0 0.78 0 0 0 0.35 0'/></filter></defs><rect width='420' height='260' fill='%23f4f1e8'/><rect width='420' height='260' filter='url(%23p)'/><text x='20' y='40' font-family='monospace' font-size='19' fill='%23142033'>GOVERNMENT OF INDIA</text><text x='20' y='86' font-family='monospace' font-size='23' fill='%23142033'>4213 8890 1276</text><text x='20' y='126' font-family='monospace' font-size='17' fill='%23142033'>DOB: 04/11/1988</text><text x='20' y='164' font-family='monospace' font-size='17' fill='%23142033'>R. NARAYANAN</text><text x='20' y='202' font-family='monospace' font-size='15' fill='%23142033'>ISSUED: BENGALURU</text><rect x='300' y='60' width='96' height='120' fill='%23cdbfa6'/><rect x='300' y='60' width='96' height='120' filter='url(%23p)'/></svg>" class="scanned-id" alt="Scanned identity document with sensitive text" width="420" height="260" />
           <button id="openSafePreview">Open Safe Preview</button>
         </div>
       </body>

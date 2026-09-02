@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-09-02T04:25:24.729Z",
+  "timestamp": "2026-09-02T06:17:20.658Z",
   "fixturesEvaluated": 14,
   "metadata": {
     "command": "D:\\SIH 2026\\SIHPROJECT1\\scripts\\run-benchmarks.js",
-    "date": "2026-09-02T04:25:24.729Z",
+    "date": "2026-09-02T06:17:20.658Z",
     "environment": "win32 x64 (Node v22.19.0)",
     "browserVersion": "Google Chrome / Chromium Headless (CDP Engine)",
     "modelProvider": "UltraFace ONNX (Wasm/CPU) + Local PII Regex/Luhn Engine",
-    "gitSha": "df79c92",
+    "gitSha": "a88f13b",
     "split": "all"
   },
   "accuracy": {
@@ -20,12 +20,12 @@
     "falseNegatives": 5
   },
   "pii": {
-    "aggregateRecall": 100,
-    "aggregatePrecision": 100,
-    "aggregateF1": 100,
-    "totalTruePositives": 17,
-    "totalFalsePositives": 0,
-    "totalFalseNegatives": 0,
+    "aggregateRecall": 94.1,
+    "aggregatePrecision": 94.1,
+    "aggregateF1": 94.1,
+    "totalTruePositives": 16,
+    "totalFalsePositives": 1,
+    "totalFalseNegatives": 1,
     "categoryBreakdown": {
       "password": {
         "category": "password",
@@ -101,12 +101,12 @@
       },
       "high_risk_surface": {
         "category": "high_risk_surface",
-        "truePositives": 3,
-        "falsePositives": 0,
-        "falseNegatives": 0,
-        "recall": 100,
-        "precision": 100,
-        "f1Score": 100
+        "truePositives": 2,
+        "falsePositives": 1,
+        "falseNegatives": 1,
+        "recall": 66.7,
+        "precision": 66.7,
+        "f1Score": 66.7
       }
     }
   },
@@ -127,8 +127,8 @@
     "p50ServerReasoningMs": 350,
     "p95ServerReasoningMs": 350,
     "p50ActionExecutionMs": 0,
-    "peakMemoryMb": 38.6,
-    "cpuLoadPct": 166.7
+    "peakMemoryMb": 41.4,
+    "cpuLoadPct": 150
   },
   "latencyMeasured": false,
   "unmeasuredCategories": [

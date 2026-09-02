@@ -614,11 +614,21 @@
             textNode = textWalker.nextNode();
           }
         }
-        const images = currentDoc.querySelectorAll('img, svg, .avatar, [class*="avatar"], [class*="profile"]');
+        const IMAGE_BEARING_TAGS = /* @__PURE__ */ new Set(["IMG", "SVG", "CANVAS", "VIDEO", "PICTURE", "OBJECT"]);
+        const isImageBearing = (el) => {
+          if (IMAGE_BEARING_TAGS.has(el.tagName ? el.tagName.toUpperCase() : "")) return true;
+          try {
+            const bg = el.ownerDocument?.defaultView?.getComputedStyle(el)?.backgroundImage;
+            return !!bg && bg !== "none";
+          } catch {
+            return false;
+          }
+        };
+        const images = currentDoc.querySelectorAll('img, svg, canvas, video, picture, .avatar, [class*="avatar"], [class*="profile"]');
         images.forEach((img, idx) => {
           const el = img;
           const rect = el.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) {
+          if (rect.width > 0 && rect.height > 0 && isImageBearing(el)) {
             const classText = (el.getAttribute?.("class") ?? (typeof el.className === "string" ? el.className : "")).toLowerCase();
             const isAvatar = classText.includes("avatar") || classText.includes("profile");
             imageElements.push({
@@ -700,7 +710,30 @@
             }
           }
         });
-        const textImages = currentDoc.querySelectorAll('img[class*="receipt"], img[class*="invoice"], img[class*="document"], img[class*="statement"], img[class*="card"], [data-has-text="true"]');
+        const DOC_IMAGE_CONCEPTS = [
+          "receipt",
+          "invoice",
+          "document",
+          "statement",
+          "card",
+          "scan",
+          "passport",
+          "licence",
+          "license",
+          "aadhaar",
+          "identity",
+          "id-proof"
+        ];
+        const textImages = Array.from(currentDoc.querySelectorAll('img, [data-has-text="true"]')).filter((el) => {
+          if (el.getAttribute("data-has-text") === "true") return true;
+          const haystack = [
+            el.getAttribute("class"),
+            el.getAttribute("id"),
+            el.getAttribute("alt"),
+            el.getAttribute("aria-label")
+          ].filter(Boolean).join(" ").toLowerCase();
+          return DOC_IMAGE_CONCEPTS.some((concept) => haystack.includes(concept));
+        });
         textImages.forEach((img) => {
           const rect = img.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
