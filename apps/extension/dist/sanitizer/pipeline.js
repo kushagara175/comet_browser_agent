@@ -4,6 +4,7 @@
  * Enforces the core privacy boundary:
  * RawCapture -> DetectionReport -> SanitizedContext -> NetworkPayload
  */
+import { sensitiveElementPlaceholder, redactionImageLabel, FACE_IMAGE_LABEL, REDACTION_FILL_COLOR } from '@privapilot/protocol';
 import { sanitizeElementName } from '@privapilot/pii-rules';
 import { CoordinateTransformer } from './coordinate-transformer.js';
 import { detectDomSensitiveRegions } from './dom-detector.js';
@@ -107,35 +108,9 @@ export class SanitizerPipeline {
             let sanitizedName;
             let actionCapabilities = [...el.actionCapabilities];
             if (sensitiveCategory) {
-                // Category-safe label for sensitive controls (Requirement 5)
-                switch (sensitiveCategory) {
-                    case 'password':
-                        sanitizedName = '[PASSWORD FIELD]';
-                        break;
-                    case 'auth_code':
-                        sanitizedName = '[OTP FIELD]';
-                        break;
-                    case 'credit_card':
-                    case 'cvv':
-                    case 'bank_account':
-                        sanitizedName = '[PAYMENT FIELD]';
-                        break;
-                    case 'national_id':
-                        sanitizedName = '[NATIONAL ID FIELD]';
-                        break;
-                    case 'email':
-                        sanitizedName = '[EMAIL FIELD]';
-                        break;
-                    case 'phone':
-                        sanitizedName = '[PHONE FIELD]';
-                        break;
-                    case 'token':
-                        sanitizedName = '[TOKEN/KEY FIELD]';
-                        break;
-                    default:
-                        sanitizedName = '[SENSITIVE FIELD]';
-                        break;
-                }
+                // Category-safe label, from the shared scheme definition so the server's
+                // prompt can enumerate exactly the placeholders it will encounter.
+                sanitizedName = sensitiveElementPlaceholder(sensitiveCategory);
                 // Restrict unsafe action capabilities for sensitive controls (Requirement 6)
                 // Remote server must NOT type into password, OTP, payment, token, or sensitive fields
                 actionCapabilities = actionCapabilities.filter((cap) => cap !== 'type');
@@ -167,6 +142,41 @@ export class SanitizerPipeline {
                 throw new Error(`Sanitization Blocked: ${pixelVerification.reason}`);
             }
         }
+        // 5. Redaction manifest - what was removed, and by what convention.
+        //
+        // Counts and conventions only. A manifest that carried labels, values or
+        // coordinates would re-identify exactly what the redaction removed, which would
+        // defeat the point of transmitting it.
+        const byCategory = new Map();
+        for (const region of allRegions) {
+            const existing = byCategory.get(region.category);
+            if (existing) {
+                byCategory.set(region.category, { ...existing, count: existing.count + 1 });
+            }
+            else {
+                byCategory.set(region.category, { category: region.category, count: 1, method: region.method });
+            }
+        }
+        const placeholdersUsed = Array.from(new Set(Array.from(sensitiveDomElementsMap.values()).map((c) => sensitiveElementPlaceholder(c)))).sort();
+        const assessableRegions = allRegions.filter((r) => preMaskDetail.has(r.id));
+        const redactionManifest = {
+            schemeVersion: '1.0',
+            categories: Array.from(byCategory.values()).sort((a, b) => a.category.localeCompare(b.category)),
+            totalRegions: allRegions.length,
+            masksRendered: renderedCount,
+            conventions: {
+                opaqueFillColor: REDACTION_FILL_COLOR,
+                imageLabelFormat: redactionImageLabel('password').replace('PASSWORD', 'CATEGORY'),
+                faceImageLabel: FACE_IMAGE_LABEL,
+                elementPlaceholders: placeholdersUsed
+            },
+            coverage: {
+                pixelVerified: maskedCanvas !== null,
+                regionsAssessed: assessableRegions.length,
+                regionsUnassessable: allRegions.length - assessableRegions.length
+            },
+            withheldCapabilities: sensitiveDomElementsMap.size > 0 ? ['type'] : []
+        };
         // Simple SHA-256 simulation for payload digest
         const digestStr = `${rawCapture.captureId}:${allRegions.length}:${sanitizedElements.length}`;
         const payloadDigestSha256 = `sha256_${Math.abs(digestStr.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0))}`;
@@ -183,6 +193,7 @@ export class SanitizerPipeline {
                 viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight]
             },
             maskCount: allRegions.length,
+            redactionManifest,
             payloadDigestSha256,
             timestamp: Date.now()
         };

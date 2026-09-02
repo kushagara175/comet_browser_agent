@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "PrivaPilot — Privacy-Preserving On-Device Visual Perception for Lightweight Browser Agents (SIH26171 | ISRO)",
+  "description": "PrivaPilot \u2014 Privacy-Preserving On-Device Visual Perception for Lightweight Browser Agents (SIH26171 | ISRO)",
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -20,7 +20,8 @@
     "test:e2e": "node scripts/run-e2e-extension.mjs",
     "dev:server": "node --env-file-if-exists=.env apps/server/dist/index.js",
     "dev:portal": "node apps/demo-portal/server.js",
-    "lint": "echo 'Lint passed (Zero lint issues)'"
+    "lint": "echo 'Lint passed (Zero lint issues)'",
+    "verify:manifest": "node scripts/verify-manifest-awareness.mjs"
   },
   "keywords": [
     "privacy",

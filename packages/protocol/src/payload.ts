@@ -105,6 +105,8 @@ export interface SanitizedContext {
   readonly elements: ReadonlyArray<SanitizedElement>;
   readonly pageState: SanitizedPageState;
   readonly maskCount: number;
+  /** What was redacted and by what convention. See redaction.ts. */
+  readonly redactionManifest: import('./redaction.js').RedactionManifest;
   readonly payloadDigestSha256: string;
   readonly timestamp: number;
 }
@@ -119,6 +121,12 @@ export interface SanitizedNetworkPayload {
   readonly screenshot: string; // Base64 data URL
   readonly elements: ReadonlyArray<SanitizedElement>;
   readonly pageState: SanitizedPageState;
+  /**
+   * The redaction scheme this payload was produced under. The problem statement
+   * requires the server to be aware of it; without this the server was reasoning
+   * over holes it had no description of.
+   */
+  readonly redactionManifest: import('./redaction.js').RedactionManifest;
 }
 
 /**

@@ -17,7 +17,7 @@
  *   is picked up on the next request instead of being stuck on "mock".
  */
 
-import { SanitizedNetworkPayload, ActionProposal, validateActionProposal } from '@privapilot/protocol';
+import { SanitizedNetworkPayload, ActionProposal, validateActionProposal, describeRedactionScheme } from '@privapilot/protocol';
 import { MockReasoningEngine } from './mock-engine.js';
 
 export interface VlmConfig {
@@ -520,7 +520,7 @@ export class VlmReasoningEngine {
     baseUrl: string,
     modelName: string
   ): Promise<ActionProposal> {
-    const systemPrompt = this.buildSystemPrompt();
+    const systemPrompt = this.buildSystemPrompt(payload);
     const userPrompt = this.buildUserPrompt(payload);
     const chatUrl = `${baseUrl.replace(/\/$/, '')}/api/chat`;
 
@@ -601,7 +601,7 @@ export class VlmReasoningEngine {
     endpoint: string,
     modelName: string
   ): Promise<ActionProposal> {
-    const systemPrompt = this.buildSystemPrompt();
+    const systemPrompt = this.buildSystemPrompt(payload);
     const userPrompt = this.buildUserPrompt(payload);
 
     const headers: Record<string, string> = {
@@ -714,16 +714,30 @@ export class VlmReasoningEngine {
     return validation.proposal;
   }
 
-  private buildSystemPrompt(): string {
+  /**
+   * Builds the system prompt for THIS payload.
+   *
+   * The redaction section is generated from the manifest the client sent, not
+   * asserted in fixed prose. Previously the prompt claimed PII "has been blacked
+   * out" without the server ever being told what was removed, how much, or by what
+   * convention - so the model was reasoning over holes it had no description of,
+   * which is exactly what the problem statement's "aware for this redaction scheme"
+   * clause asks us not to do.
+   */
+  private buildSystemPrompt(payload?: SanitizedNetworkPayload): string {
+    const scheme = describeRedactionScheme(payload?.redactionManifest);
+
     return `
 You are PrivaPilot's Centralized Reasoning Agent for browser automation.
-You receive a sanitized screenshot (with all sensitive PII intentionally blacked out or blurred) and a compact list of interactive elements with local IDs (e.g. "el_1", "el_2").
+You receive a sanitized screenshot and a compact list of interactive elements with local IDs (e.g. "el_1", "el_2").
+
+${scheme}
 
 Strict Rules:
 1. Return ONLY schema-valid JSON for one single next action.
 2. Target elements using "targetLocalId" ONLY. NEVER invent CSS selectors, XPath, or JavaScript.
 3. Classify risk as "safe" (read/navigate/preview/filter) or "protected" (submit/delete/pay/sign).
-4. Provide a concise rationale.
+4. Provide a concise rationale. When a redacted region is relevant to your decision, say so in the rationale.
 
 JSON Schema:
 {

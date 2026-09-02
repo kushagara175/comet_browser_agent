@@ -16,7 +16,7 @@
  * - A negative probe is cached only briefly, so a backend started after the gateway
  *   is picked up on the next request instead of being stuck on "mock".
  */
-import { validateActionProposal } from '@privapilot/protocol';
+import { validateActionProposal, describeRedactionScheme } from '@privapilot/protocol';
 import { MockReasoningEngine } from './mock-engine.js';
 const DEFAULT_MODEL_NAME = 'qwen2.5-vl';
 /** A successful probe result stays valid this long. */
@@ -425,7 +425,7 @@ export class VlmReasoningEngine {
      * Handles Ollama native format (/api/chat) with at most one schema-repair attempt.
      */
     async callOllama(payload, baseUrl, modelName) {
-        const systemPrompt = this.buildSystemPrompt();
+        const systemPrompt = this.buildSystemPrompt(payload);
         const userPrompt = this.buildUserPrompt(payload);
         const chatUrl = `${baseUrl.replace(/\/$/, '')}/api/chat`;
         // Extract base64 image data without data URI prefix for Ollama
@@ -484,7 +484,7 @@ export class VlmReasoningEngine {
      * Handles standard OpenAI-compatible format (/v1/chat/completions) with at most one schema-repair attempt.
      */
     async callOpenAICompatible(payload, endpoint, modelName) {
-        const systemPrompt = this.buildSystemPrompt();
+        const systemPrompt = this.buildSystemPrompt(payload);
         const userPrompt = this.buildUserPrompt(payload);
         const headers = {
             'Content-Type': 'application/json'
@@ -573,16 +573,29 @@ export class VlmReasoningEngine {
         }
         return validation.proposal;
     }
-    buildSystemPrompt() {
+    /**
+     * Builds the system prompt for THIS payload.
+     *
+     * The redaction section is generated from the manifest the client sent, not
+     * asserted in fixed prose. Previously the prompt claimed PII "has been blacked
+     * out" without the server ever being told what was removed, how much, or by what
+     * convention - so the model was reasoning over holes it had no description of,
+     * which is exactly what the problem statement's "aware for this redaction scheme"
+     * clause asks us not to do.
+     */
+    buildSystemPrompt(payload) {
+        const scheme = describeRedactionScheme(payload?.redactionManifest);
         return `
 You are PrivaPilot's Centralized Reasoning Agent for browser automation.
-You receive a sanitized screenshot (with all sensitive PII intentionally blacked out or blurred) and a compact list of interactive elements with local IDs (e.g. "el_1", "el_2").
+You receive a sanitized screenshot and a compact list of interactive elements with local IDs (e.g. "el_1", "el_2").
+
+${scheme}
 
 Strict Rules:
 1. Return ONLY schema-valid JSON for one single next action.
 2. Target elements using "targetLocalId" ONLY. NEVER invent CSS selectors, XPath, or JavaScript.
 3. Classify risk as "safe" (read/navigate/preview/filter) or "protected" (submit/delete/pay/sign).
-4. Provide a concise rationale.
+4. Provide a concise rationale. When a redacted region is relevant to your decision, say so in the rationale.
 
 JSON Schema:
 {

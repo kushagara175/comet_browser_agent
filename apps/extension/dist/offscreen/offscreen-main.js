@@ -13969,6 +13969,96 @@ as ORT format: ${n}`);
     }
   });
 
+  // ../../packages/protocol/dist/coordinates.js
+  function viewportToScreenshotBox(box, meta, paddingPx = 4) {
+    const scaleX = meta.screenshotWidth / meta.viewportWidth;
+    const scaleY = meta.screenshotHeight / meta.viewportHeight;
+    const rawX = box.x * scaleX - paddingPx;
+    const rawY = box.y * scaleY - paddingPx;
+    const rawW = box.width * scaleX + paddingPx * 2;
+    const rawH = box.height * scaleY + paddingPx * 2;
+    const clampedX = Math.max(0, Math.min(rawX, meta.screenshotWidth));
+    const clampedY = Math.max(0, Math.min(rawY, meta.screenshotHeight));
+    const clampedW = Math.max(0, Math.min(rawW, meta.screenshotWidth - clampedX));
+    const clampedH = Math.max(0, Math.min(rawH, meta.screenshotHeight - clampedY));
+    return {
+      space: "screenshotPixel",
+      x: Math.round(clampedX),
+      y: Math.round(clampedY),
+      width: Math.round(clampedW),
+      height: Math.round(clampedH)
+    };
+  }
+  function screenshotToViewportBox(box, meta) {
+    const scaleX = meta.screenshotWidth / meta.viewportWidth;
+    const scaleY = meta.screenshotHeight / meta.viewportHeight;
+    return {
+      space: "viewportCssPixel",
+      x: Math.round(box.x / scaleX),
+      y: Math.round(box.y / scaleY),
+      width: Math.round(box.width / scaleX),
+      height: Math.round(box.height / scaleY)
+    };
+  }
+  function mergeBoundingBoxes(boxes) {
+    if (boxes.length <= 1) {
+      return [...boxes];
+    }
+    const sorted = [...boxes].sort((a, b) => a.x - b.x || a.y - b.y);
+    const merged = [];
+    for (const current of sorted) {
+      if (merged.length === 0) {
+        merged.push({ ...current });
+        continue;
+      }
+      const last = merged[merged.length - 1];
+      const overlaps = current.x <= last.x + last.width && current.x + current.width >= last.x && current.y <= last.y + last.height && current.y + current.height >= last.y;
+      if (overlaps) {
+        const minX = Math.min(last.x, current.x);
+        const minY = Math.min(last.y, current.y);
+        const maxX = Math.max(last.x + last.width, current.x + current.width);
+        const maxY = Math.max(last.y + last.height, current.y + current.height);
+        merged[merged.length - 1] = {
+          space: last.space,
+          x: minX,
+          y: minY,
+          width: maxX - minX,
+          height: maxY - minY
+        };
+      } else {
+        merged.push({ ...current });
+      }
+    }
+    return merged;
+  }
+
+  // ../../packages/protocol/dist/redaction.js
+  var REDACTION_FILL_COLOR = "#0f172a";
+  function redactionImageLabel(category) {
+    return `[REDACTED: ${category.toUpperCase()}]`;
+  }
+  var FACE_IMAGE_LABEL = "[FACE BLUR]";
+  var SENSITIVE_ELEMENT_PLACEHOLDERS = {
+    password: "[PASSWORD FIELD]",
+    auth_code: "[OTP FIELD]",
+    credit_card: "[PAYMENT FIELD]",
+    cvv: "[PAYMENT FIELD]",
+    bank_account: "[PAYMENT FIELD]",
+    national_id: "[NATIONAL ID FIELD]",
+    email: "[EMAIL FIELD]",
+    phone: "[PHONE FIELD]",
+    token: "[TOKEN/KEY FIELD]",
+    date_of_birth: "[SENSITIVE FIELD]",
+    address: "[SENSITIVE FIELD]",
+    username: "[SENSITIVE FIELD]",
+    face: "[SENSITIVE FIELD]",
+    high_risk_surface: "[SENSITIVE FIELD]",
+    uninspectable: "[SENSITIVE FIELD]"
+  };
+  function sensitiveElementPlaceholder(category) {
+    return SENSITIVE_ELEMENT_PLACEHOLDERS[category] || "[SENSITIVE FIELD]";
+  }
+
   // ../../packages/pii-rules/dist/luhn.js
   function isValidLuhn(cardNumberStr) {
     const sanitized = cardNumberStr.replace(/[\s-]/g, "");
@@ -14374,69 +14464,6 @@ as ORT format: ${n}`);
       return scrubbed.substring(0, 77) + "...";
     }
     return scrubbed;
-  }
-
-  // ../../packages/protocol/dist/coordinates.js
-  function viewportToScreenshotBox(box, meta, paddingPx = 4) {
-    const scaleX = meta.screenshotWidth / meta.viewportWidth;
-    const scaleY = meta.screenshotHeight / meta.viewportHeight;
-    const rawX = box.x * scaleX - paddingPx;
-    const rawY = box.y * scaleY - paddingPx;
-    const rawW = box.width * scaleX + paddingPx * 2;
-    const rawH = box.height * scaleY + paddingPx * 2;
-    const clampedX = Math.max(0, Math.min(rawX, meta.screenshotWidth));
-    const clampedY = Math.max(0, Math.min(rawY, meta.screenshotHeight));
-    const clampedW = Math.max(0, Math.min(rawW, meta.screenshotWidth - clampedX));
-    const clampedH = Math.max(0, Math.min(rawH, meta.screenshotHeight - clampedY));
-    return {
-      space: "screenshotPixel",
-      x: Math.round(clampedX),
-      y: Math.round(clampedY),
-      width: Math.round(clampedW),
-      height: Math.round(clampedH)
-    };
-  }
-  function screenshotToViewportBox(box, meta) {
-    const scaleX = meta.screenshotWidth / meta.viewportWidth;
-    const scaleY = meta.screenshotHeight / meta.viewportHeight;
-    return {
-      space: "viewportCssPixel",
-      x: Math.round(box.x / scaleX),
-      y: Math.round(box.y / scaleY),
-      width: Math.round(box.width / scaleX),
-      height: Math.round(box.height / scaleY)
-    };
-  }
-  function mergeBoundingBoxes(boxes) {
-    if (boxes.length <= 1) {
-      return [...boxes];
-    }
-    const sorted = [...boxes].sort((a, b) => a.x - b.x || a.y - b.y);
-    const merged = [];
-    for (const current of sorted) {
-      if (merged.length === 0) {
-        merged.push({ ...current });
-        continue;
-      }
-      const last = merged[merged.length - 1];
-      const overlaps = current.x <= last.x + last.width && current.x + current.width >= last.x && current.y <= last.y + last.height && current.y + current.height >= last.y;
-      if (overlaps) {
-        const minX = Math.min(last.x, current.x);
-        const minY = Math.min(last.y, current.y);
-        const maxX = Math.max(last.x + last.width, current.x + current.width);
-        const maxY = Math.max(last.y + last.height, current.y + current.height);
-        merged[merged.length - 1] = {
-          space: last.space,
-          x: minX,
-          y: minY,
-          width: maxX - minX,
-          height: maxY - minY
-        };
-      } else {
-        merged.push({ ...current });
-      }
-    }
-    return merged;
   }
 
   // src/sanitizer/coordinate-transformer.ts
@@ -15314,34 +15341,7 @@ as ORT format: ${n}`);
         let sanitizedName;
         let actionCapabilities = [...el2.actionCapabilities];
         if (sensitiveCategory) {
-          switch (sensitiveCategory) {
-            case "password":
-              sanitizedName = "[PASSWORD FIELD]";
-              break;
-            case "auth_code":
-              sanitizedName = "[OTP FIELD]";
-              break;
-            case "credit_card":
-            case "cvv":
-            case "bank_account":
-              sanitizedName = "[PAYMENT FIELD]";
-              break;
-            case "national_id":
-              sanitizedName = "[NATIONAL ID FIELD]";
-              break;
-            case "email":
-              sanitizedName = "[EMAIL FIELD]";
-              break;
-            case "phone":
-              sanitizedName = "[PHONE FIELD]";
-              break;
-            case "token":
-              sanitizedName = "[TOKEN/KEY FIELD]";
-              break;
-            default:
-              sanitizedName = "[SENSITIVE FIELD]";
-              break;
-          }
+          sanitizedName = sensitiveElementPlaceholder(sensitiveCategory);
           actionCapabilities = actionCapabilities.filter((cap) => cap !== "type");
         } else {
           sanitizedName = sanitizeElementName(el2.rawName);
@@ -15375,6 +15375,39 @@ as ORT format: ${n}`);
           throw new Error(`Sanitization Blocked: ${pixelVerification.reason}`);
         }
       }
+      const byCategory = /* @__PURE__ */ new Map();
+      for (const region of allRegions) {
+        const existing = byCategory.get(region.category);
+        if (existing) {
+          byCategory.set(region.category, { ...existing, count: existing.count + 1 });
+        } else {
+          byCategory.set(region.category, { category: region.category, count: 1, method: region.method });
+        }
+      }
+      const placeholdersUsed = Array.from(
+        new Set(
+          Array.from(sensitiveDomElementsMap.values()).map((c) => sensitiveElementPlaceholder(c))
+        )
+      ).sort();
+      const assessableRegions = allRegions.filter((r) => preMaskDetail.has(r.id));
+      const redactionManifest = {
+        schemeVersion: "1.0",
+        categories: Array.from(byCategory.values()).sort((a, b) => a.category.localeCompare(b.category)),
+        totalRegions: allRegions.length,
+        masksRendered: renderedCount,
+        conventions: {
+          opaqueFillColor: REDACTION_FILL_COLOR,
+          imageLabelFormat: redactionImageLabel("password").replace("PASSWORD", "CATEGORY"),
+          faceImageLabel: FACE_IMAGE_LABEL,
+          elementPlaceholders: placeholdersUsed
+        },
+        coverage: {
+          pixelVerified: maskedCanvas !== null,
+          regionsAssessed: assessableRegions.length,
+          regionsUnassessable: allRegions.length - assessableRegions.length
+        },
+        withheldCapabilities: sensitiveDomElementsMap.size > 0 ? ["type"] : []
+      };
       const digestStr = `${rawCapture.captureId}:${allRegions.length}:${sanitizedElements.length}`;
       const payloadDigestSha256 = `sha256_${Math.abs(digestStr.split("").reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0))}`;
       return {
@@ -15390,6 +15423,7 @@ as ORT format: ${n}`);
           viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight]
         },
         maskCount: allRegions.length,
+        redactionManifest,
         payloadDigestSha256,
         timestamp: Date.now()
       };

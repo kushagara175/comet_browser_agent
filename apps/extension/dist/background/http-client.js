@@ -107,7 +107,8 @@ export class ReasoningHttpClient {
             goal: sanitized.goal,
             screenshot: sanitized.sanitizedScreenshotDataUrl,
             elements: sanitized.elements,
-            pageState: sanitized.pageState
+            pageState: sanitized.pageState,
+            redactionManifest: sanitized.redactionManifest
         };
         // 2. Outgoing Canary Gate check
         assertNoCanaryLeak(payload, 'Outgoing HTTP Payload');

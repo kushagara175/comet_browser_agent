@@ -185,22 +185,69 @@ benchmark scores it on.
 and reports truthfully, and finds **0 faces** across all 14 fixtures because the
 avatars are drawn SVG rather than photographs. Real face imagery belongs to **R7**.
 
-### R1 · Redaction manifest in the protocol
+### R1 · Redaction manifest in the protocol — ✅ **DELIVERED**
 **Satisfies:** *"the central server … should be **aware for this redaction scheme**
 and can process data accordingly."*
 
-`SanitizedNetworkPayload` (`protocol/payload.ts:115`) carries no redaction
-information at all — `maskCount` exists in `SanitizedContext` and is dropped at
-the network boundary. Add categories present, count per category, the
-`[REDACTED: X]` placeholder convention, mask geometry semantics and coverage
-confidence. **Generate the server system prompt from the manifest** rather than
-hardcoding prose.
+`SanitizedNetworkPayload` carried no redaction information at all — `maskCount`
+existed on `SanitizedContext` and was dropped at the network boundary — while the
+server's system prompt asserted in fixed prose that PII "has been blacked out". That
+sentence was true by assertion: it said the same thing regardless of what the client
+had actually done, and stayed true after the client changed.
 
-**Exit gate:** the server prompt is derived, not hardcoded, and the model's
-rationale demonstrably references what was redacted.
+The scheme is now defined **once**, in
+[`protocol/src/redaction.ts`](../packages/protocol/src/redaction.ts), and both sides
+read it:
 
-*Cheapest alignment win in this list — a literal unmet PS sentence, additive to
-the protocol rather than a restructure.*
+- **`RedactionManifest`** rides on `SanitizedContext` and on the wire payload. It
+  carries categories present with a count and method for each, the total regions,
+  masks rendered, the in-image conventions (fill colour, `[REDACTED: CATEGORY]`
+  label, `[FACE BLUR]` label), the element placeholders actually used, pixel-coverage
+  confidence, and the capabilities withheld from sensitive controls.
+- **Counts and conventions only.** A manifest carrying labels, values or coordinates
+  would re-identify exactly what redaction removed, which defeats the point of
+  transmitting it.
+- The pipeline's hardcoded placeholder `switch` is gone; `sensitiveElementPlaceholder()`
+  is now shared, so the server's prompt can enumerate exactly the placeholders it will
+  encounter and the two cannot drift.
+- **`describeRedactionScheme(manifest)` generates the prompt section.** The server
+  imports it from the protocol package, so what the model is told is derived from what
+  the client actually did.
+- The manifest is **validated before it reaches the model** — it is interpolated into a
+  system prompt, so an unchecked category string is a prompt-injection vector. Category
+  names are checked against a known set, counts are bounded, and string fields are
+  length-capped. A payload with no manifest is rejected with **HTTP 400**: a client that
+  declines to describe its redaction scheme is not processable.
+
+**Exit gate — met, against the live hosted model.** `npm run verify:manifest` sends the
+same page twice, differing only in the manifest:
+
+```
+=== manifest is required by the protocol ===
+  PASS  payload without a manifest -> HTTP 400
+
+=== model reasons about the redacted fields ===
+  action    : click -> el_1 (risk safe)
+  rationale : Clicking the email field to allow the user to enter their email
+              address. The email field is redacted but its role is clear.
+  PASS  did not propose typing into a redacted field
+  PASS  rationale references the redaction scheme
+
+=== an unredacted page is described differently ===
+  rationale : The goal is to sign in, but the current elements suggest a
+              search/report functionality...
+  PASS  unredacted capture reasoned about without redaction framing
+```
+
+The model reasoned about the redacted field's **role** without attempting to recover
+its value, and chose `click` rather than `type` because `type` was withheld — the
+behaviour the generated prompt asks for. The unredacted control run produced entirely
+different reasoning with no redaction framing, which is what shows the prompt is
+derived rather than fixed.
+
+*A live-model check is inherently non-deterministic. The rationale wording is reported
+as a `WARN` rather than a hard failure; the generated-prompt property itself is pinned
+by 11 tests in [`tests/redaction-manifest.test.js`](../tests/redaction-manifest.test.js).*
 
 ### R2 · Local decision tier
 **Satisfies:** *"**If it requires** the visual context to be sent to server."*
@@ -399,8 +446,8 @@ demo video.
   hostage.
 - **R6 alongside R3**, not after it. Discovering the model blows the resource
   budget *after* integrating it is the expensive order.
-- **R1 can run in parallel** with any of these — it touches the protocol and the
-  server prompt, not the client pipeline.
+- **R1 is done.** The manifest shape is now a fixed point for R2: whatever the
+  decision tier chooses not to transmit still has to be described.
 - **R8 is the first thing to cut** if the run tightens.
 
 ## Never cut
@@ -427,6 +474,7 @@ npm test                   # unit and integration tests
 npm run benchmark          # Node: detector-level PII + detector ablations
 npm run benchmark:browser  # real Chrome: redaction, visual context, resources
 npm run verify:redaction   # pixel-true mask verification, with safe-control controls
+npm run verify:manifest    # server is aware of the redaction scheme (live model)
 npm run test:e2e           # full extension against a live model
 npm run compare:models     # model and payload-size latency sweep
 ```

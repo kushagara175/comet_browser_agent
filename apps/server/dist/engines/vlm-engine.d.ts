@@ -98,6 +98,16 @@ export declare class VlmReasoningEngine {
      * Extracts and validates an ActionProposal from raw model output string.
      */
     private parseActionProposal;
+    /**
+     * Builds the system prompt for THIS payload.
+     *
+     * The redaction section is generated from the manifest the client sent, not
+     * asserted in fixed prose. Previously the prompt claimed PII "has been blacked
+     * out" without the server ever being told what was removed, how much, or by what
+     * convention - so the model was reasoning over holes it had no description of,
+     * which is exactly what the problem statement's "aware for this redaction scheme"
+     * clause asks us not to do.
+     */
     private buildSystemPrompt;
     private buildUserPrompt;
     private isLocalAddress;

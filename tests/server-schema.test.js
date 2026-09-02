@@ -27,6 +27,20 @@ function createValidPayload(overrides = {}) {
       }
     ],
     pageState: { title: 'Apex Mission Portal', viewport: [1280, 720] },
+    redactionManifest: {
+      schemeVersion: '1.0',
+      categories: [{ category: 'password', count: 1, method: 'opaque_mask' }],
+      totalRegions: 1,
+      masksRendered: 1,
+      conventions: {
+        opaqueFillColor: '#0f172a',
+        imageLabelFormat: '[REDACTED: CATEGORY]',
+        faceImageLabel: '[FACE BLUR]',
+        elementPlaceholders: ['[PASSWORD FIELD]']
+      },
+      coverage: { pixelVerified: true, regionsAssessed: 1, regionsUnassessable: 0 },
+      withheldCapabilities: ['type']
+    },
     ...overrides
   };
 }

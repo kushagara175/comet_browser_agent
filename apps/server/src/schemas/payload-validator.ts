@@ -21,7 +21,15 @@ const ALLOWED_REASONING_ROOT_KEYS = new Set([
   'goal',
   'screenshot',
   'elements',
-  'pageState'
+  'pageState',
+  'redactionManifest'
+]);
+
+/** Categories the client may declare in a redaction manifest. */
+const KNOWN_SENSITIVE_CATEGORIES = new Set([
+  'password', 'email', 'phone', 'credit_card', 'cvv', 'bank_account',
+  'national_id', 'date_of_birth', 'address', 'username', 'auth_code',
+  'token', 'face', 'high_risk_surface', 'uninspectable'
 ]);
 
 const ALLOWED_CHAT_ROOT_KEYS = new Set([
@@ -361,10 +369,83 @@ export function validateSanitizedPayload(body: any): ValidationResult<SanitizedN
     seenLocalIds.add(el.localId);
   }
 
+  const manifestRes = validateRedactionManifest(body.redactionManifest);
+  if (!manifestRes.isValid) {
+    return { isValid: false, errorMessage: manifestRes.errorMessage };
+  }
+
   return {
     isValid: true,
     payload: body as SanitizedNetworkPayload
   };
+}
+
+/**
+ * Validates the redaction manifest.
+ *
+ * The manifest is generated into the model's system prompt, so it crosses a trust
+ * boundary twice: it arrives over the wire and is then handed to an LLM as
+ * instructions. Category names are checked against a known set and counts are
+ * bounded, so a malformed or hostile manifest cannot inject arbitrary text into
+ * the prompt through a category label.
+ */
+function validateRedactionManifest(manifest: any): { isValid: boolean; errorMessage?: string } {
+  // Absent manifest is a protocol error: the server is required to be aware of the
+  // redaction scheme, so a payload that declines to describe it is not processable.
+  if (!isPlainObject(manifest)) {
+    return { isValid: false, errorMessage: 'Missing or invalid "redactionManifest"' };
+  }
+  if (manifest.schemeVersion !== '1.0') {
+    return { isValid: false, errorMessage: 'Unsupported redactionManifest.schemeVersion. Expected "1.0"' };
+  }
+  if (!Array.isArray(manifest.categories) || manifest.categories.length > 32) {
+    return { isValid: false, errorMessage: 'Invalid "redactionManifest.categories"' };
+  }
+
+  for (const entry of manifest.categories) {
+    if (!isPlainObject(entry)) {
+      return { isValid: false, errorMessage: 'Invalid entry in "redactionManifest.categories"' };
+    }
+    if (!KNOWN_SENSITIVE_CATEGORIES.has(entry.category)) {
+      return { isValid: false, errorMessage: `Unknown redaction category: not an accepted value` };
+    }
+    if (!Number.isInteger(entry.count) || entry.count < 0 || entry.count > 10000) {
+      return { isValid: false, errorMessage: 'Invalid count in "redactionManifest.categories"' };
+    }
+    if (entry.method !== 'opaque_mask' && entry.method !== 'gaussian_blur') {
+      return { isValid: false, errorMessage: 'Invalid method in "redactionManifest.categories"' };
+    }
+  }
+
+  if (!Number.isInteger(manifest.totalRegions) || manifest.totalRegions < 0 || manifest.totalRegions > 10000) {
+    return { isValid: false, errorMessage: 'Invalid "redactionManifest.totalRegions"' };
+  }
+  if (!Number.isInteger(manifest.masksRendered) || manifest.masksRendered < 0 || manifest.masksRendered > 10000) {
+    return { isValid: false, errorMessage: 'Invalid "redactionManifest.masksRendered"' };
+  }
+
+  if (!isPlainObject(manifest.conventions)) {
+    return { isValid: false, errorMessage: 'Missing "redactionManifest.conventions"' };
+  }
+  const c = manifest.conventions;
+  const shortString = (v: any, max = 64) => typeof v === 'string' && v.length > 0 && v.length <= max;
+  if (!shortString(c.opaqueFillColor, 32) || !shortString(c.imageLabelFormat) || !shortString(c.faceImageLabel)) {
+    return { isValid: false, errorMessage: 'Invalid "redactionManifest.conventions"' };
+  }
+  if (!Array.isArray(c.elementPlaceholders) || c.elementPlaceholders.length > 32 ||
+      !c.elementPlaceholders.every((p: any) => shortString(p))) {
+    return { isValid: false, errorMessage: 'Invalid "redactionManifest.conventions.elementPlaceholders"' };
+  }
+
+  if (!isPlainObject(manifest.coverage) || typeof manifest.coverage.pixelVerified !== 'boolean') {
+    return { isValid: false, errorMessage: 'Invalid "redactionManifest.coverage"' };
+  }
+  if (!Array.isArray(manifest.withheldCapabilities) || manifest.withheldCapabilities.length > 16 ||
+      !manifest.withheldCapabilities.every((x: any) => shortString(x, 32))) {
+    return { isValid: false, errorMessage: 'Invalid "redactionManifest.withheldCapabilities"' };
+  }
+
+  return { isValid: true };
 }
 
 /**
