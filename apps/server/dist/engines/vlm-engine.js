@@ -566,7 +566,21 @@ export class VlmReasoningEngine {
         catch {
             throw new Error('Model output could not be parsed as JSON');
         }
-        // 3. Strict Closed Validation against current context elements
+        // 3. Drop optional fields the model emitted as null/empty.
+        //
+        // Told to return kind "finish", models routinely emit the whole schema with
+        // "targetLocalId": null alongside it. The field is optional, but `typeof null`
+        // is not "string", so the proposal was rejected and the run fell back to the
+        // offline reasoner - a valid decision thrown away over a JSON convention.
+        // Absent and null mean the same thing here, so normalise before validating.
+        // Note this only REMOVES keys: it never invents or repairs a value, so a
+        // genuinely malformed proposal is still rejected.
+        for (const key of ['targetLocalId', 'textToType', 'selectOptionValue', 'scrollDirection', 'expectedState']) {
+            if (parsed && (parsed[key] === null || parsed[key] === '')) {
+                delete parsed[key];
+            }
+        }
+        // 4. Strict Closed Validation against current context elements
         const validation = validateActionProposal(parsed, payload.elements);
         if (!validation.isValid || !validation.proposal) {
             throw new Error(validation.errorMessage || 'Invalid action proposal schema');
@@ -618,10 +632,16 @@ JSON Schema:
             bounds: e.coarseBounds,
             capabilities: e.actionCapabilities
         }));
+        const history = (payload.recentActions || [])
+            .map((a, i) => `${i + 1}. ${a.kind}${a.targetLabel ? ` on "${a.targetLabel}"` : ''}`)
+            .join(String.fromCharCode(10));
         return `Goal: ${payload.goal || 'Inspect page'}
 Active Viewport Elements:
 ${JSON.stringify(compactElements, null, 2)}
-
+${history ? `
+Already performed in this run (do NOT repeat these; if the goal is now satisfied, return kind "finish"):
+${history}
+` : ''}
 Analyze the layout and return the JSON action proposal.`;
     }
     isLocalAddress(urlStr) {

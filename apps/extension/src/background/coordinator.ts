@@ -24,6 +24,7 @@ import {
 import { BrowserAdapter, WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
+import { DecisionRouter } from './decision-router.js';
 
 export interface ChatOutcome {
   readonly success: boolean;
@@ -94,10 +95,15 @@ export class RunCoordinator {
   private pendingAction: ActionProposal | null = null;
   private currentSanitizedContext: SanitizedContext | null = null;
   private lastRunResult: CoordinatorRunResult | null = null;
-  private actionHistory: Array<{ kind: string; targetLocalId?: string; textToType?: string; selectOptionValue?: string; scrollDirection?: string }> = [];
+  private actionHistory: Array<{ kind: string; targetLocalId?: string; label?: string; textToType?: string; selectOptionValue?: string; scrollDirection?: string }> = [];
   private t0_runStart: number = 0;
   private cumulativeClientLatency: number = 0;
   private cumulativeServerLatency: number = 0;
+  private stepsDecidedLocally: number = 0;
+  private stepsEscalated: number = 0;
+  private bytesTransmittedTotal: number = 0;
+  private consecutiveLocalScrolls: number = 0;
+  private lastDecisionSource: 'local' | 'remote' = 'remote';
   private isCancelled: boolean = false;
 
   constructor(
@@ -137,10 +143,17 @@ export class RunCoordinator {
     }
   }
 
-  private recordActionHistory(proposal: ActionProposal): void {
+  /**
+   * `label` is recorded alongside the local id because local ids are regenerated on
+   * every capture - el_6 in one step is not el_6 in the next. The label is what
+   * survives a re-perception, and it is what lets the decision tier tell "I have
+   * already pressed this" from "this is a new control".
+   */
+  private recordActionHistory(proposal: ActionProposal, label?: string): void {
     this.actionHistory.push({
       kind: proposal.kind,
       targetLocalId: proposal.targetLocalId,
+      label,
       textToType: proposal.textToType,
       selectOptionValue: proposal.selectOptionValue,
       scrollDirection: proposal.scrollDirection
@@ -201,7 +214,11 @@ export class RunCoordinator {
       clientLatencyMs: this.cumulativeClientLatency,
       serverLatencyMs: this.cumulativeServerLatency,
       stepCount: this.currentMaxSteps,
-      stepsCompleted: step
+      stepsCompleted: step,
+      decisionSource: this.lastDecisionSource,
+      stepsDecidedLocally: this.stepsDecidedLocally,
+      stepsEscalated: this.stepsEscalated,
+      bytesTransmittedTotal: this.bytesTransmittedTotal
     };
   }
 
@@ -232,6 +249,11 @@ export class RunCoordinator {
     this.t0_runStart = Date.now();
     this.cumulativeClientLatency = 0;
     this.cumulativeServerLatency = 0;
+    this.stepsDecidedLocally = 0;
+    this.stepsEscalated = 0;
+    this.bytesTransmittedTotal = 0;
+    this.consecutiveLocalScrolls = 0;
+    this.lastDecisionSource = 'remote';
     this.isCancelled = false;
 
     return this.executeLoop();
@@ -376,26 +398,82 @@ export class RunCoordinator {
         this.listeners.onSanitizationComplete(rawCapture, sanitized);
       }
 
-      // Step 3: Server Reasoning over Sanitized Context Only
-      this.transition('sending-sanitized-context', `Step ${step}/${maxSteps}: Transmitting sanitized context`);
-      this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Awaiting reasoning action`);
+      // Step 3: Decide the step - locally where possible, remotely where required.
+      //
+      // This is the problem statement's "IF it requires the visual context to be
+      // sent to server". Previously there was no "if": every step transmitted.
+      const routing = DecisionRouter.route({
+        goal,
+        sanitized,
+        step,
+        consecutiveLocalScrolls: this.consecutiveLocalScrolls,
+        viewport: domResponse.viewport,
+        alreadyActionedLabels: this.actionHistory
+          .filter((a) => a.kind === 'click' && a.label)
+          .map((a) => a.label as string)
+      });
 
       let proposal: ActionProposal;
-      try {
-        proposal = await this.httpClient.requestReasoningAction(sanitized);
-      } catch (err: any) {
-        const errorMsg = `Reasoning server error: ${err.message || 'Request failed'}`;
-        this.transition('failed-safe', errorMsg);
-        const res: CoordinatorRunResult = {
-          success: false,
-          state: 'failed-safe',
-          error: errorMsg,
-          sanitized,
-          stepCount: step
-        };
-        this.lastRunResult = res;
-        return res;
+      let decisionSource: 'local' | 'remote';
+      let bytesTransmitted = 0;
+
+      if (routing.source === 'local') {
+        decisionSource = 'local';
+        proposal = routing.proposal;
+        this.stepsDecidedLocally++;
+        this.consecutiveLocalScrolls = proposal.kind === 'scroll' ? this.consecutiveLocalScrolls + 1 : 0;
+        this.transition(
+          'validating-action',
+          `Step ${step}/${maxSteps}: Decided on-device (${routing.rule}) - nothing transmitted`
+        );
+      } else {
+        decisionSource = 'remote';
+        this.stepsEscalated++;
+        this.consecutiveLocalScrolls = 0;
+        this.transition('sending-sanitized-context', `Step ${step}/${maxSteps}: Transmitting sanitized context`);
+        this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Awaiting reasoning action`);
+
+        try {
+          proposal = await this.httpClient.requestReasoningAction(
+            sanitized,
+            this.actionHistory
+              .filter((a) => a.kind !== 'wait')
+              .slice(-8)
+              .map((a) => ({ kind: a.kind, targetLabel: a.label }))
+          );
+        } catch (err: any) {
+          const errorMsg = `Reasoning server error: ${err.message || 'Request failed'}`;
+          this.transition('failed-safe', errorMsg);
+          const res: CoordinatorRunResult = {
+            success: false,
+            state: 'failed-safe',
+            error: errorMsg,
+            sanitized,
+            stepCount: step
+          };
+          this.lastRunResult = res;
+          return res;
+        }
+        // Optional on the interface: an injected client may not do byte accounting.
+        bytesTransmitted =
+          typeof (this.httpClient as any).getLastRequestBytes === 'function'
+            ? (this.httpClient as any).getLastRequestBytes()
+            : 0;
       }
+
+      this.lastDecisionSource = decisionSource;
+      this.bytesTransmittedTotal += bytesTransmitted;
+      this.auditLogger.logDecisionEvent({
+        runId: sanitized.runId,
+        step,
+        decisionSource,
+        actionKind: proposal.kind,
+        targetLocalId: proposal.targetLocalId,
+        confidence: proposal.confidence,
+        rule: routing.source === 'local' ? routing.rule : undefined,
+        escalationReason: routing.source === 'remote' ? routing.escalationReason : undefined,
+        bytesTransmitted
+      });
 
       const t4_reasoningReceived = Date.now();
 
@@ -540,7 +618,10 @@ export class RunCoordinator {
         }
       }
 
-      this.recordActionHistory(proposal);
+      this.recordActionHistory(
+        proposal,
+        sanitized.elements.find((e) => e.localId === proposal.targetLocalId)?.sanitizedName
+      );
 
       const isSuccess = Boolean(execResponse && execResponse.success && execResponse.semanticOutcomeVerified);
       if (!isSuccess) {

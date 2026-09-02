@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-02T04:42:13.975Z",
+  "timestamp": "2026-09-02T06:51:47.385Z",
   "harness": "extension-e2e",
   "measured": true,
   "metadata": {
@@ -7,7 +7,7 @@
     "environment": "win32 x64 (Node v22.19.0)",
     "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "extensionId": "khhldhlmildnjbljlbphafnflheapiec",
-    "gitSha": "df79c92",
+    "gitSha": "22b7be8",
     "model": {
       "name": "qwen/qwen2.5-vl-72b-instruct",
       "provider": "vlm-cloud",
@@ -15,36 +15,70 @@
     }
   },
   "goal": "Open the safe preview for the pending request",
-  "success": false,
-  "state": "failed-safe",
-  "error": "Semantic verification failed: bounded timeout expired without observing expected postcondition",
+  "success": true,
+  "state": "complete",
+  "error": null,
   "proposal": {
     "actionId": "act_1",
-    "kind": "click",
-    "targetLocalId": "el_6",
+    "kind": "finish",
     "confidence": 0.95,
     "risk": "safe",
-    "rationale": "Clicking 'Open Safe Preview' aligns with the goal to view the pending request safely.",
-    "expectedState": "The safe preview for the pending request should be displayed."
+    "rationale": "The 'Open Safe Preview' button has already been clicked, and the preview drawer is open, indicating that the goal has been achieved.",
+    "expectedState": "The safe preview for the pending request is displayed."
   },
-  "maskCount": 6,
+  "maskCount": 5,
   "elementsTransmitted": 10,
-  "sanitizedScreenshotBytes": 103484,
+  "sanitizedScreenshotBytes": 103397,
   "telemetry": {
-    "runId": "run_1788324126730",
-    "t0_start": 1788324126730,
-    "t1_captureComplete": 1788324131107,
-    "t2_detectionComplete": 1788324131107,
-    "t3_sanitizationValidated": 1788324131144,
-    "t4_reasoningReceived": 1788324133796,
-    "t5_actionValidated": 1788324133796,
-    "t6_actionExecuted": 1788324133957,
-    "t7_stateVerified": 1788324133957,
-    "totalLatencyMs": 7227,
-    "clientLatencyMs": 1175,
-    "serverLatencyMs": 6051,
+    "runId": "run_1788331900761",
+    "t0_start": 1788331900761,
+    "t1_captureComplete": 1788331901901,
+    "t2_detectionComplete": 1788331901901,
+    "t3_sanitizationValidated": 1788331901979,
+    "t4_reasoningReceived": 1788331907369,
+    "t5_actionValidated": 1788331907369,
+    "t6_actionExecuted": 1788331907369,
+    "t7_stateVerified": 1788331907369,
+    "totalLatencyMs": 6608,
+    "clientLatencyMs": 1213,
+    "serverLatencyMs": 5394,
     "stepCount": 10,
-    "stepsCompleted": 2
+    "stepsCompleted": 2,
+    "decisionSource": "remote",
+    "stepsDecidedLocally": 1,
+    "stepsEscalated": 1,
+    "bytesTransmittedTotal": 140444
   },
-  "wallClockMs": 8643
+  "wallClockMs": 7984,
+  "decisionTrail": [
+    {
+      "actionKind": "click",
+      "bytesTransmitted": 0,
+      "confidence": 0.95,
+      "decisionSource": "local",
+      "id": "dec_1788331901784_oijfm",
+      "rule": "unambiguous-label-match",
+      "runId": "run_1788331901778",
+      "step": 1,
+      "targetLocalId": "el_6",
+      "timestamp": 1788331901784
+    },
+    {
+      "actionKind": "finish",
+      "bytesTransmitted": 140444,
+      "confidence": 0.95,
+      "decisionSource": "remote",
+      "escalationReason": "no local rule applies with sufficient confidence",
+      "id": "dec_1788331907369_waqiw",
+      "runId": "run_1788331901977",
+      "step": 2,
+      "timestamp": 1788331907369
+    }
+  ],
+  "transmission": {
+    "stepsDecidedLocally": 1,
+    "stepsEscalated": 1,
+    "bytesTransmitted": 140444,
+    "zeroTransmissionStep": true
+  }
 }

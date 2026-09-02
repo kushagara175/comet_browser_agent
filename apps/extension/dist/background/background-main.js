@@ -15138,7 +15138,7 @@ function sampleRegion(canvas, box) {
 
 // src/sanitizer/post-redaction-verifier.ts
 var MIN_OVERLAY_FRACTION = 0.9;
-var MIN_DETAIL_REMOVED = 0.6;
+var MIN_DETAIL_REMOVED = 0.35;
 var MIN_ASSESSABLE_DETAIL = 3;
 var PostRedactionVerifier = class {
   /**
@@ -16192,11 +16192,17 @@ var CHAT_TIMEOUT_MS = 12e4;
 var HEALTH_TIMEOUT_MS = 3e3;
 var ReasoningHttpClient = class {
   serverBaseUrl;
+  /** Bytes sent by the most recent reasoning request, for transmission accounting. */
+  lastRequestBytes = 0;
   constructor(serverBaseUrl = DEFAULT_SERVER_BASE_URL) {
     this.serverBaseUrl = serverBaseUrl.replace(/\/+$/, "");
   }
   getServerBaseUrl() {
     return this.serverBaseUrl;
+  }
+  /** Size of the last payload actually transmitted, in bytes. */
+  getLastRequestBytes() {
+    return this.lastRequestBytes;
   }
   /**
    * Turns a transport failure into something the user can act on. A bare
@@ -16272,7 +16278,7 @@ var ReasoningHttpClient = class {
   /**
    * Transmits SanitizedContext to Reasoning Server and returns one ActionProposal.
    */
-  async requestReasoningAction(sanitized) {
+  async requestReasoningAction(sanitized, recentActions) {
     const payload = {
       protocolVersion: sanitized.protocolVersion,
       runId: sanitized.runId,
@@ -16280,9 +16286,12 @@ var ReasoningHttpClient = class {
       screenshot: sanitized.sanitizedScreenshotDataUrl,
       elements: sanitized.elements,
       pageState: sanitized.pageState,
-      redactionManifest: sanitized.redactionManifest
+      redactionManifest: sanitized.redactionManifest,
+      ...recentActions && recentActions.length ? { recentActions } : {}
     };
     assertNoCanaryLeak(payload, "Outgoing HTTP Payload");
+    const serializedPayload = JSON.stringify(payload);
+    this.lastRequestBytes = serializedPayload.length;
     const response = await this.fetchWithTimeout(
       `${this.serverBaseUrl}/api/v1/reason`,
       {
@@ -16291,7 +16300,7 @@ var ReasoningHttpClient = class {
           "Content-Type": "application/json",
           "X-PrivaPilot-Version": "1.0"
         },
-        body: JSON.stringify(payload)
+        body: serializedPayload
       },
       "Reasoning request",
       REASONING_TIMEOUT_MS
@@ -16378,15 +16387,19 @@ var ReasoningHttpClient = class {
 // src/background/audit-logger.ts
 var AuditLogger = class {
   auditTrail = [];
+  decisionTrail = [];
   constructor() {
     this.loadFromStorage();
   }
   async loadFromStorage() {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       try {
-        const result = await chrome.storage.local.get(["privapilot_audit_trail"]);
+        const result = await chrome.storage.local.get(["privapilot_audit_trail", "privapilot_decision_trail"]);
         if (result && Array.isArray(result.privapilot_audit_trail)) {
           this.auditTrail = result.privapilot_audit_trail;
+        }
+        if (result && Array.isArray(result.privapilot_decision_trail)) {
+          this.decisionTrail = result.privapilot_decision_trail;
         }
       } catch {
       }
@@ -16411,9 +16424,44 @@ var AuditLogger = class {
     this.persistToStorage();
     return record;
   }
+  /**
+   * Records how a step was decided, and how many bytes it cost.
+   *
+   * A local decision writes bytesTransmitted: 0 - the audit trail is where the
+   * "we often do not send at all" claim is actually evidenced.
+   */
+  logDecisionEvent(record) {
+    const full = {
+      id: `dec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      timestamp: Date.now(),
+      ...record
+    };
+    this.decisionTrail.push(full);
+    if (this.decisionTrail.length > 500) {
+      this.decisionTrail.shift();
+    }
+    this.persistToStorage();
+    return full;
+  }
+  getDecisionRecords() {
+    return [...this.decisionTrail];
+  }
+  /** Local/remote split for the current trail, for the side panel and the harness. */
+  getTransmissionSummary() {
+    const decidedLocally = this.decisionTrail.filter((d) => d.decisionSource === "local").length;
+    return {
+      totalSteps: this.decisionTrail.length,
+      decidedLocally,
+      escalated: this.decisionTrail.length - decidedLocally,
+      bytesTransmitted: this.decisionTrail.reduce((n, d) => n + d.bytesTransmitted, 0)
+    };
+  }
   persistToStorage() {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      chrome.storage.local.set({ privapilot_audit_trail: this.auditTrail }).catch(() => {
+      chrome.storage.local.set({
+        privapilot_audit_trail: this.auditTrail,
+        privapilot_decision_trail: this.decisionTrail
+      }).catch(() => {
       });
     }
   }
@@ -16422,7 +16470,171 @@ var AuditLogger = class {
   }
   clear() {
     this.auditTrail = [];
+    this.decisionTrail = [];
     this.persistToStorage();
+  }
+};
+
+// src/background/decision-router.ts
+var DISMISS_TERMS = ["dismiss", "close", "no thanks", "not now", "maybe later", "skip", "got it"];
+var STOPWORDS = /* @__PURE__ */ new Set([
+  "the",
+  "a",
+  "an",
+  "to",
+  "of",
+  "in",
+  "on",
+  "at",
+  "for",
+  "and",
+  "or",
+  "is",
+  "are",
+  "be",
+  "my",
+  "me",
+  "i",
+  "it",
+  "this",
+  "that",
+  "with",
+  "from",
+  "by",
+  "please",
+  "go",
+  "goto",
+  "open",
+  "click",
+  "press",
+  "select",
+  "find",
+  "show",
+  "view",
+  "page"
+]);
+var MIN_LABEL_COVERAGE = 0.75;
+var MIN_MATCH_MARGIN = 0.4;
+var MIN_MATCHED_TOKENS = 2;
+var MAX_CONSECUTIVE_LOCAL_SCROLLS = 2;
+var MIN_REMAINING_SCROLL_PX = 120;
+function tokenize(text) {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((t) => t.length > 1 && !STOPWORDS.has(t));
+}
+function isRedactedPlaceholder(name2) {
+  return /^\[[^\]]+\]$/.test(name2.trim());
+}
+function isActionable(el2) {
+  return el2.actionCapabilities.includes("click") && el2.state.includes("visible") && !el2.state.includes("disabled");
+}
+function scoreCandidate(goalTokens, name2) {
+  const labelTokens = tokenize(name2);
+  if (labelTokens.length === 0) return { score: 0, matched: 0 };
+  let hits = 0;
+  for (const token of labelTokens) {
+    if (goalTokens.has(token)) hits++;
+  }
+  return { score: hits / labelTokens.length, matched: hits };
+}
+var actionCounter = 0;
+function nextActionId() {
+  actionCounter += 1;
+  return `act_local_${Date.now()}_${actionCounter}`;
+}
+var DecisionRouter = class {
+  /**
+   * Decides a step locally, or reports why it must be escalated.
+   *
+   * Returning `remote` is the safe default and the common case; a rule fires only
+   * when the answer is not in doubt.
+   */
+  static route(ctx) {
+    const { goal, sanitized } = ctx;
+    const elements = sanitized.elements;
+    if (elements.length === 0) {
+      return { source: "remote", escalationReason: "no interactive elements to reason over" };
+    }
+    const actioned = new Set((ctx.alreadyActionedLabels || []).map((l) => l.toLowerCase().trim()));
+    const candidates = elements.filter(isActionable).filter((el2) => !actioned.has(el2.sanitizedName.toLowerCase().trim()));
+    if (candidates.length === 0) {
+      return {
+        source: "remote",
+        escalationReason: actioned.size > 0 ? "every locally-obvious control has already been actioned" : "no actionable elements"
+      };
+    }
+    const dismissMatches = candidates.filter((el2) => {
+      const name2 = el2.sanitizedName.toLowerCase().trim();
+      return DISMISS_TERMS.some((term) => name2 === term || name2.startsWith(term + " ") || name2.endsWith(" " + term));
+    });
+    if (dismissMatches.length === 1) {
+      const target = dismissMatches[0];
+      return {
+        source: "local",
+        rule: "dismiss-overlay",
+        proposal: {
+          actionId: nextActionId(),
+          kind: "click",
+          targetLocalId: target.localId,
+          confidence: 0.9,
+          risk: "safe",
+          rationale: `Closing "${target.sanitizedName}" locally: dismissing an overlay needs no server reasoning.`,
+          expectedState: "The overlay is dismissed and the underlying page is interactable."
+        }
+      };
+    }
+    const goalTokenList = tokenize(goal);
+    const goalTokens = new Set(goalTokenList);
+    if (goalTokens.size > 0) {
+      const scored = candidates.filter((el2) => !isRedactedPlaceholder(el2.sanitizedName)).map((el2) => ({ el: el2, ...scoreCandidate(goalTokens, el2.sanitizedName) })).sort((a, b) => b.score - a.score || b.matched - a.matched);
+      const best = scored[0];
+      const runnerUp = scored[1];
+      const enoughTokens = best && (best.matched >= MIN_MATCHED_TOKENS || best.matched === 1 && goalTokens.size === 1 && tokenize(best.el.sanitizedName).length === 1);
+      if (best && enoughTokens && best.score >= MIN_LABEL_COVERAGE) {
+        const margin = best.score - (runnerUp ? runnerUp.score : 0);
+        if (margin >= MIN_MATCH_MARGIN) {
+          return {
+            source: "local",
+            rule: "unambiguous-label-match",
+            proposal: {
+              actionId: nextActionId(),
+              kind: "click",
+              targetLocalId: best.el.localId,
+              confidence: Math.min(0.95, 0.6 + best.score * 0.35),
+              risk: "safe",
+              rationale: `"${best.el.sanitizedName}" matches the goal unambiguously (${Math.round(best.score * 100)}% of its label named in the goal, ${Math.round(margin * 100)}% clear of the next candidate). Decided on-device; nothing was transmitted.`,
+              expectedState: `The page responds to "${best.el.sanitizedName}".`
+            }
+          };
+        }
+        return {
+          source: "remote",
+          escalationReason: `label match ambiguous (runner-up within ${Math.round(margin * 100)}%)`
+        };
+      }
+    }
+    const viewport = ctx.viewport;
+    if (viewport && typeof viewport.documentHeight === "number" && ctx.consecutiveLocalScrolls < MAX_CONSECUTIVE_LOCAL_SCROLLS) {
+      const remaining = viewport.documentHeight - (viewport.scrollY + viewport.viewportHeight);
+      if (remaining > MIN_REMAINING_SCROLL_PX) {
+        return {
+          source: "local",
+          rule: "scroll-to-reveal",
+          proposal: {
+            actionId: nextActionId(),
+            kind: "scroll",
+            confidence: 0.75,
+            risk: "safe",
+            scrollDirection: "down",
+            rationale: `No visible control matches the goal and ${Math.round(remaining)}px of page remains below the fold. Scrolling decided on-device; nothing was transmitted.`,
+            expectedState: "Additional page content becomes visible."
+          }
+        };
+      }
+    }
+    return {
+      source: "remote",
+      escalationReason: "no local rule applies with sufficient confidence"
+    };
   }
 };
 
@@ -16464,6 +16676,11 @@ var RunCoordinator = class {
   t0_runStart = 0;
   cumulativeClientLatency = 0;
   cumulativeServerLatency = 0;
+  stepsDecidedLocally = 0;
+  stepsEscalated = 0;
+  bytesTransmittedTotal = 0;
+  consecutiveLocalScrolls = 0;
+  lastDecisionSource = "remote";
   isCancelled = false;
   constructor(browser = new WebExtensionAdapter(), httpClient = new ReasoningHttpClient(), auditLogger = new AuditLogger(), options = {}) {
     this.browser = browser;
@@ -16491,10 +16708,17 @@ var RunCoordinator = class {
       this.listeners.onStateChange(next, msg);
     }
   }
-  recordActionHistory(proposal) {
+  /**
+   * `label` is recorded alongside the local id because local ids are regenerated on
+   * every capture - el_6 in one step is not el_6 in the next. The label is what
+   * survives a re-perception, and it is what lets the decision tier tell "I have
+   * already pressed this" from "this is a new control".
+   */
+  recordActionHistory(proposal, label) {
     this.actionHistory.push({
       kind: proposal.kind,
       targetLocalId: proposal.targetLocalId,
+      label,
       textToType: proposal.textToType,
       selectOptionValue: proposal.selectOptionValue,
       scrollDirection: proposal.scrollDirection
@@ -16534,7 +16758,11 @@ var RunCoordinator = class {
       clientLatencyMs: this.cumulativeClientLatency,
       serverLatencyMs: this.cumulativeServerLatency,
       stepCount: this.currentMaxSteps,
-      stepsCompleted: step
+      stepsCompleted: step,
+      decisionSource: this.lastDecisionSource,
+      stepsDecidedLocally: this.stepsDecidedLocally,
+      stepsEscalated: this.stepsEscalated,
+      bytesTransmittedTotal: this.bytesTransmittedTotal
     };
   }
   /**
@@ -16557,6 +16785,11 @@ var RunCoordinator = class {
     this.t0_runStart = Date.now();
     this.cumulativeClientLatency = 0;
     this.cumulativeServerLatency = 0;
+    this.stepsDecidedLocally = 0;
+    this.stepsEscalated = 0;
+    this.bytesTransmittedTotal = 0;
+    this.consecutiveLocalScrolls = 0;
+    this.lastDecisionSource = "remote";
     this.isCancelled = false;
     return this.executeLoop();
   }
@@ -16681,24 +16914,65 @@ var RunCoordinator = class {
       if (this.listeners.onSanitizationComplete) {
         this.listeners.onSanitizationComplete(rawCapture, sanitized);
       }
-      this.transition("sending-sanitized-context", `Step ${step}/${maxSteps}: Transmitting sanitized context`);
-      this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Awaiting reasoning action`);
+      const routing = DecisionRouter.route({
+        goal,
+        sanitized,
+        step,
+        consecutiveLocalScrolls: this.consecutiveLocalScrolls,
+        viewport: domResponse.viewport,
+        alreadyActionedLabels: this.actionHistory.filter((a) => a.kind === "click" && a.label).map((a) => a.label)
+      });
       let proposal;
-      try {
-        proposal = await this.httpClient.requestReasoningAction(sanitized);
-      } catch (err) {
-        const errorMsg2 = `Reasoning server error: ${err.message || "Request failed"}`;
-        this.transition("failed-safe", errorMsg2);
-        const res2 = {
-          success: false,
-          state: "failed-safe",
-          error: errorMsg2,
-          sanitized,
-          stepCount: step
-        };
-        this.lastRunResult = res2;
-        return res2;
+      let decisionSource;
+      let bytesTransmitted = 0;
+      if (routing.source === "local") {
+        decisionSource = "local";
+        proposal = routing.proposal;
+        this.stepsDecidedLocally++;
+        this.consecutiveLocalScrolls = proposal.kind === "scroll" ? this.consecutiveLocalScrolls + 1 : 0;
+        this.transition(
+          "validating-action",
+          `Step ${step}/${maxSteps}: Decided on-device (${routing.rule}) - nothing transmitted`
+        );
+      } else {
+        decisionSource = "remote";
+        this.stepsEscalated++;
+        this.consecutiveLocalScrolls = 0;
+        this.transition("sending-sanitized-context", `Step ${step}/${maxSteps}: Transmitting sanitized context`);
+        this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Awaiting reasoning action`);
+        try {
+          proposal = await this.httpClient.requestReasoningAction(
+            sanitized,
+            this.actionHistory.filter((a) => a.kind !== "wait").slice(-8).map((a) => ({ kind: a.kind, targetLabel: a.label }))
+          );
+        } catch (err) {
+          const errorMsg2 = `Reasoning server error: ${err.message || "Request failed"}`;
+          this.transition("failed-safe", errorMsg2);
+          const res2 = {
+            success: false,
+            state: "failed-safe",
+            error: errorMsg2,
+            sanitized,
+            stepCount: step
+          };
+          this.lastRunResult = res2;
+          return res2;
+        }
+        bytesTransmitted = typeof this.httpClient.getLastRequestBytes === "function" ? this.httpClient.getLastRequestBytes() : 0;
       }
+      this.lastDecisionSource = decisionSource;
+      this.bytesTransmittedTotal += bytesTransmitted;
+      this.auditLogger.logDecisionEvent({
+        runId: sanitized.runId,
+        step,
+        decisionSource,
+        actionKind: proposal.kind,
+        targetLocalId: proposal.targetLocalId,
+        confidence: proposal.confidence,
+        rule: routing.source === "local" ? routing.rule : void 0,
+        escalationReason: routing.source === "remote" ? routing.escalationReason : void 0,
+        bytesTransmitted
+      });
       const t4_reasoningReceived = Date.now();
       this.transition("validating-action", `Step ${step}/${maxSteps}: Validating proposed action`);
       const t5_actionValidated = Date.now();
@@ -16822,7 +17096,10 @@ var RunCoordinator = class {
           return res2;
         }
       }
-      this.recordActionHistory(proposal);
+      this.recordActionHistory(
+        proposal,
+        sanitized.elements.find((e) => e.localId === proposal.targetLocalId)?.sanitizedName
+      );
       const isSuccess = Boolean(execResponse && execResponse.success && execResponse.semanticOutcomeVerified);
       if (!isSuccess) {
         const errorMsg2 = execResponse?.message || "Action execution or semantic verification failed";

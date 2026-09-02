@@ -15366,7 +15366,7 @@ as ORT format: ${n}`);
 
   // src/sanitizer/post-redaction-verifier.ts
   var MIN_OVERLAY_FRACTION = 0.9;
-  var MIN_DETAIL_REMOVED = 0.6;
+  var MIN_DETAIL_REMOVED = 0.35;
   var MIN_ASSESSABLE_DETAIL = 3;
   var PostRedactionVerifier = class {
     /**
@@ -15891,6 +15891,10 @@ as ORT format: ${n}`);
       devicePixelRatio: dpr,
       scrollX: window.scrollX || 0,
       scrollY: window.scrollY || 0,
+      documentHeight: Math.max(
+        document.documentElement?.scrollHeight || 0,
+        document.body?.scrollHeight || 0
+      ),
       captureTimestamp: Date.now()
     };
   }
@@ -15964,7 +15968,7 @@ as ORT format: ${n}`);
       const ctx = c.getContext("2d");
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, W2, H2);
-      ctx.fillStyle = "#101820";
+      ctx.fillStyle = "#7f1d1d";
       ctx.font = "bold 22px monospace";
       for (let i = 0; i < 6; i++) ctx.fillText("4532 8901 2342", 8, 30 + i * 30);
       return c;

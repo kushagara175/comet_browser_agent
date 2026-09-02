@@ -13,7 +13,8 @@ const ALLOWED_REASONING_ROOT_KEYS = new Set([
     'screenshot',
     'elements',
     'pageState',
-    'redactionManifest'
+    'redactionManifest',
+    'recentActions'
 ]);
 /** Categories the client may declare in a redaction manifest. */
 const KNOWN_SENSITIVE_CATEGORIES = new Set([
@@ -318,6 +319,19 @@ export function validateSanitizedPayload(body) {
             return { isValid: false, errorMessage: `Duplicate element localId at index ${i}` };
         }
         seenLocalIds.add(el.localId);
+    }
+    if (body.recentActions !== undefined) {
+        if (!Array.isArray(body.recentActions) || body.recentActions.length > 20) {
+            return { isValid: false, errorMessage: 'Invalid "recentActions"' };
+        }
+        for (const a of body.recentActions) {
+            if (!isPlainObject(a) || typeof a.kind !== 'string' || a.kind.length > 32) {
+                return { isValid: false, errorMessage: 'Invalid entry in "recentActions"' };
+            }
+            if (a.targetLabel !== undefined && (typeof a.targetLabel !== 'string' || a.targetLabel.length > 200)) {
+                return { isValid: false, errorMessage: 'Invalid targetLabel in "recentActions"' };
+            }
+        }
     }
     const manifestRes = validateRedactionManifest(body.redactionManifest);
     if (!manifestRes.isValid) {

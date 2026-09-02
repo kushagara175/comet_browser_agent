@@ -249,21 +249,74 @@ derived rather than fixed.
 as a `WARN` rather than a hard failure; the generated-prompt property itself is pinned
 by 11 tests in [`tests/redaction-manifest.test.js`](../tests/redaction-manifest.test.js).*
 
-### R2 · Local decision tier
+### R2 · Local decision tier — ✅ **DELIVERED**
 **Satisfies:** *"**If it requires** the visual context to be sent to server."*
 
-A `DecisionRouter` ahead of the HTTP client. Scroll, dismiss a modal, re-perceive
-after a stale ID, and click a control whose label unambiguously matches the goal
-are decided **on-device and never transmitted**. Escalate only on low local
-confidence. Record the local/remote split in telemetry.
+`coordinator.ts` had one code path and no "if": every step transmitted. A
+[`DecisionRouter`](../apps/extension/src/background/decision-router.ts) now sits ahead
+of the HTTP client, and when it decides **nothing leaves the machine** — not a
+redacted screenshot, not an element list, not the goal string.
 
-**Exit gate:** a multi-step task completes with **at least one step resolved with
-zero network transmission**, visible in the audit log.
+Three rules, all site-agnostic:
 
-*Also the strongest available narrative: not merely "we redact before sending",
-but "we often do not send at all."*
+- **`dismiss-overlay`** — closes a blocking banner or modal. It deliberately excludes
+  *accept / agree / allow / reject*: closing an overlay is ours to do locally,
+  **answering** one is a choice about the user's data and escalates instead.
+- **`unambiguous-label-match`** — clicks the one control the goal names, requiring
+  ≥75% of the control's own label to appear in the goal, ≥2 matched words, and a ≥40%
+  lead over the runner-up.
+- **`scroll-to-reveal`** — scrolls only when the host reports a document taller than
+  the scrolled viewport, and only twice before escalating.
 
----
+**Three things this phase got wrong first, all found by running it:**
+
+1. **The label match was scored backwards.** It measured what fraction of the *goal's*
+   words a label accounted for, so the real e2e goal — "Open the safe preview for the
+   pending request" — could never match a button reading "Open Safe Preview": half the
+   goal's words are on no button. Scoring *label-in-goal* asks the question that
+   matters, which is whether this control is the thing the goal names.
+2. **The router had no memory.** It re-proposed its own obvious answer every step: the
+   goal still named the button, the page had already responded, and the run died on
+   semantic verification. It now tracks controls already actioned **by label**, since
+   local ids are regenerated on every capture. Having made the obvious move and not
+   finished, it is by definition no longer sure — so it escalates.
+3. **The scroll rule was a guess.** It first scrolled whenever nothing matched, with no
+   evidence any content existed below. `documentHeight` is now reported in the
+   client-internal viewport metadata (never transmitted) so the rule fires on evidence.
+
+Two defects outside the router had to be fixed for a multi-step task to complete at all:
+
+- **The server was never told what the agent had already done.** Every step was
+  reasoned about as if it were the first, so the model re-proposed the click it had
+  just made. `recentActions` now rides on the payload — sanitized labels already
+  present in `elements`, so it discloses nothing new.
+- **A valid decision was being thrown away over a JSON convention.** Told to return
+  `finish`, the model emitted `"targetLocalId": null` alongside it; `typeof null` is
+  not `"string"`, so the proposal was rejected and the run fell back to the offline
+  reasoner. Null and absent now mean the same thing for optional fields. The
+  normalisation only *removes* keys — it never invents or repairs a value.
+
+**Exit gate — met.** `npm run test:e2e`, real extension, real page, live model:
+
+```
+  success  : true
+  state    : complete
+  action   : finish -> page
+  rationale: The 'Open Safe Preview' button has already been clicked, and the
+             preview drawer is open...
+
+  step 1: LOCAL  unambiguous-label-match      click        0 bytes
+  step 2: REMOTE no local rule applies        finish  140444 bytes
+  1/2 step(s) resolved on-device, 137 KB transmitted in total
+```
+
+Step 1 was answered with **zero bytes transmitted**, and the split is read back out of
+the extension's own audit trail rather than asserted. This is also the first end-to-end
+run that has ever reached `complete`.
+
+*The transmission split is workload-dependent — 1/2 here is this task on this page, not
+a general claim. What is general is that the trail records it per step, so the ratio is
+always measured rather than estimated.*
 
 ### R3 · A real Vision Transformer on-device
 **Satisfies:** *"a local **Vision Transformer (ViT)** or equivalent computer
@@ -439,8 +492,8 @@ demo video.
 
 - **R0 is done.** It also removed the reason to distrust the instrument: the model
   now really runs, and the provider is reported rather than assumed.
-- **R2 before R3/R4.** The decision tier is where vision-sourced perception gets
-  consumed; building the router first gives the ViT somewhere to land.
+- **R2 is done**, so R3/R4's vision output has somewhere to land: a vision-sourced
+  element carrying provenance is just another candidate the router can rank.
 - **R3 before R4**, obviously — but keep them separate. R3 can be demonstrated the
   day the model loads; R4 is the harder integration and should not hold R3's proof
   hostage.

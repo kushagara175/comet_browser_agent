@@ -127,6 +127,19 @@ export interface SanitizedNetworkPayload {
    * over holes it had no description of.
    */
   readonly redactionManifest: import('./redaction.js').RedactionManifest;
+  /**
+   * What this run has already done, in sanitized terms.
+   *
+   * Without it the server reasons about every step as if it were the first: on a
+   * multi-step task it re-proposed the click it had just made, because the goal
+   * still named that control and nothing told it the page had already responded.
+   * Labels here are the same sanitized names already present in `elements`, so this
+   * discloses nothing new.
+   */
+  readonly recentActions?: ReadonlyArray<{
+    readonly kind: string;
+    readonly targetLabel?: string;
+  }>;
 }
 
 /**

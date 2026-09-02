@@ -50,6 +50,8 @@ export interface ChatReply {
 
 export class ReasoningHttpClient {
   private readonly serverBaseUrl: string;
+  /** Bytes sent by the most recent reasoning request, for transmission accounting. */
+  private lastRequestBytes: number = 0;
 
   constructor(serverBaseUrl: string = DEFAULT_SERVER_BASE_URL) {
     this.serverBaseUrl = serverBaseUrl.replace(/\/+$/, '');
@@ -57,6 +59,11 @@ export class ReasoningHttpClient {
 
   getServerBaseUrl(): string {
     return this.serverBaseUrl;
+  }
+
+  /** Size of the last payload actually transmitted, in bytes. */
+  getLastRequestBytes(): number {
+    return this.lastRequestBytes;
   }
 
   /**
@@ -153,7 +160,10 @@ export class ReasoningHttpClient {
   /**
    * Transmits SanitizedContext to Reasoning Server and returns one ActionProposal.
    */
-  async requestReasoningAction(sanitized: SanitizedContext): Promise<ActionProposal> {
+  async requestReasoningAction(
+    sanitized: SanitizedContext,
+    recentActions?: ReadonlyArray<{ kind: string; targetLabel?: string }>
+  ): Promise<ActionProposal> {
     // 1. Prepare Closed Network Payload
     const payload: SanitizedNetworkPayload = {
       protocolVersion: sanitized.protocolVersion,
@@ -162,11 +172,18 @@ export class ReasoningHttpClient {
       screenshot: sanitized.sanitizedScreenshotDataUrl,
       elements: sanitized.elements,
       pageState: sanitized.pageState,
-      redactionManifest: sanitized.redactionManifest
+      redactionManifest: sanitized.redactionManifest,
+      ...(recentActions && recentActions.length ? { recentActions } : {})
     };
 
     // 2. Outgoing Canary Gate check
     assertNoCanaryLeak(payload, 'Outgoing HTTP Payload');
+
+    // Size of what actually leaves the machine. The decision tier records 0 for a
+    // step it resolved on-device, so the audit trail can show the difference rather
+    // than assert it.
+    const serializedPayload = JSON.stringify(payload);
+    this.lastRequestBytes = serializedPayload.length;
 
     // 3. Make HTTP request with a bounded timeout sized for local inference
     const response = await this.fetchWithTimeout(
@@ -177,7 +194,7 @@ export class ReasoningHttpClient {
           'Content-Type': 'application/json',
           'X-PrivaPilot-Version': '1.0'
         },
-        body: JSON.stringify(payload)
+        body: serializedPayload
       },
       'Reasoning request',
       REASONING_TIMEOUT_MS

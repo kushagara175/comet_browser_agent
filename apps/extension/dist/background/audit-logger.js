@@ -6,15 +6,19 @@
  */
 export class AuditLogger {
     auditTrail = [];
+    decisionTrail = [];
     constructor() {
         this.loadFromStorage();
     }
     async loadFromStorage() {
         if (typeof chrome !== 'undefined' && chrome.storage?.local) {
             try {
-                const result = await chrome.storage.local.get(['privapilot_audit_trail']);
+                const result = await chrome.storage.local.get(['privapilot_audit_trail', 'privapilot_decision_trail']);
                 if (result && Array.isArray(result.privapilot_audit_trail)) {
                     this.auditTrail = result.privapilot_audit_trail;
+                }
+                if (result && Array.isArray(result.privapilot_decision_trail)) {
+                    this.decisionTrail = result.privapilot_decision_trail;
                 }
             }
             catch {
@@ -41,9 +45,44 @@ export class AuditLogger {
         this.persistToStorage();
         return record;
     }
+    /**
+     * Records how a step was decided, and how many bytes it cost.
+     *
+     * A local decision writes bytesTransmitted: 0 - the audit trail is where the
+     * "we often do not send at all" claim is actually evidenced.
+     */
+    logDecisionEvent(record) {
+        const full = {
+            id: `dec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            timestamp: Date.now(),
+            ...record
+        };
+        this.decisionTrail.push(full);
+        if (this.decisionTrail.length > 500) {
+            this.decisionTrail.shift();
+        }
+        this.persistToStorage();
+        return full;
+    }
+    getDecisionRecords() {
+        return [...this.decisionTrail];
+    }
+    /** Local/remote split for the current trail, for the side panel and the harness. */
+    getTransmissionSummary() {
+        const decidedLocally = this.decisionTrail.filter((d) => d.decisionSource === 'local').length;
+        return {
+            totalSteps: this.decisionTrail.length,
+            decidedLocally,
+            escalated: this.decisionTrail.length - decidedLocally,
+            bytesTransmitted: this.decisionTrail.reduce((n, d) => n + d.bytesTransmitted, 0)
+        };
+    }
     persistToStorage() {
         if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-            chrome.storage.local.set({ privapilot_audit_trail: this.auditTrail }).catch(() => { });
+            chrome.storage.local.set({
+                privapilot_audit_trail: this.auditTrail,
+                privapilot_decision_trail: this.decisionTrail
+            }).catch(() => { });
         }
     }
     getAuditRecords() {
@@ -51,6 +90,7 @@ export class AuditLogger {
     }
     clear() {
         this.auditTrail = [];
+        this.decisionTrail = [];
         this.persistToStorage();
     }
 }

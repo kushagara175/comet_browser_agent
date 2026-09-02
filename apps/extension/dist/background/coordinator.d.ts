@@ -69,6 +69,11 @@ export declare class RunCoordinator {
     private t0_runStart;
     private cumulativeClientLatency;
     private cumulativeServerLatency;
+    private stepsDecidedLocally;
+    private stepsEscalated;
+    private bytesTransmittedTotal;
+    private consecutiveLocalScrolls;
+    private lastDecisionSource;
     private isCancelled;
     constructor(browser?: BrowserAdapter, httpClient?: ReasoningHttpClient, auditLogger?: AuditLogger, options?: {
         defaultMaxSteps?: number;
@@ -79,6 +84,12 @@ export declare class RunCoordinator {
     getLastResult(): CoordinatorRunResult | null;
     cancelRun(): void;
     private transition;
+    /**
+     * `label` is recorded alongside the local id because local ids are regenerated on
+     * every capture - el_6 in one step is not el_6 in the next. The label is what
+     * survives a re-perception, and it is what lets the decision tier tell "I have
+     * already pressed this" from "this is a new control".
+     */
     private recordActionHistory;
     private isRepeatedAction;
     private createTelemetry;

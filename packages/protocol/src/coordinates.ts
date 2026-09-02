@@ -29,6 +29,14 @@ export interface ViewportMetadata {
   readonly devicePixelRatio: number;
   readonly scrollX: number;
   readonly scrollY: number;
+  /**
+   * Full scrollable document height, when the host can report it.
+   *
+   * Client-internal: this is never transmitted. It exists so the local decision
+   * tier can tell "there is more page below" from "this is the whole page", which
+   * is the difference between scrolling on evidence and scrolling on a guess.
+   */
+  readonly documentHeight?: number;
   readonly captureTimestamp: number;
 }
 

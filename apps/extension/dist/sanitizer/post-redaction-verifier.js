@@ -8,8 +8,21 @@ import { scanTextForPII, CANARY_SECRET } from '@privapilot/pii-rules';
 import { sampleRegion, overlayFractionOf, localDetailOf } from './pixel-probe.js';
 /** An opaque mask must own essentially the whole region it claims to cover. */
 const MIN_OVERLAY_FRACTION = 0.9;
-/** Pixelation must remove this much of the fine detail that was there. */
-const MIN_DETAIL_REMOVED = 0.6;
+/**
+ * Pixelation must remove this much of the fine detail that was there.
+ *
+ * Calibrated against measurements, not chosen:
+ *   displaced mask (verify:redaction probe)  0.00
+ *   44px cartoon avatar, demo portal         0.50   <- smallest legitimate case
+ *   100px avatars, face-gallery fixture      0.87 - 0.89
+ *
+ * 0.6 was the first guess and it sat INSIDE the legitimate range, so the product
+ * failed closed on a correctly masked avatar and blocked the whole run. Flat,
+ * synthetic artwork is the hard case: most of its pixel pairs are already identical,
+ * so pixelation cannot reduce the average gradient by much even when it has
+ * completely destroyed the image.
+ */
+const MIN_DETAIL_REMOVED = 0.35;
 /**
  * Below this, a region was featureless to begin with. Pixelating it is a no-op and
  * no pixel test can distinguish a masked flat area from an untouched one, so such a

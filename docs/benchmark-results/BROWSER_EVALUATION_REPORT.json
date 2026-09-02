@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-02T06:26:54.051Z",
+  "timestamp": "2026-09-02T06:52:14.629Z",
   "harness": "browser",
   "split": "all",
   "fixturesEvaluated": 14,
@@ -8,7 +8,7 @@
     "environment": "win32 x64 (Node v22.19.0)",
     "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "viewport": "1280x800 @1x",
-    "gitSha": "79bfa4e"
+    "gitSha": "22b7be8"
   },
   "accuracy": {
     "elementRecall": 78.6,
@@ -33,27 +33,27 @@
     "totalSafeElements": 18
   },
   "clientLatency": {
-    "p50Ms": 593,
-    "p95Ms": 700,
+    "p50Ms": 539,
+    "p95Ms": 720,
     "samples": 14
   },
   "resources": {
-    "peakHeapMb": 8.27,
-    "medianHeapMb": 7.77,
-    "medianTaskDurationSec": 0.645
+    "peakHeapMb": 8.39,
+    "medianHeapMb": 7.25,
+    "medianTaskDurationSec": 0.596
   },
   "vision": {
     "providers": [
       {
         "fixture": "standard-login",
         "providerUsed": "wasm",
-        "durationMs": 19,
+        "durationMs": 20,
         "faceCount": 0
       },
       {
         "fixture": "misleading-field-names",
         "providerUsed": "wasm",
-        "durationMs": 24,
+        "durationMs": 23,
         "faceCount": 0
       },
       {
@@ -65,19 +65,19 @@
       {
         "fixture": "profile-pii",
         "providerUsed": "wasm",
-        "durationMs": 19,
+        "durationMs": 22,
         "faceCount": 0
       },
       {
         "fixture": "face-gallery",
         "providerUsed": "wasm",
-        "durationMs": 19,
+        "durationMs": 21,
         "faceCount": 0
       },
       {
         "fixture": "image-pii",
         "providerUsed": "wasm",
-        "durationMs": 26,
+        "durationMs": 20,
         "faceCount": 0
       },
       {
@@ -89,31 +89,31 @@
       {
         "fixture": "cross-origin-iframe",
         "providerUsed": "wasm",
-        "durationMs": 18,
+        "durationMs": 32,
         "faceCount": 0
       },
       {
         "fixture": "shadow-dom",
         "providerUsed": "wasm",
-        "durationMs": 19,
+        "durationMs": 21,
         "faceCount": 0
       },
       {
         "fixture": "controlled-react-input",
         "providerUsed": "wasm",
-        "durationMs": 18,
+        "durationMs": 19,
         "faceCount": 0
       },
       {
         "fixture": "long-scroll",
         "providerUsed": "wasm",
-        "durationMs": 19,
+        "durationMs": 21,
         "faceCount": 0
       },
       {
         "fixture": "dark-mode",
         "providerUsed": "wasm",
-        "durationMs": 17,
+        "durationMs": 18,
         "faceCount": 0
       },
       {
@@ -125,7 +125,7 @@
       {
         "fixture": "cookie-banner",
         "providerUsed": "wasm",
-        "durationMs": 19,
+        "durationMs": 27,
         "faceCount": 0
       }
     ],
@@ -143,11 +143,11 @@
       "blocked": false,
       "regionsAssessable": 2,
       "regionsCovered": 2,
-      "extractMs": 2.8,
-      "sanitizeMs": 639.2,
-      "clientMs": 642,
-      "heapUsedMb": 8.11,
-      "taskDurationSec": 0.714,
+      "extractMs": 3.7,
+      "sanitizeMs": 610.8,
+      "clientMs": 614.5,
+      "heapUsedMb": 8.32,
+      "taskDurationSec": 0.682,
       "rawScreenshotKb": 10,
       "sanitizedScreenshotKb": 30,
       "redactionVerdicts": [
@@ -203,11 +203,11 @@
       "blocked": false,
       "regionsAssessable": 2,
       "regionsCovered": 2,
-      "extractMs": 3.3,
-      "sanitizeMs": 677.3,
-      "clientMs": 680.6,
+      "extractMs": 3.2,
+      "sanitizeMs": 625.6,
+      "clientMs": 628.8,
       "heapUsedMb": 6.76,
-      "taskDurationSec": 0.755,
+      "taskDurationSec": 0.695,
       "rawScreenshotKb": 8,
       "sanitizedScreenshotKb": 27,
       "redactionVerdicts": [
@@ -264,10 +264,10 @@
       "regionsAssessable": 3,
       "regionsCovered": 3,
       "extractMs": 3.6,
-      "sanitizeMs": 696,
-      "clientMs": 699.6,
-      "heapUsedMb": 6.85,
-      "taskDurationSec": 0.773,
+      "sanitizeMs": 716.5,
+      "clientMs": 720.1,
+      "heapUsedMb": 6.97,
+      "taskDurationSec": 0.804,
       "rawScreenshotKb": 10,
       "sanitizedScreenshotKb": 30,
       "redactionVerdicts": [
@@ -337,11 +337,11 @@
       "blocked": false,
       "regionsAssessable": 4,
       "regionsCovered": 4,
-      "extractMs": 5.3,
-      "sanitizeMs": 567.5,
-      "clientMs": 572.8,
-      "heapUsedMb": 8.12,
-      "taskDurationSec": 0.645,
+      "extractMs": 5.1,
+      "sanitizeMs": 544.3,
+      "clientMs": 549.4,
+      "heapUsedMb": 8.13,
+      "taskDurationSec": 0.624,
       "rawScreenshotKb": 17,
       "sanitizedScreenshotKb": 39,
       "redactionVerdicts": [
@@ -439,11 +439,11 @@
       "blocked": false,
       "regionsAssessable": 2,
       "regionsCovered": 2,
-      "extractMs": 3.3,
-      "sanitizeMs": 592.8,
-      "clientMs": 596.1,
-      "heapUsedMb": 7.97,
-      "taskDurationSec": 0.655,
+      "extractMs": 2,
+      "sanitizeMs": 536.6,
+      "clientMs": 538.6,
+      "heapUsedMb": 8.39,
+      "taskDurationSec": 0.596,
       "rawScreenshotKb": 50,
       "sanitizedScreenshotKb": 26,
       "redactionVerdicts": [
@@ -500,10 +500,10 @@
       "regionsAssessable": 1,
       "regionsCovered": 1,
       "extractMs": 2.2,
-      "sanitizeMs": 606,
-      "clientMs": 608.2,
-      "heapUsedMb": 7.1,
-      "taskDurationSec": 0.678,
+      "sanitizeMs": 496.5,
+      "clientMs": 498.7,
+      "heapUsedMb": 7.11,
+      "taskDurationSec": 0.575,
       "rawScreenshotKb": 78,
       "sanitizedScreenshotKb": 27,
       "redactionVerdicts": [
@@ -545,11 +545,11 @@
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 3.5,
-      "sanitizeMs": 671.2,
-      "clientMs": 674.7,
-      "heapUsedMb": 7.35,
-      "taskDurationSec": 0.736,
+      "extractMs": 2,
+      "sanitizeMs": 504.5,
+      "clientMs": 506.5,
+      "heapUsedMb": 6.88,
+      "taskDurationSec": 0.56,
       "rawScreenshotKb": 6,
       "sanitizedScreenshotKb": 26,
       "redactionVerdicts": [
@@ -592,10 +592,10 @@
       "regionsAssessable": 1,
       "regionsCovered": 1,
       "extractMs": 2.8,
-      "sanitizeMs": 512,
-      "clientMs": 514.8,
-      "heapUsedMb": 7.99,
-      "taskDurationSec": 0.581,
+      "sanitizeMs": 579.4,
+      "clientMs": 582.2,
+      "heapUsedMb": 6.72,
+      "taskDurationSec": 0.673,
       "rawScreenshotKb": 6,
       "sanitizedScreenshotKb": 26,
       "redactionVerdicts": [
@@ -637,11 +637,11 @@
       "blocked": false,
       "regionsAssessable": 0,
       "regionsCovered": 0,
-      "extractMs": 1.8,
-      "sanitizeMs": 509.4,
-      "clientMs": 511.2,
-      "heapUsedMb": 6.69,
-      "taskDurationSec": 0.558,
+      "extractMs": 2.4,
+      "sanitizeMs": 576.8,
+      "clientMs": 579.2,
+      "heapUsedMb": 7.72,
+      "taskDurationSec": 0.638,
       "rawScreenshotKb": 6,
       "sanitizedScreenshotKb": 24,
       "redactionVerdicts": [
@@ -670,10 +670,10 @@
       "regionsAssessable": 0,
       "regionsCovered": 0,
       "extractMs": 2.3,
-      "sanitizeMs": 509.2,
-      "clientMs": 511.5,
-      "heapUsedMb": 7.39,
-      "taskDurationSec": 0.563,
+      "sanitizeMs": 520.9,
+      "clientMs": 523.2,
+      "heapUsedMb": 7.25,
+      "taskDurationSec": 0.559,
       "rawScreenshotKb": 7,
       "sanitizedScreenshotKb": 25,
       "redactionVerdicts": [
@@ -715,11 +715,11 @@
       "blocked": false,
       "regionsAssessable": 0,
       "regionsCovered": 0,
-      "extractMs": 2.4,
-      "sanitizeMs": 517.3,
-      "clientMs": 519.7,
-      "heapUsedMb": 8.03,
-      "taskDurationSec": 0.571,
+      "extractMs": 2.5,
+      "sanitizeMs": 499.4,
+      "clientMs": 501.9,
+      "heapUsedMb": 6.73,
+      "taskDurationSec": 0.557,
       "rawScreenshotKb": 6,
       "sanitizedScreenshotKb": 24,
       "redactionVerdicts": [
@@ -776,10 +776,10 @@
       "regionsAssessable": 1,
       "regionsCovered": 1,
       "extractMs": 2.4,
-      "sanitizeMs": 590.1,
-      "clientMs": 592.5,
-      "heapUsedMb": 6.85,
-      "taskDurationSec": 0.638,
+      "sanitizeMs": 523.7,
+      "clientMs": 526.1,
+      "heapUsedMb": 8.23,
+      "taskDurationSec": 0.575,
       "rawScreenshotKb": 9,
       "sanitizedScreenshotKb": 29,
       "redactionVerdicts": [
@@ -821,11 +821,11 @@
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 3.8,
-      "sanitizeMs": 535.7,
-      "clientMs": 539.5,
-      "heapUsedMb": 8.27,
-      "taskDurationSec": 0.592,
+      "extractMs": 2.6,
+      "sanitizeMs": 504.1,
+      "clientMs": 506.7,
+      "heapUsedMb": 7.06,
+      "taskDurationSec": 0.56,
       "rawScreenshotKb": 11,
       "sanitizedScreenshotKb": 29,
       "redactionVerdicts": [
@@ -881,11 +881,11 @@
       "blocked": false,
       "regionsAssessable": 0,
       "regionsCovered": 0,
-      "extractMs": 1.9,
-      "sanitizeMs": 514.6,
-      "clientMs": 516.5,
-      "heapUsedMb": 7.77,
-      "taskDurationSec": 0.571,
+      "extractMs": 2.2,
+      "sanitizeMs": 501,
+      "clientMs": 503.2,
+      "heapUsedMb": 7.66,
+      "taskDurationSec": 0.559,
       "rawScreenshotKb": 9,
       "sanitizedScreenshotKb": 28,
       "redactionVerdicts": [

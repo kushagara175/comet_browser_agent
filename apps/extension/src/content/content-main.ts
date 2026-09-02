@@ -44,6 +44,10 @@ export async function handleMessage(message: any): Promise<any> {
         devicePixelRatio: window.devicePixelRatio || 1,
         scrollX: window.scrollX || 0,
         scrollY: window.scrollY || 0,
+        documentHeight: Math.max(
+          document.documentElement?.scrollHeight || 0,
+          document.body?.scrollHeight || 0
+        ),
         captureTimestamp: Date.now()
       }
     };

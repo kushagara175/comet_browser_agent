@@ -50,6 +50,10 @@ function readViewport(): HarnessViewport {
     devicePixelRatio: dpr,
     scrollX: window.scrollX || 0,
     scrollY: window.scrollY || 0,
+    documentHeight: Math.max(
+      document.documentElement?.scrollHeight || 0,
+      document.body?.scrollHeight || 0
+    ),
     captureTimestamp: Date.now()
   };
 }
@@ -171,7 +175,10 @@ export function probeDisplacedMaskFailsClosed(): FailClosedProbe {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
     // Deterministic high-frequency content, so "detail destroyed" is measurable.
-    ctx.fillStyle = '#101820';
+    // NOT a near-black: #101820 sits inside the tolerance of the mask fill #0f172a,
+    // so the secret text itself was being counted as redaction overlay and excluded
+    // from the residual-detail measurement. The probe passed for the wrong reason.
+    ctx.fillStyle = '#7f1d1d';
     ctx.font = 'bold 22px monospace';
     for (let i = 0; i < 6; i++) ctx.fillText('4532 8901 2342', 8, 30 + i * 30);
     return c;

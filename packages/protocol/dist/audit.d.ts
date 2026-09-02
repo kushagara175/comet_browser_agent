@@ -18,6 +18,28 @@ export interface AuditRecord {
     readonly sanitizedPayloadDigest: string;
     readonly decision: 'redacted' | 'blocked' | 'safe_allowed';
 }
+/**
+ * One step's routing decision: was the server needed, and what actually left the
+ * machine.
+ *
+ * `bytesTransmitted: 0` is the evidence for the problem statement's conditional
+ * clause - a step resolved with literally nothing sent, not merely with less sent.
+ */
+export interface DecisionAuditRecord {
+    readonly id: string;
+    readonly timestamp: number;
+    readonly runId: string;
+    readonly step: number;
+    readonly decisionSource: 'local' | 'remote';
+    readonly actionKind: string;
+    readonly targetLocalId?: string;
+    readonly confidence: number;
+    /** Which local rule fired, when decided on-device. */
+    readonly rule?: string;
+    /** Why the server was needed, when escalated. */
+    readonly escalationReason?: string;
+    readonly bytesTransmitted: number;
+}
 export interface RunTelemetry {
     readonly runId: string;
     readonly t0_start: number;
@@ -33,5 +55,11 @@ export interface RunTelemetry {
     readonly serverLatencyMs: number;
     readonly stepCount?: number;
     readonly stepsCompleted?: number;
+    /** How this step was decided. */
+    readonly decisionSource?: 'local' | 'remote';
+    /** Running split across the whole run, so the ratio is visible live. */
+    readonly stepsDecidedLocally?: number;
+    readonly stepsEscalated?: number;
+    readonly bytesTransmittedTotal?: number;
 }
 //# sourceMappingURL=audit.d.ts.map

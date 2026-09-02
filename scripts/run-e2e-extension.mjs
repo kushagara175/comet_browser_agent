@@ -145,6 +145,26 @@ async function main() {
   const run = JSON.parse(runJson);
   console.log('  [5/5] Agent run complete\n');
 
+  // R2 evidence: the per-step routing trail, read back out of extension storage.
+  // A step with bytesTransmitted 0 was answered without contacting the server at
+  // all - which is what the problem statement's "IF it requires the visual context
+  // to be sent" actually asks for.
+  let decisionTrail = [];
+  try {
+    const trailJson = await panel.evaluate(
+      `new Promise((resolve) => {
+         chrome.storage.local.get(['privapilot_decision_trail'], (r) => {
+           resolve(JSON.stringify(r && r.privapilot_decision_trail ? r.privapilot_decision_trail : []));
+         });
+       })`,
+      { timeoutMs: 15000 }
+    );
+    decisionTrail = JSON.parse(trailJson);
+  } catch {
+    decisionTrail = [];
+  }
+
+
   const result = run.result || {};
   const telemetry = result.telemetry || null;
 
@@ -171,6 +191,20 @@ async function main() {
     console.log(`  total round-trip: ${telemetry.totalLatencyMs} ms`);
   }
   console.log(`  wall clock      : ${totalMs} ms`);
+
+  const localSteps = decisionTrail.filter((d) => d.decisionSource === 'local');
+  const remoteSteps = decisionTrail.filter((d) => d.decisionSource === 'remote');
+  console.log('-'.repeat(72));
+  console.log('  transmission decisions (from the extension audit trail)');
+  if (decisionTrail.length === 0) console.log('    (no decision records found)');
+  for (const d of decisionTrail) {
+    const how = d.decisionSource === 'local' ? ('LOCAL  ' + d.rule) : ('REMOTE ' + (d.escalationReason || ''));
+    console.log('    step ' + d.step + ': ' + how.padEnd(46) + ' ' + String(d.actionKind).padEnd(7) +
+                String(d.bytesTransmitted).padStart(8) + ' bytes');
+  }
+  console.log('    ' + localSteps.length + '/' + decisionTrail.length + ' step(s) resolved on-device, ' +
+              Math.round(remoteSteps.reduce((n, d) => n + d.bytesTransmitted, 0) / 1024) + ' KB transmitted in total');
+
   console.log('-'.repeat(72));
 
   const record = {
@@ -196,7 +230,14 @@ async function main() {
       ? Math.round(result.sanitized.sanitizedScreenshotDataUrl.length * 0.75)
       : null,
     telemetry,
-    wallClockMs: totalMs
+    wallClockMs: totalMs,
+    decisionTrail,
+    transmission: {
+      stepsDecidedLocally: decisionTrail.filter((d) => d.decisionSource === 'local').length,
+      stepsEscalated: decisionTrail.filter((d) => d.decisionSource === 'remote').length,
+      bytesTransmitted: decisionTrail.reduce((n, d) => n + d.bytesTransmitted, 0),
+      zeroTransmissionStep: decisionTrail.some((d) => d.bytesTransmitted === 0)
+    }
   };
 
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });

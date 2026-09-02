@@ -14916,7 +14916,7 @@ as ORT format: ${n}`);
 
   // src/sanitizer/post-redaction-verifier.ts
   var MIN_OVERLAY_FRACTION = 0.9;
-  var MIN_DETAIL_REMOVED = 0.6;
+  var MIN_DETAIL_REMOVED = 0.35;
   var MIN_ASSESSABLE_DETAIL = 3;
   var PostRedactionVerifier = class {
     /**

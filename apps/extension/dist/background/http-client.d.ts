@@ -27,8 +27,12 @@ export interface ChatReply {
 }
 export declare class ReasoningHttpClient {
     private readonly serverBaseUrl;
+    /** Bytes sent by the most recent reasoning request, for transmission accounting. */
+    private lastRequestBytes;
     constructor(serverBaseUrl?: string);
     getServerBaseUrl(): string;
+    /** Size of the last payload actually transmitted, in bytes. */
+    getLastRequestBytes(): number;
     /**
      * Turns a transport failure into something the user can act on. A bare
      * "Failed to fetch" is the single most confusing symptom in this system:
@@ -47,7 +51,10 @@ export declare class ReasoningHttpClient {
     /**
      * Transmits SanitizedContext to Reasoning Server and returns one ActionProposal.
      */
-    requestReasoningAction(sanitized: SanitizedContext): Promise<ActionProposal>;
+    requestReasoningAction(sanitized: SanitizedContext, recentActions?: ReadonlyArray<{
+        kind: string;
+        targetLabel?: string;
+    }>): Promise<ActionProposal>;
     /**
      * Transmits sanitized page-aware context projection to Chat endpoint.
      * Strictly accepts SanitizedContext only (never raw captures or URLs).
