@@ -1,342 +1,238 @@
-# PrivaPilot (SIH26171) — Execution Plan
+# PrivaPilot — Execution Plan
 
-**Deadline:** 20 September 2026, 23:59 IST · **Plan written:** 31 August 2026 · **Days remaining: 20**
+**SIH26171 · ISRO / Department of Space · Deadline 20 September 2026, 23:59 IST**
+Written 2 September 2026, revised the same day after a line-by-line re-read of the
+problem statement. Supersedes
+[`archive/EXECUTION_PLAN_2026-08-31.md`](archive/EXECUTION_PLAN_2026-08-31.md).
 
-> Scope is defined by [`00_PROBLEM_STATEMENT.md`](00_PROBLEM_STATEMENT.md), which is authoritative and
-> overrides this document. Source of truth for design decisions is
-> [`SIH26171_WINNING_EXECUTION_PLAYBOOK.md`](SIH26171_WINNING_EXECUTION_PLAYBOOK.md).
-> Binding working rules are in [`AGENT_RULES.md`](AGENT_RULES.md) — read that before any coding session.
+This document is **strategy**: what we are betting on, what actually decides the
+outcome, and how the two of us split it. The task board is
+[`PHASES.md`](PHASES.md) — phases R0–R9, each with an exit gate. What is measured
+versus merely claimed is [`AUDIT_LOCAL_VS_DEFERRED.md`](AUDIT_LOCAL_VS_DEFERRED.md).
+[`00_PROBLEM_STATEMENT.md`](00_PROBLEM_STATEMENT.md) is authoritative and overrides
+everything here.
 
 ---
 
-## 1. Where the project actually stands
+## 1. Where we actually stand
 
-### What works (verified 31 Aug 2026)
+The pipeline is built and, as of 2 Sep, genuinely measured for the first time.
 
-| Check | Result |
+| | |
 | :--- | :--- |
-| `npm install` | 11 packages, 0 vulnerabilities |
-| `npm run build` | All 6 workspace packages compile clean (TypeScript 7.0.2, strict) |
-| `npm test` | **16 / 16 pass** in ~143 ms |
+| **Real** | Offscreen sanitizer, UltraFace ONNX executing, multi-step agent loop, hosted + local model backends, 160/160 tests |
+| **Measured in real Chrome** | Redaction 83.3% pixel-verified · safe controls 100% preserved · visual context 78.6% · client perception 55 ms p50 · heap 3.94 MB |
+| **Known broken** | Face masks render in the wrong place (0/2 covered) · `PostRedactionVerifier` cannot detect a displaced mask · server reasoning 6–7 s |
+| **Structurally missing** | No ViT · vision does not drive decisions · every step transmits · the server is not told what was redacted |
 
-Genuinely strong assets to build on, not replace:
-
-- **`packages/protocol/`** — the type-level privacy boundary. `_brand` fields make `RawCapture`
-  structurally unassignable to a network client; coordinate spaces are separate types
-  (`ScreenshotPixelBox` vs `ViewportCssPixelBox`), designing out the classic mask-misalignment bug.
-- **`packages/pii-rules/`** — real regex detectors with Luhn validation and overlap suppression.
-- **`apps/server/`** — closed-schema validation, canary scanner, header scrubbing, and a VLM adapter
-  that auto-probes Ollama → LM Studio → cloud → mock.
-- **`SIH26171_WINNING_EXECUTION_PLAYBOOK.md`** — a self-aware, well-reasoned spec.
-
-### What is broken — audit findings
-
-| # | Defect | Rubric impact |
-| :-: | :--- | :--- |
-| 1 | `SanitizerPipeline.sanitize()` is called from the **MV3 service worker** (`coordinator.ts:123`), where `document`/`Image` do not exist. It falls through to the fallback at `pipeline.ts:107`, emits a **1×1 transparent PNG** as the "sanitized screenshot", and sets `renderedCount = allRegions.length` so `PostRedactionVerifier` passes on a fake. **No pixel is ever masked in the real extension.** | 20% redaction — currently 0 |
-| 2 | **No on-device vision model exists.** Zero `onnxruntime-web`, `transformers.js`, or WebGPU in the tree. `face-detector.ts` is aspect-ratio + CSS-class heuristics. `README.md` claims "BlazeFace ONNX"; `sidepanel.html:60` prints "enabled (WebGPU)". | 25% + 20% resting on a claim |
-| 3 | `benchmark/src/runner.ts` pushes to `detections` **and** `groundTruth` inside the same loop with identical values — 100%/100% is mathematically guaranteed regardless of code quality. `GROUND_TRUTH_DATA` exists but is never imported. Memory `62.4 MB` and CPU `5.8%` are hardcoded literals in `latency-profiler.ts`. | all 5 metrics unevidenced |
-| 4 | `EVALUATION_REPORT.md` reports **2292 ms measured against a <1200 ms target** and marks it **"✅ PASSED"**. | credibility with an ISRO jury |
-| 5 | Systematic over-masking: `text-detector.ts` masks the whole **parent element** rect per match; any 32–500 px image with 0.6–1.4 aspect ratio is called a face; every `<canvas>` and `<iframe>` is unconditionally `isCrossOriginOrUninspectable`. | 20% redaction precision |
-| 6 | `coordinator.startRun()` performs **one** capture → action → execute cycle. No agent loop, so no end-to-end task completion — which the PS explicitly requires. | demo viability |
-| 7 | No `.git` directory. **Nothing is version-controlled.** | total loss risk |
-
-### Official evaluation rubric — what we are optimising
-
-| Metric | Weight | Current state |
-| :--- | :-: | :--- |
-| Accuracy of visual context from screen | 25% | extractor exists, unmeasured |
-| Recall & precision for sensitive/PII detection | 20% | good rules, circular benchmark |
-| Precision of redaction | 20% | **not running at all** |
-| Client-side resource utilization | 20% | hardcoded fake numbers |
-| Overall end-to-end task latency | 15% | honestly measured; server is 94% of it |
-
-### The constraint that shapes everything: the finale pages are unknown
-
-> *"Use cases for evaluation will be provided during finale."* — official PS
-
-**We will not see the evaluation website before judging.** Generalization to arbitrary, unseen pages
-is therefore a hard requirement, not a stretch goal, and it constrains every phase below:
-
-- **No site-specific selectors, hardcoded IDs, or per-domain branches** anywhere in the detection,
-  redaction, or execution path. If a detector needs to know what site it is on, it is wrong.
-- Detectors stay **semantic and generic**: `input[type=password]`, `autocomplete` tokens, ARIA roles,
-  regex over visible text, and the vision model — never "the field on page X".
-- The benchmark corpus (Phase 4) must include page shapes the code was **not** developed against.
-  A harness that only scores the pages we wrote tells us nothing about finale performance.
-- Rehearsal (Phase 6) must include **at least one page nobody on the team has seen**, driven live.
-- On an unfamiliar page, **fail-closed is the correct outcome**. Over-masking and refusing to
-  transmit is recoverable in front of a jury; leaking PII is not.
-
-The demo portal is a development fixture and a safety net — **not the target**. Any work that makes
-the agent better on the demo portal specifically, at the cost of generality, is negative progress.
+The honest summary: **we built the privacy boundary extremely well and the
+perception layer only halfway.** The PS asks for a Vision Transformer that reads
+the screen and decides; ours is a CNN face detector wired to redaction only.
 
 ---
 
-## 2. Phase 0 — Repo hygiene · Day 1 (~2h)
+## 2. What decides selection
 
-Cheap, unblocks everything.
+Two things, and only one of them is the rubric.
 
-- [ ] `git init`, add `.gitignore` coverage for `dist/` and `node_modules/`, initial commit. **Do this first.**
-- [ ] `scripts/build.js` — replace `npx tsc` with the workspace-local `node_modules/.bin/tsc`, so a
-      missing install can never silently fetch the decoy `tsc@2.0.4` package from npm (this is what
-      made the build appear broken).
-- [ ] `scripts/run-e2e-chrome.js` — `CHROME_PATH` is hardcoded to `/Applications/Google Chrome.app/…`,
-      so it only runs on macOS. Resolve per-platform (macOS / Windows / Linux) with a `CHROME_PATH`
-      environment-variable override.
-- [x] ~~`README.md` — broken absolute macOS links, wrong PS number.~~ Rewritten as the project front
-      door with a documentation map and an honest status table.
-- [ ] Strip unmeasured claims: `README.md` (`<350MB VRAM`, `<15% CPU`, `>98% recall`, `<1.2s`) and
-      `apps/extension/src/sidepanel/sidepanel.html:60` ("Face & avatar blur filters **enabled (WebGPU)**").
-      Replace with "measured — see `docs/benchmark-results/`" until a real number exists.
-- [ ] Move `docs/benchmark-results/EVALUATION_REPORT.*` into `docs/benchmark-results/archive/`.
-      These are not evidence and must never be cited.
-- [x] ~~Consolidate the five overlapping planning documents.~~ All documentation now lives in `docs/`
-      under one hierarchy — see [`INDEX.md`](INDEX.md). Superseded plans moved to `docs/archive/`.
-- [x] ~~Strip fabricated metrics from `09_DEMO_PITCH_SCRIPT.md`~~ (96.4% / 99.1% / 98.8% / <230MB /
-      ~820ms were all invented). Replaced with placeholders that must be filled from measured output.
+### 2.1 The rubric — 100 points of it
+
+| Metric | Weight | Where we are | Phase |
+| :--- | :---: | :--- | :--- |
+| Accuracy of visual context from screen | **25%** | 78.6%, answered from the **DOM, not vision** | R3, R4 |
+| PII detection recall / precision | **20%** | 100%/100% detector-level, face unmeasured | R0, R4 |
+| Precision of redaction | **20%** | 83.3% pixel-verified, 3 under-masked | R0 |
+| Client resource utilization | **20%** | 3.94 MB heap, no governance | R6 |
+| End-to-end latency | **15%** | 6–7 s server, 55 ms client | R2, R5 |
+
+### 2.2 The part that is not on the scoresheet
+
+Every team drawing SIH26171 will demo a Chrome extension that blurs a face,
+blacks out a password, ships a screenshot to a hosted VLM and clicks a button.
+The architecture diagram will look like ours. **Differentiation is not the
+architecture — it is what we can prove.**
 
 ---
 
-## 3. Phase 1 — Make the privacy boundary real · Days 1–4 · **P0, blocks everything**
+## 3. The bet: we are the team that can prove it
 
-The single most important fix. Until it lands, the product does not do what it claims.
+Five assets no GPT-4V wrapper can reproduce on demand. Four already exist; the
+fifth is what R4 is for.
 
-### 1.1 Offscreen document for sanitization
-Chrome MV3 service workers have no DOM, so canvas masking cannot run there.
+1. **The privacy boundary is enforced by the type system.** `RawCapture` carries a
+   brand that makes it structurally unassignable to the network client. Sending
+   raw pixels is not a code-review failure we might catch — it does not compile.
+   *Demonstrable live: try it, watch `tsc` reject it.*
+2. **It fails closed, and we can trigger it.** If mask coverage is uncertain the
+   client transmits nothing. A canary string planted on a page hard-errors if it
+   ever reaches a payload. *Demonstrable live: plant the canary, watch the run
+   block instead of leak.*
+3. **Redaction is verified at the pixel level.** We read the actual output PNG and
+   assert every pixel inside a sensitive region belongs to the redaction overlay —
+   100% for a password field against 5% for a button that must survive. Nobody
+   else will bring this.
+4. **The benchmark reports its own failures.** It has a `⚪ NOT MEASURED` verdict
+   and a scope section listing what it cannot assess. Ablate a detector and recall
+   drops, on demand.
+5. **The vision score survives the DOM being switched off.** (R4.) Any team can
+   claim their model reads the screen. We will be able to disable DOM perception
+   entirely, live, and show the agent still working with a number attached.
 
-- [ ] Add `"offscreen"` to `permissions` in `apps/extension/manifest.json`.
-- [ ] Create `apps/extension/src/offscreen/offscreen.html` + `offscreen-main.ts`.
-- [ ] `coordinator.ts` stops calling `SanitizerPipeline.sanitize()` directly — it creates/reuses the
-      offscreen document, posts `{ rawCapture, snapshot, goal }`, and awaits a `SanitizedContext`.
-- [ ] Route this through the existing `BrowserAdapter` (`apps/extension/src/browser/browser-adapter.ts`)
-      via a new `runInSanitizerHost(payload)` method. Playbook §4.1 requires Chrome-specific code stay
-      behind the adapter so Firefox can swap in a background page later.
-
-### 1.2 Delete the permissive fallback
-- [ ] Remove the `else` branch at `pipeline.ts:107`. With no canvas available it must **throw**, the
-      coordinator transitions to `blocked-local-only`, and the UI shows the playbook §3.2 message.
-      Fail closed — never permissive.
-- [ ] `renderedCount` must be what `MaskRenderer` actually drew, never assumed from `allRegions.length`.
-- [ ] Add a test asserting sanitization **without** a canvas throws instead of returning a payload.
-
-### 1.3 Real blur
-- [ ] `mask-renderer.ts` implements `gaussian_blur` as a flat `rgba(180,180,180,0.95)` fillRect.
-      Replace with `ctx.filter = 'blur(Npx)'` over a re-drawn source region, or downscale→upscale
-      pixelation. Either is defensible; the current one is not a blur and must not be called one.
-- [ ] Keep opaque masks for everything else (playbook §3.5).
-
-### 1.4 Honest telemetry
-- [ ] `coordinator.ts` sets `t2 = Date.now()` immediately after `t1`, and `t5` immediately after `t4`,
-      so the detection and validation buckets are empty while the real work happens inside `sanitize()`.
-      Return real `t_detect` / `t_render` / `t_verify` marks from the sanitizer and thread them through
-      `RunTelemetry`.
-
-> **Exit gate.** Load the unpacked extension in Chrome against `apps/demo-portal`. The outgoing
-> payload's `screenshot` must be a full-size PNG with visible masks over the password field, email,
-> phone, employee ID, and avatar. **If it is a 1×1 image, Phase 1 is not done.**
+**On asset 4, tell the story straight.** We found our own benchmark was fabricating
+results — it string-matched fixture literals and emitted face boxes hardcoded to
+the ground-truth coordinates, reporting 100% face recall without ever loading the
+model. We rebuilt it, and the honest numbers are lower. With an ISRO jury that is
+a *strength*: a team that audits itself is a team whose numbers you can trust. Do
+not hide it and do not lead with it — have it ready for "how do you know?"
 
 ---
 
-## 4. Phase 2 — Real on-device vision model · Days 4–8 · **P0**
+## 4. Closing the gap to the problem statement
 
-The PS requires "a client-side vision model running in the browser (e.g., via WebGPU) that evaluates
-the current screen state." Playbook §4.4 is right that the MVP should be **one bundled quantized face
-detector**, not a generic ViT bolted on to satisfy a keyword. Follow that.
+The PS sentences we do not yet satisfy, in cost order. Detail and exit gates in
+[`PHASES.md`](PHASES.md).
 
-- [ ] Add `onnxruntime-web` to `apps/extension`. **Bundle the `.wasm` artifacts and the model file
-      locally** — no CDN, no runtime weight fetch. An extension that downloads its model over the
-      network undercuts the entire privacy argument.
-- [ ] Create `apps/extension/src/vision/face-model.ts` — loads a quantized face detector
-      (BlazeFace / UltraFace-320 ONNX, ~1–2 MB) inside the Phase 1 offscreen document.
-- [ ] Execution providers in order `webgpu` → `wasm`. Per playbook §4.1, **correctness must not depend
-      on WebGPU**: WASM is the correctness path, WebGPU is the accelerator. Log which provider actually
-      engaged and surface it in the side panel — a truthful telemetry line, unlike the current hardcoded one.
-- [ ] Rewrite `apps/extension/src/sanitizer/face-detector.ts` to consume real model boxes. Keep the DOM
-      avatar heuristic as a **union** fallback (playbook §5.1: union, never intersection) so recall
-      never regresses below today's.
-- [ ] Run the model on the captured screenshot bitmap in the offscreen document — not on `<img>` elements.
-- [ ] Fail-closed: if the model fails to load or times out, mask all image elements wholesale and record
-      the degradation. Never silently skip.
+| | PS clause | What we do today | Phase |
+| :-- | :--- | :--- | :-- |
+| 1 | *"server … should be **aware for this redaction scheme**"* | The payload carries no redaction information at all | **R1** — cheapest win |
+| 2 | *"**If it requires** the visual context to be sent"* | One code path; every step transmits | **R2** |
+| 3 | *"a local **Vision Transformer (ViT)** or equivalent"* | UltraFace is an SSD-style CNN; we rely on "or equivalent" | **R3** |
+| 4 | *"**reads the screen and takes decision** based on that"* | Vision detects faces for redaction only; the 25% metric is DOM-sourced | **R4** — biggest, riskiest, most aligned |
+| 5 | *"balance the trade-offs between latency and accuracy"* | Scattered constants, no policy | **R5** |
 
-> **Exit gate.** A fixture page with three photographed faces produces three blurred boxes from the
-> model alone, verified with the DOM heuristic disabled.
+**R3+R4 are what change the pitch.** Until they land we are a DOM agent with a
+face blurrer defending a word in the PS. After them we are what the PS literally
+describes, with a number to back it.
 
----
+### The three things that were still open, and how they close
 
-## 5. Phase 3 — Redaction precision · Days 6–9 · 20% of score
+An earlier reading of the old board asked whether following it would *completely*
+satisfy the PS. It would not, for three reasons. Each now has a phase:
 
-Over-masking reads as "safe" but scores badly and looks crude to a judge.
+- **"ViT or equivalent" was a defence, not an answer.** → **R3** ships an actual
+  CLIP-family ViT image tower, bundled locally, on the `onnxruntime-web` we
+  already depend on. Zero new runtime dependencies.
+- **Vision only firing where the DOM failed left the 25% metric DOM-sourced.** →
+  **R4** runs vision on every page in three roles (primary, corroborator, PII
+  auditor) and reports a **DOM-ablated** accuracy figure.
+- **Generalisation was unprovable in advance.** It still is — but **R7** now
+  reports the dev↔held-out **gap** as a published number rather than hoping the
+  gap is small.
 
-- [ ] **`text-detector.ts` — the biggest single win.** It masks `node.boundingClientRect`, which is the
-      **parent element's** rect, once per match over the same box. Replace with per-match geometry:
-      build a `Range` over the matched substring offsets already returned by `scanTextForPII`, then use
-      `range.getClientRects()`.
-- [ ] **`element-extractor.ts`** — text nodes are collected with no viewport clipping, so off-screen text
-      produces masks at off-screen coordinates. Clip to the viewport.
-- [ ] **`face-detector.ts`** — drop the blanket "any 32–500 px image with 0.6–1.4 aspect ratio is a face"
-      rule once the real model lands. Keep only explicit avatar/profile signals.
-- [ ] **`element-extractor.ts` surfaces** — every `<canvas>` and `<iframe>` is hardcoded
-      `isCrossOriginOrUninspectable: true`. Test same-origin accessibility first; mask the full rect only
-      when genuinely uninspectable (playbook §3.6).
-- [ ] **`regex-patterns.ts`** — add the **Verhoeff checksum** for Aadhaar. `AADHAAR_REGEX` currently
-      matches any 12-digit run starting 2–9 and will collide with order numbers and phone strings.
-      Verhoeff removes most false positives and directly lifts the precision metric. Mirror the existing
-      `luhn.ts` pattern.
-- [ ] Use the existing `mergeBoundingBoxes()` in `packages/protocol/src/coordinates.ts` to unify
-      overlapping regions before rendering. It exists and is tested — do not write a second one.
+What remains genuinely outside anyone's guarantee: the finale pages are unknown,
+and satisfying the PS is not the same as scoring well. R7 shrinks that risk as far
+as it can be shrunk; it does not remove it.
 
 ---
 
-## 6. Phase 4 — Honest benchmark harness · Days 8–12 · gates every number you quote
+## 5. Division of labour
 
-`packages/benchmark/src/runner.ts` must be rewritten. Today it derives ground truth from detector
-output, so it cannot fail.
+Two people, two tracks, one shared interface agreed before either starts: the
+`PerceptionSource` contract and the `redactionManifest` shape.
 
-- [ ] Ground truth comes **only** from `packages/test-fixtures/src/ground-truth.ts` (`GROUND_TRUTH_DATA`),
-      which already has real annotations and is currently unused. Extend it to all 14 fixtures.
-- [ ] **Add a held-out corpus.** Annotate 4–6 pages the detectors were *not* developed against —
-      saved copies of real public pages with synthetic PII substituted in. Report scores on the
-      held-out set **separately** from the development set. The held-out number is the one that
-      predicts finale performance; the development number mostly measures overfitting.
-- [ ] Render each fixture in a **real browser** — extend the already-CDP-based `scripts/run-e2e-chrome.js`
-      — and run the actual client pipeline against it. No string-matching on raw HTML.
-- [ ] **Visual context (25%)** — element recall/precision, role accuracy, median IoU against annotated
-      actionable elements. `accuracy-metrics.ts` currently compares an array to itself.
-- [ ] **PII (20%)** — box-level TP/FP/FN at IoU ≥ 0.5 against `groundTruthBoxes`, per category.
-- [ ] **Redaction (20%)** — ground-truth area coverage, **plus** an over-mask ratio (masked ÷ ground-truth
-      area) and a safe-element-preservation count. Report both; over-masking must be visible as a cost.
-- [ ] **Resource (20%)** — real measurement via CDP `Performance.getMetrics` and `performance.memory`.
-      Delete the hardcoded `62.4` / `5.8` from `latency-profiler.ts`.
-- [ ] **Latency (15%)** — keep the honest `real-e2e-latencies.json` approach; report p50/p95 split into
-      client and server.
-- [ ] **The reporter must not lie.** `reporter.ts` needs a real verdict function: `measured <= target`,
-      no exceptions. A FAILED row in your own report buys credibility; a fake PASSED row is what loses
-      the round.
-- [ ] Store every result alongside its git SHA and the exact command that produced it.
+| | **Track A — Perception & Decision** | **Track B — Correctness & Compatibility** |
+| :--- | :--- | :--- |
+| Owns | R2 decision tier, R3 the ViT, R4 vision everywhere, R5 policy | R0 defect closure, R1 redaction manifest, R6 resource budget, R8 Firefox |
+| First move | R2 — the router is where R3/R4's output will land | R0 — the face defect is a live privacy hole |
+| Shared | R7 generalisation and rehearsal, R9 freeze and submit |
+
+Track B's R0 and R1 are independent of Track A and can land in any order. R6 must
+run **alongside** R3, not after it — finding out the ViT blows the resource budget
+after integrating it is the expensive order.
 
 ---
 
-## 7. Phase 5 — Multi-step agent loop · Days 10–14
+## 6. The demo
 
-The PS requires "An end-to-end task assisting the user should be demonstrated."
+Six minutes. The goal is not "it works" — every team shows that. The goal is
+**"we can prove it, and you can try to break it."**
 
-- [ ] Wrap the existing cycle in a loop with a **step budget** (8–12) and goal-completion detection via
-      the `finish` action kind already in `ActionProposal`.
-- [ ] Re-capture and re-sanitize before **every** step (playbook §6.4). Element IDs are ephemeral.
-- [ ] Stale-ID handling: if `elementMap.get()` misses, do not act — re-perceive (playbook §8.3).
-- [ ] `SemanticStateVerifier.verifyOutcome()` currently falls through to
-      `document.readyState === 'complete'`, i.e. it always returns true. Implement real postconditions
-      per playbook §6.3 — target/landmark mutation, visibility or enabled-state change, URL change —
-      with a bounded timeout. Image diff only as corroboration.
-- [ ] `ActionExecutor.execute()` sets `.value` directly on `type`; React's synthetic event system ignores
-      that. Use the native setter
-      (`Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set`) before
-      dispatching `input`. The `controlledReactInput` fixture already exists to test this.
-- [ ] Reuse `classifyActionRisk()` in `packages/protocol/src/action.ts` for the confirmation gate — it
-      works and is tested. Do not reimplement.
+1. **Let the jury pick the page.** Open something nobody prepared. This is the
+   single highest-credibility move available, and it is only possible if R7 is
+   done. If we cannot do it live, the pipeline is overfitted and we should fix
+   that rather than hide it.
+2. **Raw versus redacted, side by side.** The side panel already does this.
+3. **Show the wire.** Display the actual JSON payload leaving the machine. Not a
+   diagram of it — the bytes.
+4. **Try to leak.** Plant the canary, watch the run fail closed and transmit
+   nothing. This is the moment the demo is won.
+5. **Switch the DOM off.** Disable DOM perception; the ViT carries the page alone.
+   This is the moment the *problem statement* is answered.
+6. **Complete a real task.** A 3–4 step approval workflow with a confirmation
+   prompt on the protected submit step.
+7. **Show the scoreboard, failures included.** Then ablate a detector live and show
+   the number move.
 
----
+**Have a recorded backup.** Venue wifi is a single point of failure for a
+hosted model.
 
-## 8. Phase 6 — Server, latency, demo · Days 13–17
+### 6.1 Questions to have answers ready for
 
-- [ ] **Latency.** The server round-trip is **1.4–4.0 s** — ~94% of end-to-end, against ~140 ms of client
-      work. This is the only lever that matters. In order: a smaller/faster hosted open-weights VLM;
-      downscale the sanitized screenshot before sending; send DOM-only context when there is no visual
-      ambiguity; cache repeated `(goal, page-signature)` → action.
-- [ ] **Hosting.** Use a **cloud-hosted open-weights** model (Qwen2.5-VL via Groq / Together / OpenRouter)
-      — explicitly PS-permitted during SIH, and it removes any dependency on the build machine's GPU.
-      `apps/server/src/engines/vlm-engine.ts` already handles the adapter logic: just set `VLM_ENDPOINT`,
-      `VLM_API_KEY`, `VLM_MODEL`. Document the self-host path for the "offline deployable" requirement.
-- [ ] **System prompt** must state the playbook §6.1 clauses: redactions are intentional; never ask for
-      unredacted content; choose one action; use local IDs only; express uncertainty; request confirmation
-      for protected actions; return schema-valid JSON only.
-- [ ] **Side panel.** The raw-vs-redacted split view is the demo's whole argument. Wire it to real Phase 1
-      data and show the live network payload so a judge can see exactly what left the machine.
-- [ ] **Demo task.** Extend the existing `apps/demo-portal` "Valley Workspace Hub" — it already carries a
-      password, email, phone, employee ID and avatar — into a 3–4 step approval workflow. Do not build a
-      new fixture from scratch.
-- [ ] **Rehearse on an unseen page.** The demo portal proves the story; it does not prove the claim.
-      Rehearse the same task on a public page nobody on the team has prepared, and be ready to invite
-      the jury to pick one. If that is too fragile to attempt live, that is a signal the pipeline is
-      overfitted — fix it rather than hiding it.
+These are the ones that decide rounds. Answer each in two sentences, not ten.
 
----
-
-## 9. Phase 7 — Firefox, hardening, submission · Days 17–20
-
-- [ ] Firefox port behind the existing `BrowserAdapter`. `chrome.offscreen` does not exist there — use a
-      background page/worker. **If it has not landed cleanly by Day 19, cut it** and say so honestly.
-      One browser working beats two half-working.
-- [ ] Complete the playbook §8.3 adversarial suite. Four cases exist in `tests/adversarial.test.js`; add:
-      secret in input value, secret in placeholder/aria-label, secret in canvas, detector timeout,
-      stale local ID, animated page.
-- [ ] Regenerate `docs/benchmark-results/` from the real harness. Whatever it says is what you present.
-- [ ] Record a backup demo video.
-- [ ] Submit before **20 September 2026, 23:59 IST**.
-
-### Cut order if time runs short
-1. Firefox port
-2. Local OCR / text-region detection for image and canvas PII (playbook already calls this stretch)
-3. Action memory cache
-4. Multi-step loop beyond 3 steps
-
-**Never cut:** the offscreen sanitizer, the real face model, the honest benchmark, or generic
-site-agnostic detection. The first three are what the rubric scores; the fourth is what makes the
-score survive contact with a page we have never seen.
-
----
-
-## 10. Machine requirements
-
-The architecture is deliberately light on the build machine: the heavy model lives on the server, and
-the in-browser model is a 1–2 MB quantized detector, not a VLM. Any modern laptop can run the whole
-client side and all development.
-
-**Minimum for development and the live demo**
-
-| Requirement | Why |
+| Question | The answer |
 | :--- | :--- |
-| Node.js 20+ and npm | Monorepo build, tests, server, demo portal |
-| A recent Chrome or Chromium (WebGPU-capable) | Extension host; WebGPU accelerates the face detector |
-| ~8 GB RAM | Chrome + extension + local dev server concurrently |
-| ~5 GB free disk on the drive Chrome caches to | ONNX weights and `node_modules` |
-| An up-to-date GPU driver | Stale drivers are the usual cause of WebGPU silently falling back |
-
-**Not required:** a discrete GPU, and any local hosting of the server-side VLM. A 7B-class VLM needs
-roughly 6–8 GB of VRAM; the PS explicitly permits a cloud-hosted open-weights model during SIH, so
-Phase 6 uses one. WASM remains the correctness path if WebGPU is unavailable on the build machine.
-
-**Before demo day:** close other applications, confirm WebGPU is active at `chrome://gpu`, and note in
-the side panel which execution provider actually engaged — never claim WebGPU without checking.
+| *"Is that really a Vision Transformer?"* | Name the model and the parameter count, and show the side panel reporting it live. This is why R3 exists. |
+| *"How do we know the vision model is doing anything, and not the DOM?"* | Switch the DOM off and show the number. R4. |
+| *"How do you know nothing leaked?"* | The type system rejects it at compile time, and the canary makes it fail closed. Show both. |
+| *"Your numbers are from your own fixtures."* | Agree, immediately. Then show the held-out corpus and the dev↔held-out gap we publish ourselves. R7. |
+| *"Why is it slow?"* | Client perception is 55 ms; the wait is the server reasoning model, and R2 removes the round trip entirely for simple steps. |
+| *"What happens on a page you've never seen?"* | It over-masks and refuses to transmit. That is the designed outcome, not a failure. |
+| *"Why not just send the screenshot to GPT-4V?"* | Because the PS forbids it and the user's password is in that screenshot. That is the entire point of the project. |
 
 ---
 
-## 11. Verification
+## 7. Risk register
 
-Run after each phase; all must pass before moving on.
+| Risk | Likelihood | Mitigation |
+| :--- | :--- | :--- |
+| Venue internet fails, hosted model unreachable | Medium | Local Ollama path already works — rehearse the `.env` switch until it takes ten seconds |
+| **The ViT blows the client resource budget (20% of score)** | **Medium** | Start at ~10 MB (TinyCLIP ViT-8M), lazy-load it, and run R6 alongside R3 rather than after |
+| 6–7 s latency reads as "slow" to judges | High | R2 removes the round trip for simple steps; R5 lets us pick a faster policy live. Narrate it: perception is 55 ms, the wait is the reasoning model |
+| An unseen page breaks the agent live | Medium | Fail-closed is the designed outcome and a *good* look — rehearse saying so. R7 reduces the chance |
+| R3/R4 destabilise a working pipeline | Medium | Ship behind the `PerceptionSource` seam; DOM stays the default source and vision is additive |
+| WebGPU never verified to engage | Medium | It has only ever run on the WASM fallback. Verify headful once and report the provider truthfully — never claim WebGPU we have not seen |
+| Face redaction still broken at the finale | Low if R0 lands | R0 is first for exactly this reason — it is a privacy hole, not a scoring detail |
+| A judge asks for a number we cannot reproduce | Low | Every figure in our docs names the command that produced it |
+| OpenRouter key abuse | Low | Rotate after the finale, set a spend limit now |
+
+---
+
+## 8. Working rules
+
+Binding rules are in [`AGENT_RULES.md`](AGENT_RULES.md). The three that matter
+most here:
+
+- **No unmeasured claims.** No performance number enters any document until a
+  named command has produced it. A FAILED row is an asset; a fabricated PASSED row
+  is what loses the round. We have already had to strip invented figures once.
+- **No site-specific anything.** No hardcoded selectors, IDs, or per-domain
+  branches in detection, redaction or execution. The finale pages are unknown; a
+  detector that needs to know which site it is on is wrong. This is also why R3
+  uses an open-vocabulary model rather than a fixed-class classifier.
+- **Fail closed.** On an unfamiliar page, refusing to transmit is the correct
+  outcome. Over-masking is recoverable in front of a jury; leaking PII is not.
+
+---
+
+## 9. Verification
 
 ```bash
-# from the repository root
-npm install
-npm run build          # all 6 packages compile clean
-npm test               # 16 existing + new phase tests
-npm run test:canary    # canary must never appear in any payload
-npm run benchmark      # after Phase 4: real numbers, honest verdicts
-npm run test:e2e       # after the Phase 0 platform fix
+npm run build              # all artifacts including the harness bundle
+npm test                   # unit and integration tests
+npm run benchmark          # detector-level PII + ablations
+npm run benchmark:browser  # real Chrome: redaction, visual context, resources
+npm run verify:redaction   # pixel-true masking, with safe-control controls
+npm run test:e2e           # full extension against a live model
+npm run compare:models     # model and payload-size latency sweep
 ```
 
-Manual gates automation cannot cover:
+Manual gates no automation covers:
 
-1. **Phase 1** — load the unpacked extension, run against `npm run dev:portal` (localhost:4500), open
-   DevTools → Network on the service worker, inspect the `POST /api/v1/reason` body. The `screenshot`
-   field must be a full-size PNG with visible masks. Save it and confirm the password, email, phone,
-   employee ID and avatar are covered. **If it is a 1×1 image, Phase 1 is not done.**
-2. **Phase 2** — disable the DOM avatar heuristic, load a 3-face fixture, confirm the model alone produces
-   3 boxes. Confirm the side panel reports the execution provider that actually engaged.
-3. **Phase 3** — visually diff masked output before/after on `profilePii`; the over-mask ratio must drop.
-4. **Phase 4** — deliberately break a detector (comment out the Aadhaar rule) and confirm the benchmark
-   **reports lower recall**. If the number does not move, the harness is still circular.
-5. **Phase 5** — complete a 3+ step task on the demo portal end to end, with a confirmation prompt
-   appearing on the submit step.
-6. **Phase 7** — every playbook §8.3 adversarial case has a passing test.
+1. The outgoing `/api/v1/reason` screenshot is full-size with visible masks — never 1×1.
+2. Ablate a detector; the browser harness must report lower recall. If the number
+   does not move, the harness is circular again.
+3. Disable the DOM perception source entirely; the harness must still report a
+   non-zero visual-context accuracy, with the engaged execution provider and model
+   family reported truthfully.
+4. A 3+ step task completed live on a page nobody on the team has seen.

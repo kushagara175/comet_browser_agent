@@ -6,13 +6,44 @@
  * It is impossible to pass `RawCapture` to this client.
  */
 import { SanitizedContext, ActionProposal } from '@privapilot/protocol';
+export declare const DEFAULT_SERVER_BASE_URL = "http://localhost:4501";
+export interface ModelStatus {
+    readonly reachable: boolean;
+    readonly provider?: 'ollama' | 'lm-studio' | 'vlm-cloud' | 'mock';
+    readonly modelName?: string;
+    readonly endpoint?: string;
+    readonly modelConnected?: boolean;
+    readonly detail?: string;
+    readonly lastError?: string;
+    /** Populated when the gateway itself could not be reached. */
+    readonly error?: string;
+}
+export interface ChatReply {
+    readonly reply: string;
+    readonly modelConnected?: boolean;
+    readonly provider?: string;
+    readonly modelName?: string;
+    readonly detail?: string;
+}
 export declare class ReasoningHttpClient {
     private readonly serverBaseUrl;
     constructor(serverBaseUrl?: string);
+    getServerBaseUrl(): string;
+    /**
+     * Turns a transport failure into something the user can act on. A bare
+     * "Failed to fetch" is the single most confusing symptom in this system:
+     * it means the gateway is not running, not that the model refused.
+     */
+    private describeTransportError;
     /**
      * Bounded fetch helper wrapping AbortController with deterministic timeouts.
      */
     private fetchWithTimeout;
+    /**
+     * Diagnoses the two failures that look identical in the UI: the gateway being
+     * down, and the gateway being up with no model backend behind it.
+     */
+    getModelStatus(): Promise<ModelStatus>;
     /**
      * Transmits SanitizedContext to Reasoning Server and returns one ActionProposal.
      */
@@ -21,14 +52,10 @@ export declare class ReasoningHttpClient {
      * Transmits sanitized page-aware context projection to Chat endpoint.
      * Strictly accepts SanitizedContext only (never raw captures or URLs).
      */
-    requestChat(sanitized: SanitizedContext, message: string): Promise<{
-        reply: string;
-    }>;
+    requestChat(sanitized: SanitizedContext, message: string): Promise<ChatReply>;
     /**
      * Transmits contextless general query (zero page or browser state).
      */
-    requestGeneralChat(message: string): Promise<{
-        reply: string;
-    }>;
+    requestGeneralChat(message: string): Promise<ChatReply>;
 }
 //# sourceMappingURL=http-client.d.ts.map

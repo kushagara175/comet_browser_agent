@@ -29,7 +29,12 @@ export function analyzeDomElementSensitivity(desc) {
     for (const autoVal of SENSITIVE_AUTOCOMPLETE_VALUES) {
         if (autocomplete.includes(autoVal)) {
             let cat = 'password';
-            if (autoVal.startsWith('cc-'))
+            // cc-csc is the standard token for the card security code. It must be checked
+            // before the generic cc- rule, which would otherwise label every CVV field as
+            // a card number.
+            if (autoVal === 'cc-csc')
+                cat = 'cvv';
+            else if (autoVal.startsWith('cc-'))
                 cat = 'credit_card';
             else if (autoVal.startsWith('bday'))
                 cat = 'date_of_birth';

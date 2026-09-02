@@ -320,7 +320,16 @@ export class ElementExtractor {
         const el = img as HTMLElement;
         const rect = el.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) {
-          const isAvatar = (el.className || '').toLowerCase().includes('avatar') || (el.className || '').toLowerCase().includes('profile');
+          // On SVG elements `className` is an SVGAnimatedString, not a string, so
+          // calling toLowerCase() on it throws and aborts the whole snapshot. This
+          // selector explicitly includes `svg`, so that is not a rare edge case - it
+          // broke extraction on any page containing an inline SVG. Prefer the
+          // class attribute, which is always a string on every element type.
+          const classText = (
+            el.getAttribute?.('class') ??
+            (typeof el.className === 'string' ? el.className : '')
+          ).toLowerCase();
+          const isAvatar = classText.includes('avatar') || classText.includes('profile');
           imageElements.push({
             id: `img_${depth}_${idx + 1}`,
             isProfilePhotoOrAvatar: isAvatar,

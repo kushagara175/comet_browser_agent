@@ -14,8 +14,8 @@ export const GROUND_TRUTH_DATA = {
         maxActionableElements: 3,
         expectedSafeActionableCount: 1,
         groundTruthBoxes: [
-            { category: 'email', normX: 0.1, normY: 0.2, normW: 0.8, normH: 0.08, tokenOrLabel: 'alex.tester@enterprise.local' },
-            { category: 'password', normX: 0.1, normY: 0.35, normW: 0.8, normH: 0.08, tokenOrLabel: 'SuperSecretPassword123!' }
+            { category: 'email', normX: 0.1, normY: 0.2, normW: 0.8, normH: 0.08, selector: '#emailInput', tokenOrLabel: 'alex.tester@enterprise.local' },
+            { category: 'password', normX: 0.1, normY: 0.35, normW: 0.8, normH: 0.08, selector: '#passwordInput', tokenOrLabel: 'SuperSecretPassword123!' }
         ],
         groundTruthElements: [
             { role: 'input', name: 'Email Address', selector: '#emailInput', isSensitive: true },
@@ -26,13 +26,17 @@ export const GROUND_TRUTH_DATA = {
     'misleading-field-names': {
         fixtureId: 'misleading-field-names',
         split: 'dev',
-        expectedPiiCategories: ['password', 'national_id'],
+        expectedPiiCategories: ['password', 'token'],
         minActionableElements: 3,
         maxActionableElements: 3,
         expectedSafeActionableCount: 1,
         groundTruthBoxes: [
-            { category: 'password', normX: 0.1, normY: 0.1, normW: 0.8, normH: 0.08, tokenOrLabel: 'HiddenPass!99' },
-            { category: 'national_id', normX: 0.1, normY: 0.25, normW: 0.8, normH: 0.08, tokenOrLabel: SECRET_CANARY }
+            { category: 'password', normX: 0.1, normY: 0.1, normW: 0.8, normH: 0.08, selector: '#query_search', tokenOrLabel: 'HiddenPass!99' },
+            // The canary is a bearer-token style secret, not a national ID. Its DOM context
+            // in the fixture is id="custom_token" / "Confidential Key:" / "Token:". It was
+            // authored as national_id, which made every correct 'token' detection score as
+            // both a miss and a false positive.
+            { category: 'token', selector: '#custom_token', normX: 0.1, normY: 0.25, normW: 0.8, normH: 0.08, tokenOrLabel: SECRET_CANARY }
         ],
         groundTruthElements: [
             { role: 'input', name: 'search_q', selector: '#query_search', isSensitive: true },
@@ -48,8 +52,12 @@ export const GROUND_TRUTH_DATA = {
         maxActionableElements: 5,
         expectedSafeActionableCount: 1,
         groundTruthBoxes: [
-            { category: 'credit_card', normX: 0.1, normY: 0.25, normW: 0.8, normH: 0.08, tokenOrLabel: '4532 0150 1234 5671' },
-            { category: 'cvv', normX: 0.1, normY: 0.45, normW: 0.3, normH: 0.08, tokenOrLabel: '892' }
+            { category: 'credit_card', normX: 0.1, normY: 0.25, normW: 0.8, normH: 0.08, selector: '#cardNumber', tokenOrLabel: '4532 0150 1234 5671' },
+            // The expiry field is already declared isSensitive in groundTruthElements below
+            // and is masked by the pipeline, but had no box, so every correct detection of
+            // it scored as a false positive. autocomplete="cc-exp" is card data.
+            { category: 'credit_card', normX: 0.1, normY: 0.33, normW: 0.4, normH: 0.08, selector: '#cardExp', tokenOrLabel: '12/28' },
+            { category: 'cvv', normX: 0.1, normY: 0.45, normW: 0.3, normH: 0.08, selector: '#cardCvv', tokenOrLabel: '892' }
         ],
         groundTruthElements: [
             { role: 'input', name: 'Cardholder Name', selector: '#cardHolder', isSensitive: true },
@@ -67,10 +75,10 @@ export const GROUND_TRUTH_DATA = {
         maxActionableElements: 2,
         expectedSafeActionableCount: 2,
         groundTruthBoxes: [
-            { category: 'email', normX: 0.15, normY: 0.2, normW: 0.7, normH: 0.05, tokenOrLabel: 'rohan.sharma@isro.gov.in.synthetic' },
-            { category: 'phone', normX: 0.15, normY: 0.28, normW: 0.5, normH: 0.05, tokenOrLabel: '+91 98765 43210' },
-            { category: 'national_id', normX: 0.15, normY: 0.36, normW: 0.4, normH: 0.05, tokenOrLabel: 'ABCDE1234F' },
-            { category: 'national_id', normX: 0.15, normY: 0.44, normW: 0.5, normH: 0.05, tokenOrLabel: '4532 8901 2342' }
+            { category: 'email', normX: 0.15, normY: 0.2, normW: 0.7, normH: 0.05, selector: '.profile-card p:nth-of-type(1) span', tokenOrLabel: 'rohan.sharma@isro.gov.in.synthetic' },
+            { category: 'phone', normX: 0.15, normY: 0.28, normW: 0.5, normH: 0.05, selector: '.profile-card p:nth-of-type(2) span', tokenOrLabel: '+91 98765 43210' },
+            { category: 'national_id', normX: 0.15, normY: 0.36, normW: 0.4, normH: 0.05, selector: '.profile-card p:nth-of-type(3) span', tokenOrLabel: 'ABCDE1234F' },
+            { category: 'national_id', normX: 0.15, normY: 0.44, normW: 0.5, normH: 0.05, selector: '.profile-card p:nth-of-type(4) span', tokenOrLabel: '4532 8901 2342' }
         ],
         groundTruthElements: [
             { role: 'button', name: 'View Safe Records', selector: '#viewRecordsBtn', isSensitive: false },
@@ -85,8 +93,8 @@ export const GROUND_TRUTH_DATA = {
         maxActionableElements: 1,
         expectedSafeActionableCount: 1,
         groundTruthBoxes: [
-            { category: 'face', normX: 0.1, normY: 0.2, normW: 0.2, normH: 0.2, tokenOrLabel: 'Avatar 1' },
-            { category: 'face', normX: 0.4, normY: 0.2, normW: 0.2, normH: 0.2, tokenOrLabel: 'Avatar 2' }
+            { category: 'face', normX: 0.1, normY: 0.2, normW: 0.2, normH: 0.2, selector: 'img[alt="Avatar 1"]', tokenOrLabel: 'Avatar 1' },
+            { category: 'face', normX: 0.4, normY: 0.2, normW: 0.2, normH: 0.2, selector: 'img[alt="Avatar 2"]', tokenOrLabel: 'Avatar 2' }
         ],
         groundTruthElements: [
             { role: 'button', name: 'Load More', selector: '#loadMoreBtn', isSensitive: false }
@@ -100,7 +108,7 @@ export const GROUND_TRUTH_DATA = {
         maxActionableElements: 1,
         expectedSafeActionableCount: 1,
         groundTruthBoxes: [
-            { category: 'high_risk_surface', normX: 0.1, normY: 0.2, normW: 0.8, normH: 0.5, tokenOrLabel: 'Scanned Document' }
+            { category: 'high_risk_surface', normX: 0.1, normY: 0.2, normW: 0.8, normH: 0.5, selector: 'img.scanned-id', tokenOrLabel: 'Scanned Document' }
         ],
         groundTruthElements: [
             { role: 'button', name: 'Open Safe Preview', selector: '#openSafePreview', isSensitive: false }
@@ -114,7 +122,7 @@ export const GROUND_TRUTH_DATA = {
         maxActionableElements: 1,
         expectedSafeActionableCount: 1,
         groundTruthBoxes: [
-            { category: 'high_risk_surface', normX: 0.1, normY: 0.2, normW: 0.6, normH: 0.4, tokenOrLabel: 'telemetryCanvas' }
+            { category: 'high_risk_surface', normX: 0.1, normY: 0.2, normW: 0.6, normH: 0.4, selector: '#telemetryCanvas', tokenOrLabel: 'telemetryCanvas' }
         ],
         groundTruthElements: [
             { role: 'button', name: 'Refresh Data', selector: '#refreshDataBtn', isSensitive: false }
@@ -128,7 +136,7 @@ export const GROUND_TRUTH_DATA = {
         maxActionableElements: 1,
         expectedSafeActionableCount: 1,
         groundTruthBoxes: [
-            { category: 'high_risk_surface', normX: 0.1, normY: 0.2, normW: 0.7, normH: 0.5, tokenOrLabel: 'iframe' }
+            { category: 'high_risk_surface', normX: 0.1, normY: 0.2, normW: 0.7, normH: 0.5, selector: 'iframe', tokenOrLabel: 'iframe' }
         ],
         groundTruthElements: [
             { role: 'button', name: 'Continue', selector: '#safeContinueBtn', isSensitive: false }
@@ -162,12 +170,16 @@ export const GROUND_TRUTH_DATA = {
     'long-scroll': {
         fixtureId: 'long-scroll',
         split: 'held-out',
-        expectedPiiCategories: ['national_id'],
+        expectedPiiCategories: ['token'],
         minActionableElements: 2,
         maxActionableElements: 2,
         expectedSafeActionableCount: 2,
         groundTruthBoxes: [
-            { category: 'national_id', normX: 0.1, normY: 0.5, normW: 0.8, normH: 0.05, tokenOrLabel: SECRET_CANARY }
+            // The canary is a bearer-token style secret, not a national ID. Its DOM context
+            // in the fixture is id="custom_token" / "Confidential Key:" / "Token:". It was
+            // authored as national_id, which made every correct 'token' detection score as
+            // both a miss and a false positive.
+            { category: 'token', selector: 'div[style*="margin-top"] p', normX: 0.1, normY: 0.5, normW: 0.8, normH: 0.05, tokenOrLabel: SECRET_CANARY }
         ],
         groundTruthElements: [
             { role: 'button', name: 'Top Nav', selector: '#topNavBtn', isSensitive: false },
@@ -182,7 +194,7 @@ export const GROUND_TRUTH_DATA = {
         maxActionableElements: 2,
         expectedSafeActionableCount: 1,
         groundTruthBoxes: [
-            { category: 'password', normX: 0.1, normY: 0.3, normW: 0.8, normH: 0.08, tokenOrLabel: 'HiddenDarkPass' }
+            { category: 'password', normX: 0.1, normY: 0.3, normW: 0.8, normH: 0.08, selector: '#darkSecret', tokenOrLabel: 'HiddenDarkPass' }
         ],
         groundTruthElements: [
             { role: 'input', name: 'darkSecret', selector: '#darkSecret', isSensitive: true },
@@ -192,12 +204,16 @@ export const GROUND_TRUTH_DATA = {
     'modal-dialog': {
         fixtureId: 'modal-dialog',
         split: 'held-out',
-        expectedPiiCategories: ['national_id'],
+        expectedPiiCategories: ['token'],
         minActionableElements: 2,
         maxActionableElements: 2,
         expectedSafeActionableCount: 2,
         groundTruthBoxes: [
-            { category: 'national_id', normX: 0.2, normY: 0.3, normW: 0.6, normH: 0.05, tokenOrLabel: SECRET_CANARY }
+            // The canary is a bearer-token style secret, not a national ID. Its DOM context
+            // in the fixture is id="custom_token" / "Confidential Key:" / "Token:". It was
+            // authored as national_id, which made every correct 'token' detection score as
+            // both a miss and a false positive.
+            { category: 'token', selector: '#reviewModal p', normX: 0.2, normY: 0.3, normW: 0.6, normH: 0.05, tokenOrLabel: SECRET_CANARY }
         ],
         groundTruthElements: [
             { role: 'button', name: 'Cancel', selector: '#modalCloseBtn', isSensitive: false },

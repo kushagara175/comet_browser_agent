@@ -3,7 +3,9 @@
  *
  * Implements:
  * - GET /health
+ * - GET /api/v1/model-status   (live model-backend diagnosis for the extension)
  * - POST /api/v1/reason
+ * - POST /api/v1/chat
  */
 
 import http from 'node:http';
@@ -45,7 +47,7 @@ export function createServer(): http.Server {
           <!DOCTYPE html>
           <html>
             <head>
-              <title>PrivaPilot Reasoning Server (:4501)</title>
+              <title>PrivaPilot Reasoning Server (:${PORT})</title>
               <style>
                 body { font-family: -apple-system, system-ui, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; }
                 .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 24px; max-width: 600px; margin: 0 auto; }
@@ -54,16 +56,22 @@ export function createServer(): http.Server {
                 .pill { display: inline-block; background: #065f46; color: #6ee7b7; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 12px; }
                 .btn { display: inline-block; background: #2563eb; color: #fff; text-decoration: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 13px; margin-top: 10px; }
                 .btn:hover { background: #1d4ed8; }
-                pre { background: #0f172a; padding: 12px; border-radius: 8px; font-size: 12px; color: #94a3b8; overflow-x: auto; }
+                pre { background: #0f172a; padding: 12px; border-radius: 8px; font-size: 12px; color: #94a3b8; overflow-x: auto; white-space: pre-wrap; }
+                .warn { color: #fbbf24; }
               </style>
             </head>
             <body>
               <div class="card">
-                <h1>🛡️ PrivaPilot Reasoning Server (:4501)</h1>
+                <h1>🛡️ PrivaPilot Reasoning Server (:${PORT})</h1>
                 <p><span class="pill">🟢 Server Active</span> &nbsp; Model: <strong>${engineStatus.modelName}</strong> (${engineStatus.provider})</p>
+                ${engineStatus.provider === 'mock' || !engineStatus.isOnline
+                  ? `<p class="warn"><strong>⚠ No model backend connected.</strong> Requests are answered by the
+                       deterministic offline reasoner. ${engineStatus.detail || ''}</p>
+                     ${engineStatus.lastError ? `<pre>${engineStatus.lastError}</pre>` : ''}`
+                  : `<p style="color:#6ee7b7;">✓ ${engineStatus.detail || 'Model backend reachable.'}</p>`}
                 <p>This is the <strong>AI API Gateway</strong>. To interact with the simulated web app & extension:</p>
                 <a class="btn" href="http://localhost:4500" target="_blank">👉 Open Mission Control Portal (:4500)</a>
-                <p style="margin-top: 20px; font-size: 12px; color: #94a3b8;">Active Endpoints: <code>GET /health</code> | <code>POST /api/v1/reason</code></p>
+                <p style="margin-top: 20px; font-size: 12px; color: #94a3b8;">Active Endpoints: <code>GET /health</code> | <code>GET /api/v1/model-status</code> | <code>POST /api/v1/reason</code> | <code>POST /api/v1/chat</code></p>
               </div>
             </body>
           </html>
@@ -83,6 +91,31 @@ export function createServer(): http.Server {
       return;
     }
 
+    // 1b. Model Backend Diagnosis
+    // The extension calls this to tell "gateway down" apart from "gateway up but no
+    // model connected", which are the two failures that look identical in the UI.
+    if (req.method === 'GET' && url === '/api/v1/model-status') {
+      // Always re-probe: the operator is asking precisely because something changed.
+      engine.invalidateStatusCache();
+      const engineStatus = await engine.getStatus();
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        provider: engineStatus.provider,
+        modelName: engineStatus.modelName,
+        endpoint: engineStatus.endpoint,
+        isOnline: engineStatus.isOnline,
+        isMultimodal: engineStatus.isMultimodal,
+        // A reachable gateway with provider 'mock' still answers requests, but with
+        // the deterministic offline reasoner rather than a real model.
+        modelConnected: engineStatus.provider !== 'mock' && engineStatus.isOnline,
+        detail: engineStatus.detail,
+        lastError: engineStatus.lastError,
+        timestamp: Date.now()
+      }));
+      return;
+    }
+
     // 2. Reasoning Endpoint
     if (req.method === 'POST' && url === '/api/v1/reason') {
       let bodyStr = '';
@@ -94,9 +127,13 @@ export function createServer(): http.Server {
         bodyStr += chunk.toString();
         if (bodyStr.length > MAX_REASON_BODY_BYTES) {
           exceeded = true;
-          res.writeHead(413, { 'Content-Type': 'application/json' });
+          // Answer 413 and stop accumulating, but DRAIN the remaining upload rather
+          // than destroying the socket. The client is still writing at this point, so a
+          // destroy resets it mid-write and it sees ECONNRESET instead of the status code.
+          // The data handler returns early while 'exceeded' is set, so memory stays bounded.
+          res.writeHead(413, { 'Content-Type': 'application/json', 'Connection': 'close' });
           res.end(JSON.stringify({ error: 'Payload Too Large: Request body exceeds 4MB limit' }));
-          req.destroy();
+          req.resume();
         }
       });
 
@@ -147,9 +184,13 @@ export function createServer(): http.Server {
         bodyStr += chunk.toString();
         if (bodyStr.length > MAX_CHAT_BODY_BYTES) {
           exceeded = true;
-          res.writeHead(413, { 'Content-Type': 'application/json' });
+          // Answer 413 and stop accumulating, but DRAIN the remaining upload rather
+          // than destroying the socket. The client is still writing at this point, so a
+          // destroy resets it mid-write and it sees ECONNRESET instead of the status code.
+          // The data handler returns early while 'exceeded' is set, so memory stays bounded.
+          res.writeHead(413, { 'Content-Type': 'application/json', 'Connection': 'close' });
           res.end(JSON.stringify({ error: 'Payload Too Large: Chat request body exceeds 512KB limit' }));
-          req.destroy();
+          req.resume();
         }
       });
 
@@ -196,59 +237,22 @@ export function createServer(): http.Server {
             fullUserMessage = `Page Title: "${sanitizedTitle || 'Untitled'}" (${maskCount || 0} sensitive masks active locally)\n\nSanitized Page Elements:\n${elementSummary}\n\nUser Question: ${message}`;
           }
 
-          // Auto-detect active model
-          const engineStatus = await engine.getStatus();
-          let reply = '';
-
-          if (engineStatus.provider === 'ollama') {
-            const ollamaRes = await fetch(`${engineStatus.endpoint}/api/chat`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: engineStatus.modelName,
-                messages: [
-                  { role: 'system', content: systemPrompt },
-                  { role: 'user', content: fullUserMessage }
-                ],
-                stream: false,
-                options: { temperature: 0.4 }
-              })
-            });
-            if (ollamaRes.ok) {
-              const data: any = await ollamaRes.json();
-              reply = data.message?.content || 'No response from model.';
-            } else {
-              reply = 'Model reasoning temporarily unavailable.';
-            }
-          } else if (engineStatus.provider === 'lm-studio') {
-            const lmRes = await fetch(engineStatus.endpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: engineStatus.modelName,
-                messages: [
-                  { role: 'system', content: systemPrompt },
-                  { role: 'user', content: fullUserMessage }
-                ],
-                temperature: 0.4
-              })
-            });
-            if (lmRes.ok) {
-              const data: any = await lmRes.json();
-              reply = data.choices?.[0]?.message?.content || 'No response.';
-            } else {
-              reply = 'Model reasoning temporarily unavailable.';
-            }
-          } else {
-            // Sanitized context aware local response
-            reply = sanitizedTitle
-              ? `PrivaPilot verified "${sanitizedTitle}" with ${maskCount || 0} local masks applied. Privacy firewall is active.`
-              : `PrivaPilot privacy firewall is active. Local model reasoning ready.`;
-          }
+          // Single adapter for every backend. It applies a bounded inference timeout
+          // and degrades to an explanatory offline reply instead of throwing, so a
+          // missing or slow model never becomes an opaque 500 in the extension.
+          const chatResult = await engine.chat(systemPrompt, fullUserMessage);
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ reply }));
+          res.end(JSON.stringify({
+            reply: chatResult.reply,
+            provider: chatResult.provider,
+            modelName: chatResult.modelName,
+            modelConnected: !chatResult.degraded,
+            detail: chatResult.detail
+          }));
         } catch (err: any) {
+          // Reaching here means the request itself was malformed, not the model.
+          console.error('[PrivaPilot] Chat request handling failed:', err?.message || err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Chat service temporarily unavailable' }));
         }
@@ -265,7 +269,42 @@ export function createServer(): http.Server {
 
 if (process.argv[1] && process.argv[1].endsWith('index.js')) {
   const server = createServer();
-  server.listen(PORT, () => {
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(
+        `[PrivaPilot] Port ${PORT} is already in use. Another reasoning server is probably running.\n` +
+        `             Stop it, or start this one on a different port with PORT=<port>.`
+      );
+    } else {
+      console.error('[PrivaPilot] Reasoning Server failed to start:', err.message);
+    }
+    process.exit(1);
+  });
+
+  // Default dual-stack bind, so both ::1 and 127.0.0.1 reach the gateway.
+  server.listen(PORT, async () => {
     console.log(`[PrivaPilot] Reasoning Server running on http://localhost:${PORT}`);
+
+    // Report the model backend at boot so a missing model is obvious immediately
+    // rather than after the first failed request from the extension.
+    const status = await engine.getStatus();
+    if (status.provider === 'mock') {
+      console.warn(`[PrivaPilot] ⚠ No model backend connected — using the deterministic offline reasoner.`);
+      if (status.lastError) {
+        console.warn(`[PrivaPilot]   Probe results: ${status.lastError}`);
+      }
+      console.warn(`[PrivaPilot]   Start Ollama ("ollama serve" + "ollama pull qwen2.5vl"), start LM Studio,`);
+      console.warn(`[PrivaPilot]   or set VLM_ENDPOINT / VLM_API_KEY / VLM_MODEL, then reload the extension.`);
+    } else {
+      console.log(`[PrivaPilot] ✓ Model connected: ${status.modelName} via ${status.provider} (${status.endpoint})`);
+      if (!status.isMultimodal) {
+        console.warn(`[PrivaPilot]   Note: this model is text-only; screenshots will not be sent to it.`);
+      }
+      if (status.lastError) {
+        console.warn(`[PrivaPilot]   ${status.lastError}`);
+      }
+    }
+    console.log(`[PrivaPilot] Live model diagnosis: http://localhost:${PORT}/api/v1/model-status`);
   });
 }

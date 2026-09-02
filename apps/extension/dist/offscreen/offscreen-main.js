@@ -14278,7 +14278,9 @@ as ORT format: ${n}`);
     for (const autoVal of SENSITIVE_AUTOCOMPLETE_VALUES) {
       if (autocomplete.includes(autoVal)) {
         let cat = "password";
-        if (autoVal.startsWith("cc-"))
+        if (autoVal === "cc-csc")
+          cat = "cvv";
+        else if (autoVal.startsWith("cc-"))
           cat = "credit_card";
         else if (autoVal.startsWith("bday"))
           cat = "date_of_birth";

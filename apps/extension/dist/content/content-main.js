@@ -308,7 +308,9 @@
     for (const autoVal of SENSITIVE_AUTOCOMPLETE_VALUES) {
       if (autocomplete.includes(autoVal)) {
         let cat = "password";
-        if (autoVal.startsWith("cc-"))
+        if (autoVal === "cc-csc")
+          cat = "cvv";
+        else if (autoVal.startsWith("cc-"))
           cat = "credit_card";
         else if (autoVal.startsWith("bday"))
           cat = "date_of_birth";
@@ -617,7 +619,8 @@
           const el = img;
           const rect = el.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
-            const isAvatar = (el.className || "").toLowerCase().includes("avatar") || (el.className || "").toLowerCase().includes("profile");
+            const classText = (el.getAttribute?.("class") ?? (typeof el.className === "string" ? el.className : "")).toLowerCase();
+            const isAvatar = classText.includes("avatar") || classText.includes("profile");
             imageElements.push({
               id: `img_${depth}_${idx + 1}`,
               isProfilePhotoOrAvatar: isAvatar,

@@ -27,6 +27,16 @@ export interface FullBenchmarkResults {
   readonly pii: PiiDetectionReport;
   readonly redaction: RedactionPrecisionReport;
   readonly latency: LatencyBenchmarkSummary;
+  /**
+   * Categories this harness could not evaluate at all. Their ground-truth targets
+   * are excluded from the scores above rather than counted as hits or misses, so a
+   * reader is never shown a number that no code actually produced.
+   */
+  readonly unmeasuredCategories?: ReadonlyArray<string>;
+  /** Metrics whose reported value here is not a real measurement. */
+  readonly unmeasuredNotes?: ReadonlyArray<string>;
+  /** False when latency figures are estimated rather than measured by this run. */
+  readonly latencyMeasured?: boolean;
 }
 
 export class BenchmarkReporter {
@@ -35,7 +45,11 @@ export class BenchmarkReporter {
     const piiPass = results.pii.aggregateRecall >= 98 && results.pii.aggregatePrecision >= 95;
     const redactionPass = results.redaction.sensitiveRegionCoverage === 100 && results.redaction.underMaskCount === 0;
     const resourcePass = results.latency.peakMemoryMb < 350 && results.latency.cpuLoadPct < 15;
-    const latencyPass = results.latency.p50TotalLatencyMs > 0 && results.latency.p50TotalLatencyMs <= 1200;
+    // A metric this harness did not measure must never be able to pass. Estimated
+    // latency previously rendered as PASSED, which is exactly the kind of unearned
+    // green tick that costs credibility with a jury.
+    const latencyMeasured = results.latencyMeasured !== false;
+    const latencyPass = latencyMeasured && results.latency.p50TotalLatencyMs > 0 && results.latency.p50TotalLatencyMs <= 1200;
 
     return `# PrivaPilot — Benchmark Evaluation Report
 **Problem Statement:** ISRO | Software | SIH26171  
@@ -58,7 +72,7 @@ export class BenchmarkReporter {
 | **PII & Sensitive Data Recall** | **20%** | **${results.pii.aggregateRecall}% Recall (${results.pii.aggregatePrecision}% Precision, F1: ${results.pii.aggregateF1}%)** | > 98% Recall / > 95% Precision | ${piiPass ? '✅ PASSED' : '❌ FAILED'} |
 | **Redaction Precision** | **20%** | **${results.redaction.sensitiveRegionCoverage}% Coverage (${results.redaction.underMaskCount} Under-Masks, Overhead: ${results.redaction.overMaskRatio}x)** | 100% Coverage (0 Under-Masks) | ${redactionPass ? '✅ PASSED' : '❌ FAILED'} |
 | **Client Resource Utilization** | **20%** | **~${results.latency.peakMemoryMb} MB Memory / ${results.latency.cpuLoadPct}% CPU** | < 350 MB / < 15% | ${resourcePass ? '✅ PASSED' : '❌ FAILED'} |
-| **End-to-End Task Latency** | **15%** | **${results.latency.p50TotalLatencyMs} ms (p50) / ${results.latency.p95TotalLatencyMs} ms (p95)** | < 1200 ms (p50) | ${latencyPass ? '✅ PASSED' : '❌ FAILED'} |
+| **End-to-End Task Latency** | **15%** | **${results.latency.p50TotalLatencyMs} ms (p50) / ${results.latency.p95TotalLatencyMs} ms (p95)** | < 1200 ms (p50) | ${latencyPass ? '✅ PASSED' : (latencyMeasured ? '❌ FAILED' : '⚪ NOT MEASURED')} |
 
 ---
 
@@ -79,6 +93,20 @@ ${Object.entries(results.pii.categoryBreakdown).map(([cat, m]) =>
 - **Client DOM Action & Verification ($t_5 \dots t_7$):** ${results.latency.p50ActionExecutionMs} ms (p50)
 - **Total Step Round-Trip (p50):** ${results.latency.p50TotalLatencyMs} ms
 - **Total Step Round-Trip (p95):** ${results.latency.p95TotalLatencyMs} ms
+
+---
+
+## ⚠️ Scope of This Harness — What These Numbers Do And Do Not Cover
+
+This suite runs in Node against static HTML fixtures. It calls the shipped detectors
+directly, but it has no browser, no layout engine and no ONNX runtime.
+
+${(results.unmeasuredCategories && results.unmeasuredCategories.length)
+  ? `**Excluded from every score above:** ${results.unmeasuredCategories.join(', ')}. Their ground-truth targets are neither counted as hits nor as misses.\n`
+  : '**Excluded from the scores above:** none.\n'}
+${(results.unmeasuredNotes || []).map(n => `- ${n}`).join('\n')}
+
+Full breakdown of what is verified where: \`docs/AUDIT_LOCAL_VS_DEFERRED.md\`.
 
 ---
 

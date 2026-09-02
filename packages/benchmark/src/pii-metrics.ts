@@ -38,6 +38,7 @@ export function computePiiMetrics(
     'credit_card',
     'cvv',
     'national_id',
+    'token',
     'face',
     'high_risk_surface'
   ];

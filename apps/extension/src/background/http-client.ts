@@ -16,11 +16,76 @@ import {
 } from '@privapilot/protocol';
 import { assertNoCanaryLeak } from '@privapilot/test-fixtures';
 
+export const DEFAULT_SERVER_BASE_URL = 'http://localhost:4501';
+
+/**
+ * Local model inference is slow, especially on the first request after a cold
+ * start when weights are still being loaded into memory. A 15s budget aborts
+ * mid-inference and looks identical to "the model is not connected", so the
+ * reasoning budget is generous and the gateway is given the shorter one.
+ */
+const REASONING_TIMEOUT_MS = 120000;
+const CHAT_TIMEOUT_MS = 120000;
+const HEALTH_TIMEOUT_MS = 3000;
+
+export interface ModelStatus {
+  readonly reachable: boolean;
+  readonly provider?: 'ollama' | 'lm-studio' | 'vlm-cloud' | 'mock';
+  readonly modelName?: string;
+  readonly endpoint?: string;
+  readonly modelConnected?: boolean;
+  readonly detail?: string;
+  readonly lastError?: string;
+  /** Populated when the gateway itself could not be reached. */
+  readonly error?: string;
+}
+
+export interface ChatReply {
+  readonly reply: string;
+  readonly modelConnected?: boolean;
+  readonly provider?: string;
+  readonly modelName?: string;
+  readonly detail?: string;
+}
+
 export class ReasoningHttpClient {
   private readonly serverBaseUrl: string;
 
-  constructor(serverBaseUrl: string = 'http://localhost:4501') {
-    this.serverBaseUrl = serverBaseUrl;
+  constructor(serverBaseUrl: string = DEFAULT_SERVER_BASE_URL) {
+    this.serverBaseUrl = serverBaseUrl.replace(/\/+$/, '');
+  }
+
+  getServerBaseUrl(): string {
+    return this.serverBaseUrl;
+  }
+
+  /**
+   * Turns a transport failure into something the user can act on. A bare
+   * "Failed to fetch" is the single most confusing symptom in this system:
+   * it means the gateway is not running, not that the model refused.
+   */
+  private describeTransportError(error: any, operation: string): Error {
+    const raw = String(error?.message || error || 'Request failed');
+
+    if (/timed out/i.test(raw)) {
+      return new Error(
+        `${operation} timed out. The reasoning gateway at ${this.serverBaseUrl} is running but the ` +
+        `model did not answer in time. A local model may still be loading — retry in a moment, or ` +
+        `check ${this.serverBaseUrl}/api/v1/model-status.`
+      );
+    }
+
+    // Chrome reports every connection-level failure from a service worker as
+    // "Failed to fetch", with no status and no cause.
+    if (/failed to fetch|networkerror|load failed/i.test(raw)) {
+      return new Error(
+        `Cannot reach the PrivaPilot reasoning gateway at ${this.serverBaseUrl}. ` +
+        `Start it with "npm run dev:server", then retry. ` +
+        `(If it is running on another port, update the server URL in the extension options.)`
+      );
+    }
+
+    return new Error(`${operation} failed: ${raw}`);
   }
 
   /**
@@ -30,7 +95,7 @@ export class ReasoningHttpClient {
     url: string,
     init: RequestInit,
     operation: string,
-    timeoutMs: number = 15000
+    timeoutMs: number = REASONING_TIMEOUT_MS
   ): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -42,11 +107,46 @@ export class ReasoningHttpClient {
       });
     } catch (error: any) {
       if (controller.signal.aborted) {
-        throw new Error(`${operation} timed out after ${timeoutMs}ms`);
+        throw this.describeTransportError(new Error(`timed out after ${timeoutMs}ms`), operation);
       }
-      throw error;
+      throw this.describeTransportError(error, operation);
     } finally {
       clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * Diagnoses the two failures that look identical in the UI: the gateway being
+   * down, and the gateway being up with no model backend behind it.
+   */
+  async getModelStatus(): Promise<ModelStatus> {
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.serverBaseUrl}/api/v1/model-status`,
+        { method: 'GET' },
+        'Model status check',
+        HEALTH_TIMEOUT_MS
+      );
+
+      if (!response.ok) {
+        return {
+          reachable: false,
+          error: `Reasoning gateway at ${this.serverBaseUrl} responded ${response.status}.`
+        };
+      }
+
+      const data: any = await response.json();
+      return {
+        reachable: true,
+        provider: data.provider,
+        modelName: data.modelName,
+        endpoint: data.endpoint,
+        modelConnected: Boolean(data.modelConnected),
+        detail: data.detail,
+        lastError: data.lastError
+      };
+    } catch (err: any) {
+      return { reachable: false, error: err?.message || 'Reasoning gateway unreachable' };
     }
   }
 
@@ -67,7 +167,7 @@ export class ReasoningHttpClient {
     // 2. Outgoing Canary Gate check
     assertNoCanaryLeak(payload, 'Outgoing HTTP Payload');
 
-    // 3. Make HTTP request with 15s bounded timeout
+    // 3. Make HTTP request with a bounded timeout sized for local inference
     const response = await this.fetchWithTimeout(
       `${this.serverBaseUrl}/api/v1/reason`,
       {
@@ -79,7 +179,7 @@ export class ReasoningHttpClient {
         body: JSON.stringify(payload)
       },
       'Reasoning request',
-      15000
+      REASONING_TIMEOUT_MS
     );
 
     if (!response.ok) {
@@ -102,7 +202,7 @@ export class ReasoningHttpClient {
    * Transmits sanitized page-aware context projection to Chat endpoint.
    * Strictly accepts SanitizedContext only (never raw captures or URLs).
    */
-  async requestChat(sanitized: SanitizedContext, message: string): Promise<{ reply: string }> {
+  async requestChat(sanitized: SanitizedContext, message: string): Promise<ChatReply> {
     const payload: SanitizedChatPayload = {
       _brand: 'SanitizedChatPayload_Verified',
       protocolVersion: '1.0',
@@ -131,7 +231,7 @@ export class ReasoningHttpClient {
         })
       },
       'Chat request',
-      15000
+      CHAT_TIMEOUT_MS
     );
 
     if (!response.ok) {
@@ -145,7 +245,7 @@ export class ReasoningHttpClient {
   /**
    * Transmits contextless general query (zero page or browser state).
    */
-  async requestGeneralChat(message: string): Promise<{ reply: string }> {
+  async requestGeneralChat(message: string): Promise<ChatReply> {
     const payload: GeneralChatPayload = {
       protocolVersion: '1.0',
       message
@@ -162,7 +262,7 @@ export class ReasoningHttpClient {
         body: JSON.stringify(payload)
       },
       'General chat request',
-      15000
+      CHAT_TIMEOUT_MS
     );
 
     if (!response.ok) {
@@ -173,4 +273,3 @@ export class ReasoningHttpClient {
     return await response.json();
   }
 }
-

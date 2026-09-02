@@ -101,6 +101,25 @@ try {
   process.exit(1);
 }
 
+// 2d. Bundle the benchmark harness entry as an IIFE with a global name, so a
+// CDP-driven benchmark can call the SHIPPED pipeline inside a real page via
+// Runtime.evaluate. The content-script bundle cannot be reused for this: it is an
+// IIFE with no --global-name, so it exposes nothing to evaluate against.
+console.log('📦 Bundling benchmark harness entry (IIFE, global __privapilot)...');
+const harnessEntry = path.join(extensionDir, 'src', 'harness', 'harness-entry.ts');
+const harnessOutfile = path.join(extensionDir, 'dist', 'harness', 'harness-entry.js');
+
+try {
+  execSync(
+    `"${ESBUILD_BIN}" "${harnessEntry}" --bundle --outfile="${harnessOutfile}" --format=iife --global-name=__privapilot --target=es2022`,
+    { cwd: extensionDir, stdio: 'inherit' }
+  );
+  console.log('✓ benchmark harness entry bundled successfully.\n');
+} catch (err) {
+  console.error('❌ Failed to bundle benchmark harness entry with esbuild');
+  process.exit(1);
+}
+
 // 3. Validate All Required Production Build Artifacts
 console.log('🔍 Validating production build artifacts...');
 
@@ -114,7 +133,8 @@ const REQUIRED_ARTIFACTS = [
   { path: 'apps/extension/dist/background/background-main.js', desc: 'Extension background service worker' },
   { path: 'apps/extension/dist/content/content-main.js', desc: 'Bundled standalone content script (IIFE)' },
   { path: 'apps/extension/dist/offscreen/offscreen-main.js', desc: 'Bundled standalone offscreen host script (IIFE)' },
-  { path: 'apps/extension/assets/models/version-RFB-320.onnx', desc: 'Locally bundled UltraFace-320 ONNX model weights' }
+  { path: 'apps/extension/assets/models/version-RFB-320.onnx', desc: 'Locally bundled UltraFace-320 ONNX model weights' },
+  { path: 'apps/extension/dist/harness/harness-entry.js', desc: 'Benchmark harness bundle (IIFE, global __privapilot)' }
 ];
 
 for (const artifact of REQUIRED_ARTIFACTS) {
@@ -154,6 +174,6 @@ if (hasBackgroundUnresolvedImports) {
   process.exit(1);
 }
 
-console.log('✓ All 10 production build artifacts verified and ready for deployment.\n');
+console.log(`✓ All ${REQUIRED_ARTIFACTS.length} production build artifacts verified and ready for deployment.\n`);
 console.log('🎉 [PrivaPilot] Full monorepo build completed successfully!');
 

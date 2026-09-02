@@ -8,6 +8,16 @@ import { SensitiveCategory } from '@privapilot/protocol';
 export type BenchmarkSplit = 'dev' | 'held-out';
 export interface GroundTruthBox {
     readonly category: SensitiveCategory;
+    /**
+     * DOM anchor for this region. The browser harness resolves it against real layout
+     * and derives the true box, so ground truth describes WHICH element is sensitive
+     * rather than where it happened to sit in a synthetic grid.
+     *
+     * The normX..normH values below are the legacy hand-authored coordinates, kept so
+     * the Node harness - which has no layout engine - keeps working unchanged. They are
+     * not meaningful in a real browser and the browser harness ignores them.
+     */
+    readonly selector?: string;
     readonly normX: number;
     readonly normY: number;
     readonly normW: number;

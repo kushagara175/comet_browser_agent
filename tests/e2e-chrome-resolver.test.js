@@ -7,7 +7,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert';
-import { resolveChromeBinary, getPlatformCandidates } from '../scripts/run-e2e-chrome.js';
+import { resolveChromeBinary, getPlatformCandidates } from '../scripts/lib/chrome-launcher.mjs';
 
 test('Chrome Resolver: Respects explicit CHROME_PATH environment variable override', () => {
   const customPath = '/custom/bin/my-chrome';
