@@ -1,13 +1,13 @@
 # PrivaPilot — Benchmark Evaluation Report
 **Problem Statement:** ISRO | Software | SIH26171  
 **Product:** PrivaPilot Privacy-Preserving Browser Agent  
-**Generated:** 2026-09-02T04:25:24.729Z  
+**Generated:** 2026-09-02T06:00:21.282Z  
 **Split Evaluated:** all (14 Synthetic Web Scenarios)  
-**Git SHA:** `df79c92`  
-**Environment:** win32 x64 (Node v22.19.0)  
+**Git SHA:** `ca1252e`  
+**Environment:** darwin arm64 (Node v22.22.0)  
 **Browser Engine:** Google Chrome / Chromium Headless (CDP Engine)  
 **Vision/PII Provider:** UltraFace ONNX (Wasm/CPU) + Local PII Regex/Luhn Engine  
-**Command:** `D:\SIH 2026\SIHPROJECT1\scripts\run-benchmarks.js`  
+**Command:** `/Users/kushagrasingh/dev/SIH_26209/scripts/run-benchmarks.js`  
 
 ---
 
@@ -18,7 +18,7 @@
 | **Visual Context Accuracy** | **25%** | **82.1% Recall / 76.7% Precision** (Median IoU: 1) | > 95% | ❌ FAILED |
 | **PII & Sensitive Data Recall** | **20%** | **100% Recall (100% Precision, F1: 100%)** | > 98% Recall / > 95% Precision | ✅ PASSED |
 | **Redaction Precision** | **20%** | **94.7% Coverage (1 Under-Masks, Overhead: 0.85x)** | 100% Coverage (0 Under-Masks) | ❌ FAILED |
-| **Client Resource Utilization** | **20%** | **~38.6 MB Memory / 166.7% CPU** | < 350 MB / < 15% | ❌ FAILED |
+| **Client Resource Utilization** | **20%** | **~49.7 MB Memory / 110.6% CPU** | < 350 MB / < 15% | ❌ FAILED |
 | **End-to-End Task Latency** | **15%** | **385 ms (p50) / 385 ms (p95)** | < 1200 ms (p50) | ⚪ NOT MEASURED |
 
 ---

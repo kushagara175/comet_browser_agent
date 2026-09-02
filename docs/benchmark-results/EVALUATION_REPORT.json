@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-09-02T04:25:24.729Z",
+  "timestamp": "2026-09-02T06:00:21.282Z",
   "fixturesEvaluated": 14,
   "metadata": {
-    "command": "D:\\SIH 2026\\SIHPROJECT1\\scripts\\run-benchmarks.js",
-    "date": "2026-09-02T04:25:24.729Z",
-    "environment": "win32 x64 (Node v22.19.0)",
+    "command": "/Users/kushagrasingh/dev/SIH_26209/scripts/run-benchmarks.js",
+    "date": "2026-09-02T06:00:21.282Z",
+    "environment": "darwin arm64 (Node v22.22.0)",
     "browserVersion": "Google Chrome / Chromium Headless (CDP Engine)",
     "modelProvider": "UltraFace ONNX (Wasm/CPU) + Local PII Regex/Luhn Engine",
-    "gitSha": "df79c92",
+    "gitSha": "ca1252e",
     "split": "all"
   },
   "accuracy": {
@@ -127,8 +127,8 @@
     "p50ServerReasoningMs": 350,
     "p95ServerReasoningMs": 350,
     "p50ActionExecutionMs": 0,
-    "peakMemoryMb": 38.6,
-    "cpuLoadPct": 166.7
+    "peakMemoryMb": 49.7,
+    "cpuLoadPct": 110.6
   },
   "latencyMeasured": false,
   "unmeasuredCategories": [
