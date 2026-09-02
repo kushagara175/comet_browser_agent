@@ -12,9 +12,7 @@
     "offscreen"
   ],
   "host_permissions": [
-    "http://localhost:*/*",
-    "http://127.0.0.1:*/*",
-    "https://*/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "dist/background/background-main.js",

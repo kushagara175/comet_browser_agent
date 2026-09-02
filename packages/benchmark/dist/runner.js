@@ -8,7 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { TEST_FIXTURES, GROUND_TRUTH_DATA } from '@privapilot/test-fixtures';
-import { scanTextForPII } from '@privapilot/pii-rules';
+import { scanTextForPII, analyzeDomElementSensitivity, fuseSensitiveDetections } from '@privapilot/pii-rules';
+import { parseFixtureDocument } from './fixture-parser.js';
 import { computeAccuracyMetrics } from './accuracy-metrics.js';
 import { computePiiMetrics } from './pii-metrics.js';
 import { computeRedactionMetrics } from './redaction-metrics.js';
@@ -68,6 +69,22 @@ function parseInteractiveElementsFromHtml(html) {
     }
     return elements;
 }
+/**
+ * Mirrors the mask-renderer's conservative padding policy (8px on a ~1000px
+ * viewport ≈ 0.008 normalized) so the benchmark measures the shipped padding rule
+ * rather than an arbitrary inset.
+ */
+const MASK_PADDING_NORM = 0.01;
+function maskForBox(box) {
+    const x = Math.max(0, box[0] - MASK_PADDING_NORM);
+    const y = Math.max(0, box[1] - MASK_PADDING_NORM);
+    return {
+        normX: x,
+        normY: y,
+        normW: Math.min(1 - x, box[2] + MASK_PADDING_NORM * 2),
+        normH: Math.min(1 - y, box[3] + MASK_PADDING_NORM * 2)
+    };
+}
 export class BenchmarkRunner {
     static getGitSha() {
         try {
@@ -95,6 +112,8 @@ export class BenchmarkRunner {
         const allGroundTruthElements = [];
         const allMasks = [];
         const allExtractedSafeElements = [];
+        // Categories this harness cannot evaluate, reported rather than silently scored.
+        const unmeasuredCategories = new Set();
         const allGroundTruthSafeElements = [];
         for (const key of fixtureKeys) {
             const fixture = TEST_FIXTURES[key];
@@ -112,7 +131,11 @@ export class BenchmarkRunner {
                     }
                 }
             }
+            // Detections are fused per fixture. Fusing globally would merge detections
+            // from different pages that happen to share the synthetic layout coordinates.
+            const fixtureDetections = [];
             // 2. Run Real Visual Context Extraction
+            const parsed = parseFixtureDocument(html);
             const extractedElements = parseInteractiveElementsFromHtml(html);
             for (const el of extractedElements) {
                 allExtractedElements.push(el);
@@ -124,90 +147,102 @@ export class BenchmarkRunner {
             // Text PII Scanner
             if (!options?.detectorOverrides?.disableTextPii) {
                 const textMatches = scanTextForPII(html);
-                for (const m of textMatches) {
-                    allDetections.push({
+                for (let i = 0; i < textMatches.length; i++) {
+                    const m = textMatches[i];
+                    // Each match gets its own synthetic row, ordered by position in the
+                    // document. Emitting every match at one fixed box made distinct secrets
+                    // on the same page indistinguishable to fusion and to the matcher.
+                    const box = [0.15, 0.2 + i * 0.07, 0.6, 0.05];
+                    fixtureDetections.push({
                         category: m.category,
                         text: html.slice(m.startIndex, m.endIndex),
-                        normX: 0.15,
-                        normY: 0.25,
-                        normW: 0.6,
-                        normH: 0.05
+                        normX: box[0],
+                        normY: box[1],
+                        normW: box[2],
+                        normH: box[3]
                     });
-                    allMasks.push({ normX: 0.14, normY: 0.24, normW: 0.62, normH: 0.07 });
+                    allMasks.push(maskForBox(box));
                 }
             }
-            // DOM Semantic Analyzer (passwords, cards, forms)
+            // DOM Semantic Analyzer — calls the SHIPPED detector on parsed elements.
+            // Previously this block matched hardcoded element identifiers copied out of the
+            // fixtures, so it graded its own constants instead of the real rules.
             if (!options?.detectorOverrides?.disableDomSemantic) {
-                if (html.includes('type="password"') || html.includes('id="darkSecret"') || html.includes('name="password"') || html.includes('HiddenPass')) {
-                    allDetections.push({
-                        category: 'password',
-                        text: 'password field',
-                        normX: 0.1,
-                        normY: 0.35,
-                        normW: 0.8,
-                        normH: 0.08
+                for (const el of parsed.elements) {
+                    if (el.tagName !== 'input' && el.tagName !== 'textarea' && el.tagName !== 'select') {
+                        continue;
+                    }
+                    const decision = analyzeDomElementSensitivity({
+                        tagName: el.tagName,
+                        type: el.type,
+                        name: el.name,
+                        id: el.id,
+                        autocomplete: el.autocomplete,
+                        inputmode: el.inputmode,
+                        placeholder: el.placeholder,
+                        ariaLabel: el.ariaLabel,
+                        associatedLabelText: el.associatedLabelText,
+                        value: el.value
                     });
-                    allMasks.push({ normX: 0.09, normY: 0.34, normW: 0.82, normH: 0.1 });
-                }
-                if (html.includes('autocomplete="cc-number"') || html.includes('cardNumber')) {
-                    allDetections.push({
-                        category: 'credit_card',
-                        text: '4532 0150 1234 5671',
-                        normX: 0.1,
-                        normY: 0.25,
-                        normW: 0.8,
-                        normH: 0.08
+                    if (!decision.isSensitive || !decision.category)
+                        continue;
+                    // Report the value the field actually holds, so the matcher can align the
+                    // detection with the authored ground-truth token rather than a fixed box.
+                    fixtureDetections.push({
+                        category: decision.category,
+                        text: el.value || el.associatedLabelText || el.placeholder || el.displayName,
+                        normX: el.normBox[0],
+                        normY: el.normBox[1],
+                        normW: el.normBox[2],
+                        normH: el.normBox[3]
                     });
-                    allMasks.push({ normX: 0.09, normY: 0.24, normW: 0.82, normH: 0.1 });
-                }
-                if (html.includes('autocomplete="cc-csc"') || html.includes('cardCvv')) {
-                    allDetections.push({
-                        category: 'cvv',
-                        text: '892',
-                        normX: 0.1,
-                        normY: 0.45,
-                        normW: 0.3,
-                        normH: 0.08
-                    });
-                    allMasks.push({ normX: 0.09, normY: 0.44, normW: 0.32, normH: 0.1 });
+                    allMasks.push(maskForBox(el.normBox));
                 }
             }
             // Vision / Face Detection
+            //
+            // NOT MEASURED HERE. Face detection is UltraFace ONNX running under
+            // onnxruntime-web against real rendered pixels. This harness has no canvas and
+            // no WebGPU/WASM runtime, so there is nothing to run. The previous code emitted
+            // two boxes hardcoded to the ground-truth coordinates whenever the HTML string
+            // contained an avatar CSS class, reporting 100% recall without ever executing
+            // the model. Face targets are excluded from the score and reported as unmeasured;
+            // they are evaluated in the browser harness. See docs/AUDIT_LOCAL_VS_DEFERRED.md.
             if (!options?.detectorOverrides?.disableVisionFace) {
-                if (html.includes('face-avatar') || key === 'faceGallery') {
-                    allDetections.push({
-                        category: 'face',
-                        text: 'Avatar 1',
-                        normX: 0.1,
-                        normY: 0.2,
-                        normW: 0.2,
-                        normH: 0.2
+                unmeasuredCategories.add('face');
+            }
+            // High-Risk Uninspectable Surfaces — derived from the parsed DOM, matching the
+            // shipped rule: a surface whose contents cannot be inspected from the DOM
+            // (canvas, cross-origin iframe, scanned document image) is masked wholesale.
+            if (!options?.detectorOverrides?.disableHighRiskSurfaces) {
+                for (const el of parsed.elements) {
+                    const cls = (el.className || '').toLowerCase();
+                    const isUninspectable = el.tagName === 'canvas' ||
+                        el.tagName === 'iframe' ||
+                        (el.tagName === 'img' && (cls.includes('scanned') || cls.includes('document') || cls.includes('id-card')));
+                    if (!isUninspectable)
+                        continue;
+                    fixtureDetections.push({
+                        category: 'high_risk_surface',
+                        // Report the accessible name a reviewer would recognise (alt text / id),
+                        // not the CSS class, so detections align with authored ground truth.
+                        text: el.ariaLabel || el.id || el.className || el.tagName,
+                        normX: el.normBox[0],
+                        normY: el.normBox[1],
+                        normW: el.normBox[2],
+                        normH: el.normBox[3]
                     });
-                    allDetections.push({
-                        category: 'face',
-                        text: 'Avatar 2',
-                        normX: 0.4,
-                        normY: 0.2,
-                        normW: 0.2,
-                        normH: 0.2
-                    });
-                    allMasks.push({ normX: 0.09, normY: 0.19, normW: 0.22, normH: 0.22 });
-                    allMasks.push({ normX: 0.39, normY: 0.19, normW: 0.22, normH: 0.22 });
+                    allMasks.push(maskForBox(el.normBox));
                 }
             }
-            // High-Risk Uninspectable Surfaces
-            if (!options?.detectorOverrides?.disableHighRiskSurfaces) {
-                if (html.includes('<canvas') || html.includes('<iframe') || html.includes('class="scanned-id"')) {
-                    allDetections.push({
-                        category: 'high_risk_surface',
-                        text: 'uninspectable-surface',
-                        normX: 0.1,
-                        normY: 0.2,
-                        normW: 0.7,
-                        normH: 0.4
-                    });
-                    allMasks.push({ normX: 0.09, normY: 0.19, normW: 0.72, normH: 0.42 });
-                }
+            // 3b. Fuse this page's detections, exactly as the client sanitizer does, so a
+            // secret found by two independent layers is reported and masked once.
+            // Spatial fusion is off: this harness has no browser layout, so its boxes are
+            // synthetic. Detections are fused by the secret they found, and matched to
+            // ground truth by token. Positional accuracy is measured in the browser
+            // harness instead - see docs/AUDIT_LOCAL_VS_DEFERRED.md.
+            for (const fused of fuseSensitiveDetections(fixtureDetections, { spatial: false })) {
+                allDetections.push(fused);
             }
         }
         // 4. Latency Telemetries: Read from real e2e run or perform timed in-memory run
@@ -222,6 +257,7 @@ export class BenchmarkRunner {
                 telemetries = [];
             }
         }
+        const usedRecordedLatencies = telemetries.length > 0;
         // Fallback if real e2e run file not present: measure real execution time per fixture without sleep
         if (!telemetries.length) {
             for (const key of fixtureKeys) {
@@ -257,7 +293,8 @@ export class BenchmarkRunner {
         const measuredResources = measureCurrentProcessResources(startCpu, startTime);
         // 6. Compute Category Metrics
         const accuracy = computeAccuracyMetrics(allExtractedElements, allGroundTruthElements);
-        const pii = computePiiMetrics(allDetections, allGroundTruthBoxes);
+        const scoredGroundTruthBoxes = allGroundTruthBoxes.filter(b => !unmeasuredCategories.has(b.category));
+        const pii = computePiiMetrics(allDetections, scoredGroundTruthBoxes);
         const redaction = computeRedactionMetrics(allMasks, allGroundTruthBoxes, allExtractedSafeElements, allGroundTruthSafeElements);
         const latency = computeLatencyBenchmark(telemetries, measuredResources);
         const metadata = {
@@ -276,7 +313,17 @@ export class BenchmarkRunner {
             accuracy,
             pii,
             redaction,
-            latency
+            latency,
+            latencyMeasured: false,
+            unmeasuredCategories: [...unmeasuredCategories],
+            unmeasuredNotes: [
+                ...(unmeasuredCategories.has('face')
+                    ? ['Face detection (UltraFace ONNX) requires a rendered canvas and the onnxruntime-web WASM/WebGPU runtime. It cannot execute in this Node harness, so face targets are excluded from the scores rather than assumed correct.']
+                    : []),
+                'Region geometry is synthetic: a fixture is an HTML string with no layout. PII detections are matched to ground truth by the secret they found, not by position. Positional/IoU accuracy and true redaction coverage of rendered pixels require the browser harness.',
+                `End-to-end latency here is ${usedRecordedLatencies ? 'read from a stored file rather than measured by this run' : 'estimated with a nominal server figure, not measured against a real model'}. Real client-side perception latency is measured by "npm run benchmark:browser", which runs the shipped pipeline in real Chrome.`,
+                'CPU and memory reflect this Node process running the detectors, not the browser extension under real perception load.'
+            ]
         };
     }
 }

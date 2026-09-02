@@ -13,8 +13,16 @@
  */
 import { AgentState, RawCapture, SanitizedContext, ActionProposal, RunTelemetry } from '@privapilot/protocol';
 import { BrowserAdapter } from '../browser/browser-adapter.js';
-import { ReasoningHttpClient } from './http-client.js';
+import { ReasoningHttpClient, ModelStatus } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
+export interface ChatOutcome {
+    readonly success: boolean;
+    readonly reply: string;
+    readonly maskCount: number;
+    readonly elementCount: number;
+    /** False when the gateway answered from its offline reasoner, or not at all. */
+    readonly modelConnected?: boolean;
+}
 export interface CoordinatorRunOptions {
     readonly maxSteps?: number;
     readonly maxStaleRetries?: number;
@@ -84,14 +92,19 @@ export declare class RunCoordinator {
     resumeRun(): Promise<CoordinatorRunResult>;
     private executeLoop;
     /**
+     * Reports whether the reasoning gateway and a model backend are reachable.
+     */
+    getModelStatus(): Promise<ModelStatus>;
+    /**
      * Performs page-aware chat strictly across the privacy boundary.
      */
-    chatWithPage(userMessage: string): Promise<{
-        success: boolean;
-        reply: string;
-        maskCount: number;
-        elementCount: number;
-    }>;
+    chatWithPage(userMessage: string): Promise<ChatOutcome>;
+    /**
+     * Contextless chat turn. Reports a real connection failure instead of claiming
+     * the model is ready — that claim is what made a broken model look like a
+     * working one with nothing to say.
+     */
+    private generalChat;
     /**
      * Called when the user clicks 'Approve' on a protected action card.
      * If resumeLoop is true, continues multi-step execution loop.

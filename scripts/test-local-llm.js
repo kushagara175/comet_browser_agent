@@ -10,9 +10,13 @@
 
 import http from 'node:http';
 
-const SERVER_URL = 'http://localhost:4501';
-const OLLAMA_URL = 'http://localhost:11434';
-const LM_STUDIO_URL = 'http://localhost:1234';
+const SERVER_URL = process.env.PRIVAPILOT_SERVER_URL || 'http://localhost:4501';
+
+// Probe both loopback spellings. On Windows `localhost` resolves to ::1 first while
+// Ollama and LM Studio bind the IPv4 loopback, which is the single most common reason
+// a model that is definitely running still reads as "offline".
+const OLLAMA_URLS = ['http://127.0.0.1:11434', 'http://localhost:11434'];
+const LM_STUDIO_URLS = ['http://127.0.0.1:1234', 'http://localhost:1234'];
 
 async function fetchJson(url, options = {}) {
   const controller = new AbortController();
@@ -38,31 +42,64 @@ async function runDiagnostics() {
   console.log('='.repeat(64) + '\n');
 
   // 1. Check Ollama
-  console.log('[1/4] Probing Local Ollama Service (http://localhost:11434)...');
-  const ollamaCheck = await fetchJson(`${OLLAMA_URL}/api/tags`);
-  if (ollamaCheck.ok) {
+  console.log('[1/4] Probing Local Ollama Service (127.0.0.1 / localhost :11434)...');
+  let ollamaFound = false;
+  for (const base of OLLAMA_URLS) {
+    const ollamaCheck = await fetchJson(`${base}/api/tags`);
+    if (!ollamaCheck.ok) {
+      console.log(`  \x1b[90m○ ${base} — ${ollamaCheck.error || 'offline'}\x1b[0m`);
+      continue;
+    }
+    ollamaFound = true;
     const models = ollamaCheck.data?.models || [];
-    console.log(`  \x1b[32m✔ Ollama is running online!\x1b[0m`);
+    console.log(`  \x1b[32m✔ Ollama is running at ${base}\x1b[0m`);
     if (models.length > 0) {
       console.log(`  Installed models (${models.length}):`);
       models.forEach(m => console.log(`    - ${m.name} (${(m.size / 1e9).toFixed(2)} GB)`));
+      const hasVision = models.some(m => /vl|vision|llava|moondream|minicpm-v/i.test(m.name || ''));
+      if (!hasVision) {
+        console.log('  \x1b[33m⚠ No vision-capable model installed — screenshots will not be sent.\x1b[0m');
+        console.log('    Run: `ollama pull qwen2.5vl` (or llama3.2-vision, llava)');
+      }
     } else {
       console.log('  \x1b[33m⚠ No models installed yet in Ollama.\x1b[0m');
-      console.log('    Run: `ollama run qwen2.5-vl` or `ollama run llama3.2-vision` or `ollama run llama3.2:1b`');
+      console.log('    Run: `ollama pull qwen2.5vl` or `ollama pull llama3.2-vision` or `ollama pull llama3.2:1b`');
     }
-  } else {
-    console.log(`  \x1b[90m○ Ollama not detected on localhost:11434 (${ollamaCheck.error || 'offline'})\x1b[0m`);
+    break;
+  }
+  if (!ollamaFound) {
+    console.log('  \x1b[33m  Start it with `ollama serve` (Windows: launch the Ollama app).\x1b[0m');
   }
 
   // 2. Check LM Studio
-  console.log('\n[2/4] Probing Local LM Studio Service (http://localhost:1234)...');
-  const lmCheck = await fetchJson(`${LM_STUDIO_URL}/v1/models`);
-  if (lmCheck.ok) {
-    console.log(`  \x1b[32m✔ LM Studio is running online!\x1b[0m`);
+  console.log('\n[2/4] Probing Local LM Studio Service (127.0.0.1 / localhost :1234)...');
+  let lmFound = false;
+  for (const base of LM_STUDIO_URLS) {
+    const lmCheck = await fetchJson(`${base}/v1/models`);
+    if (!lmCheck.ok) {
+      console.log(`  \x1b[90m○ ${base} — ${lmCheck.error || 'offline'}\x1b[0m`);
+      continue;
+    }
+    lmFound = true;
+    console.log(`  \x1b[32m✔ LM Studio is running at ${base}\x1b[0m`);
     const models = lmCheck.data?.data || [];
     models.forEach(m => console.log(`    - ${m.id}`));
+    break;
+  }
+  if (!lmFound) {
+    console.log('  \x1b[90m  (Optional — only needed if you use LM Studio instead of Ollama.)\x1b[0m');
+  }
+
+  // 2b. Check the reasoning gateway itself
+  console.log(`\n[2b/4] Probing PrivaPilot Reasoning Gateway (${SERVER_URL})...`);
+  const gatewayCheck = await fetchJson(`${SERVER_URL}/api/v1/model-status`);
+  if (gatewayCheck.ok) {
+    const s = gatewayCheck.data || {};
+    console.log(`  \x1b[32m✔ Gateway online\x1b[0m — modelConnected: ${s.modelConnected ? '\x1b[32myes\x1b[0m' : '\x1b[33mno\x1b[0m'}`);
+    if (s.detail) console.log(`  ${s.detail}`);
+    if (s.lastError) console.log(`  \x1b[33m${s.lastError}\x1b[0m`);
   } else {
-    console.log(`  \x1b[90m○ LM Studio not detected on localhost:1234\x1b[0m`);
+    console.log(`  \x1b[33m○ Gateway not reachable (${gatewayCheck.error || 'offline'}). Start it with \`npm run dev:server\`.\x1b[0m`);
   }
 
   // 3. Test Reasoning Engine Direct Simulation
@@ -130,6 +167,9 @@ async function runDiagnostics() {
   console.log(`  Engine Provider: \x1b[36m${status.provider.toUpperCase()}\x1b[0m`);
   console.log(`  Engine Endpoint: \x1b[90m${status.endpoint}\x1b[0m`);
   console.log(`  Engine Model:    \x1b[33m${status.modelName}\x1b[0m`);
+  console.log(`  Multimodal:      ${status.isMultimodal ? 'yes' : '\x1b[33mno (text-only)\x1b[0m'}`);
+  if (status.detail) console.log(`  Diagnosis:       ${status.detail}`);
+  if (status.lastError) console.log(`  \x1b[33mProbe notes:     ${status.lastError}\x1b[0m`);
 
   const tStart = Date.now();
   const decision = await engine.decideNextAction(syntheticSanitizedPayload);

@@ -1,0 +1,694 @@
+{
+  "timestamp": "2026-09-02T04:23:55.411Z",
+  "harness": "browser",
+  "split": "all",
+  "fixturesEvaluated": 14,
+  "metadata": {
+    "command": "npm run benchmark:browser",
+    "environment": "win32 x64 (Node v22.19.0)",
+    "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "viewport": "1280x800 @1x",
+    "gitSha": "df79c92"
+  },
+  "accuracy": {
+    "elementRecall": 78.6,
+    "elementPrecision": 78.6,
+    "roleAccuracy": 100,
+    "medianIoU": 1,
+    "truePositives": 22,
+    "falsePositives": 6,
+    "falseNegatives": 6
+  },
+  "redaction": {
+    "pixelVerified": true,
+    "regionsAssessable": 18,
+    "regionsCovered": 15,
+    "sensitiveRegionCoverage": 83.3,
+    "underMaskCount": 3,
+    "underMasked": [
+      {
+        "fixture": "face-gallery",
+        "region": "s0:face",
+        "overlayFraction": 0.074
+      },
+      {
+        "fixture": "face-gallery",
+        "region": "s1:face",
+        "overlayFraction": 0.054
+      },
+      {
+        "fixture": "image-pii",
+        "region": "s0:high_risk_surface",
+        "overlayFraction": 0
+      }
+    ],
+    "safeElementPreservation": 100,
+    "safeElementsPreserved": 18,
+    "totalSafeElements": 18
+  },
+  "clientLatency": {
+    "p50Ms": 55,
+    "p95Ms": 99,
+    "samples": 14
+  },
+  "resources": {
+    "peakHeapMb": 3.94,
+    "medianHeapMb": 3.79,
+    "medianTaskDurationSec": 0.112
+  },
+  "blockedFixtures": [],
+  "perFixture": [
+    {
+      "fixtureId": "standard-login",
+      "split": "dev",
+      "elementsExtracted": 3,
+      "masksRendered": 2,
+      "blocked": false,
+      "regionsAssessable": 2,
+      "regionsCovered": 2,
+      "extractMs": 2.7,
+      "sanitizeMs": 50.3,
+      "clientMs": 53,
+      "heapUsedMb": 3.91,
+      "taskDurationSec": 0.118,
+      "rawScreenshotKb": 10,
+      "sanitizedScreenshotKb": 30,
+      "redactionVerdicts": [
+        {
+          "id": "s0:email",
+          "covered": true,
+          "opaqueFraction": 0.906,
+          "overlayFraction": 1,
+          "residualVariance": 764.7,
+          "rawVariance": 5772.4,
+          "varianceReduction": 0.868,
+          "sampledPixels": 3717
+        },
+        {
+          "id": "s1:password",
+          "covered": true,
+          "opaqueFraction": 0.878,
+          "overlayFraction": 1,
+          "residualVariance": 938,
+          "rawVariance": 3288.8,
+          "varianceReduction": 0.715,
+          "sampledPixels": 3717
+        },
+        {
+          "id": "safe0:Sign In",
+          "covered": false,
+          "opaqueFraction": 0.042,
+          "overlayFraction": 0.062,
+          "residualVariance": 4807.3,
+          "rawVariance": 4158.2,
+          "varianceReduction": -0.156,
+          "sampledPixels": 1218
+        }
+      ]
+    },
+    {
+      "fixtureId": "misleading-field-names",
+      "split": "dev",
+      "elementsExtracted": 3,
+      "masksRendered": 2,
+      "blocked": false,
+      "regionsAssessable": 2,
+      "regionsCovered": 2,
+      "extractMs": 2.4,
+      "sanitizeMs": 52.3,
+      "clientMs": 54.7,
+      "heapUsedMb": 3.79,
+      "taskDurationSec": 0.105,
+      "rawScreenshotKb": 8,
+      "sanitizedScreenshotKb": 27,
+      "redactionVerdicts": [
+        {
+          "id": "s0:password",
+          "covered": true,
+          "opaqueFraction": 0.888,
+          "overlayFraction": 1,
+          "residualVariance": 851.3,
+          "rawVariance": 2981.2,
+          "varianceReduction": 0.714,
+          "sampledPixels": 3717
+        },
+        {
+          "id": "s1:token",
+          "covered": true,
+          "opaqueFraction": 0.919,
+          "overlayFraction": 1,
+          "residualVariance": 669.8,
+          "rawVariance": 6067.2,
+          "varianceReduction": 0.89,
+          "sampledPixels": 3717
+        },
+        {
+          "id": "safe0:Perform Safe Search",
+          "covered": false,
+          "opaqueFraction": 0.04,
+          "overlayFraction": 0.051,
+          "residualVariance": 5193,
+          "rawVariance": 4952.3,
+          "varianceReduction": -0.049,
+          "sampledPixels": 2940
+        }
+      ]
+    },
+    {
+      "fixtureId": "payment-portal",
+      "split": "dev",
+      "elementsExtracted": 5,
+      "masksRendered": 3,
+      "blocked": false,
+      "regionsAssessable": 3,
+      "regionsCovered": 3,
+      "extractMs": 2.6,
+      "sanitizeMs": 55,
+      "clientMs": 57.6,
+      "heapUsedMb": 3.81,
+      "taskDurationSec": 0.113,
+      "rawScreenshotKb": 10,
+      "sanitizedScreenshotKb": 30,
+      "redactionVerdicts": [
+        {
+          "id": "s0:credit_card",
+          "covered": true,
+          "opaqueFraction": 0.882,
+          "overlayFraction": 1,
+          "residualVariance": 901.2,
+          "rawVariance": 4956,
+          "varianceReduction": 0.818,
+          "sampledPixels": 3717
+        },
+        {
+          "id": "s1:credit_card",
+          "covered": true,
+          "opaqueFraction": 0.882,
+          "overlayFraction": 1,
+          "residualVariance": 901.2,
+          "rawVariance": 2773.9,
+          "varianceReduction": 0.675,
+          "sampledPixels": 3717
+        },
+        {
+          "id": "s2:cvv",
+          "covered": true,
+          "opaqueFraction": 0.933,
+          "overlayFraction": 1,
+          "residualVariance": 551.8,
+          "rawVariance": 2586.7,
+          "varianceReduction": 0.787,
+          "sampledPixels": 3717
+        },
+        {
+          "id": "safe0:Submit Payment ($49.00)",
+          "covered": false,
+          "opaqueFraction": 0.038,
+          "overlayFraction": 0.05,
+          "residualVariance": 5052.7,
+          "rawVariance": 4856.6,
+          "varianceReduction": -0.04,
+          "sampledPixels": 3507
+        }
+      ]
+    },
+    {
+      "fixtureId": "profile-pii",
+      "split": "dev",
+      "elementsExtracted": 2,
+      "masksRendered": 5,
+      "blocked": false,
+      "regionsAssessable": 4,
+      "regionsCovered": 4,
+      "extractMs": 4.5,
+      "sanitizeMs": 94.9,
+      "clientMs": 99.4,
+      "heapUsedMb": 3.94,
+      "taskDurationSec": 0.174,
+      "rawScreenshotKb": 17,
+      "sanitizedScreenshotKb": 30,
+      "redactionVerdicts": [
+        {
+          "id": "s0:email",
+          "covered": true,
+          "opaqueFraction": 0.889,
+          "overlayFraction": 1,
+          "residualVariance": 936.7,
+          "rawVariance": 6553.3,
+          "varianceReduction": 0.857,
+          "sampledPixels": 3927
+        },
+        {
+          "id": "s1:phone",
+          "covered": true,
+          "opaqueFraction": 0.764,
+          "overlayFraction": 1,
+          "residualVariance": 1769.4,
+          "rawVariance": 5775.2,
+          "varianceReduction": 0.694,
+          "sampledPixels": 1921
+        },
+        {
+          "id": "s2:national_id",
+          "covered": true,
+          "opaqueFraction": 0.712,
+          "overlayFraction": 1,
+          "residualVariance": 1963.7,
+          "rawVariance": 7323.5,
+          "varianceReduction": 0.732,
+          "sampledPixels": 1615
+        },
+        {
+          "id": "s3:national_id",
+          "covered": true,
+          "opaqueFraction": 0.715,
+          "overlayFraction": 1,
+          "residualVariance": 1960.3,
+          "rawVariance": 5790.1,
+          "varianceReduction": 0.661,
+          "sampledPixels": 1768
+        },
+        {
+          "id": "safe0:View Safe Records",
+          "covered": false,
+          "opaqueFraction": 0,
+          "overlayFraction": 0,
+          "residualVariance": 182.4,
+          "rawVariance": 4642.8,
+          "varianceReduction": 0.961,
+          "sampledPixels": 2709
+        },
+        {
+          "id": "safe1:Edit Profile",
+          "covered": false,
+          "opaqueFraction": 0,
+          "overlayFraction": 0,
+          "residualVariance": 265.3,
+          "rawVariance": 4621.4,
+          "varianceReduction": 0.943,
+          "sampledPixels": 1680
+        }
+      ]
+    },
+    {
+      "fixtureId": "face-gallery",
+      "split": "dev",
+      "elementsExtracted": 1,
+      "masksRendered": 2,
+      "blocked": false,
+      "regionsAssessable": 2,
+      "regionsCovered": 0,
+      "extractMs": 2.2,
+      "sanitizeMs": 57.2,
+      "clientMs": 59.4,
+      "heapUsedMb": 3.72,
+      "taskDurationSec": 0.112,
+      "rawScreenshotKb": 7,
+      "sanitizedScreenshotKb": 26,
+      "redactionVerdicts": [
+        {
+          "id": "s0:face",
+          "covered": false,
+          "opaqueFraction": 0,
+          "overlayFraction": 0.074,
+          "residualVariance": 2097.2,
+          "rawVariance": 424.8,
+          "varianceReduction": -3.937,
+          "sampledPixels": 10000
+        },
+        {
+          "id": "s1:face",
+          "covered": false,
+          "opaqueFraction": 0,
+          "overlayFraction": 0.054,
+          "residualVariance": 1611.5,
+          "rawVariance": 424.8,
+          "varianceReduction": -2.794,
+          "sampledPixels": 10000
+        },
+        {
+          "id": "safe0:Load More",
+          "covered": false,
+          "opaqueFraction": 0.023,
+          "overlayFraction": 0.028,
+          "residualVariance": 4019.2,
+          "rawVariance": 4545.4,
+          "varianceReduction": 0.116,
+          "sampledPixels": 1680
+        }
+      ]
+    },
+    {
+      "fixtureId": "image-pii",
+      "split": "dev",
+      "elementsExtracted": 1,
+      "masksRendered": 0,
+      "blocked": false,
+      "regionsAssessable": 1,
+      "regionsCovered": 0,
+      "extractMs": 3.7,
+      "sanitizeMs": 54.8,
+      "clientMs": 58.5,
+      "heapUsedMb": 3.61,
+      "taskDurationSec": 0.12,
+      "rawScreenshotKb": 6,
+      "sanitizedScreenshotKb": 25,
+      "redactionVerdicts": [
+        {
+          "id": "s0:high_risk_surface",
+          "covered": false,
+          "opaqueFraction": 0,
+          "overlayFraction": 0,
+          "residualVariance": 0,
+          "rawVariance": 0,
+          "varianceReduction": 0,
+          "sampledPixels": 1
+        },
+        {
+          "id": "safe0:Open Safe Preview",
+          "covered": false,
+          "opaqueFraction": 0.021,
+          "overlayFraction": 0.024,
+          "residualVariance": 4769.8,
+          "rawVariance": 4769.8,
+          "varianceReduction": 0,
+          "sampledPixels": 2751
+        }
+      ]
+    },
+    {
+      "fixtureId": "canvas-pii",
+      "split": "dev",
+      "elementsExtracted": 1,
+      "masksRendered": 1,
+      "blocked": false,
+      "regionsAssessable": 1,
+      "regionsCovered": 1,
+      "extractMs": 2.5,
+      "sanitizeMs": 60.5,
+      "clientMs": 63,
+      "heapUsedMb": 3.64,
+      "taskDurationSec": 0.121,
+      "rawScreenshotKb": 6,
+      "sanitizedScreenshotKb": 26,
+      "redactionVerdicts": [
+        {
+          "id": "s0:high_risk_surface",
+          "covered": true,
+          "opaqueFraction": 0.991,
+          "overlayFraction": 1,
+          "residualVariance": 84.9,
+          "rawVariance": 0,
+          "varianceReduction": 0,
+          "sampledPixels": 80000
+        },
+        {
+          "id": "safe0:Refresh Data",
+          "covered": false,
+          "opaqueFraction": 0.025,
+          "overlayFraction": 0.026,
+          "residualVariance": 4993.1,
+          "rawVariance": 4993.1,
+          "varianceReduction": 0,
+          "sampledPixels": 1995
+        }
+      ]
+    },
+    {
+      "fixtureId": "cross-origin-iframe",
+      "split": "dev",
+      "elementsExtracted": 1,
+      "masksRendered": 1,
+      "blocked": false,
+      "regionsAssessable": 1,
+      "regionsCovered": 1,
+      "extractMs": 3,
+      "sanitizeMs": 53.1,
+      "clientMs": 56.1,
+      "heapUsedMb": 3.56,
+      "taskDurationSec": 0.128,
+      "rawScreenshotKb": 6,
+      "sanitizedScreenshotKb": 26,
+      "redactionVerdicts": [
+        {
+          "id": "s0:high_risk_surface",
+          "covered": true,
+          "opaqueFraction": 0.995,
+          "overlayFraction": 1,
+          "residualVariance": 44.5,
+          "rawVariance": 57.8,
+          "varianceReduction": 0.23,
+          "sampledPixels": 153216
+        },
+        {
+          "id": "safe0:Continue",
+          "covered": false,
+          "opaqueFraction": 0.032,
+          "overlayFraction": 0.034,
+          "residualVariance": 4482.1,
+          "rawVariance": 4482.1,
+          "varianceReduction": 0,
+          "sampledPixels": 1449
+        }
+      ]
+    },
+    {
+      "fixtureId": "shadow-dom",
+      "split": "dev",
+      "elementsExtracted": 1,
+      "masksRendered": 0,
+      "blocked": false,
+      "regionsAssessable": 0,
+      "regionsCovered": 0,
+      "extractMs": 2.7,
+      "sanitizeMs": 50.3,
+      "clientMs": 53,
+      "heapUsedMb": 3.62,
+      "taskDurationSec": 0.101,
+      "rawScreenshotKb": 6,
+      "sanitizedScreenshotKb": 24,
+      "redactionVerdicts": [
+        {
+          "id": "safe0:Next Step",
+          "covered": false,
+          "opaqueFraction": 0.031,
+          "overlayFraction": 0.033,
+          "residualVariance": 4830.2,
+          "rawVariance": 4830.2,
+          "varianceReduction": 0,
+          "sampledPixels": 1575
+        }
+      ]
+    },
+    {
+      "fixtureId": "controlled-react-input",
+      "split": "held-out",
+      "elementsExtracted": 2,
+      "masksRendered": 0,
+      "blocked": false,
+      "regionsAssessable": 0,
+      "regionsCovered": 0,
+      "extractMs": 2.8,
+      "sanitizeMs": 45.7,
+      "clientMs": 48.5,
+      "heapUsedMb": 3.86,
+      "taskDurationSec": 0.098,
+      "rawScreenshotKb": 7,
+      "sanitizedScreenshotKb": 25,
+      "redactionVerdicts": [
+        {
+          "id": "safe0:Search mission tickets...",
+          "covered": false,
+          "opaqueFraction": 0,
+          "overlayFraction": 0,
+          "residualVariance": 2644.7,
+          "rawVariance": 2644.7,
+          "varianceReduction": 0,
+          "sampledPixels": 3717
+        },
+        {
+          "id": "safe1:Search",
+          "covered": false,
+          "opaqueFraction": 0.026,
+          "overlayFraction": 0.03,
+          "residualVariance": 4558.1,
+          "rawVariance": 4558.1,
+          "varianceReduction": 0,
+          "sampledPixels": 1218
+        }
+      ]
+    },
+    {
+      "fixtureId": "long-scroll",
+      "split": "held-out",
+      "elementsExtracted": 2,
+      "masksRendered": 1,
+      "blocked": false,
+      "regionsAssessable": 0,
+      "regionsCovered": 0,
+      "extractMs": 2.5,
+      "sanitizeMs": 48.3,
+      "clientMs": 50.8,
+      "heapUsedMb": 3.7,
+      "taskDurationSec": 0.1,
+      "rawScreenshotKb": 6,
+      "sanitizedScreenshotKb": 24,
+      "redactionVerdicts": [
+        {
+          "id": "s0:token",
+          "covered": true,
+          "opaqueFraction": 0,
+          "overlayFraction": 1,
+          "residualVariance": 0,
+          "rawVariance": 0,
+          "varianceReduction": 0,
+          "sampledPixels": 370
+        },
+        {
+          "id": "safe0:Top Nav",
+          "covered": false,
+          "opaqueFraction": 0.024,
+          "overlayFraction": 0.026,
+          "residualVariance": 4347.7,
+          "rawVariance": 4347.7,
+          "varianceReduction": 0,
+          "sampledPixels": 1365
+        },
+        {
+          "id": "safe1:Middle Action",
+          "covered": true,
+          "opaqueFraction": 0,
+          "overlayFraction": 1,
+          "residualVariance": 0,
+          "rawVariance": 0,
+          "varianceReduction": 0,
+          "sampledPixels": 95
+        }
+      ]
+    },
+    {
+      "fixtureId": "dark-mode",
+      "split": "held-out",
+      "elementsExtracted": 2,
+      "masksRendered": 1,
+      "blocked": false,
+      "regionsAssessable": 1,
+      "regionsCovered": 1,
+      "extractMs": 2,
+      "sanitizeMs": 43.3,
+      "clientMs": 45.3,
+      "heapUsedMb": 3.86,
+      "taskDurationSec": 0.094,
+      "rawScreenshotKb": 9,
+      "sanitizedScreenshotKb": 29,
+      "redactionVerdicts": [
+        {
+          "id": "s0:password",
+          "covered": true,
+          "opaqueFraction": 0.878,
+          "overlayFraction": 1,
+          "residualVariance": 938,
+          "rawVariance": 4652.7,
+          "varianceReduction": 0.798,
+          "sampledPixels": 3717
+        },
+        {
+          "id": "safe0:Safe Inspect",
+          "covered": false,
+          "opaqueFraction": 0.083,
+          "overlayFraction": 0.096,
+          "residualVariance": 6419.8,
+          "rawVariance": 6153.3,
+          "varianceReduction": -0.043,
+          "sampledPixels": 1890
+        }
+      ]
+    },
+    {
+      "fixtureId": "modal-dialog",
+      "split": "held-out",
+      "elementsExtracted": 2,
+      "masksRendered": 1,
+      "blocked": false,
+      "regionsAssessable": 1,
+      "regionsCovered": 1,
+      "extractMs": 2.3,
+      "sanitizeMs": 46.4,
+      "clientMs": 48.7,
+      "heapUsedMb": 3.84,
+      "taskDurationSec": 0.097,
+      "rawScreenshotKb": 11,
+      "sanitizedScreenshotKb": 29,
+      "redactionVerdicts": [
+        {
+          "id": "s0:token",
+          "covered": true,
+          "opaqueFraction": 0.927,
+          "overlayFraction": 1,
+          "residualVariance": 625.2,
+          "rawVariance": 6926.6,
+          "varianceReduction": 0.91,
+          "sampledPixels": 6290
+        },
+        {
+          "id": "safe0:Cancel",
+          "covered": false,
+          "opaqueFraction": 0.028,
+          "overlayFraction": 0.031,
+          "residualVariance": 4401.2,
+          "rawVariance": 4401.2,
+          "varianceReduction": 0,
+          "sampledPixels": 1218
+        },
+        {
+          "id": "safe1:Authorize Transfer",
+          "covered": false,
+          "opaqueFraction": 0.031,
+          "overlayFraction": 0.035,
+          "residualVariance": 4802.6,
+          "rawVariance": 4802.6,
+          "varianceReduction": 0,
+          "sampledPixels": 2625
+        }
+      ]
+    },
+    {
+      "fixtureId": "cookie-banner",
+      "split": "held-out",
+      "elementsExtracted": 2,
+      "masksRendered": 0,
+      "blocked": false,
+      "regionsAssessable": 0,
+      "regionsCovered": 0,
+      "extractMs": 1.9,
+      "sanitizeMs": 41.8,
+      "clientMs": 43.7,
+      "heapUsedMb": 3.67,
+      "taskDurationSec": 0.093,
+      "rawScreenshotKb": 9,
+      "sanitizedScreenshotKb": 28,
+      "redactionVerdicts": [
+        {
+          "id": "safe0:Accept Cookies",
+          "covered": false,
+          "opaqueFraction": 0.028,
+          "overlayFraction": 0.029,
+          "residualVariance": 4706.9,
+          "rawVariance": 4706.9,
+          "varianceReduction": 0,
+          "sampledPixels": 2289
+        },
+        {
+          "id": "safe1:Main Feature",
+          "covered": false,
+          "opaqueFraction": 0.015,
+          "overlayFraction": 0.023,
+          "residualVariance": 4715.6,
+          "rawVariance": 4715.6,
+          "varianceReduction": 0,
+          "sampledPixels": 1995
+        }
+      ]
+    }
+  ]
+}

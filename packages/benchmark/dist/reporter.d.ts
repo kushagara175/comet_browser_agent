@@ -24,6 +24,16 @@ export interface FullBenchmarkResults {
     readonly pii: PiiDetectionReport;
     readonly redaction: RedactionPrecisionReport;
     readonly latency: LatencyBenchmarkSummary;
+    /**
+     * Categories this harness could not evaluate at all. Their ground-truth targets
+     * are excluded from the scores above rather than counted as hits or misses, so a
+     * reader is never shown a number that no code actually produced.
+     */
+    readonly unmeasuredCategories?: ReadonlyArray<string>;
+    /** Metrics whose reported value here is not a real measurement. */
+    readonly unmeasuredNotes?: ReadonlyArray<string>;
+    /** False when latency figures are estimated rather than measured by this run. */
+    readonly latencyMeasured?: boolean;
 }
 export declare class BenchmarkReporter {
     static formatMarkdownReport(results: FullBenchmarkResults): string;

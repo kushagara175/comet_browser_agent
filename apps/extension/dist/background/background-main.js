@@ -14563,7 +14563,9 @@ function analyzeDomElementSensitivity(desc) {
   for (const autoVal of SENSITIVE_AUTOCOMPLETE_VALUES) {
     if (autocomplete.includes(autoVal)) {
       let cat = "password";
-      if (autoVal.startsWith("cc-"))
+      if (autoVal === "cc-csc")
+        cat = "cvv";
+      else if (autoVal.startsWith("cc-"))
         cat = "credit_card";
       else if (autoVal.startsWith("bday"))
         cat = "date_of_birth";
@@ -15986,15 +15988,41 @@ var TEST_FIXTURES = {
 };
 
 // src/background/http-client.ts
+var DEFAULT_SERVER_BASE_URL = "http://localhost:4501";
+var REASONING_TIMEOUT_MS = 12e4;
+var CHAT_TIMEOUT_MS = 12e4;
+var HEALTH_TIMEOUT_MS = 3e3;
 var ReasoningHttpClient = class {
   serverBaseUrl;
-  constructor(serverBaseUrl = "http://localhost:4501") {
-    this.serverBaseUrl = serverBaseUrl;
+  constructor(serverBaseUrl = DEFAULT_SERVER_BASE_URL) {
+    this.serverBaseUrl = serverBaseUrl.replace(/\/+$/, "");
+  }
+  getServerBaseUrl() {
+    return this.serverBaseUrl;
+  }
+  /**
+   * Turns a transport failure into something the user can act on. A bare
+   * "Failed to fetch" is the single most confusing symptom in this system:
+   * it means the gateway is not running, not that the model refused.
+   */
+  describeTransportError(error, operation) {
+    const raw = String(error?.message || error || "Request failed");
+    if (/timed out/i.test(raw)) {
+      return new Error(
+        `${operation} timed out. The reasoning gateway at ${this.serverBaseUrl} is running but the model did not answer in time. A local model may still be loading \u2014 retry in a moment, or check ${this.serverBaseUrl}/api/v1/model-status.`
+      );
+    }
+    if (/failed to fetch|networkerror|load failed/i.test(raw)) {
+      return new Error(
+        `Cannot reach the PrivaPilot reasoning gateway at ${this.serverBaseUrl}. Start it with "npm run dev:server", then retry. (If it is running on another port, update the server URL in the extension options.)`
+      );
+    }
+    return new Error(`${operation} failed: ${raw}`);
   }
   /**
    * Bounded fetch helper wrapping AbortController with deterministic timeouts.
    */
-  async fetchWithTimeout(url, init, operation, timeoutMs = 15e3) {
+  async fetchWithTimeout(url, init, operation, timeoutMs = REASONING_TIMEOUT_MS) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -16004,11 +16032,43 @@ var ReasoningHttpClient = class {
       });
     } catch (error) {
       if (controller.signal.aborted) {
-        throw new Error(`${operation} timed out after ${timeoutMs}ms`);
+        throw this.describeTransportError(new Error(`timed out after ${timeoutMs}ms`), operation);
       }
-      throw error;
+      throw this.describeTransportError(error, operation);
     } finally {
       clearTimeout(timeout);
+    }
+  }
+  /**
+   * Diagnoses the two failures that look identical in the UI: the gateway being
+   * down, and the gateway being up with no model backend behind it.
+   */
+  async getModelStatus() {
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.serverBaseUrl}/api/v1/model-status`,
+        { method: "GET" },
+        "Model status check",
+        HEALTH_TIMEOUT_MS
+      );
+      if (!response.ok) {
+        return {
+          reachable: false,
+          error: `Reasoning gateway at ${this.serverBaseUrl} responded ${response.status}.`
+        };
+      }
+      const data = await response.json();
+      return {
+        reachable: true,
+        provider: data.provider,
+        modelName: data.modelName,
+        endpoint: data.endpoint,
+        modelConnected: Boolean(data.modelConnected),
+        detail: data.detail,
+        lastError: data.lastError
+      };
+    } catch (err) {
+      return { reachable: false, error: err?.message || "Reasoning gateway unreachable" };
     }
   }
   /**
@@ -16035,7 +16095,7 @@ var ReasoningHttpClient = class {
         body: JSON.stringify(payload)
       },
       "Reasoning request",
-      15e3
+      REASONING_TIMEOUT_MS
     );
     if (!response.ok) {
       const errText = await response.text();
@@ -16079,7 +16139,7 @@ var ReasoningHttpClient = class {
         })
       },
       "Chat request",
-      15e3
+      CHAT_TIMEOUT_MS
     );
     if (!response.ok) {
       const errText = await response.text();
@@ -16106,7 +16166,7 @@ var ReasoningHttpClient = class {
         body: JSON.stringify(payload)
       },
       "General chat request",
-      15e3
+      CHAT_TIMEOUT_MS
     );
     if (!response.ok) {
       const errText = await response.text();
@@ -16598,14 +16658,19 @@ var RunCoordinator = class {
     return res;
   }
   /**
+   * Reports whether the reasoning gateway and a model backend are reachable.
+   */
+  async getModelStatus() {
+    return this.httpClient.getModelStatus();
+  }
+  /**
    * Performs page-aware chat strictly across the privacy boundary.
    */
   async chatWithPage(userMessage) {
     try {
       const activeTab = await this.browser.getActiveTab();
       if (!activeTab || !activeTab.id) {
-        const genRes = await this.httpClient.requestGeneralChat(userMessage);
-        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+        return this.generalChat(userMessage);
       }
       let domResponse = null;
       try {
@@ -16616,8 +16681,7 @@ var RunCoordinator = class {
       } catch (_) {
       }
       if (!domResponse || !domResponse.success || !domResponse.snapshot) {
-        const genRes = await this.httpClient.requestGeneralChat(userMessage);
-        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+        return this.generalChat(userMessage);
       }
       let screenshotDataUrl = "";
       try {
@@ -16625,8 +16689,7 @@ var RunCoordinator = class {
       } catch (_) {
       }
       if (!screenshotDataUrl) {
-        const genRes = await this.httpClient.requestGeneralChat(userMessage);
-        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+        return this.generalChat(userMessage);
       }
       const rawCapture = {
         _brand: "RawCapture_InternalOnly",
@@ -16644,8 +16707,7 @@ var RunCoordinator = class {
           goal: userMessage
         });
       } catch (_) {
-        const genRes = await this.httpClient.requestGeneralChat(userMessage);
-        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+        return this.generalChat(userMessage);
       }
       if (this.listeners.onSanitizationComplete) {
         this.listeners.onSanitizationComplete(rawCapture, sanitized);
@@ -16655,20 +16717,39 @@ var RunCoordinator = class {
         success: true,
         reply: chatRes.reply,
         maskCount: sanitized.maskCount,
-        elementCount: sanitized.elements.length
+        elementCount: sanitized.elements.length,
+        modelConnected: chatRes.modelConnected !== false
       };
     } catch (err) {
-      try {
-        const genRes = await this.httpClient.requestGeneralChat(userMessage);
-        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
-      } catch (_) {
-        return {
-          success: true,
-          reply: "PrivaPilot local AI model is online and ready.",
-          maskCount: 0,
-          elementCount: 0
-        };
-      }
+      return this.generalChat(userMessage, err);
+    }
+  }
+  /**
+   * Contextless chat turn. Reports a real connection failure instead of claiming
+   * the model is ready — that claim is what made a broken model look like a
+   * working one with nothing to say.
+   */
+  async generalChat(userMessage, priorError) {
+    try {
+      const genRes = await this.httpClient.requestGeneralChat(userMessage);
+      return {
+        success: true,
+        reply: genRes.reply,
+        maskCount: 0,
+        elementCount: 0,
+        modelConnected: genRes.modelConnected !== false
+      };
+    } catch (err) {
+      const detail = err?.message || priorError?.message || "Reasoning gateway unreachable";
+      return {
+        success: false,
+        reply: `Could not reach the reasoning model.
+
+${detail}`,
+        maskCount: 0,
+        elementCount: 0,
+        modelConnected: false
+      };
     }
   }
   /**
@@ -16817,10 +16898,19 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       }).catch((err) => {
         sendResponse({
           success: false,
-          reply: "Privacy Boundary Active: Context transmission was blocked.",
+          reply: `Chat failed before any context left the browser: ${err?.message || "unknown error"}`,
           maskCount: 0,
-          elementCount: 0
+          elementCount: 0,
+          modelConnected: false
         });
+      });
+      return true;
+    }
+    if (message.type === "GET_MODEL_STATUS") {
+      coordinator.getModelStatus().then((status) => {
+        sendResponse(status);
+      }).catch((err) => {
+        sendResponse({ reachable: false, error: err?.message || "Model status check failed" });
       });
       return true;
     }

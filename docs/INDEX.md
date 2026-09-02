@@ -17,6 +17,7 @@ disagree, the one higher in this list wins.
 | :--- | :--- |
 | **[EXECUTION_PLAN.md](EXECUTION_PLAN.md)** | Current state of the codebase from audit, the defects blocking each scored metric, and the phased plan to 20 Sep 2026 with an explicit cut order. **Start here to decide what to do next.** |
 | **[AGENT_RULES.md](AGENT_RULES.md)** | Binding rules for every coding session: privacy boundary, fail-closed policy, data classes, action safety, evidence-and-honesty rules, reuse table, definition of done. **Read before writing code.** |
+| **[AUDIT_LOCAL_VS_DEFERRED.md](AUDIT_LOCAL_VS_DEFERRED.md)** | What is actually measured by executing code versus what is still unverified, and why. Records the benchmark-harness rebuild, the real bugs it exposed, and every ground-truth correction with its justification. **Read before quoting any metric.** |
 
 ## Tier 3 — Design reference
 

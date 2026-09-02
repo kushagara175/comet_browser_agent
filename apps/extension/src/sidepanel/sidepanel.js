@@ -460,6 +460,9 @@ if (typeof document !== 'undefined') {
       if (res && res.reply) {
         const maskCount = res.maskCount ?? 0;
         const elementCount = res.elementCount ?? 0;
+        // The gateway answers even when no model is behind it. Say so, instead of
+        // presenting the offline reasoner's text as if a model had replied.
+        const modelDisconnected = res.modelConnected === false;
         agentBubble.innerHTML = `
           ${maskCount > 0 || elementCount > 0 ? `
             <div class="perception-badge-row">
@@ -467,9 +470,14 @@ if (typeof document !== 'undefined') {
               <span class="perception-pill">🔍 ${elementCount} Interactive Elements</span>
             </div>
           ` : ''}
+          ${modelDisconnected ? `
+            <div style="padding: 6px 8px; margin-bottom: 5px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; color: #b45309; font-size: 10.5px; font-weight: 600;">
+              ⚠️ No reasoning model connected — this reply did not come from a model.
+            </div>
+          ` : ''}
           <div style="font-size: 11.5px; color: #0f172a; line-height: 1.5; white-space: pre-wrap; user-select: text;">${escapeHtml(res.reply)}</div>
         `;
-        setAgentStatus('idle');
+        setAgentStatus(modelDisconnected ? 'failed-safe' : 'idle');
         chatMessages.scrollTop = chatMessages.scrollHeight;
         return;
       }
@@ -755,6 +763,54 @@ if (typeof document !== 'undefined') {
     setVisionProvider('wasm');
     setAgentStatus('idle');
     updateInspectorLayout();
+
+    // Probe the reasoning gateway once on open, so a missing server or a missing
+    // model is reported here instead of surfacing as a failed first message.
+    function reportModelConnectivity() {
+      if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;
+
+      chrome.runtime.sendMessage({ type: 'GET_MODEL_STATUS' }, (status) => {
+        if (chrome.runtime.lastError || !status) {
+          addAuditEntry('MODEL', 'Background service worker unreachable', 'warn');
+          return;
+        }
+
+        if (!status.reachable) {
+          addAuditEntry('MODEL', status.error || 'Reasoning gateway unreachable', 'warn');
+          showModelBanner(
+            'Reasoning gateway offline',
+            status.error || 'Start it with "npm run dev:server" and reopen this panel.'
+          );
+          return;
+        }
+
+        if (!status.modelConnected) {
+          addAuditEntry('MODEL', status.detail || 'No model backend connected', 'warn');
+          showModelBanner(
+            'No reasoning model connected',
+            status.detail || 'Start Ollama and pull a model, or set VLM_ENDPOINT on the gateway.'
+          );
+          return;
+        }
+
+        addAuditEntry('MODEL', `Connected: ${status.modelName} via ${status.provider}`, 'pass');
+      });
+    }
+
+    function showModelBanner(title, detail) {
+      if (!chatMessages) return;
+      const banner = document.createElement('div');
+      banner.className = 'chat-msg agent';
+      banner.innerHTML = `
+        <div style="padding: 8px 10px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; color: #b45309; font-size: 11px; line-height: 1.5;">
+          <strong>⚠️ ${escapeHtml(title)}</strong><br/>${escapeHtml(detail)}
+        </div>
+      `;
+      chatMessages.appendChild(banner);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    reportModelConnectivity();
   });
 }
 

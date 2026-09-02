@@ -158,15 +158,68 @@ Load the extension in Chrome:
 
 ### Connecting a model
 
+The gateway reads its model configuration from the environment, or from a `.env` file in the repo
+root (`npm run dev:server` loads it automatically). Copy `.env.example` to `.env` and edit it —
+that avoids the usual shell-syntax trap, since `export FOO=bar` is not valid in PowerShell.
+
 ```bash
+cp .env.example .env      # then uncomment what you need
+```
+
+**Current configuration: Qwen2.5-VL-72B, cloud-hosted via OpenRouter.**
+
+```ini
+VLM_ENDPOINT=https://openrouter.ai/api/v1/chat/completions
+VLM_API_KEY=sk-or-v1-...          # your key; .env is gitignored, never commit it
+VLM_MODEL=qwen/qwen2.5-vl-72b-instruct
+```
+
+Qwen2.5-VL is Apache-2.0 open weights and runs offline via `ollama pull qwen2.5vl`, so the hosted
+endpoint is a deployment choice rather than a dependency — which is what the problem statement
+allows: *"any offline deployable (open-source/open-weights) model … During SIH they can use cloud
+hosted version of these."* Measured 592 ms median for an action proposal; see
+[AUDIT_LOCAL_VS_DEFERRED.md](docs/AUDIT_LOCAL_VS_DEFERRED.md) §3.5 for the full latency table.
+
+Or set the variables directly:
+
+```bash
+# macOS / Linux
 export VLM_ENDPOINT="https://<provider>/v1/chat/completions"
 export VLM_API_KEY="..."
 export VLM_MODEL="qwen2.5-vl"
 ```
 
-With nothing set, `VlmReasoningEngine` auto-probes Ollama (`:11434`) and LM Studio (`:1234`), then
-falls back to a deterministic mock engine — **so the entire system is developable with no model at
-all.** Per the problem statement, a cloud-hosted open-weights model is permitted during SIH.
+```powershell
+# Windows PowerShell
+$env:VLM_ENDPOINT="https://<provider>/v1/chat/completions"
+$env:VLM_API_KEY="..."
+$env:VLM_MODEL="qwen2.5-vl"
+```
+
+With nothing set, `VlmReasoningEngine` auto-probes Ollama (`:11434`) and LM Studio (`:1234`) on both
+`127.0.0.1` and `localhost`, then falls back to a deterministic mock engine — **so the entire system
+is developable with no model at all.** Per the problem statement, a cloud-hosted open-weights model
+is permitted during SIH.
+
+### When the extension says it cannot reach the model
+
+The two failures look identical in the side panel, so check which one it is first:
+
+```bash
+curl http://localhost:4501/api/v1/model-status   # gateway + model diagnosis
+npm run test:llm                                 # full local backend probe
+```
+
+| `model-status` says | Meaning | Fix |
+| :--- | :--- | :--- |
+| connection refused | The gateway is not running | `npm run dev:server` |
+| `"modelConnected": false`, provider `mock` | Gateway is up, no model behind it | Start Ollama (`ollama serve`) and `ollama pull qwen2.5vl`, or set `VLM_ENDPOINT` |
+| `lastError` mentions a model not found | `VLM_MODEL` names a tag that is not pulled | `ollama pull <that model>`, or unset `VLM_MODEL` to auto-select |
+| `"isMultimodal": false` | Only a text model is installed | `ollama pull qwen2.5vl` — screenshots are otherwise not sent |
+
+The side panel also logs a `MODEL` line to the **Audit** tab on open, and marks any reply that did
+not come from a real model. After changing extension code, rebuild (`npm run build`) and press
+**Reload** on the extension in `chrome://extensions` — the service worker caches the old bundle.
 
 **Requirements:** Node.js 20+ and a recent Chrome. No discrete GPU. WebGPU is an accelerator;
 WebAssembly is the correctness path, so the client stays correct without it.

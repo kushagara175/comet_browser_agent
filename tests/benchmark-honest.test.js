@@ -11,8 +11,13 @@
 
 import test from 'node:test';
 import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { BenchmarkRunner } from '../packages/benchmark/dist/runner.js';
 import { BenchmarkReporter } from '../packages/benchmark/dist/reporter.js';
+
+const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 test('Honest Benchmark: Baseline evaluation against authored ground truth', () => {
   const baseline = BenchmarkRunner.runAll({ split: 'all' });
@@ -38,9 +43,17 @@ test('Honest Benchmark: Disabling Text PII detector strictly decreases recall', 
     `Disabling text PII must decrease recall (baseline: ${baseline.pii.aggregateRecall}%, disabled: ${disabledText.pii.aggregateRecall}%)`
   );
 
-  // Email and phone recall must drop when text scanner is disabled
-  assert.strictEqual(disabledText.pii.categoryBreakdown.email.recall, 0, 'Email recall must be 0% when text scanner is disabled');
+  // Categories reachable ONLY through free text must drop to zero. Email is
+  // deliberately not one of them: an <input type="email"> is still caught by the DOM
+  // semantic layer, which is the defense-in-depth the two-detector design exists for.
   assert.strictEqual(disabledText.pii.categoryBreakdown.phone.recall, 0, 'Phone recall must be 0% when text scanner is disabled');
+  assert.strictEqual(disabledText.pii.categoryBreakdown.national_id.recall, 0, 'National ID recall must be 0% when text scanner is disabled');
+
+  // Email survives via the DOM layer, proving the layers are genuinely independent.
+  assert.ok(
+    disabledText.pii.categoryBreakdown.email.recall > 0,
+    'Email must still be caught by the DOM semantic layer when the text scanner is off'
+  );
 });
 
 test('Honest Benchmark: Disabling DOM Semantic Analyzer decreases password recall', () => {
@@ -56,15 +69,48 @@ test('Honest Benchmark: Disabling DOM Semantic Analyzer decreases password recal
   );
 });
 
-test('Honest Benchmark: Disabling Face Detector drops face recall to 0%', () => {
+test('Honest Benchmark: Face detection is reported as unmeasured, never scored, in the Node harness', () => {
   const baseline = BenchmarkRunner.runAll({ split: 'all' });
-  const disabledFace = BenchmarkRunner.runAll({
-    split: 'all',
-    detectorOverrides: { disableVisionFace: true }
-  });
 
-  assert.ok(baseline.pii.categoryBreakdown.face.recall > 0, 'Baseline face recall must be > 0%');
-  assert.strictEqual(disabledFace.pii.categoryBreakdown.face.recall, 0, 'Disabled face recall must be 0%');
+  // The ONNX face model needs a rendered canvas and the onnxruntime-web runtime,
+  // neither of which exists here. The harness must say so rather than emit a score.
+  // This previously asserted a face recall produced by hardcoded boxes keyed off the
+  // substring "face-avatar", which reported 100% without running the model at all.
+  assert.ok(
+    Array.isArray(baseline.unmeasuredCategories) && baseline.unmeasuredCategories.includes('face'),
+    'Face must be declared unmeasured by the Node harness'
+  );
+
+  assert.strictEqual(
+    baseline.pii.categoryBreakdown.face.truePositives, 0,
+    'An unmeasured category must not contribute true positives'
+  );
+  assert.strictEqual(
+    baseline.pii.categoryBreakdown.face.falseNegatives, 0,
+    'An unmeasured category must not be counted as misses either'
+  );
+
+  assert.ok(
+    (baseline.unmeasuredNotes || []).some(n => /onnx|canvas/i.test(n)),
+    'The report must state why face detection could not be measured'
+  );
+});
+
+test('Honest Benchmark: No detector is driven by fixture-specific literals', () => {
+  // Guards the regression this harness was built to fix: detection blocks that
+  // matched fixture identifiers such as `id="darkSecret"` scored the harness's own
+  // constants instead of the shipped rules.
+  const runnerSource = fs.readFileSync(
+    path.join(ROOT_DIR, 'packages/benchmark/src/runner.ts'),
+    'utf-8'
+  );
+
+  for (const literal of ['darkSecret', 'HiddenPass', 'cardNumber', 'cardCvv', 'face-avatar', 'faceGallery']) {
+    assert.ok(
+      !runnerSource.includes(literal),
+      `Benchmark runner must not branch on the fixture-specific literal "${literal}"`
+    );
+  }
 });
 
 test('Honest Benchmark: Dev and Held-Out splits partition fixtures accurately', () => {

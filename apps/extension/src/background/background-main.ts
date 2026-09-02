@@ -67,10 +67,20 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       }).catch((err) => {
         sendResponse({
           success: false,
-          reply: 'Privacy Boundary Active: Context transmission was blocked.',
+          reply: `Chat failed before any context left the browser: ${err?.message || 'unknown error'}`,
           maskCount: 0,
-          elementCount: 0
+          elementCount: 0,
+          modelConnected: false
         });
+      });
+      return true;
+    }
+
+    if (message.type === 'GET_MODEL_STATUS') {
+      coordinator.getModelStatus().then((status) => {
+        sendResponse(status);
+      }).catch((err) => {
+        sendResponse({ reachable: false, error: err?.message || 'Model status check failed' });
       });
       return true;
     }

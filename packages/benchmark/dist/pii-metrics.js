@@ -12,6 +12,7 @@ export function computePiiMetrics(detections, groundTruth) {
         'credit_card',
         'cvv',
         'national_id',
+        'token',
         'face',
         'high_risk_surface'
     ];

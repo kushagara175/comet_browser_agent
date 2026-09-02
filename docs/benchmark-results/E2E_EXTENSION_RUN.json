@@ -1,0 +1,50 @@
+{
+  "timestamp": "2026-09-02T04:42:13.975Z",
+  "harness": "extension-e2e",
+  "measured": true,
+  "metadata": {
+    "command": "npm run test:e2e",
+    "environment": "win32 x64 (Node v22.19.0)",
+    "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "extensionId": "khhldhlmildnjbljlbphafnflheapiec",
+    "gitSha": "df79c92",
+    "model": {
+      "name": "qwen/qwen2.5-vl-72b-instruct",
+      "provider": "vlm-cloud",
+      "connected": true
+    }
+  },
+  "goal": "Open the safe preview for the pending request",
+  "success": false,
+  "state": "failed-safe",
+  "error": "Semantic verification failed: bounded timeout expired without observing expected postcondition",
+  "proposal": {
+    "actionId": "act_1",
+    "kind": "click",
+    "targetLocalId": "el_6",
+    "confidence": 0.95,
+    "risk": "safe",
+    "rationale": "Clicking 'Open Safe Preview' aligns with the goal to view the pending request safely.",
+    "expectedState": "The safe preview for the pending request should be displayed."
+  },
+  "maskCount": 6,
+  "elementsTransmitted": 10,
+  "sanitizedScreenshotBytes": 103484,
+  "telemetry": {
+    "runId": "run_1788324126730",
+    "t0_start": 1788324126730,
+    "t1_captureComplete": 1788324131107,
+    "t2_detectionComplete": 1788324131107,
+    "t3_sanitizationValidated": 1788324131144,
+    "t4_reasoningReceived": 1788324133796,
+    "t5_actionValidated": 1788324133796,
+    "t6_actionExecuted": 1788324133957,
+    "t7_stateVerified": 1788324133957,
+    "totalLatencyMs": 7227,
+    "clientLatencyMs": 1175,
+    "serverLatencyMs": 6051,
+    "stepCount": 10,
+    "stepsCompleted": 2
+  },
+  "wallClockMs": 8643
+}

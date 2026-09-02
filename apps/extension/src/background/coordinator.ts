@@ -22,8 +22,17 @@ import {
   RunTelemetry
 } from '@privapilot/protocol';
 import { BrowserAdapter, WebExtensionAdapter } from '../browser/browser-adapter.js';
-import { ReasoningHttpClient } from './http-client.js';
+import { ReasoningHttpClient, ModelStatus } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
+
+export interface ChatOutcome {
+  readonly success: boolean;
+  readonly reply: string;
+  readonly maskCount: number;
+  readonly elementCount: number;
+  /** False when the gateway answered from its offline reasoner, or not at all. */
+  readonly modelConnected?: boolean;
+}
 
 export interface CoordinatorRunOptions {
   readonly maxSteps?: number;
@@ -572,14 +581,20 @@ export class RunCoordinator {
   }
 
   /**
+   * Reports whether the reasoning gateway and a model backend are reachable.
+   */
+  async getModelStatus(): Promise<ModelStatus> {
+    return this.httpClient.getModelStatus();
+  }
+
+  /**
    * Performs page-aware chat strictly across the privacy boundary.
    */
-  async chatWithPage(userMessage: string): Promise<{ success: boolean; reply: string; maskCount: number; elementCount: number }> {
+  async chatWithPage(userMessage: string): Promise<ChatOutcome> {
     try {
       const activeTab = await this.browser.getActiveTab();
       if (!activeTab || !activeTab.id) {
-        const genRes = await this.httpClient.requestGeneralChat(userMessage);
-        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+        return this.generalChat(userMessage);
       }
 
       let domResponse: any = null;
@@ -593,8 +608,7 @@ export class RunCoordinator {
       }
 
       if (!domResponse || !domResponse.success || !domResponse.snapshot) {
-        const genRes = await this.httpClient.requestGeneralChat(userMessage);
-        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+        return this.generalChat(userMessage);
       }
 
       let screenshotDataUrl: string = '';
@@ -605,8 +619,7 @@ export class RunCoordinator {
       }
 
       if (!screenshotDataUrl) {
-        const genRes = await this.httpClient.requestGeneralChat(userMessage);
-        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+        return this.generalChat(userMessage);
       }
 
       const rawCapture: RawCapture = {
@@ -627,8 +640,7 @@ export class RunCoordinator {
         });
       } catch (_) {
         // Sanitizer host unavailable or timed out; fallback to general chat
-        const genRes = await this.httpClient.requestGeneralChat(userMessage);
-        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
+        return this.generalChat(userMessage);
       }
 
       if (this.listeners.onSanitizationComplete) {
@@ -640,20 +652,38 @@ export class RunCoordinator {
         success: true,
         reply: chatRes.reply,
         maskCount: sanitized.maskCount,
-        elementCount: sanitized.elements.length
+        elementCount: sanitized.elements.length,
+        modelConnected: chatRes.modelConnected !== false
       };
     } catch (err: any) {
-      try {
-        const genRes = await this.httpClient.requestGeneralChat(userMessage);
-        return { success: true, reply: genRes.reply, maskCount: 0, elementCount: 0 };
-      } catch (_) {
-        return {
-          success: true,
-          reply: 'PrivaPilot local AI model is online and ready.',
-          maskCount: 0,
-          elementCount: 0
-        };
-      }
+      return this.generalChat(userMessage, err);
+    }
+  }
+
+  /**
+   * Contextless chat turn. Reports a real connection failure instead of claiming
+   * the model is ready — that claim is what made a broken model look like a
+   * working one with nothing to say.
+   */
+  private async generalChat(userMessage: string, priorError?: any): Promise<ChatOutcome> {
+    try {
+      const genRes = await this.httpClient.requestGeneralChat(userMessage);
+      return {
+        success: true,
+        reply: genRes.reply,
+        maskCount: 0,
+        elementCount: 0,
+        modelConnected: genRes.modelConnected !== false
+      };
+    } catch (err: any) {
+      const detail = err?.message || priorError?.message || 'Reasoning gateway unreachable';
+      return {
+        success: false,
+        reply: `Could not reach the reasoning model.\n\n${detail}`,
+        maskCount: 0,
+        elementCount: 0,
+        modelConnected: false
+      };
     }
   }
 

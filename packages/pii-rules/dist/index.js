@@ -7,4 +7,5 @@ export * from './keywords.js';
 export * from './regex-patterns.js';
 export * from './dom-semantic.js';
 export * from './scrubber.js';
+export * from './fusion.js';
 //# sourceMappingURL=index.js.map

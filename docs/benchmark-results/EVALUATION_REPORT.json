@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-08-31T19:58:16.877Z",
+  "timestamp": "2026-09-02T04:25:24.729Z",
   "fixturesEvaluated": 14,
   "metadata": {
-    "command": "/Users/kushagrasingh/dev/SIH_26209/scripts/run-benchmarks.js",
-    "date": "2026-08-31T19:58:16.877Z",
-    "environment": "darwin arm64 (Node v22.22.0)",
+    "command": "D:\\SIH 2026\\SIHPROJECT1\\scripts\\run-benchmarks.js",
+    "date": "2026-09-02T04:25:24.729Z",
+    "environment": "win32 x64 (Node v22.19.0)",
     "browserVersion": "Google Chrome / Chromium Headless (CDP Engine)",
     "modelProvider": "UltraFace ONNX (Wasm/CPU) + Local PII Regex/Luhn Engine",
-    "gitSha": "1548d4a",
+    "gitSha": "df79c92",
     "split": "all"
   },
   "accuracy": {
@@ -20,21 +20,21 @@
     "falseNegatives": 5
   },
   "pii": {
-    "aggregateRecall": 72.2,
-    "aggregatePrecision": 81.3,
-    "aggregateF1": 76.5,
-    "totalTruePositives": 13,
-    "totalFalsePositives": 3,
-    "totalFalseNegatives": 5,
+    "aggregateRecall": 100,
+    "aggregatePrecision": 100,
+    "aggregateF1": 100,
+    "totalTruePositives": 17,
+    "totalFalsePositives": 0,
+    "totalFalseNegatives": 0,
     "categoryBreakdown": {
       "password": {
         "category": "password",
-        "truePositives": 1,
-        "falsePositives": 2,
-        "falseNegatives": 2,
-        "recall": 33.3,
-        "precision": 33.3,
-        "f1Score": 33.3
+        "truePositives": 3,
+        "falsePositives": 0,
+        "falseNegatives": 0,
+        "recall": 100,
+        "precision": 100,
+        "f1Score": 100
       },
       "email": {
         "category": "email",
@@ -56,12 +56,12 @@
       },
       "credit_card": {
         "category": "credit_card",
-        "truePositives": 1,
-        "falsePositives": 1,
+        "truePositives": 2,
+        "falsePositives": 0,
         "falseNegatives": 0,
         "recall": 100,
-        "precision": 50,
-        "f1Score": 66.7
+        "precision": 100,
+        "f1Score": 100
       },
       "cvv": {
         "category": "cvv",
@@ -76,14 +76,23 @@
         "category": "national_id",
         "truePositives": 2,
         "falsePositives": 0,
-        "falseNegatives": 3,
-        "recall": 40,
+        "falseNegatives": 0,
+        "recall": 100,
         "precision": 100,
-        "f1Score": 57.1
+        "f1Score": 100
+      },
+      "token": {
+        "category": "token",
+        "truePositives": 3,
+        "falsePositives": 0,
+        "falseNegatives": 0,
+        "recall": 100,
+        "precision": 100,
+        "f1Score": 100
       },
       "face": {
         "category": "face",
-        "truePositives": 2,
+        "truePositives": 0,
         "falsePositives": 0,
         "falseNegatives": 0,
         "recall": 100,
@@ -102,23 +111,33 @@
     }
   },
   "redaction": {
-    "sensitiveRegionCoverage": 88.9,
-    "underMaskCount": 2,
-    "overMaskRatio": 1.06,
+    "sensitiveRegionCoverage": 94.7,
+    "underMaskCount": 1,
+    "overMaskRatio": 0.85,
     "safeElementPreservation": 100,
     "safeElementsPreserved": 19,
     "totalSafeElements": 19
   },
   "latency": {
-    "sampleCount": 5,
-    "p50TotalLatencyMs": 1549,
-    "p95TotalLatencyMs": 1865,
-    "p50ClientPerceptionMs": 1,
-    "p95ClientPerceptionMs": 4,
-    "p50ServerReasoningMs": 1548,
-    "p95ServerReasoningMs": 1864,
+    "sampleCount": 14,
+    "p50TotalLatencyMs": 385,
+    "p95TotalLatencyMs": 385,
+    "p50ClientPerceptionMs": 35,
+    "p95ClientPerceptionMs": 35,
+    "p50ServerReasoningMs": 350,
+    "p95ServerReasoningMs": 350,
     "p50ActionExecutionMs": 0,
-    "peakMemoryMb": 48.6,
-    "cpuLoadPct": 130.8
-  }
+    "peakMemoryMb": 38.6,
+    "cpuLoadPct": 166.7
+  },
+  "latencyMeasured": false,
+  "unmeasuredCategories": [
+    "face"
+  ],
+  "unmeasuredNotes": [
+    "Face detection (UltraFace ONNX) requires a rendered canvas and the onnxruntime-web WASM/WebGPU runtime. It cannot execute in this Node harness, so face targets are excluded from the scores rather than assumed correct.",
+    "Region geometry is synthetic: a fixture is an HTML string with no layout. PII detections are matched to ground truth by the secret they found, not by position. Positional/IoU accuracy and true redaction coverage of rendered pixels require the browser harness.",
+    "End-to-end latency here is estimated with a nominal server figure, not measured against a real model. Real client-side perception latency is measured by \"npm run benchmark:browser\", which runs the shipped pipeline in real Chrome.",
+    "CPU and memory reflect this Node process running the detectors, not the browser extension under real perception load."
+  ]
 }
