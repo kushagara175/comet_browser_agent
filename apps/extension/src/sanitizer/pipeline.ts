@@ -28,6 +28,9 @@ import { detectHighRiskSurfaces, RawSurfaceCapture } from './surface-detector.js
 import { MaskRenderer } from './mask-renderer.js';
 import { PostRedactionVerifier } from './post-redaction-verifier.js';
 import { UltraFaceModelRunner, DetectedFace } from '../vision/face-model.js';
+import { VitEncoder, VIT_MODEL_FAMILY } from '../vision/vit-encoder.js';
+import { proposeRegions } from '../vision/region-proposer.js';
+import { classifyEmbedding } from '../vision/ui-classifier.js';
 
 export interface LocalDomSnapshot {
   readonly domElements: ReadonlyArray<RawDomElementCapture>;
@@ -90,20 +93,16 @@ export class SanitizerPipeline {
       requiresFailClosedBlock: false
     };
 
-    // 2. Render Redaction Masks onto Canvas (Strictly Fail-Closed: Zero 1x1 or permissive fallbacks)
-    let sanitizedDataUrl: string;
-    let renderedCount = 0;
-    // Canvas the masks were actually drawn on, kept so coverage can be verified
-    // against real pixels rather than against a mask count.
-    let maskedCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
-    let preMaskDetail: Map<string, number> = new Map();
+    // 2. Resolve the host canvas.
+    //
+    // Split from mask rendering so the vision pass below can read the screen BEFORE
+    // masks are painted over it. Reading the masked canvas means reading solid
+    // blackout rectangles - the first version did exactly that and the ViT was
+    // dutifully classifying the redaction overlay.
+    let hostCanvas: HTMLCanvasElement | OffscreenCanvas;
 
     if (imageCanvas) {
-      preMaskDetail = PostRedactionVerifier.measurePreMaskDetail(imageCanvas, allRegions);
-      const renderResult = MaskRenderer.renderMasks(imageCanvas, allRegions);
-      sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
-      renderedCount = renderResult.renderedMaskCount;
-      maskedCanvas = imageCanvas;
+      hostCanvas = imageCanvas;
     } else if (typeof document !== 'undefined' && rawCapture.rawScreenshotDataUrl && rawCapture.rawScreenshotDataUrl.startsWith('data:image')) {
       const canvas = document.createElement('canvas');
       canvas.width = rawCapture.metadata.screenshotWidth;
@@ -121,14 +120,80 @@ export class SanitizerPipeline {
       });
 
       ctx.drawImage(img, 0, 0);
-      preMaskDetail = PostRedactionVerifier.measurePreMaskDetail(canvas, allRegions);
-      const renderResult = MaskRenderer.renderMasks(canvas, allRegions);
-      sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
-      renderedCount = renderResult.renderedMaskCount;
-      maskedCanvas = canvas;
+      hostCanvas = canvas;
     } else {
       throw new Error('Sanitization Blocked: No canvas host available. Rendering must execute in an offscreen document with DOM access.');
     }
+
+    // 3. Vision Transformer pass over surfaces the DOM cannot describe.
+    //
+    // This is the problem statement's "local ViT reads the screen". On a canvas app,
+    // a cross-origin iframe or a closed shadow root there is no DOM to parse, and the
+    // surface was previously masked wholesale with the agent blind to it.
+    //
+    // It runs on the RAW canvas, on-device, before redaction - which is exactly what
+    // local vision is for. Only the resulting category labels are retained; the
+    // embeddings never leave this function and no pixels leave the machine.
+    //
+    // Deliberately scoped to DOM-blind surfaces: each region is a full ViT forward
+    // pass (~200 ms on WASM), so running it over an ordinary page would cost seconds
+    // to re-derive what the DOM already states precisely. Extending it to every page
+    // is a later phase, with a resource budget attached.
+    const visionObservations: Array<{
+      surfaceId: string; regionId: string; label: string | null;
+      bestLabel: string; margin: number; confident: boolean;
+      box: readonly [number, number, number, number];
+    }> = [];
+    let regionsProposed = 0;
+    let regionsEmbedded = 0;
+    let visionInferenceMs = 0;
+    let visionError: string | undefined;
+
+    if (surfaceRegions.length > 0) {
+      try {
+        for (const surface of surfaceRegions) {
+          const proposals = proposeRegions(hostCanvas, surface.screenshotBox);
+          regionsProposed += proposals.length;
+
+          for (const region of proposals) {
+            const embedding = await VitEncoder.embedRegion(hostCanvas, region);
+            regionsEmbedded++;
+            visionInferenceMs += VitEncoder.getStatus().lastInferenceMs;
+            const classification = classifyEmbedding(embedding.vector);
+            visionObservations.push({
+              surfaceId: surface.id,
+              regionId: region.id,
+              label: classification.label,
+              bestLabel: classification.bestLabel,
+              margin: classification.margin,
+              confident: classification.confident,
+              box: [region.x, region.y, region.width, region.height] as const
+            });
+          }
+        }
+      } catch (err: any) {
+        // Reported, never swallowed. A silently-failing vision model is exactly how
+        // face detection ran for weeks without executing once.
+        visionError = String(err?.message || err);
+      }
+    }
+
+    const visionTelemetry = {
+      modelFamily: VIT_MODEL_FAMILY,
+      providerUsed: VitEncoder.getStatus().providerUsed,
+      regionsProposed,
+      regionsEmbedded,
+      totalInferenceMs: visionInferenceMs,
+      available: VitEncoder.getStatus().available,
+      ...(visionError ? { error: visionError } : {})
+    };
+
+    // 4. Render Redaction Masks onto Canvas (Strictly Fail-Closed: Zero 1x1 or permissive fallbacks)
+    const preMaskDetail = PostRedactionVerifier.measurePreMaskDetail(hostCanvas, allRegions);
+    const renderResult = MaskRenderer.renderMasks(hostCanvas, allRegions);
+    const sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
+    const renderedCount = renderResult.renderedMaskCount;
+    const maskedCanvas: HTMLCanvasElement | OffscreenCanvas = hostCanvas;
 
     // Map of localId -> sensitive category from DOM detector
     const sensitiveDomElementsMap = new Map<string, SensitiveCategory>();
@@ -260,6 +325,8 @@ export class SanitizerPipeline {
         viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight]
       },
       maskCount: allRegions.length,
+      visionObservations,
+      visionTelemetry,
       redactionManifest,
       payloadDigestSha256,
       timestamp: Date.now()

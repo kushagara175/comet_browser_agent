@@ -98,6 +98,7 @@ async function main() {
   let safeTotal = 0;
   let blockedFixtures = [];
   const visionProviders = [];
+  const vitTelemetry = [];
 
   for (const fixture of Object.values(TEST_FIXTURES)) {
     const gt = GROUND_TRUTH_DATA[fixture.id];
@@ -181,6 +182,12 @@ async function main() {
 
     if (result.sanitize.blocked) blockedFixtures.push({ id: fixture.id, reason: result.sanitize.blockReason });
 
+    if (result.sanitize.visionTelemetry) {
+      vitTelemetry.push({ fixture: fixture.id, ...result.sanitize.visionTelemetry,
+                          observations: (result.sanitize.visionObservations || []).length,
+                          labelled: (result.sanitize.visionObservations || []).filter((o) => o.label).length });
+    }
+
     if (result.faceModel) {
       visionProviders.push({
         fixture: fixture.id,
@@ -209,7 +216,9 @@ async function main() {
       taskDurationSec: result.resources.taskDurationSec,
       rawScreenshotKb: Math.round(result.rawScreenshotBytes / 1024),
       sanitizedScreenshotKb: Math.round(result.sanitizedScreenshotBytes / 1024),
-      redactionVerdicts: result.redactionVerdicts
+      redactionVerdicts: result.redactionVerdicts,
+      visionObservations: result.sanitize.visionObservations || [],
+      visionTelemetry: result.sanitize.visionTelemetry || null
     });
 
     const status = result.sanitize.blocked ? 'BLOCKED' : `${fixtureCovered}/${fixtureAssessable} regions covered`;
@@ -271,6 +280,14 @@ async function main() {
       fixturesProbed: visionProviders.length,
       totalFacesDetected: visionProviders.reduce((n, v) => n + v.faceCount, 0)
     },
+    vit: {
+      modelFamily: vitTelemetry.length ? vitTelemetry[0].modelFamily : null,
+      perFixture: vitTelemetry,
+      regionsEmbedded: vitTelemetry.reduce((n, v) => n + v.regionsEmbedded, 0),
+      observations: vitTelemetry.reduce((n, v) => n + v.observations, 0),
+      labelled: vitTelemetry.reduce((n, v) => n + v.labelled, 0),
+      totalInferenceMs: vitTelemetry.reduce((n, v) => n + v.totalInferenceMs, 0)
+    },
     blockedFixtures,
     perFixture
   };
@@ -288,6 +305,12 @@ async function main() {
   console.log(`Visual context recall / precision   : ${accuracy.elementRecall}% / ${accuracy.elementPrecision}%`);
   console.log(`Client perception latency           : ${results.clientLatency.p50Ms}ms p50, ${results.clientLatency.p95Ms}ms p95`);
   console.log(`Peak heap                           : ${results.resources.peakHeapMb}MB`);
+  const vitEmbedded = vitTelemetry.reduce((n, v) => n + v.regionsEmbedded, 0);
+  const vitLabelled = vitTelemetry.reduce((n, v) => n + v.labelled, 0);
+  const vitMs = vitTelemetry.reduce((n, v) => n + v.totalInferenceMs, 0);
+  console.log(`ViT (DOM-blind surfaces)            : ${vitEmbedded} region(s) embedded, ` +
+              `${vitLabelled} labelled confidently, ${vitMs}ms total`);
+
   const provTally = visionProviders.reduce((m, v) => { m[v.providerUsed] = (m[v.providerUsed] || 0) + 1; return m; }, {});
   console.log(`Vision model provider               : ${Object.entries(provTally).map(([k, n]) => `${k} x${n}`).join(', ') || 'not probed'}` +
               ` (${visionProviders.reduce((n, v) => n + v.faceCount, 0)} faces detected)`);

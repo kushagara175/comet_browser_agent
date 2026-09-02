@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-09-02T06:52:14.629Z",
+  "timestamp": "2026-09-02T07:19:41.879Z",
   "harness": "browser",
   "split": "all",
-  "fixturesEvaluated": 14,
+  "fixturesEvaluated": 15,
   "metadata": {
     "command": "npm run benchmark:browser",
     "environment": "win32 x64 (Node v22.19.0)",
     "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "viewport": "1280x800 @1x",
-    "gitSha": "22b7be8"
+    "gitSha": "66b41a9"
   },
   "accuracy": {
     "elementRecall": 78.6,
@@ -21,8 +21,8 @@
   },
   "redaction": {
     "pixelVerified": true,
-    "regionsAssessable": 18,
-    "regionsCovered": 18,
+    "regionsAssessable": 19,
+    "regionsCovered": 19,
     "sensitiveRegionCoverage": 100,
     "underMaskCount": 0,
     "underMasked": [],
@@ -33,105 +33,285 @@
     "totalSafeElements": 18
   },
   "clientLatency": {
-    "p50Ms": 539,
-    "p95Ms": 720,
-    "samples": 14
+    "p50Ms": 593,
+    "p95Ms": 3655,
+    "samples": 15
   },
   "resources": {
-    "peakHeapMb": 8.39,
-    "medianHeapMb": 7.25,
-    "medianTaskDurationSec": 0.596
+    "peakHeapMb": 9.24,
+    "medianHeapMb": 7.15,
+    "medianTaskDurationSec": 0.665
   },
   "vision": {
     "providers": [
       {
         "fixture": "standard-login",
         "providerUsed": "wasm",
-        "durationMs": 20,
+        "durationMs": 21,
         "faceCount": 0
       },
       {
         "fixture": "misleading-field-names",
         "providerUsed": "wasm",
-        "durationMs": 23,
+        "durationMs": 30,
         "faceCount": 0
       },
       {
         "fixture": "payment-portal",
         "providerUsed": "wasm",
-        "durationMs": 32,
+        "durationMs": 29,
         "faceCount": 0
       },
       {
         "fixture": "profile-pii",
         "providerUsed": "wasm",
-        "durationMs": 22,
+        "durationMs": 33,
         "faceCount": 0
       },
       {
         "fixture": "face-gallery",
         "providerUsed": "wasm",
-        "durationMs": 21,
+        "durationMs": 28,
         "faceCount": 0
       },
       {
         "fixture": "image-pii",
         "providerUsed": "wasm",
-        "durationMs": 20,
+        "durationMs": 33,
+        "faceCount": 0
+      },
+      {
+        "fixture": "canvas-app",
+        "providerUsed": "wasm",
+        "durationMs": 27,
         "faceCount": 0
       },
       {
         "fixture": "canvas-pii",
         "providerUsed": "wasm",
-        "durationMs": 20,
+        "durationMs": 25,
         "faceCount": 0
       },
       {
         "fixture": "cross-origin-iframe",
         "providerUsed": "wasm",
-        "durationMs": 32,
+        "durationMs": 20,
         "faceCount": 0
       },
       {
         "fixture": "shadow-dom",
         "providerUsed": "wasm",
-        "durationMs": 21,
+        "durationMs": 24,
         "faceCount": 0
       },
       {
         "fixture": "controlled-react-input",
         "providerUsed": "wasm",
-        "durationMs": 19,
+        "durationMs": 21,
         "faceCount": 0
       },
       {
         "fixture": "long-scroll",
         "providerUsed": "wasm",
-        "durationMs": 21,
+        "durationMs": 18,
         "faceCount": 0
       },
       {
         "fixture": "dark-mode",
         "providerUsed": "wasm",
-        "durationMs": 18,
+        "durationMs": 23,
         "faceCount": 0
       },
       {
         "fixture": "modal-dialog",
         "providerUsed": "wasm",
-        "durationMs": 19,
+        "durationMs": 22,
         "faceCount": 0
       },
       {
         "fixture": "cookie-banner",
         "providerUsed": "wasm",
-        "durationMs": 27,
+        "durationMs": 20,
         "faceCount": 0
       }
     ],
-    "modelExecuted": 14,
-    "fixturesProbed": 14,
+    "modelExecuted": 15,
+    "fixturesProbed": 15,
     "totalFacesDetected": 0
+  },
+  "vit": {
+    "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+    "perFixture": [
+      {
+        "fixture": "standard-login",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false,
+        "observations": 0,
+        "labelled": 0
+      },
+      {
+        "fixture": "misleading-field-names",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false,
+        "observations": 0,
+        "labelled": 0
+      },
+      {
+        "fixture": "payment-portal",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false,
+        "observations": 0,
+        "labelled": 0
+      },
+      {
+        "fixture": "profile-pii",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false,
+        "observations": 0,
+        "labelled": 0
+      },
+      {
+        "fixture": "face-gallery",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false,
+        "observations": 0,
+        "labelled": 0
+      },
+      {
+        "fixture": "image-pii",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "wasm",
+        "regionsProposed": 6,
+        "regionsEmbedded": 6,
+        "totalInferenceMs": 1645,
+        "available": true,
+        "observations": 6,
+        "labelled": 3
+      },
+      {
+        "fixture": "canvas-app",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "wasm",
+        "regionsProposed": 6,
+        "regionsEmbedded": 6,
+        "totalInferenceMs": 2256,
+        "available": true,
+        "observations": 6,
+        "labelled": 5
+      },
+      {
+        "fixture": "canvas-pii",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false,
+        "observations": 0,
+        "labelled": 0
+      },
+      {
+        "fixture": "cross-origin-iframe",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "wasm",
+        "regionsProposed": 6,
+        "regionsEmbedded": 6,
+        "totalInferenceMs": 1264,
+        "available": true,
+        "observations": 6,
+        "labelled": 6
+      },
+      {
+        "fixture": "shadow-dom",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false,
+        "observations": 0,
+        "labelled": 0
+      },
+      {
+        "fixture": "controlled-react-input",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false,
+        "observations": 0,
+        "labelled": 0
+      },
+      {
+        "fixture": "long-scroll",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false,
+        "observations": 0,
+        "labelled": 0
+      },
+      {
+        "fixture": "dark-mode",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false,
+        "observations": 0,
+        "labelled": 0
+      },
+      {
+        "fixture": "modal-dialog",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false,
+        "observations": 0,
+        "labelled": 0
+      },
+      {
+        "fixture": "cookie-banner",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false,
+        "observations": 0,
+        "labelled": 0
+      }
+    ],
+    "regionsEmbedded": 18,
+    "observations": 18,
+    "labelled": 14,
+    "totalInferenceMs": 5165
   },
   "blockedFixtures": [],
   "perFixture": [
@@ -143,11 +323,11 @@
       "blocked": false,
       "regionsAssessable": 2,
       "regionsCovered": 2,
-      "extractMs": 3.7,
-      "sanitizeMs": 610.8,
-      "clientMs": 614.5,
-      "heapUsedMb": 8.32,
-      "taskDurationSec": 0.682,
+      "extractMs": 3.3,
+      "sanitizeMs": 605.7,
+      "clientMs": 609,
+      "heapUsedMb": 7.16,
+      "taskDurationSec": 0.702,
       "rawScreenshotKb": 10,
       "sanitizedScreenshotKb": 30,
       "redactionVerdicts": [
@@ -193,7 +373,16 @@
           "detailRemoved": 0.15,
           "sampledPixels": 1218
         }
-      ]
+      ],
+      "visionObservations": [],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false
+      }
     },
     {
       "fixtureId": "misleading-field-names",
@@ -203,11 +392,11 @@
       "blocked": false,
       "regionsAssessable": 2,
       "regionsCovered": 2,
-      "extractMs": 3.2,
-      "sanitizeMs": 625.6,
-      "clientMs": 628.8,
-      "heapUsedMb": 6.76,
-      "taskDurationSec": 0.695,
+      "extractMs": 2.5,
+      "sanitizeMs": 588.2,
+      "clientMs": 590.7,
+      "heapUsedMb": 7.03,
+      "taskDurationSec": 0.662,
       "rawScreenshotKb": 8,
       "sanitizedScreenshotKb": 27,
       "redactionVerdicts": [
@@ -253,7 +442,16 @@
           "detailRemoved": 0.174,
           "sampledPixels": 2940
         }
-      ]
+      ],
+      "visionObservations": [],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false
+      }
     },
     {
       "fixtureId": "payment-portal",
@@ -263,11 +461,11 @@
       "blocked": false,
       "regionsAssessable": 3,
       "regionsCovered": 3,
-      "extractMs": 3.6,
-      "sanitizeMs": 716.5,
-      "clientMs": 720.1,
-      "heapUsedMb": 6.97,
-      "taskDurationSec": 0.804,
+      "extractMs": 2.7,
+      "sanitizeMs": 597.7,
+      "clientMs": 600.4,
+      "heapUsedMb": 7.04,
+      "taskDurationSec": 0.681,
       "rawScreenshotKb": 10,
       "sanitizedScreenshotKb": 30,
       "redactionVerdicts": [
@@ -327,7 +525,16 @@
           "detailRemoved": 0.167,
           "sampledPixels": 3507
         }
-      ]
+      ],
+      "visionObservations": [],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false
+      }
     },
     {
       "fixtureId": "profile-pii",
@@ -337,11 +544,11 @@
       "blocked": false,
       "regionsAssessable": 4,
       "regionsCovered": 4,
-      "extractMs": 5.1,
-      "sanitizeMs": 544.3,
-      "clientMs": 549.4,
-      "heapUsedMb": 8.13,
-      "taskDurationSec": 0.624,
+      "extractMs": 3.1,
+      "sanitizeMs": 801.6,
+      "clientMs": 804.7,
+      "heapUsedMb": 7.15,
+      "taskDurationSec": 0.873,
       "rawScreenshotKb": 17,
       "sanitizedScreenshotKb": 39,
       "redactionVerdicts": [
@@ -429,7 +636,16 @@
           "detailRemoved": 0.104,
           "sampledPixels": 1680
         }
-      ]
+      ],
+      "visionObservations": [],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false
+      }
     },
     {
       "fixtureId": "face-gallery",
@@ -439,11 +655,11 @@
       "blocked": false,
       "regionsAssessable": 2,
       "regionsCovered": 2,
-      "extractMs": 2,
-      "sanitizeMs": 536.6,
-      "clientMs": 538.6,
-      "heapUsedMb": 8.39,
-      "taskDurationSec": 0.596,
+      "extractMs": 5.5,
+      "sanitizeMs": 691.4,
+      "clientMs": 696.9,
+      "heapUsedMb": 7.93,
+      "taskDurationSec": 0.782,
       "rawScreenshotKb": 50,
       "sanitizedScreenshotKb": 26,
       "redactionVerdicts": [
@@ -489,7 +705,16 @@
           "detailRemoved": 0.269,
           "sampledPixels": 1680
         }
-      ]
+      ],
+      "visionObservations": [],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false
+      }
     },
     {
       "fixtureId": "image-pii",
@@ -499,11 +724,11 @@
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 2.2,
-      "sanitizeMs": 496.5,
-      "clientMs": 498.7,
-      "heapUsedMb": 7.11,
-      "taskDurationSec": 0.575,
+      "extractMs": 3.9,
+      "sanitizeMs": 2760.6,
+      "clientMs": 2764.5,
+      "heapUsedMb": 9.24,
+      "taskDurationSec": 2.635,
       "rawScreenshotKb": 78,
       "sanitizedScreenshotKb": 27,
       "redactionVerdicts": [
@@ -535,7 +760,227 @@
           "detailRemoved": 0.116,
           "sampledPixels": 2751
         }
-      ]
+      ],
+      "visionObservations": [
+        {
+          "surfaceId": "surface_image_text_img_text_1",
+          "regionId": "r1c0",
+          "label": null,
+          "bestLabel": "table_or_list",
+          "margin": 0.0029,
+          "confident": false,
+          "box": [
+            6,
+            72,
+            106,
+            66
+          ]
+        },
+        {
+          "surfaceId": "surface_image_text_img_text_1",
+          "regionId": "r1c1",
+          "label": null,
+          "bestLabel": "empty_space",
+          "margin": 0.012,
+          "confident": false,
+          "box": [
+            112,
+            72,
+            106,
+            66
+          ]
+        },
+        {
+          "surfaceId": "surface_image_text_img_text_1",
+          "regionId": "r2c0",
+          "label": "text_input",
+          "bestLabel": "text_input",
+          "margin": 0.0322,
+          "confident": true,
+          "box": [
+            6,
+            138,
+            106,
+            66
+          ]
+        },
+        {
+          "surfaceId": "surface_image_text_img_text_1",
+          "regionId": "r0c0",
+          "label": null,
+          "bestLabel": "link_or_nav",
+          "margin": 0.0041,
+          "confident": false,
+          "box": [
+            6,
+            6,
+            106,
+            66
+          ]
+        },
+        {
+          "surfaceId": "surface_image_text_img_text_1",
+          "regionId": "r0c1",
+          "label": "link_or_nav",
+          "bestLabel": "link_or_nav",
+          "margin": 0.0179,
+          "confident": true,
+          "box": [
+            112,
+            6,
+            106,
+            66
+          ]
+        },
+        {
+          "surfaceId": "surface_image_text_img_text_1",
+          "regionId": "r2c1",
+          "label": "empty_space",
+          "bestLabel": "empty_space",
+          "margin": 0.0181,
+          "confident": true,
+          "box": [
+            112,
+            138,
+            106,
+            66
+          ]
+        }
+      ],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "wasm",
+        "regionsProposed": 6,
+        "regionsEmbedded": 6,
+        "totalInferenceMs": 1645,
+        "available": true
+      }
+    },
+    {
+      "fixtureId": "canvas-app",
+      "split": "dev",
+      "elementsExtracted": 0,
+      "masksRendered": 1,
+      "blocked": false,
+      "regionsAssessable": 1,
+      "regionsCovered": 1,
+      "extractMs": 1.4,
+      "sanitizeMs": 3653.6,
+      "clientMs": 3655,
+      "heapUsedMb": 6.64,
+      "taskDurationSec": 3.575,
+      "rawScreenshotKb": 26,
+      "sanitizedScreenshotKb": 25,
+      "redactionVerdicts": [
+        {
+          "id": "s0:high_risk_surface",
+          "covered": true,
+          "assessable": true,
+          "opaqueFraction": 0.995,
+          "overlayFraction": 1,
+          "residualVariance": 27.9,
+          "rawVariance": 791.3,
+          "varianceReduction": 0.965,
+          "rawDetail": 1.91,
+          "residualDetail": 0,
+          "detailRemoved": 0,
+          "sampledPixels": 468000
+        }
+      ],
+      "visionObservations": [
+        {
+          "surfaceId": "surface_canvas_cvs_1",
+          "regionId": "r0c0",
+          "label": "table_or_list",
+          "bestLabel": "table_or_list",
+          "margin": 0.0254,
+          "confident": true,
+          "box": [
+            0,
+            0,
+            226,
+            131
+          ]
+        },
+        {
+          "surfaceId": "surface_canvas_cvs_1",
+          "regionId": "r0c1",
+          "label": null,
+          "bestLabel": "table_or_list",
+          "margin": 0.0055,
+          "confident": false,
+          "box": [
+            226,
+            0,
+            226,
+            131
+          ]
+        },
+        {
+          "surfaceId": "surface_canvas_cvs_1",
+          "regionId": "r1c0",
+          "label": "table_or_list",
+          "bestLabel": "table_or_list",
+          "margin": 0.0322,
+          "confident": true,
+          "box": [
+            0,
+            131,
+            226,
+            131
+          ]
+        },
+        {
+          "surfaceId": "surface_canvas_cvs_1",
+          "regionId": "r2c0",
+          "label": "text_block",
+          "bestLabel": "text_block",
+          "margin": 0.0198,
+          "confident": true,
+          "box": [
+            0,
+            262,
+            226,
+            131
+          ]
+        },
+        {
+          "surfaceId": "surface_canvas_cvs_1",
+          "regionId": "r3c2",
+          "label": "table_or_list",
+          "bestLabel": "table_or_list",
+          "margin": 0.0169,
+          "confident": true,
+          "box": [
+            452,
+            393,
+            226,
+            131
+          ]
+        },
+        {
+          "surfaceId": "surface_canvas_cvs_1",
+          "regionId": "r2c2",
+          "label": "chart_or_graph",
+          "bestLabel": "chart_or_graph",
+          "margin": 0.1168,
+          "confident": true,
+          "box": [
+            452,
+            262,
+            226,
+            131
+          ]
+        }
+      ],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "wasm",
+        "regionsProposed": 6,
+        "regionsEmbedded": 6,
+        "totalInferenceMs": 2256,
+        "available": true
+      }
     },
     {
       "fixtureId": "canvas-pii",
@@ -545,11 +990,11 @@
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 2,
-      "sanitizeMs": 504.5,
-      "clientMs": 506.5,
-      "heapUsedMb": 6.88,
-      "taskDurationSec": 0.56,
+      "extractMs": 2.8,
+      "sanitizeMs": 590.3,
+      "clientMs": 593.1,
+      "heapUsedMb": 6.93,
+      "taskDurationSec": 0.665,
       "rawScreenshotKb": 6,
       "sanitizedScreenshotKb": 26,
       "redactionVerdicts": [
@@ -581,7 +1026,16 @@
           "detailRemoved": 0.118,
           "sampledPixels": 1995
         }
-      ]
+      ],
+      "visionObservations": [],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false
+      }
     },
     {
       "fixtureId": "cross-origin-iframe",
@@ -591,11 +1045,11 @@
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 2.8,
-      "sanitizeMs": 579.4,
-      "clientMs": 582.2,
-      "heapUsedMb": 6.72,
-      "taskDurationSec": 0.673,
+      "extractMs": 2.6,
+      "sanitizeMs": 2257,
+      "clientMs": 2259.6,
+      "heapUsedMb": 6.76,
+      "taskDurationSec": 2.165,
       "rawScreenshotKb": 6,
       "sanitizedScreenshotKb": 26,
       "redactionVerdicts": [
@@ -627,7 +1081,101 @@
           "detailRemoved": 0.19,
           "sampledPixels": 1449
         }
-      ]
+      ],
+      "visionObservations": [
+        {
+          "surfaceId": "surface_iframe_ifr_1",
+          "regionId": "r0c0",
+          "label": "empty_space",
+          "bestLabel": "empty_space",
+          "margin": 0.0505,
+          "confident": true,
+          "box": [
+            6,
+            6,
+            127,
+            77
+          ]
+        },
+        {
+          "surfaceId": "surface_iframe_ifr_1",
+          "regionId": "r0c3",
+          "label": "empty_space",
+          "bestLabel": "empty_space",
+          "margin": 0.0536,
+          "confident": true,
+          "box": [
+            387,
+            6,
+            127,
+            77
+          ]
+        },
+        {
+          "surfaceId": "surface_iframe_ifr_1",
+          "regionId": "r0c1",
+          "label": "empty_space",
+          "bestLabel": "empty_space",
+          "margin": 0.0502,
+          "confident": true,
+          "box": [
+            133,
+            6,
+            127,
+            77
+          ]
+        },
+        {
+          "surfaceId": "surface_iframe_ifr_1",
+          "regionId": "r0c2",
+          "label": "empty_space",
+          "bestLabel": "empty_space",
+          "margin": 0.0502,
+          "confident": true,
+          "box": [
+            260,
+            6,
+            127,
+            77
+          ]
+        },
+        {
+          "surfaceId": "surface_iframe_ifr_1",
+          "regionId": "r3c0",
+          "label": "empty_space",
+          "bestLabel": "empty_space",
+          "margin": 0.0562,
+          "confident": true,
+          "box": [
+            6,
+            237,
+            127,
+            77
+          ]
+        },
+        {
+          "surfaceId": "surface_iframe_ifr_1",
+          "regionId": "r1c1",
+          "label": "empty_space",
+          "bestLabel": "empty_space",
+          "margin": 0.0318,
+          "confident": true,
+          "box": [
+            133,
+            83,
+            127,
+            77
+          ]
+        }
+      ],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "wasm",
+        "regionsProposed": 6,
+        "regionsEmbedded": 6,
+        "totalInferenceMs": 1264,
+        "available": true
+      }
     },
     {
       "fixtureId": "shadow-dom",
@@ -637,11 +1185,11 @@
       "blocked": false,
       "regionsAssessable": 0,
       "regionsCovered": 0,
-      "extractMs": 2.4,
-      "sanitizeMs": 576.8,
-      "clientMs": 579.2,
-      "heapUsedMb": 7.72,
-      "taskDurationSec": 0.638,
+      "extractMs": 1.9,
+      "sanitizeMs": 532,
+      "clientMs": 533.9,
+      "heapUsedMb": 7.47,
+      "taskDurationSec": 0.593,
       "rawScreenshotKb": 6,
       "sanitizedScreenshotKb": 24,
       "redactionVerdicts": [
@@ -659,7 +1207,16 @@
           "detailRemoved": 0.149,
           "sampledPixels": 1575
         }
-      ]
+      ],
+      "visionObservations": [],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false
+      }
     },
     {
       "fixtureId": "controlled-react-input",
@@ -669,11 +1226,11 @@
       "blocked": false,
       "regionsAssessable": 0,
       "regionsCovered": 0,
-      "extractMs": 2.3,
-      "sanitizeMs": 520.9,
-      "clientMs": 523.2,
-      "heapUsedMb": 7.25,
-      "taskDurationSec": 0.559,
+      "extractMs": 2.2,
+      "sanitizeMs": 523.5,
+      "clientMs": 525.7,
+      "heapUsedMb": 8.3,
+      "taskDurationSec": 0.594,
       "rawScreenshotKb": 7,
       "sanitizedScreenshotKb": 25,
       "redactionVerdicts": [
@@ -705,7 +1262,16 @@
           "detailRemoved": 0.147,
           "sampledPixels": 1218
         }
-      ]
+      ],
+      "visionObservations": [],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false
+      }
     },
     {
       "fixtureId": "long-scroll",
@@ -716,10 +1282,10 @@
       "regionsAssessable": 0,
       "regionsCovered": 0,
       "extractMs": 2.5,
-      "sanitizeMs": 499.4,
-      "clientMs": 501.9,
-      "heapUsedMb": 6.73,
-      "taskDurationSec": 0.557,
+      "sanitizeMs": 533.6,
+      "clientMs": 536.1,
+      "heapUsedMb": 7.57,
+      "taskDurationSec": 0.588,
       "rawScreenshotKb": 6,
       "sanitizedScreenshotKb": 24,
       "redactionVerdicts": [
@@ -765,7 +1331,16 @@
           "detailRemoved": 0,
           "sampledPixels": 95
         }
-      ]
+      ],
+      "visionObservations": [],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false
+      }
     },
     {
       "fixtureId": "dark-mode",
@@ -775,11 +1350,11 @@
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 2.4,
-      "sanitizeMs": 523.7,
-      "clientMs": 526.1,
-      "heapUsedMb": 8.23,
-      "taskDurationSec": 0.575,
+      "extractMs": 2.2,
+      "sanitizeMs": 546.9,
+      "clientMs": 549.1,
+      "heapUsedMb": 6.97,
+      "taskDurationSec": 0.611,
       "rawScreenshotKb": 9,
       "sanitizedScreenshotKb": 29,
       "redactionVerdicts": [
@@ -811,7 +1386,16 @@
           "detailRemoved": 0.172,
           "sampledPixels": 1890
         }
-      ]
+      ],
+      "visionObservations": [],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false
+      }
     },
     {
       "fixtureId": "modal-dialog",
@@ -821,11 +1405,11 @@
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 2.6,
-      "sanitizeMs": 504.1,
-      "clientMs": 506.7,
-      "heapUsedMb": 7.06,
-      "taskDurationSec": 0.56,
+      "extractMs": 2.4,
+      "sanitizeMs": 558.8,
+      "clientMs": 561.2,
+      "heapUsedMb": 6.96,
+      "taskDurationSec": 0.606,
       "rawScreenshotKb": 11,
       "sanitizedScreenshotKb": 29,
       "redactionVerdicts": [
@@ -871,7 +1455,16 @@
           "detailRemoved": 0.176,
           "sampledPixels": 2625
         }
-      ]
+      ],
+      "visionObservations": [],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false
+      }
     },
     {
       "fixtureId": "cookie-banner",
@@ -882,10 +1475,10 @@
       "regionsAssessable": 0,
       "regionsCovered": 0,
       "extractMs": 2.2,
-      "sanitizeMs": 501,
-      "clientMs": 503.2,
-      "heapUsedMb": 7.66,
-      "taskDurationSec": 0.559,
+      "sanitizeMs": 516.4,
+      "clientMs": 518.6,
+      "heapUsedMb": 7.84,
+      "taskDurationSec": 0.573,
       "rawScreenshotKb": 9,
       "sanitizedScreenshotKb": 28,
       "redactionVerdicts": [
@@ -917,7 +1510,16 @@
           "detailRemoved": 0.114,
           "sampledPixels": 1995
         }
-      ]
+      ],
+      "visionObservations": [],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "unavailable",
+        "regionsProposed": 0,
+        "regionsEmbedded": 0,
+        "totalInferenceMs": 0,
+        "available": false
+      }
     }
   ]
 }

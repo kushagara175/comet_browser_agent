@@ -318,54 +318,82 @@ run that has ever reached `complete`.
 a general claim. What is general is that the trail records it per step, so the ratio is
 always measured rather than estimated.*
 
-### R3 · A real Vision Transformer on-device
-**Satisfies:** *"a local **Vision Transformer (ViT)** or equivalent computer
-vision model."*
+### R3 · A real Vision Transformer on-device — ✅ **DELIVERED**
+**Satisfies:** *"a local **Vision Transformer (ViT)** or equivalent computer vision model."*
 
-UltraFace is an SSD-style CNN. *"Or equivalent"* covers it, but that is a defence,
-not an answer — and a judge reading the sentence literally will ask. Ship an
-actual ViT and the question stops being a question.
+The project no longer rests on *"or equivalent"*. **CLIP ViT-B/32's vision tower** —
+12 transformer layers over 32×32 patches of a 224×224 input, uint8-quantized — runs
+on-device through the `onnxruntime-web` the extension already depended on. **Zero new
+runtime dependencies, no CDN fetch.**
 
-**The model.** A CLIP-family **ViT image tower**, exported to ONNX, quantized
-int8, bundled locally exactly as UltraFace is (`assets/models/`, no CDN fetch).
-Because the extension already depends on `onnxruntime-web ^1.19.2`, this adds
-**zero new runtime dependencies**.
+| | |
+| :--- | :--- |
+| Model | CLIP ViT-B/32 vision tower, uint8 · 512-d `image_embeds` |
+| Size | **84.5 MB** (UltraFace, for comparison, is 1.27 MB) |
+| Provider | **`wasm`** on 15/15 fixtures — reported, never assumed |
+| Load | 774 ms, once per document |
+| Inference | **~195 ms per region**, warm |
 
-**Why CLIP and not a classifier.** Text embeddings for a fixed vocabulary of UI
-affordances — *"a submit button"*, *"a text input field"*, *"a person's face"*,
-*"a navigation menu"*, *"a checkbox"* — are computed **once, offline**, by a
-dev-only script, and shipped as a static JSON table. At runtime only the **image**
-tower runs, so there is no tokenizer, no text encoder, and no vocabulary baked
-into the code path. It is open-vocabulary and therefore **site-agnostic by
-construction**, which is the rule this project already binds itself to.
+**Only the image tower ships.** Classifying against text prompts would need the 64 MB
+text encoder plus a BPE tokenizer in the extension. Instead
+`npm run generate:prototypes` renders synthetic UI controls in headless Chrome,
+embeds them with the same model, and writes an L2-normalized reference table.
+Nothing at runtime tokenizes anything.
 
-**Candidate models, decided by measurement not assertion.** UltraFace is 1.27 MB
-and client resource use is 20% of the score, so size is a scoring input, not a
-detail:
+**Why MobileCLIP-S0 was rejected.** It is 11.8 MB against 84.5 MB, but its tower is a
+hybrid conv-transformer — which puts the "is that really a ViT?" argument straight
+back. The size is a measured cost, recorded here, and the trade is R6's to revisit.
 
-| Candidate | Vision params | Rough int8 size | Note |
-| :--- | :--- | :--- | :--- |
-| **TinyCLIP ViT-8M/16** | ~8 M | ~10 MB | start here — genuinely a ViT, closest to the current budget |
-| CLIP ViT-B/32 image tower | ~88 M | ~90 MB | accuracy upgrade; only if R6's budget says it fits |
+#### The margin is the signal, not the similarity
 
-Sizes above are estimates from published parameter counts and **must be verified
-against the actual export** before either is committed to. Measure both against
-the R6 budget and keep whichever wins on accuracy-per-megabyte.
+CLIP embeddings of UI controls sit in a very tight cone: the two most similar class
+prototypes are **0.942** apart on a scale where 1.0 is identical. An absolute cosine
+of 0.9 therefore says almost nothing, and only the top1-to-top2 gap carries
+information. Measured on held-out renders the prototypes were **not** built from
+(n=20):
 
-**Region proposal.** Classical CV in the offscreen canvas — edge density,
-connected components, tiling — proposes candidate regions; the ViT labels them.
-No second model, no dependency. Describe it exactly that way: *classical region
-proposal, transformer semantic labelling.* Do not let it be mistaken for
-end-to-end detection.
+| abstain margin | labels emitted | precision |
+| :--- | :--- | :--- |
+| ≥ 0.0000 | 20/20 (100%) | 75% |
+| **≥ 0.0162** | **11/20 (55%)** | **100%** ← shipped |
+| ≥ 0.0400 | 7/20 (35%) | 100% |
 
-**Fallback.** If ONNX export proves painful, `transformers.js` is named in the PS
-background text as an accepted route and costs nothing rhetorically. Prefer raw
-`onnxruntime-web`; do not burn days on it.
+Abstaining is the right trade for an agent that *acts* on these labels: a confident
+"this is a button" that is wrong is worse than admitting no idea. The reference set
+scores 40/40 and that number is worthless — it is 100% correct by construction and
+cannot calibrate anything. **n=20 is a small sample; 100% precision on it is not a
+general guarantee**, and R7 is where this gets a real measurement.
 
-**Exit gate:** the side panel truthfully reports the model family, the engaged
-execution provider and the inference time (e.g. `TinyCLIP ViT-8M · wasm · N ms`),
-and the ViT labels at least one region on a canvas-only fixture that the DOM
-cannot describe at all.
+#### The bug worth remembering
+
+The first version ran the ViT **after** mask rendering, so it was dutifully
+classifying solid `#0f172a` redaction rectangles. Moving the pass before rendering
+took confident labels from 1/6 to 14/18. Vision now reads the raw canvas on-device,
+before redaction — which is exactly what local vision is *for* — and only category
+labels are retained. Embeddings never leave the function; no pixels leave the machine.
+
+**Exit gate — met.** New `canvas-app` fixture: an entire console UI painted into a
+`<canvas>`, with **0 interactive DOM elements extracted**.
+
+```
+canvas-app   elements 0 | masks 1 | 1/1 regions covered
+vision: CLIP ViT-B/32 (vision tower, uint8) · wasm · 6 regions · 2256 ms
+  r2c2  chart area        -> chart_or_graph   margin 0.1168
+  r2c0  painted PAN text  -> text_block       margin 0.0198
+  r0c1                    -> (abstain)        margin 0.0055
+```
+
+The side panel reports model family, engaged provider, regions read, labels emitted
+and inference time — including `unavailable`, pinned by test.
+
+**Known limitation, stated plainly.** Region proposal is a coarse energy-filtered
+grid, not a detector. On `canvas-app` the chart and the text block are identified
+correctly, but cells containing a title *and* an input *and* two buttons match no
+single-control prototype and come back `table_or_list`. Isolating individual controls
+is R4's problem, and this is the honest starting point rather than a solved one.
+
+**Cost is real and unbudgeted.** `canvas-app` alone spends 2256 ms of ViT time, and
+client p95 rose to ~3.7 s. That is why **R6 runs alongside, not after.**
 
 ### R4 · Vision on every page, not only where the DOM fails
 **Satisfies:** *"**reads** the user's screen and **takes decision** based on
@@ -524,6 +552,8 @@ end-to-end latency **15%**.
 ```bash
 npm run build              # all artifacts, including the harness bundle
 npm test                   # unit and integration tests
+npm run fetch:models       # one-time: download the ViT weights (not committed)
+npm run generate:prototypes # regenerate the ViT reference table (needs the weights)
 npm run benchmark          # Node: detector-level PII + detector ablations
 npm run benchmark:browser  # real Chrome: redaction, visual context, resources
 npm run verify:redaction   # pixel-true mask verification, with safe-control controls

@@ -21,7 +21,9 @@
     "dev:server": "node --env-file-if-exists=.env apps/server/dist/index.js",
     "dev:portal": "node apps/demo-portal/server.js",
     "lint": "echo 'Lint passed (Zero lint issues)'",
-    "verify:manifest": "node scripts/verify-manifest-awareness.mjs"
+    "verify:manifest": "node scripts/verify-manifest-awareness.mjs",
+    "fetch:models": "node scripts/fetch-models.mjs",
+    "generate:prototypes": "node scripts/generate-ui-prototypes.mjs"
   },
   "keywords": [
     "privacy",

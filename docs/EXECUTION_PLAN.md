@@ -23,7 +23,7 @@ The pipeline is built and, as of 2 Sep, genuinely measured for the first time.
 | **Real** | Offscreen sanitizer, UltraFace ONNX **verified executing** (`wasm`), multi-step agent loop, hosted + local model backends, 160/160 tests |
 | **Measured in real Chrome** | Redaction **100%** pixel-verified (18/18) · safe controls 100% preserved · visual context 78.6% · client perception 503 ms p50 (**19 ms warm inference**) · heap 8.99 MB |
 | **Known broken** | Server reasoning 6–7 s · face-detection recall still unmeasured (model finds 0 faces in synthetic SVG avatars) |
-| **Structurally missing** | No ViT · vision does not drive decisions |
+| **Structurally missing** | Vision reads only DOM-blind surfaces, so the 25% metric is still DOM-sourced |
 
 The honest summary: **we built the privacy boundary extremely well and the
 perception layer only halfway.** The PS asks for a Vision Transformer that reads
@@ -102,7 +102,7 @@ The PS sentences we do not yet satisfy, in cost order. Detail and exit gates in
 | :-- | :--- | :--- | :-- |
 | 1 | *"server … should be **aware for this redaction scheme**"* | ✅ **Done.** Manifest on the wire, server prompt generated from it | ✅ **R1** |
 | 2 | *"**If it requires** the visual context to be sent"* | ✅ **Done.** DecisionRouter resolves steps on-device at 0 bytes | ✅ **R2** |
-| 3 | *"a local **Vision Transformer (ViT)** or equivalent"* | UltraFace is an SSD-style CNN; we rely on "or equivalent" | **R3** |
+| 3 | *"a local **Vision Transformer (ViT)** or equivalent"* | ✅ **Done.** CLIP ViT-B/32 vision tower runs on-device (`wasm`) | ✅ **R3** |
 | 4 | *"**reads the screen and takes decision** based on that"* | Vision detects faces for redaction only; the 25% metric is DOM-sourced | **R4** — biggest, riskiest, most aligned |
 | 5 | *"balance the trade-offs between latency and accuracy"* | Scattered constants, no policy | **R5** |
 
@@ -178,7 +178,7 @@ These are the ones that decide rounds. Answer each in two sentences, not ten.
 
 | Question | The answer |
 | :--- | :--- |
-| *"Is that really a Vision Transformer?"* | Name the model and the parameter count, and show the side panel reporting it live. This is why R3 exists. |
+| *"Is that really a Vision Transformer?"* | CLIP ViT-B/32 vision tower — 12 transformer layers, 32×32 patches. The side panel names it and the engaged provider live. |
 | *"How do we know the vision model is doing anything, and not the DOM?"* | Switch the DOM off and show the number. R4. |
 | *"How do you know nothing leaked?"* | The type system rejects it at compile time, and the canary makes it fail closed. Show both. |
 | *"Your numbers are from your own fixtures."* | Agree, immediately. Then show the held-out corpus and the dev↔held-out gap we publish ourselves. R7. |

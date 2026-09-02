@@ -19,6 +19,7 @@ import { CoordinateTransformer } from '../sanitizer/coordinate-transformer.js';
 import { MaskRenderer } from '../sanitizer/mask-renderer.js';
 import { PostRedactionVerifier } from '../sanitizer/post-redaction-verifier.js';
 import { UltraFaceModelRunner } from '../vision/face-model.js';
+import { VitEncoder, VIT_MODEL_FAMILY, cosineSimilarity } from '../vision/vit-encoder.js';
 import { RawCapture, SanitizedContext, ViewportMetadata } from '@privapilot/protocol';
 
 /**
@@ -221,6 +222,108 @@ export function probeDisplacedMaskFailsClosed(): FailClosedProbe {
  */
 export function configureVisionAssets(assetBase: string | null): void {
   UltraFaceModelRunner.configure(assetBase);
+  VitEncoder.configure(assetBase);
+}
+
+/**
+ * Embeds a list of screenshot regions with the ViT.
+ *
+ * Used by the offline prototype generator and by accuracy measurement; the product
+ * calls VitEncoder directly.
+ */
+export async function embedRegions(
+  screenshotDataUrl: string,
+  viewport: HarnessViewport,
+  regions: ReadonlyArray<{ id: string; x: number; y: number; width: number; height: number }>
+): Promise<Array<{ id: string; vector: number[]; inferenceMs: number }>> {
+  const canvas = await decodeToCanvas(screenshotDataUrl, viewport.screenshotWidth, viewport.screenshotHeight);
+  const out: Array<{ id: string; vector: number[]; inferenceMs: number }> = [];
+  for (const r of regions) {
+    const emb = await VitEncoder.embedRegion(canvas, r);
+    out.push({ id: r.id, vector: Array.from(emb.vector), inferenceMs: VitEncoder.getStatus().lastInferenceMs });
+  }
+  return out;
+}
+
+export interface VitProbeResult {
+  readonly modelFamily: string;
+  readonly ok: boolean;
+  readonly error?: string;
+  readonly provider: string;
+  readonly loadMs: number;
+  readonly dimensions: number;
+  readonly inferenceMsSamples: number[];
+  readonly inputNames: string[];
+  readonly outputNames: string[];
+  /** Cosine similarity between two visually distinct crops - a sanity check that
+   * the embeddings actually discriminate rather than collapsing to one vector. */
+  readonly distinctCropSimilarity: number;
+  /** ...and between a crop and itself, which must be ~1. */
+  readonly identicalCropSimilarity: number;
+}
+
+/**
+ * Loads the ViT and reports what it actually cost, before anything is built on it.
+ *
+ * Load time, per-inference time and embedding dimensionality decide whether this
+ * model is affordable at all against the client-resource metric, and that is a
+ * measured question. The two similarity checks guard against the failure mode where
+ * a model loads, runs, and returns near-identical vectors for everything - which
+ * would look like success in every timing number while being useless.
+ */
+export async function probeVit(screenshotDataUrl: string, viewport: HarnessViewport): Promise<VitProbeResult> {
+  try {
+    const canvas = await decodeToCanvas(screenshotDataUrl, viewport.screenshotWidth, viewport.screenshotHeight);
+    const t0 = performance.now();
+    await VitEncoder.initialize();
+    const loadMs = performance.now() - t0;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    const topLeft = { x: 0, y: 0, width: Math.floor(w / 3), height: Math.floor(h / 3) };
+    const bottomRight = {
+      x: Math.floor((w * 2) / 3),
+      y: Math.floor((h * 2) / 3),
+      width: Math.floor(w / 3),
+      height: Math.floor(h / 3)
+    };
+
+    const samples: number[] = [];
+    const a1 = await VitEncoder.embedRegion(canvas, topLeft);
+    samples.push(VitEncoder.getStatus().lastInferenceMs);
+    const a2 = await VitEncoder.embedRegion(canvas, topLeft);
+    samples.push(VitEncoder.getStatus().lastInferenceMs);
+    const b1 = await VitEncoder.embedRegion(canvas, bottomRight);
+    samples.push(VitEncoder.getStatus().lastInferenceMs);
+
+    const session = (VitEncoder as any).session;
+    return {
+      modelFamily: VIT_MODEL_FAMILY,
+      ok: true,
+      provider: VitEncoder.getStatus().providerUsed,
+      loadMs: Math.round(loadMs),
+      dimensions: a1.dimensions,
+      inferenceMsSamples: samples,
+      inputNames: session ? Array.from(session.inputNames) : [],
+      outputNames: session ? Array.from(session.outputNames) : [],
+      identicalCropSimilarity: Math.round(cosineSimilarity(a1.vector, a2.vector) * 1000) / 1000,
+      distinctCropSimilarity: Math.round(cosineSimilarity(a1.vector, b1.vector) * 1000) / 1000
+    };
+  } catch (err: any) {
+    return {
+      modelFamily: VIT_MODEL_FAMILY,
+      ok: false,
+      error: String(err?.message || err),
+      provider: 'unavailable',
+      loadMs: 0,
+      dimensions: 0,
+      inferenceMsSamples: [],
+      inputNames: [],
+      outputNames: [],
+      identicalCropSimilarity: 0,
+      distinctCropSimilarity: 0
+    };
+  }
 }
 
 export interface HarnessFaceResult {

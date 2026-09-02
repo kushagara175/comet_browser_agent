@@ -105,6 +105,32 @@ export interface SanitizedContext {
   readonly elements: ReadonlyArray<SanitizedElement>;
   readonly pageState: SanitizedPageState;
   readonly maskCount: number;
+  /**
+   * What the on-device Vision Transformer read on surfaces the DOM cannot describe.
+   *
+   * Empty on an ordinary page: the ViT is spent only where the DOM is blind, because
+   * each region costs a full forward pass. `label: null` means the model declined to
+   * commit - see MIN_CLASSIFICATION_MARGIN.
+   */
+  readonly visionObservations: ReadonlyArray<{
+    readonly surfaceId: string;
+    readonly regionId: string;
+    readonly label: string | null;
+    readonly bestLabel: string;
+    readonly margin: number;
+    readonly confident: boolean;
+    readonly box: readonly [number, number, number, number];
+  }>;
+  /** How the ViT behaved this capture, reported rather than assumed. */
+  readonly visionTelemetry: {
+    readonly modelFamily: string;
+    readonly providerUsed: string;
+    readonly regionsProposed: number;
+    readonly regionsEmbedded: number;
+    readonly totalInferenceMs: number;
+    readonly available: boolean;
+    readonly error?: string;
+  };
   /** What was redacted and by what convention. See redaction.ts. */
   readonly redactionManifest: import('./redaction.js').RedactionManifest;
   readonly payloadDigestSha256: string;

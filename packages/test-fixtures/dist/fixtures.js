@@ -139,6 +139,66 @@ export const TEST_FIXTURES = {
       </html>
     `
     },
+    canvasApp: {
+        id: 'canvas-app',
+        name: 'Canvas-Only Application Surface',
+        description: 'An entire UI painted into a canvas. No DOM element describes any control, so DOM parsing is blind and only vision can read it.',
+        expectedPiiCount: 1,
+        expectedSafeActionableCount: 0,
+        html: `
+      <!DOCTYPE html>
+      <html>
+      <head><title>Station Console</title></head>
+      <body style="margin:0;background:#ffffff">
+        <canvas id="appSurface" width="900" height="520"></canvas>
+        <script>
+          // The whole interface is drawn as pixels. There is deliberately no DOM
+          // structure to parse: this is the surface the problem statement's local
+          // vision model exists for.
+          var c = document.getElementById('appSurface');
+          var g = c.getContext('2d');
+          g.fillStyle = '#f8fafc'; g.fillRect(0, 0, 900, 520);
+
+          g.fillStyle = '#0f172a'; g.font = 'bold 26px sans-serif';
+          g.fillText('Ground Station Console', 40, 56);
+
+          g.fillStyle = '#475569'; g.font = '15px sans-serif';
+          g.fillText('Pass window opens in 14 minutes. Telemetry nominal across all subsystems.', 40, 92);
+
+          // A text input, painted
+          g.fillStyle = '#ffffff'; g.fillRect(40, 130, 300, 42);
+          g.strokeStyle = '#94a3b8'; g.lineWidth = 1; g.strokeRect(40, 130, 300, 42);
+          g.fillStyle = '#1f2937'; g.font = '15px sans-serif';
+          g.fillText('bengaluru-01', 54, 157);
+
+          // Two buttons, painted
+          g.fillStyle = '#2563eb'; g.fillRect(40, 196, 168, 46);
+          g.fillStyle = '#ffffff'; g.font = 'bold 15px sans-serif';
+          g.fillText('Schedule Pass', 60, 225);
+
+          g.fillStyle = '#f1f5f9'; g.fillRect(224, 196, 120, 46);
+          g.strokeStyle = '#cbd5e1'; g.strokeRect(224, 196, 120, 46);
+          g.fillStyle = '#0f172a'; g.font = '15px sans-serif';
+          g.fillText('Cancel', 258, 225);
+
+          // A chart, painted
+          g.strokeStyle = '#94a3b8'; g.beginPath();
+          g.moveTo(430, 420); g.lineTo(860, 420); g.stroke();
+          g.strokeStyle = '#059669'; g.lineWidth = 3; g.beginPath();
+          g.moveTo(440, 380); g.lineTo(510, 300); g.lineTo(580, 330);
+          g.lineTo(650, 210); g.lineTo(720, 260); g.lineTo(790, 160);
+          g.stroke();
+          g.fillStyle = '#334155'; g.font = '13px sans-serif';
+          g.fillText('Downlink throughput (Mbps)', 440, 450);
+
+          // Sensitive text rendered as pixels only - invisible to every DOM rule
+          g.fillStyle = '#0f172a'; g.font = '15px monospace';
+          g.fillText('Operator PAN: ABCDE1234F', 40, 300);
+        <\/script>
+      </body>
+      </html>
+    `
+    },
     canvasPii: {
         id: 'canvas-pii',
         name: 'Canvas Surface with Graphics',

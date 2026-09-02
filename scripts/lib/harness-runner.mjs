@@ -99,6 +99,8 @@ export async function runFixture(client, url, {
       `${lit(extract.snapshot)}, ${lit(extract.viewport)}, ${lit(goal)})` +
       `.then(r => JSON.stringify({ blocked: r.blocked, blockReason: r.blockReason, ` +
       `sanitizeMs: r.sanitizeMs, maskCount: r.maskCount, elementCount: r.elementCount, ` +
+      `visionObservations: r.sanitized ? r.sanitized.visionObservations : [], ` +
+      `visionTelemetry: r.sanitized ? r.sanitized.visionTelemetry : null, ` +
       `sanitized: r.sanitized, shot: r.sanitizedScreenshotDataUrl }))`;
 
     const sanitizeJson = await page.evaluate(sanitizeExpr, { timeoutMs: 120000 });
@@ -143,6 +145,8 @@ export async function runFixture(client, url, {
       faceModel,
       sanitize: {
         blocked: sanitizeResult.blocked,
+        visionObservations: sanitizeResult.visionObservations || [],
+        visionTelemetry: sanitizeResult.visionTelemetry || null,
         blockReason: sanitizeResult.blockReason,
         sanitizeMs: sanitizeResult.sanitizeMs,
         maskCount: sanitizeResult.maskCount,

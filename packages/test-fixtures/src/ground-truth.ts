@@ -166,6 +166,22 @@ export const GROUND_TRUTH_DATA: Record<string, GroundTruthAnnotation> = {
     ]
   },
 
+  'canvas-app': {
+    fixtureId: 'canvas-app',
+    split: 'dev',
+    expectedPiiCategories: ['high_risk_surface'],
+    // Zero actionable DOM elements is the point of this fixture: the entire UI is
+    // painted into a canvas, so DOM parsing has nothing to find and only the vision
+    // model can read the surface.
+    minActionableElements: 0,
+    maxActionableElements: 0,
+    expectedSafeActionableCount: 0,
+    groundTruthBoxes: [
+      { category: 'high_risk_surface', normX: 0.0, normY: 0.0, normW: 0.7, normH: 0.65, selector: '#appSurface', tokenOrLabel: 'appSurface' }
+    ],
+    groundTruthElements: []
+  },
+
   'canvas-pii': {
     fixtureId: 'canvas-pii',
     split: 'dev',

@@ -1,0 +1,8 @@
+{
+  "clip-vit-base-patch32-vision-uint8.onnx": {
+    "sha256": "b95448754a6ae56964ec80c570c80bb9863787ee85f51b664abed8c0e5f22a7a",
+    "bytes": 88648915,
+    "url": "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/vision_model_uint8.onnx",
+    "note": "CLIP ViT-B/32 vision tower, uint8. 12-layer Vision Transformer, 32x32 patches, 224x224 input."
+  }
+}

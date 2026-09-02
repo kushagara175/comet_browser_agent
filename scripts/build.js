@@ -121,6 +121,21 @@ try {
 }
 
 // 3. Validate All Required Production Build Artifacts
+// The ViT weights are fetched, not committed (see scripts/fetch-models.mjs). Absent
+// weights are a valid state for a fresh clone, but they must be reported loudly:
+// silently shipping without the vision model is precisely the failure mode that let
+// face detection "run" for weeks without executing.
+{
+  const vitModel = path.join(__dirname, '..', 'apps', 'extension', 'assets', 'models', 'clip-vit-base-patch32-vision-uint8.onnx');
+  if (!fs.existsSync(vitModel)) {
+    console.log('');
+    console.log('⚠️  Vision Transformer weights are MISSING.');
+    console.log('   The extension will build, but every ViT perception pass will report');
+    console.log('   itself unavailable. Run:  npm run fetch:models');
+    console.log('');
+  }
+}
+
 console.log('🔍 Validating production build artifacts...');
 
 const REQUIRED_ARTIFACTS = [

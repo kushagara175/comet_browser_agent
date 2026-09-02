@@ -69,6 +69,49 @@ export declare function probeDisplacedMaskFailsClosed(): FailClosedProbe;
  * where `chrome.runtime.getURL` does not exist.
  */
 export declare function configureVisionAssets(assetBase: string | null): void;
+/**
+ * Embeds a list of screenshot regions with the ViT.
+ *
+ * Used by the offline prototype generator and by accuracy measurement; the product
+ * calls VitEncoder directly.
+ */
+export declare function embedRegions(screenshotDataUrl: string, viewport: HarnessViewport, regions: ReadonlyArray<{
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}>): Promise<Array<{
+    id: string;
+    vector: number[];
+    inferenceMs: number;
+}>>;
+export interface VitProbeResult {
+    readonly modelFamily: string;
+    readonly ok: boolean;
+    readonly error?: string;
+    readonly provider: string;
+    readonly loadMs: number;
+    readonly dimensions: number;
+    readonly inferenceMsSamples: number[];
+    readonly inputNames: string[];
+    readonly outputNames: string[];
+    /** Cosine similarity between two visually distinct crops - a sanity check that
+     * the embeddings actually discriminate rather than collapsing to one vector. */
+    readonly distinctCropSimilarity: number;
+    /** ...and between a crop and itself, which must be ~1. */
+    readonly identicalCropSimilarity: number;
+}
+/**
+ * Loads the ViT and reports what it actually cost, before anything is built on it.
+ *
+ * Load time, per-inference time and embedding dimensionality decide whether this
+ * model is affordable at all against the client-resource metric, and that is a
+ * measured question. The two similarity checks guard against the failure mode where
+ * a model loads, runs, and returns near-identical vectors for everything - which
+ * would look like success in every timing number while being useless.
+ */
+export declare function probeVit(screenshotDataUrl: string, viewport: HarnessViewport): Promise<VitProbeResult>;
 export interface HarnessFaceResult {
     readonly providerUsed: string;
     readonly durationMs: number;

@@ -4,3 +4,6 @@ __pycache__/
 node_modules/
 .env
 *.dmg
+
+# Fetched model weights (npm run fetch:models). Too large for git; bundled at build time.
+apps/extension/assets/models/clip-vit-*.onnx

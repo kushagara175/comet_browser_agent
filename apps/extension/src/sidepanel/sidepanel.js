@@ -52,8 +52,31 @@ export function buildMinimizedWirePayload(sanitized, goal = 'User goal') {
       viewport: [1280, 800]
     },
     maskCount: sanitized.maskCount ?? 0,
+    visionObservations: sanitized.visionObservations || [],
+    visionTelemetry: sanitized.visionTelemetry || null,
     payloadDigestSha256: sanitized.payloadDigestSha256 || 'sha256_verified'
   };
+}
+
+
+/**
+ * Renders what the on-device Vision Transformer actually did.
+ *
+ * Reports the provider it really engaged and the time it really took, including
+ * "unavailable" - a vision claim the user cannot verify is worth nothing, and the
+ * project has already shipped one model that silently never ran.
+ */
+export function renderVisionPill(visionTelemetry, visionObservations = []) {
+  if (!visionTelemetry) return '';
+  if (!visionTelemetry.available) {
+    return `<span class="perception-pill">👁️ ViT unavailable${visionTelemetry.error ? ': ' + String(visionTelemetry.error).slice(0, 60) : ''}</span>`;
+  }
+  if (!visionTelemetry.regionsEmbedded) {
+    return `<span class="perception-pill">👁️ ${visionTelemetry.modelFamily} · idle (DOM described the page)</span>`;
+  }
+  const labelled = visionObservations.filter((o) => o.label).length;
+  return `<span class="perception-pill">👁️ ${visionTelemetry.modelFamily} · ${visionTelemetry.providerUsed} · ` +
+         `${visionTelemetry.regionsEmbedded} region(s) read, ${labelled} labelled · ${visionTelemetry.totalInferenceMs}ms</span>`;
 }
 
 /**
@@ -528,6 +551,7 @@ if (typeof document !== 'undefined') {
         <div class="perception-badge-row">
           <span class="perception-pill pill-shield">🛡️ ${maskCount} Masks Applied</span>
           <span class="perception-pill">🔍 ${elementCount} Interactive Elements</span>
+          ${renderVisionPill(sanitized?.visionTelemetry, sanitized?.visionObservations)}
         </div>
 
         <div class="thought-card">
