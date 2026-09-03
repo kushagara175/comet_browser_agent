@@ -93,7 +93,12 @@ export class WebExtensionAdapter implements BrowserAdapter {
     }
 
     return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('Content script did not respond within 3000ms'));
+      }, 3000);
+
       api.tabs.sendMessage(tabId, message, (response: T) => {
+        clearTimeout(timer);
         if (api.runtime.lastError) {
           reject(new Error(api.runtime.lastError.message));
         } else {

@@ -15514,7 +15514,11 @@ var WebExtensionAdapter = class {
       return {};
     }
     return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error("Content script did not respond within 3000ms"));
+      }, 3e3);
       api.tabs.sendMessage(tabId, message, (response) => {
+        clearTimeout(timer);
         if (api.runtime.lastError) {
           reject(new Error(api.runtime.lastError.message));
         } else {
@@ -16729,6 +16733,12 @@ var RunCoordinator = class {
     }
   }
   /**
+   * Directly chats with the reasoning model without page context or perception overhead.
+   */
+  async chatWithoutPage(userMessage) {
+    return this.generalChat(userMessage);
+  }
+  /**
    * Contextless chat turn. Reports a real connection failure instead of claiming
    * the model is ready — that claim is what made a broken model look like a
    * working one with nothing to say.
@@ -16893,6 +16903,20 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
         sendResponse(result);
       }).catch((err) => {
         sendResponse({ success: false, state: "failed-safe", error: err.message });
+      });
+      return true;
+    }
+    if (message.type === "GENERAL_CHAT") {
+      coordinator.chatWithoutPage(message.message || "").then((res) => {
+        sendResponse(res);
+      }).catch((err) => {
+        sendResponse({
+          success: false,
+          reply: `Could not reach the reasoning model: ${err?.message || "unknown error"}`,
+          maskCount: 0,
+          elementCount: 0,
+          modelConnected: false
+        });
       });
       return true;
     }

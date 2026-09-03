@@ -100,6 +100,10 @@ export declare class RunCoordinator {
      */
     chatWithPage(userMessage: string): Promise<ChatOutcome>;
     /**
+     * Directly chats with the reasoning model without page context or perception overhead.
+     */
+    chatWithoutPage(userMessage: string): Promise<ChatOutcome>;
+    /**
      * Contextless chat turn. Reports a real connection failure instead of claiming
      * the model is ready — that claim is what made a broken model look like a
      * working one with nothing to say.

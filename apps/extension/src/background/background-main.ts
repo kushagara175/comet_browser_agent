@@ -61,6 +61,21 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
+    if (message.type === 'GENERAL_CHAT') {
+      coordinator.chatWithoutPage(message.message || '').then((res) => {
+        sendResponse(res);
+      }).catch((err) => {
+        sendResponse({
+          success: false,
+          reply: `Could not reach the reasoning model: ${err?.message || 'unknown error'}`,
+          maskCount: 0,
+          elementCount: 0,
+          modelConnected: false
+        });
+      });
+      return true;
+    }
+
     if (message.type === 'CHAT_WITH_PAGE') {
       coordinator.chatWithPage(message.message || '').then((res) => {
         sendResponse(res);
