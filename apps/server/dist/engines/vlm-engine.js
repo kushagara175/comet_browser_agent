@@ -63,6 +63,22 @@ function uniqueOrigins(...candidates) {
     }
     return out;
 }
+/** Azure OpenAI and Azure AI Foundry use `api-key`; other OpenAI-compatible
+ * providers conventionally use an OAuth-style Bearer token. */
+export function buildProviderAuthHeaders(endpoint, apiKey) {
+    if (!apiKey)
+        return {};
+    try {
+        const hostname = new URL(endpoint).hostname.toLowerCase();
+        if (hostname.endsWith('.openai.azure.com') || hostname.endsWith('.services.ai.azure.com')) {
+            return { 'api-key': apiKey };
+        }
+    }
+    catch {
+        // Let fetch report malformed endpoints; do not risk placing a key in the URL.
+    }
+    return { Authorization: `Bearer ${apiKey}` };
+}
 /** Loose match so a configured "qwen2.5-vl" still resolves an installed "qwen2.5vl:7b". */
 function looselyMatchesModel(installedName, configured) {
     const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -352,21 +368,28 @@ export class VlmReasoningEngine {
         return data?.message?.content || '';
     }
     async chatViaOpenAICompatible(status, systemPrompt, userMessage) {
-        const headers = { 'Content-Type': 'application/json' };
-        if (this.config.apiKey) {
-            headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+        const headers = {
+            'Content-Type': 'application/json',
+            ...buildProviderAuthHeaders(status.endpoint, this.config.apiKey)
+        };
+        const isOpenRouter = status.endpoint.includes('openrouter.ai');
+        const requestBody = {
+            model: status.modelName,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userMessage }
+            ],
+            temperature: 0.4,
+            max_tokens: 1500
+        };
+        if (isOpenRouter) {
+            requestBody.route = 'fallback';
+            requestBody.models = [status.modelName, 'qwen/qwen-2.5-72b-instruct'];
         }
         const res = await this.fetchWithTimeout(status.endpoint, {
             method: 'POST',
             headers,
-            body: JSON.stringify({
-                model: status.modelName,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userMessage }
-                ],
-                temperature: 0.4
-            })
+            body: JSON.stringify(requestBody)
         }, this.inferenceTimeoutMs);
         if (!res.ok) {
             throw new Error(`Endpoint returned ${res.status}: ${await this.safeErrorText(res)}`);
@@ -505,16 +528,25 @@ export class VlmReasoningEngine {
             { role: 'system', content: systemPrompt },
             { role: 'user', content: contentArray }
         ];
-        const post = (msgs, temperature) => this.fetchWithTimeout(endpoint, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
+        const isOpenRouter = endpoint.includes('openrouter.ai');
+        const post = (msgs, temperature) => {
+            const requestBody = {
                 model: modelName,
                 messages: msgs,
                 response_format: { type: 'json_object' },
-                temperature
-            })
-        }, this.inferenceTimeoutMs);
+                temperature,
+                max_tokens: 1500
+            };
+            if (isOpenRouter) {
+                requestBody.route = 'fallback';
+                requestBody.models = [modelName, 'qwen/qwen-2.5-72b-instruct'];
+            }
+            return this.fetchWithTimeout(endpoint, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(requestBody)
+            }, this.inferenceTimeoutMs);
+        };
         const response = await post(messages, 0.1);
         if (!response.ok) {
             throw new Error(`Endpoint returned status ${response.status}: ${await this.safeErrorText(response)}`);

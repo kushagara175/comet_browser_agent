@@ -600,7 +600,7 @@ if (typeof document !== 'undefined') {
       agentBubble.innerHTML = `
         <div style="display: flex; align-items: center; gap: 6px;">
           <span class="clean-spinner" style="width: 14px; height: 14px; border-width: 2px; border-top-color: #2563eb; border-right-color: #93c5fd;"></span>
-          <em>Reasoning with local model...</em>
+          <em>Contacting reasoning model...</em>
         </div>
       `;
       chatMessages.appendChild(agentBubble);
@@ -623,18 +623,77 @@ if (typeof document !== 'undefined') {
 
       setAgentStatus(isExplicitAction || needsPageContext ? 'capturing' : 'reasoning');
 
-      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-        chrome.runtime.sendMessage({
-          type: messageType,
-          [payloadKey]: goalText
-        }, (res) => {
-          if (chrome.runtime.lastError) {
-            agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">⚠️ Background service worker unreachable: ${escapeHtml(chrome.runtime.lastError.message)}</div>`;
-            setAgentStatus('failed-safe');
-            return;
-          }
-          renderActionResult(agentBubble, res);
+      if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
+        const requestId = `chat_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        const port = chrome.runtime.connect({ name: 'privapilot-sidepanel' });
+        let settled = false;
+
+        const finishWithError = (message) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          try { port.disconnect(); } catch {}
+          agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">⚠️ ${escapeHtml(message)}</div>`;
+          setAgentStatus('failed-safe');
+        };
+
+        const timeout = setTimeout(() => {
+          finishWithError('Reasoning request timed out after 120 seconds.');
+        }, 120000);
+
+        port.onMessage.addListener((message) => {
+          if (settled || message?.requestId !== requestId) return;
+          settled = true;
+          clearTimeout(timeout);
+          try { port.disconnect(); } catch {}
+          renderActionResult(agentBubble, message.response);
         });
+
+        port.onDisconnect.addListener(() => {
+          if (!settled) {
+            if (chrome.runtime?.sendMessage) {
+              chrome.runtime.sendMessage({
+                type: messageType,
+                [payloadKey]: goalText
+              }, (res) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                if (chrome.runtime.lastError) {
+                  finishWithError(chrome.runtime.lastError.message);
+                  return;
+                }
+                renderActionResult(agentBubble, res);
+              });
+              return;
+            }
+            finishWithError(chrome.runtime.lastError?.message || 'Background service worker disconnected before replying.');
+          }
+        });
+
+        try {
+          port.postMessage({
+            requestId,
+            type: messageType,
+            [payloadKey]: goalText
+          });
+        } catch (postErr) {
+          if (!settled && chrome.runtime?.sendMessage) {
+            chrome.runtime.sendMessage({
+              type: messageType,
+              [payloadKey]: goalText
+            }, (res) => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(timeout);
+              if (chrome.runtime.lastError) {
+                finishWithError(chrome.runtime.lastError.message);
+                return;
+              }
+              renderActionResult(agentBubble, res);
+            });
+          }
+        }
       } else {
         // Fallback for standalone / mock preview
         setTimeout(() => {
@@ -777,7 +836,7 @@ if (typeof document !== 'undefined') {
     function reportModelConnectivity() {
       if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;
 
-      chrome.runtime.sendMessage({ type: 'GET_MODEL_STATUS' }, (status) => {
+      chrome.runtime.sendMessage({ target: 'privapilot-background', type: 'GET_MODEL_STATUS' }, (status) => {
         if (chrome.runtime.lastError || !status) {
           addAuditEntry('MODEL', 'Background service worker unreachable', 'warn');
           return;

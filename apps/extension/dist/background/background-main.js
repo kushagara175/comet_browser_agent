@@ -14214,23 +14214,26 @@ function validateActionProposal(proposal, validElements) {
           errorMessage: "Target element with localId not found in sanitized context"
         };
       }
-      if (kind === "click" && !targetElement.actionCapabilities.includes("click")) {
-        return {
-          isValid: false,
-          errorMessage: 'Target element does not support "click" action capability'
-        };
-      }
-      if (kind === "type" && !targetElement.actionCapabilities.includes("type")) {
-        return {
-          isValid: false,
-          errorMessage: 'Target element does not support "type" action capability'
-        };
-      }
-      if (kind === "select" && !targetElement.actionCapabilities.includes("select")) {
-        return {
-          isValid: false,
-          errorMessage: 'Target element does not support "select" action capability'
-        };
+      const caps = targetElement.actionCapabilities || [];
+      if (caps.length > 0) {
+        if (kind === "click" && !caps.includes("click")) {
+          return {
+            isValid: false,
+            errorMessage: 'Target element does not support "click" action capability'
+          };
+        }
+        if (kind === "type" && !caps.includes("type")) {
+          return {
+            isValid: false,
+            errorMessage: 'Target element does not support "type" action capability'
+          };
+        }
+        if (kind === "select" && !caps.includes("select")) {
+          return {
+            isValid: false,
+            errorMessage: 'Target element does not support "select" action capability'
+          };
+        }
       }
     }
   }
@@ -16896,8 +16899,48 @@ coordinator.setListeners({
     }
   }
 });
+async function handleSidepanelRequest(message) {
+  if (message.type === "START_AGENT_RUN") {
+    return coordinator.startRun(message.goal || "Safe assistance");
+  }
+  if (message.type === "GENERAL_CHAT") {
+    return coordinator.chatWithoutPage(message.message || "");
+  }
+  if (message.type === "CHAT_WITH_PAGE") {
+    return coordinator.chatWithPage(message.message || "");
+  }
+  throw new Error(`Unsupported side-panel request: ${message?.type || "unknown"}`);
+}
+if (typeof chrome !== "undefined" && chrome.runtime?.onConnect) {
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== "privapilot-sidepanel") return;
+    port.onMessage.addListener((message) => {
+      const requestId = message?.requestId;
+      if (!requestId) return;
+      handleSidepanelRequest(message).then((response) => {
+        port.postMessage({ requestId, response });
+      }).catch((err) => {
+        port.postMessage({
+          requestId,
+          response: {
+            success: false,
+            state: "failed-safe",
+            reply: `Could not reach the reasoning model: ${err?.message || "unknown error"}`,
+            error: err?.message || "Request failed",
+            maskCount: 0,
+            elementCount: 0,
+            modelConnected: false
+          }
+        });
+      });
+    });
+  });
+}
 if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.target && message.target !== "privapilot-background") {
+      return false;
+    }
     if (message.type === "START_AGENT_RUN") {
       coordinator.startRun(message.goal || "Safe assistance").then((result) => {
         sendResponse(result);

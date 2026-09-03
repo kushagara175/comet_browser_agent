@@ -279,26 +279,29 @@ export function validateActionProposal(
         };
       }
 
-      // Check capabilities
-      if (kind === 'click' && !targetElement.actionCapabilities.includes('click')) {
-        return {
-          isValid: false,
-          errorMessage: 'Target element does not support "click" action capability'
-        };
-      }
+      // Check capabilities (if element declares actionCapabilities)
+      const caps = targetElement.actionCapabilities || [];
+      if (caps.length > 0) {
+        if (kind === 'click' && !caps.includes('click')) {
+          return {
+            isValid: false,
+            errorMessage: 'Target element does not support "click" action capability'
+          };
+        }
 
-      if (kind === 'type' && !targetElement.actionCapabilities.includes('type')) {
-        return {
-          isValid: false,
-          errorMessage: 'Target element does not support "type" action capability'
-        };
-      }
+        if (kind === 'type' && !caps.includes('type')) {
+          return {
+            isValid: false,
+            errorMessage: 'Target element does not support "type" action capability'
+          };
+        }
 
-      if (kind === 'select' && !targetElement.actionCapabilities.includes('select')) {
-        return {
-          isValid: false,
-          errorMessage: 'Target element does not support "select" action capability'
-        };
+        if (kind === 'select' && !caps.includes('select')) {
+          return {
+            isValid: false,
+            errorMessage: 'Target element does not support "select" action capability'
+          };
+        }
       }
     }
   }

@@ -1617,6 +1617,9 @@
   var currentElementMap = /* @__PURE__ */ new Map();
   if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type !== "EXTRACT_DOM_SNAPSHOT" && message?.type !== "EXECUTE_ACTION") {
+        return false;
+      }
       handleMessage(message).then(sendResponse).catch((err) => {
         sendResponse({ success: false, error: err.message });
       });

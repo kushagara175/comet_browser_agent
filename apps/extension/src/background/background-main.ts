@@ -50,8 +50,58 @@ coordinator.setListeners({
   }
 });
 
+async function handleSidepanelRequest(message: any): Promise<any> {
+  if (message.type === 'START_AGENT_RUN') {
+    return coordinator.startRun(message.goal || 'Safe assistance');
+  }
+
+  if (message.type === 'GENERAL_CHAT') {
+    return coordinator.chatWithoutPage(message.message || '');
+  }
+
+  if (message.type === 'CHAT_WITH_PAGE') {
+    return coordinator.chatWithPage(message.message || '');
+  }
+
+  throw new Error(`Unsupported side-panel request: ${message?.type || 'unknown'}`);
+}
+
+// A named port keeps the MV3 service worker alive for the full model request and
+// avoids one-shot runtime message response races with content/offscreen contexts.
+if (typeof chrome !== 'undefined' && chrome.runtime?.onConnect) {
+  chrome.runtime.onConnect.addListener((port: any) => {
+    if (port.name !== 'privapilot-sidepanel') return;
+
+    port.onMessage.addListener((message: any) => {
+      const requestId = message?.requestId;
+      if (!requestId) return;
+
+      handleSidepanelRequest(message).then((response) => {
+        port.postMessage({ requestId, response });
+      }).catch((err) => {
+        port.postMessage({
+          requestId,
+          response: {
+            success: false,
+            state: 'failed-safe',
+            reply: `Could not reach the reasoning model: ${err?.message || 'unknown error'}`,
+            error: err?.message || 'Request failed',
+            maskCount: 0,
+            elementCount: 0,
+            modelConnected: false
+          }
+        });
+      });
+    });
+  });
+}
+
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((message: any, _sender: any, sendResponse: (res: any) => void) => {
+    if (message?.target && message.target !== 'privapilot-background') {
+      return false;
+    }
+
     if (message.type === 'START_AGENT_RUN') {
       coordinator.startRun(message.goal || 'Safe assistance').then((result) => {
         sendResponse(result);

@@ -18,6 +18,13 @@ let currentElementMap = new Map<string, HTMLElement>();
 // Listen for messages from background coordinator
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((message: any, _sender: any, sendResponse: (res: any) => void) => {
+    // Runtime messages are broadcast to extension contexts. Only claim commands
+    // intended for this content script; otherwise it can win the response race
+    // against the background worker with an empty response.
+    if (message?.type !== 'EXTRACT_DOM_SNAPSHOT' && message?.type !== 'EXECUTE_ACTION') {
+      return false;
+    }
+
     handleMessage(message).then(sendResponse).catch((err) => {
       sendResponse({ success: false, error: err.message });
     });

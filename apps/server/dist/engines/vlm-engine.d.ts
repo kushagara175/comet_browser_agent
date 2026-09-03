@@ -45,6 +45,9 @@ export interface ChatResult {
     readonly degraded: boolean;
     readonly detail?: string;
 }
+/** Azure OpenAI and Azure AI Foundry use `api-key`; other OpenAI-compatible
+ * providers conventionally use an OAuth-style Bearer token. */
+export declare function buildProviderAuthHeaders(endpoint: string, apiKey?: string): Record<string, string>;
 export declare class VlmReasoningEngine {
     private config;
     private readonly mockFallback;
