@@ -253,6 +253,18 @@ if (typeof document !== 'undefined') {
     }
     updateActiveTabUrl();
 
+    // Extension In-Panel Reload
+    const reloadExtensionBtn = document.getElementById('reloadExtensionBtn');
+    const triggerReload = () => {
+      if (typeof chrome !== 'undefined' && chrome.runtime?.reload) {
+        chrome.runtime.reload();
+      } else {
+        window.location.reload();
+      }
+    };
+    reloadExtensionBtn?.addEventListener('click', triggerReload);
+    backToConnectBtn?.addEventListener('click', triggerReload);
+
     // Tab Navigation
     function switchTab(activeBtn, activePane) {
       [tabChatBtn, tabInspectorBtn, tabPayloadBtn, tabAuditBtn].forEach(b => b?.classList.remove('active'));

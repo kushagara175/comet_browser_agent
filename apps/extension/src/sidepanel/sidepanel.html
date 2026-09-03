@@ -31,7 +31,10 @@
             <img src="../../assets/export.png" width="26" height="26" alt="PrivaPilot Logo" class="top-left-logo-img" />
           </button>
           <div class="header-title-col">
-            <span class="brand-title">PrivaPilot</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span class="brand-title">PrivaPilot</span>
+              <button id="reloadExtensionBtn" class="reload-ext-btn" title="Reload Extension from Disk" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 1px 5px; font-size: 9.5px; font-weight: 600; cursor: pointer; color: #475569; line-height: 14px;">🔄 Reload</button>
+            </div>
             <span id="activeTabUrl" class="active-url-text" title="Current Tab">Loading tab...</span>
           </div>
         </div>
