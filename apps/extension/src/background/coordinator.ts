@@ -592,6 +592,15 @@ export class RunCoordinator {
    */
   async chatWithPage(userMessage: string): Promise<ChatOutcome> {
     try {
+      // Fast-track: Conversational greetings/queries without page-context intent
+      // bypass heavy DOM snapshot, full-screenshot capture, and ONNX initialization.
+      const PAGE_CONTEXT_PATTERN =
+        /\b(this page|current page|screen|button|form|field|input|website|site|tab|summarize|read|click|find|where|select|scroll|submit|on screen)\b/i;
+
+      if (!PAGE_CONTEXT_PATTERN.test(userMessage.trim())) {
+        return this.generalChat(userMessage);
+      }
+
       const activeTab = await this.browser.getActiveTab();
       if (!activeTab || !activeTab.id) {
         return this.generalChat(userMessage);
