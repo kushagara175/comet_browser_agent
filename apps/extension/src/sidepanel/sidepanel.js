@@ -616,10 +616,21 @@ if (typeof document !== 'undefined') {
       const payloadKey = isExplicitAction ? 'goal' : 'message';
 
       if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        let finished = false;
+        const watchdog = setTimeout(() => {
+          if (finished) return;
+          finished = true;
+          agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">⚠️ The operation timed out. No unsanitized data was transmitted.</div>`;
+          setAgentStatus('failed-safe');
+        }, 20000);
+
         chrome.runtime.sendMessage({
           type: messageType,
           [payloadKey]: goalText
         }, (res) => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(watchdog);
           if (chrome.runtime.lastError) {
             agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">⚠️ Background service worker unreachable: ${escapeHtml(chrome.runtime.lastError.message)}</div>`;
             setAgentStatus('failed-safe');
