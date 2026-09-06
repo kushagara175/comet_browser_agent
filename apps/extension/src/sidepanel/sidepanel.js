@@ -637,7 +637,7 @@ if (typeof document !== 'undefined') {
       const lower = goalText.toLowerCase().trim();
       const isExplicitAction = /^(click|type|fill|press|select|scroll|submit|login|log in|buy|checkout|find and click|go to|search for and click)\b/.test(lower);
 
-      const needsPageContext = /\b(this page|current page|website|screen|tab|summari[sz]e|explain this|find on|shown here)\b/i.test(goalText);
+      const needsPageContext = /\b(this page|current page|website|screen|tab|summari[sz]e|explain this|find on|shown here|review|inspect|read|analyze|scan|look at)\b/i.test(goalText);
 
       const messageType = isExplicitAction
         ? 'START_AGENT_RUN'
