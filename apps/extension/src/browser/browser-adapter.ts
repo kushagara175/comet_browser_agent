@@ -92,20 +92,41 @@ export class WebExtensionAdapter implements BrowserAdapter {
       return {} as T;
     }
 
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error('Content script did not respond within 3000ms'));
-      }, 3000);
+    const trySend = (): Promise<T> => {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error('Content script did not respond within 3000ms'));
+        }, 3000);
 
-      api.tabs.sendMessage(tabId, message, (response: T) => {
-        clearTimeout(timer);
-        if (api.runtime.lastError) {
-          reject(new Error(api.runtime.lastError.message));
-        } else {
-          resolve(response);
-        }
+        api.tabs.sendMessage(tabId, message, (response: T) => {
+          clearTimeout(timer);
+          if (api.runtime.lastError) {
+            reject(new Error(api.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        });
       });
-    });
+    };
+
+    try {
+      return await trySend();
+    } catch (initialErr: any) {
+      // If content script was detached during extension reload, auto-inject and retry
+      if (api.scripting && typeof api.scripting.executeScript === 'function') {
+        try {
+          await api.scripting.executeScript({
+            target: { tabId },
+            files: ['dist/content/content-main.js']
+          });
+          await new Promise((r) => setTimeout(r, 150));
+          return await trySend();
+        } catch {
+          throw initialErr;
+        }
+      }
+      throw initialErr;
+    }
   }
 
   async sendMessageToRuntime<T = any>(message: any): Promise<T> {
