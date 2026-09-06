@@ -15083,6 +15083,74 @@ as ORT format: ${n}`);
     }
   };
 
+  // src/security/digest.ts
+  function canonicalizeJson(value) {
+    if (value === null || value === void 0) {
+      return "null";
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+      return JSON.stringify(value);
+    }
+    if (typeof value === "string") {
+      return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+      const items = value.map((item) => canonicalizeJson(item));
+      return `[${items.join(",")}]`;
+    }
+    if (typeof value === "object") {
+      const keys = Object.keys(value).sort();
+      const entries = keys.map((key) => {
+        const serializedVal = canonicalizeJson(value[key]);
+        return `${JSON.stringify(key)}:${serializedVal}`;
+      });
+      return `{${entries.join(",")}}`;
+    }
+    throw new Error(`Unsupported type for canonical JSON serialization: ${typeof value}`);
+  }
+  async function computeSha256Hex(data) {
+    let buffer;
+    if (typeof data === "string") {
+      buffer = new TextEncoder().encode(data);
+    } else {
+      buffer = data;
+    }
+    const subtle = globalThis.crypto?.subtle;
+    if (!subtle || typeof subtle.digest !== "function") {
+      throw new Error("Web Crypto subtle.digest is unavailable in current runtime environment");
+    }
+    const hashBuffer = await subtle.digest("SHA-256", buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  async function computePayloadDigestSha256(payload) {
+    const safeRepresentation = {
+      captureId: String(payload.captureId || ""),
+      goal: String(payload.goal || ""),
+      maskCount: Number(payload.maskCount || 0),
+      pageState: {
+        title: String(payload.pageState?.title || ""),
+        viewport: Array.isArray(payload.pageState?.viewport) ? [Number(payload.pageState.viewport[0] || 0), Number(payload.pageState.viewport[1] || 0)] : [1280, 800]
+      },
+      elements: Array.isArray(payload.elements) ? payload.elements.map((el2) => ({
+        localId: String(el2.localId || ""),
+        role: String(el2.role || "generic"),
+        sanitizedName: String(el2.sanitizedName || ""),
+        coarseBounds: Array.isArray(el2.coarseBounds) ? [
+          Number(el2.coarseBounds[0] || 0),
+          Number(el2.coarseBounds[1] || 0),
+          Number(el2.coarseBounds[2] || 0),
+          Number(el2.coarseBounds[3] || 0)
+        ] : [0, 0, 0, 0],
+        state: Array.isArray(el2.state) ? [...el2.state].map(String).sort() : [],
+        actionCapabilities: Array.isArray(el2.actionCapabilities) ? [...el2.actionCapabilities].map(String).sort() : []
+      })) : []
+    };
+    const canonicalString = canonicalizeJson(safeRepresentation);
+    const hex = await computeSha256Hex(canonicalString);
+    return `sha256_${hex}`;
+  }
+
   // src/sanitizer/pipeline.ts
   var SanitizerPipeline = class {
     /**
@@ -15211,8 +15279,17 @@ as ORT format: ${n}`);
       if (!verification.isValid) {
         throw new Error(`Sanitization Blocked: ${verification.reason}`);
       }
-      const digestStr = `${rawCapture.captureId}:${allRegions.length}:${sanitizedElements.length}`;
-      const payloadDigestSha256 = `sha256_${Math.abs(digestStr.split("").reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0))}`;
+      const safeCanonicalData = {
+        captureId: rawCapture.captureId,
+        goal: sanitizeElementName(goal),
+        maskCount: allRegions.length,
+        pageState: {
+          title: sanitizedTitle,
+          viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight]
+        },
+        elements: sanitizedElements
+      };
+      const payloadDigestSha256 = await computePayloadDigestSha256(safeCanonicalData);
       return {
         _brand: "SanitizedContext_Verified",
         protocolVersion: "1.0",

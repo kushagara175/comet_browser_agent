@@ -20,7 +20,7 @@
     "test:e2e": "node scripts/run-e2e-extension.mjs",
     "dev:server": "node --env-file-if-exists=.env apps/server/dist/index.js",
     "dev:portal": "node apps/demo-portal/server.js",
-    "lint": "echo 'Lint passed (Zero lint issues)'"
+    "lint": "node scripts/typecheck.js && node scripts/check-repo-integrity.mjs"
   },
   "keywords": [
     "privacy",

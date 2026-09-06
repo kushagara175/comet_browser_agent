@@ -13,6 +13,7 @@ import { detectHighRiskSurfaces } from './surface-detector.js';
 import { MaskRenderer } from './mask-renderer.js';
 import { PostRedactionVerifier } from './post-redaction-verifier.js';
 import { UltraFaceModelRunner } from '../vision/face-model.js';
+import { computePayloadDigestSha256 } from '../security/digest.js';
 export class SanitizerPipeline {
     /**
      * Transforms raw capture into sanitized context or fails closed.
@@ -150,9 +151,17 @@ export class SanitizerPipeline {
         if (!verification.isValid) {
             throw new Error(`Sanitization Blocked: ${verification.reason}`);
         }
-        // Simple SHA-256 simulation for payload digest
-        const digestStr = `${rawCapture.captureId}:${allRegions.length}:${sanitizedElements.length}`;
-        const payloadDigestSha256 = `sha256_${Math.abs(digestStr.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0))}`;
+        const safeCanonicalData = {
+            captureId: rawCapture.captureId,
+            goal: sanitizeElementName(goal),
+            maskCount: allRegions.length,
+            pageState: {
+                title: sanitizedTitle,
+                viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight]
+            },
+            elements: sanitizedElements
+        };
+        const payloadDigestSha256 = await computePayloadDigestSha256(safeCanonicalData);
         return {
             _brand: 'SanitizedContext_Verified',
             protocolVersion: '1.0',

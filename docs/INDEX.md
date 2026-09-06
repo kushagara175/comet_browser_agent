@@ -32,6 +32,7 @@ disagree, the one higher in this list wins.
 | [05_ACTION_CACHE_SELF_HEALING.md](05_ACTION_CACHE_SELF_HEALING.md) | Action cache, state verification, and the privacy audit trail. |
 | [06_FRONTEND_MISSION_CONTROL.md](06_FRONTEND_MISSION_CONTROL.md) | Side-panel HUD: the raw-vs-redacted split view and live telemetry. |
 | [07_TEAM_WORKFLOW_HARDWARE_SPLIT.md](07_TEAM_WORKFLOW_HARDWARE_SPLIT.md) | Baseline machine requirements and the workstream split. |
+| [08_AGENT_SCREEN_VISIBILITY_AND_HIDDEN_MODE.md](08_AGENT_SCREEN_VISIBILITY_AND_HIDDEN_MODE.md) | What the agent can and cannot see, when screenshots are captured, and how side-panel, page, tab, and browser hidden states affect execution. |
 | [09_DEMO_PITCH_SCRIPT.md](09_DEMO_PITCH_SCRIPT.md) | Finale pitch and live demo script, plus prepared jury answers. |
 
 ## Tier 4 — Evidence
