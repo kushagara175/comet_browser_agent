@@ -126,12 +126,16 @@ export interface SanitizedDisplayPayload {
     readonly pageState: SanitizedPageState | 'Not available';
     readonly redactionManifest?: RedactionManifest;
 }
+export declare function calculateBase64ByteLength(dataUrlOrBase64: string): number;
 /**
  * Generates canonical safe display projection directly from the exact canonical wire payload.
  * Never synthesizes fake run IDs, capture IDs, digests, viewports, or goals.
  * Displays 'Not available' for missing values.
  */
-export declare function toSanitizedDisplayPayload(payload: SanitizedNetworkPayload | null | undefined, digest?: string): SanitizedDisplayPayload | {
+export declare function toSanitizedDisplayPayload(payload: SanitizedNetworkPayload | null | undefined, options?: {
+    payloadDigest?: string;
+    screenshotDigest?: string;
+} | string): SanitizedDisplayPayload | {
     protocolVersion: string;
     status: string;
 };

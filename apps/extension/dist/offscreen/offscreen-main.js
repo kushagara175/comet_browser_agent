@@ -14848,8 +14848,31 @@ as ORT format: ${n}`);
       const y = Math.max(0, Math.min(canvasHeight - 1, Math.floor(box.y)));
       const w = Math.max(1, Math.min(canvasWidth - x, Math.ceil(box.width)));
       const h = Math.max(1, Math.min(canvasHeight - y, Math.ceil(box.height)));
-      const sData = sCtx.getImageData(x, y, w, h).data;
-      const rData = rCtx ? rCtx.getImageData(x, y, w, h).data : null;
+      let sData;
+      let rData = null;
+      try {
+        sData = sCtx.getImageData(x, y, w, h).data;
+        if (sData.length !== w * h * 4) {
+          throw new Error(`Pixel buffer size mismatch: expected ${w * h * 4}, got ${sData.length}`);
+        }
+        if (rCtx) {
+          rData = rCtx.getImageData(x, y, w, h).data;
+        }
+      } catch (err) {
+        verdicts.push({
+          id: region.id,
+          covered: false,
+          method: region.method,
+          opaqueFraction: 0,
+          overlayFraction: 0,
+          residualVariance: 0,
+          rawVariance: 0,
+          varianceReduction: 0,
+          sampledPixels: 0,
+          failureReason: `Canvas getImageData extraction failed: ${err?.message || "unknown error"}`
+        });
+        continue;
+      }
       const verdict = verifyRegionPixelBuffer(sData, rData, region.method, region.id);
       verdicts.push(verdict);
     }
@@ -15111,36 +15134,6 @@ as ORT format: ${n}`);
           reason: `Mask count mismatch: detected ${regions.length} regions but rendered ${renderedMaskCount} masks.`
         };
       }
-      if (regionRecords) {
-        if (regionRecords.length !== regions.length) {
-          return {
-            isValid: false,
-            reason: `Region record count mismatch: expected ${regions.length}, got ${regionRecords.length}.`
-          };
-        }
-        const failedRecord = regionRecords.find((r) => !r.success);
-        if (failedRecord) {
-          return {
-            isValid: false,
-            reason: `Pixel mask failed for region '${failedRecord.regionId}': ${failedRecord.failureReason || "unknown render failure"}`
-          };
-        }
-      }
-      let pixelReport;
-      if (canvases?.sanitizedCanvas && regions.length > 0) {
-        pixelReport = verifyCanvasRedaction(
-          canvases.sanitizedCanvas,
-          canvases.rawCanvas || null,
-          regions
-        );
-        if (!pixelReport.allPassed) {
-          return {
-            isValid: false,
-            reason: `Pixel verification failed: ${pixelReport.failureReason || "one or more regions unmasked"}`,
-            pixelVerificationReport: pixelReport
-          };
-        }
-      }
       if (pageTitle.includes(CANARY_SECRET)) {
         return {
           isValid: false,
@@ -15159,6 +15152,42 @@ as ORT format: ${n}`);
           return {
             isValid: false,
             reason: `Residual unredacted PII (${residualPii[0].category}) found in element '${el2.localId}'.`
+          };
+        }
+      }
+      if (regionRecords) {
+        if (regionRecords.length !== regions.length) {
+          return {
+            isValid: false,
+            reason: `Region record count mismatch: expected ${regions.length}, got ${regionRecords.length}.`
+          };
+        }
+        const failedRecord = regionRecords.find((r) => !r.success);
+        if (failedRecord) {
+          return {
+            isValid: false,
+            reason: `Pixel mask failed for region '${failedRecord.regionId}': ${failedRecord.failureReason || "unknown render failure"}`
+          };
+        }
+      }
+      let pixelReport;
+      if (regions.length > 0) {
+        if (!canvases?.sanitizedCanvas) {
+          return {
+            isValid: false,
+            reason: `Pixel verification failed: ${regions.length} sensitive regions exist but no sanitized canvas or pixel evidence was provided.`
+          };
+        }
+        pixelReport = verifyCanvasRedaction(
+          canvases.sanitizedCanvas,
+          canvases.rawCanvas || null,
+          regions
+        );
+        if (!pixelReport.allPassed) {
+          return {
+            isValid: false,
+            reason: `Pixel verification failed: ${pixelReport.failureReason || "one or more regions unmasked"}`,
+            pixelVerificationReport: pixelReport
           };
         }
       }

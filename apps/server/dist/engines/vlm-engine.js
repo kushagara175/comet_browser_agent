@@ -111,6 +111,7 @@ export class VlmReasoningEngine {
     mockFallback;
     cachedStatus = null;
     lastProbeTime = 0;
+    cloudExhaustedUntil = 0;
     constructor(config = {}) {
         this.config = {
             endpoint: config.endpoint || process.env.VLM_ENDPOINT || undefined,
@@ -120,7 +121,8 @@ export class VlmReasoningEngine {
             modelName: config.modelName || process.env.VLM_MODEL || undefined,
             timeoutMs: config.timeoutMs ?? parseInt(process.env.VLM_TIMEOUT_MS || '90000', 10),
             probeTimeoutMs: config.probeTimeoutMs ?? parseInt(process.env.VLM_PROBE_TIMEOUT_MS || '4000', 10),
-            numCtx: config.numCtx ?? parseInt(process.env.VLM_NUM_CTX || '8192', 10)
+            numCtx: config.numCtx ?? parseInt(process.env.VLM_NUM_CTX || '8192', 10),
+            maxTokens: config.maxTokens ?? parseInt(process.env.VLM_MAX_TOKENS || '600', 10)
         };
         this.mockFallback = new MockReasoningEngine();
     }
@@ -132,6 +134,10 @@ export class VlmReasoningEngine {
     get inferenceTimeoutMs() {
         const v = this.config.timeoutMs;
         return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 90000;
+    }
+    get maxTokens() {
+        const v = this.config.maxTokens;
+        return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 600;
     }
     /**
      * Ollama context window. Its default (2048-4096) is far too small once a
@@ -160,6 +166,17 @@ export class VlmReasoningEngine {
      */
     async getStatus() {
         const now = Date.now();
+        if (this.cloudExhaustedUntil && now < this.cloudExhaustedUntil) {
+            return {
+                provider: 'mock',
+                endpoint: this.config.endpoint || 'http://localhost:4501',
+                modelName: 'offline-reasoner',
+                isOnline: true,
+                isMultimodal: true,
+                detail: 'Cloud provider exhausted (credit limit / 402); degraded to deterministic offline reasoner',
+                lastError: 'HTTP 402: Payment required'
+            };
+        }
         if (this.cachedStatus) {
             const ttl = this.cachedStatus.provider === 'mock' ? OFFLINE_STATUS_CACHE_MS : STATUS_CACHE_MS;
             if (now - this.lastProbeTime < ttl) {
@@ -380,7 +397,7 @@ export class VlmReasoningEngine {
                 { role: 'user', content: userMessage }
             ],
             temperature: 0.4,
-            max_tokens: 1500
+            max_tokens: this.maxTokens
         };
         if (isOpenRouter) {
             requestBody.route = 'fallback';
@@ -417,6 +434,9 @@ export class VlmReasoningEngine {
             // A model that cannot answer must not end the run. Degrade to the deterministic
             // offline reasoner; the client still risk-classifies and confirms every action.
             console.warn(`[PrivaPilot:VLM] Model reasoning failed (${err.message}). Falling back to offline reasoner.`);
+            if (err.message && (err.message.includes('402') || err.message.includes('credit') || err.message.includes('tokens limit') || err.message.includes('afford'))) {
+                this.cloudExhaustedUntil = Date.now() + 300000;
+            }
             this.invalidateStatusCache();
             return this.mockProposal(payload, err.message);
         }
@@ -426,13 +446,20 @@ export class VlmReasoningEngine {
      */
     async mockProposal(payload, degradeReason) {
         const fallbackProposal = await this.mockFallback.decideNextAction(payload);
-        const annotated = degradeReason
+        // Sanitize degradeReason to clean text only (no URLs, no script tags, no html)
+        const cleanReason = degradeReason
+            ? degradeReason.replace(/https?:\/\/[^\s)]+/gi, '').replace(/[<>]/g, '').replace(/[^a-zA-Z0-9 _.,:;-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100)
+            : '';
+        const annotated = cleanReason
             ? {
                 ...fallbackProposal,
-                rationale: `[offline reasoner: ${degradeReason}] ${fallbackProposal.rationale}`.slice(0, 500)
+                rationale: `[offline reasoner: ${cleanReason}] ${fallbackProposal.rationale}`.slice(0, 500)
             }
             : fallbackProposal;
-        const validation = validateActionProposal(annotated, payload.elements);
+        let validation = validateActionProposal(annotated, payload.elements);
+        if (!validation.isValid || !validation.proposal) {
+            validation = validateActionProposal(fallbackProposal, payload.elements);
+        }
         if (!validation.isValid || !validation.proposal) {
             return {
                 actionId: `act_error_${Date.now()}`,
@@ -535,7 +562,7 @@ export class VlmReasoningEngine {
                 messages: msgs,
                 response_format: { type: 'json_object' },
                 temperature,
-                max_tokens: 1500
+                max_tokens: this.maxTokens
             };
             if (isOpenRouter) {
                 requestBody.route = 'fallback';
@@ -636,10 +663,11 @@ Strict Rules:
 1. Return ONLY schema-valid JSON for one single next action.
 2. Target elements using "targetLocalId" ONLY for interaction actions ("click", "type", "select"). NEVER invent CSS selectors, XPath, or JavaScript.
 3. Classify risk as "safe" (read/navigate/preview/filter/finish) or "protected" (submit/delete/pay/sign).
-4. SEARCH / FILTER / INPUT DIRECTIVE: When the user's goal asks to search, filter, or input text into a search box or text input (role: "input"), you MUST return kind: "type", target that input's local ID, and set "textToType" to the requested search term. Do NOT propose "click" when the intention is to enter text or filter.
+4. SEARCH / FILTER / INPUT DIRECTIVE: When the user's goal asks to search, filter, type, fill, enter, write, or set text in a search box or text input (role: "input" or "textarea"), you MUST return kind: "type", target that input's local ID, and set "textToType" to the exact requested text. Do NOT propose "click", "observe", "wait", or a prose plan when the intention is to enter text or filter.
 5. SELECT DIRECTIVE: When selecting an option from a dropdown (role: "select"), you MUST return kind: "select", target that select's local ID, and provide "selectOptionValue" with the desired option value.
-6. Provide a concise rationale.
-7. GOAL COMPLETION: If the user's goal has already been achieved by the current page state and visible landmarks:
+6. Provide a concise rationale. Never answer with a plan, instructions, or conversational prose; choose the single next executable action.
+7. Do not return "finish" merely because you have explained what should happen. Use "finish" only when visible page state proves the user's requested browser operation is already complete.
+8. GOAL COMPLETION: If the user's goal has already been achieved by the current page state and visible landmarks:
    - If the goal was to open a preview drawer/modal and it is already visible/open: return kind: "finish".
    - If the goal was to click Refresh Sync / synchronize and the status already says "Synchronized" or "Sync": return kind: "finish".
    - If the goal was to submit clearance approval and the status already says "Approved": return kind: "finish".

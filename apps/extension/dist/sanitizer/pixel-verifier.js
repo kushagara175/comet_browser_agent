@@ -213,8 +213,32 @@ export function verifyCanvasRedaction(sanitizedCanvas, rawCanvas, regions) {
         const y = Math.max(0, Math.min(canvasHeight - 1, Math.floor(box.y)));
         const w = Math.max(1, Math.min(canvasWidth - x, Math.ceil(box.width)));
         const h = Math.max(1, Math.min(canvasHeight - y, Math.ceil(box.height)));
-        const sData = sCtx.getImageData(x, y, w, h).data;
-        const rData = rCtx ? rCtx.getImageData(x, y, w, h).data : null;
+        let sData;
+        let rData = null;
+        try {
+            sData = sCtx.getImageData(x, y, w, h).data;
+            if (sData.length !== w * h * 4) {
+                throw new Error(`Pixel buffer size mismatch: expected ${w * h * 4}, got ${sData.length}`);
+            }
+            if (rCtx) {
+                rData = rCtx.getImageData(x, y, w, h).data;
+            }
+        }
+        catch (err) {
+            verdicts.push({
+                id: region.id,
+                covered: false,
+                method: region.method,
+                opaqueFraction: 0,
+                overlayFraction: 0,
+                residualVariance: 0,
+                rawVariance: 0,
+                varianceReduction: 0,
+                sampledPixels: 0,
+                failureReason: `Canvas getImageData extraction failed: ${err?.message || 'unknown error'}`
+            });
+            continue;
+        }
         const verdict = verifyRegionPixelBuffer(sData, rData, region.method, region.id);
         verdicts.push(verdict);
     }

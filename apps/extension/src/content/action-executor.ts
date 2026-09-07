@@ -59,14 +59,26 @@ export class ActionExecutor {
 
     if (proposal.kind === 'scroll') {
       if (typeof window !== 'undefined') {
-        if (proposal.scrollDirection === 'down') {
-          window.scrollBy(0, 400);
-        } else if (proposal.scrollDirection === 'up') {
-          window.scrollBy(0, -400);
-        } else if (proposal.scrollDirection === 'top') {
+        const delta = proposal.scrollDirection === 'up' ? -400 : 400;
+        if (proposal.scrollDirection === 'top') {
           window.scrollTo(0, 0);
+          document.documentElement?.scrollTo(0, 0);
+          document.body?.scrollTo(0, 0);
+        } else if (proposal.scrollDirection === 'bottom') {
+          const maxScroll = Math.max(document.body?.scrollHeight || 0, document.documentElement?.scrollHeight || 0, 10000);
+          window.scrollTo(0, maxScroll);
+          document.documentElement?.scrollTo(0, maxScroll);
+          document.body?.scrollTo(0, maxScroll);
         } else {
-          window.scrollTo(0, document.body?.scrollHeight || 1000);
+          const prevY = window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0;
+          window.scrollBy(0, delta);
+          const newY = window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0;
+          if (newY === prevY) {
+            const scrollable = document.querySelector('main, [role="main"], .main-content, #main, .content, .container, body') as HTMLElement;
+            if (scrollable && typeof scrollable.scrollBy === 'function') {
+              scrollable.scrollBy(0, delta);
+            }
+          }
         }
       }
 

@@ -26,9 +26,10 @@ export interface ChatReply {
     readonly detail?: string;
 }
 export declare class ReasoningHttpClient {
-    private readonly serverBaseUrl;
+    private serverBaseUrl;
     constructor(serverBaseUrl?: string);
     getServerBaseUrl(): string;
+    setServerBaseUrl(url: string): void;
     /**
      * Turns a transport failure into something the user can act on. A bare
      * "Failed to fetch" is the single most confusing symptom in this system:

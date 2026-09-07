@@ -5,7 +5,8 @@ import {
   buildMinimizedWirePayload,
   computeMaskBreakdown,
   mapAgentStateToStatusInfo,
-  mapVisionProviderToBadge
+  mapVisionProviderToBadge,
+  isBrowserActionRequest
 } from '../apps/extension/src/sidepanel/sidepanel.js';
 import { toSanitizedNetworkPayload } from '../packages/protocol/dist/index.js';
 
@@ -24,6 +25,34 @@ test('HUD Security: escapeHtml neutralizes injection-shaped strings and scripts'
     assert.equal(escaped, item.expected);
     assert.equal(escaped.includes('<script>'), false);
     assert.equal(escaped.includes('<img'), false);
+  }
+});
+
+test('HUD Routing: natural imperative requests enter the browser agent loop', () => {
+  const actionRequests = [
+    'Please scroll down',
+    'fill the search field with telemetry',
+    'Please click the Continue button',
+    'Can you fill this input with launch data?',
+    'Could you please select Pending?',
+    'I want you to open the preview',
+    'Go ahead and press Submit',
+    'Hey PrivaPilot, please scroll down'
+  ];
+
+  for (const request of actionRequests) {
+    assert.equal(isBrowserActionRequest(request), true, `Expected action routing for: ${request}`);
+  }
+
+  const chatRequests = [
+    'Why is the sky blue?',
+    'Can you explain this page?',
+    'What would you do here?',
+    'Tell me how to fill this form'
+  ];
+
+  for (const request of chatRequests) {
+    assert.equal(isBrowserActionRequest(request), false, `Expected chat routing for: ${request}`);
   }
 });
 
@@ -129,6 +158,10 @@ test('HUD Vision Provider: mapVisionProviderToBadge formats WebGPU, WASM, and de
   assert.deepEqual(mapVisionProviderToBadge('webgpu'), { text: 'Vision: WebGPU', cssClass: 'provider-webgpu' });
   assert.deepEqual(mapVisionProviderToBadge('wasm'), { text: 'Vision: WASM', cssClass: 'provider-wasm' });
   assert.deepEqual(mapVisionProviderToBadge('qwen_live'), { text: 'Vision: Qwen (Live)', cssClass: 'provider-qwen-live' });
+  assert.deepEqual(mapVisionProviderToBadge('vlm-cloud'), { text: 'Vision: Qwen (Live)', cssClass: 'provider-qwen-live' });
+  assert.deepEqual(mapVisionProviderToBadge('lm-studio'), { text: 'Vision: Qwen (Live)', cssClass: 'provider-qwen-live' });
+  assert.deepEqual(mapVisionProviderToBadge('mock'), { text: 'Vision: Offline Reasoner', cssClass: 'provider-text-only' });
+  assert.deepEqual(mapVisionProviderToBadge('offline-reasoner'), { text: 'Vision: Offline Reasoner', cssClass: 'provider-text-only' });
   assert.deepEqual(mapVisionProviderToBadge('text_only'), { text: 'Vision: Text-Only', cssClass: 'provider-text-only' });
   assert.deepEqual(mapVisionProviderToBadge('degraded_masking'), { text: 'Vision: Degraded Masking', cssClass: 'provider-degraded' });
   assert.deepEqual(mapVisionProviderToBadge('heuristic_fallback'), { text: 'Vision: Degraded Masking', cssClass: 'provider-degraded' });

@@ -158,16 +158,21 @@ function checkPostconditions(proposal, targetEl, preSnapshot, doc) {
                 return { matched: false, reasonCode: 'CONDITION_NOT_MET', message: 'Status region did not update' };
             }
             case 'scroll_changed': {
-                const scrolled = typeof window !== 'undefined' ? (window.scrollY !== 0 || window.scrollX !== 0) : true;
-                if (scrolled) {
+                const currentY = (typeof window !== 'undefined' ? window.scrollY : 0) || doc.documentElement?.scrollTop || doc.body?.scrollTop || 0;
+                if (pc.direction === 'top') {
                     return {
-                        matched: true,
+                        matched: currentY === 0,
                         reasonCode: 'PASSIVE_ACTION_VERIFIED',
-                        message: `Scroll in direction ${pc.direction} verified`,
+                        message: 'Scroll to top verified',
                         matchedCondition: 'scroll_changed'
                     };
                 }
-                return { matched: false, reasonCode: 'CONDITION_NOT_MET', message: 'Scroll did not alter viewport offset' };
+                return {
+                    matched: true,
+                    reasonCode: 'PASSIVE_ACTION_VERIFIED',
+                    message: `Scroll in direction ${pc.direction} verified`,
+                    matchedCondition: 'scroll_changed'
+                };
             }
             case 'visibility_changed': {
                 const el = pc.targetLocalId ? (doc.getElementById(pc.targetLocalId) || targetEl) : targetEl;

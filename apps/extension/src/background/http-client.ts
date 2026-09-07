@@ -50,7 +50,7 @@ export interface ChatReply {
 }
 
 export class ReasoningHttpClient {
-  private readonly serverBaseUrl: string;
+  private serverBaseUrl: string;
 
   constructor(serverBaseUrl: string = DEFAULT_SERVER_BASE_URL) {
     this.serverBaseUrl = serverBaseUrl.replace(/\/+$/, '');
@@ -58,6 +58,10 @@ export class ReasoningHttpClient {
 
   getServerBaseUrl(): string {
     return this.serverBaseUrl;
+  }
+
+  setServerBaseUrl(url: string): void {
+    this.serverBaseUrl = url.replace(/\/+$/, '');
   }
 
   /**

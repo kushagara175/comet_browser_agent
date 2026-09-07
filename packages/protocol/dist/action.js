@@ -3,7 +3,13 @@
  * binding expected semantic terminal postconditions to the run.
  */
 export function resolveTaskContract(goal) {
-    const g = (goal || '').trim().toLowerCase();
+    let g = (goal || '').trim().toLowerCase();
+    let prev = '';
+    const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?)+/i;
+    while (g && g !== prev) {
+        prev = g;
+        g = g.replace(ACTION_PREFIX_REGEX, '').trim();
+    }
     if (!g) {
         return {
             supported: false,
@@ -39,10 +45,10 @@ export function resolveTaskContract(goal) {
             expectedTargetNameSubstring: 'preview'
         };
     }
-    // 3. Search / Find / Locate / Type / Filter
-    if (/(?:search|find|locate|type|filter|query|telemetry)/i.test(g)) {
-        const filterMatch = g.match(/(?:search|type|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query))?\s+["']?([^"']+)["']?/i);
-        const val = filterMatch ? filterMatch[1].trim() : '';
+    // 3. Search / Find / Locate / Type / Fill / Enter / Set / Write / Filter
+    if (/(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry)/i.test(g)) {
+        const filterMatch = g.match(/(?:search|type|fill|enter|write|set|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query|the\s+search\s+field\s+with|the\s+field\s+with|the\s+input\s+with|this\s+field\s+with|this\s+input\s+with|the\s+input\s+to|in\s+this\s+field|into\s+this\s+field|in\s+the\s+field|with))?\s+["']?([^"']+)["']?/i);
+        const val = filterMatch ? filterMatch[1].replace(/\?+$/, '').trim() : '';
         return {
             supported: true,
             goalPattern: 'search_filter',
@@ -53,7 +59,7 @@ export function resolveTaskContract(goal) {
     // 4. Select option
     if (/(?:select|choose)(?:\s+(?:option))?/i.test(g)) {
         const selectMatch = g.match(/(?:select|choose)(?:\s+(?:option))?\s+["']?([^"']+)["']?/i);
-        const opt = selectMatch ? selectMatch[1].trim() : '';
+        const opt = selectMatch ? selectMatch[1].replace(/\?+$/, '').trim() : '';
         return {
             supported: true,
             goalPattern: 'select_option',
@@ -88,10 +94,10 @@ export function resolveTaskContract(goal) {
             expectedTargetNameSubstring: 'approve'
         };
     }
-    // 8. Generic clicking / interactions (button, link, item, admin, finish, sanitize, navigate, navigation)
-    if (/(?:click|press|button|link|item|admin|finish|sanitize|sensitive|login|navigate|navigation)/i.test(g)) {
-        const clickMatch = g.match(/click\s+(?:the\s+)?["']?([^"']+)["']?/i);
-        const target = clickMatch ? clickMatch[1].trim() : undefined;
+    // 8. Generic clicking / interactions / navigation (button, link, item, admin, finish, sanitize, navigate, go to)
+    if (/(?:click|press|button|link|item|admin|finish|sanitize|sensitive|login|navigate|navigation|go\s+to)/i.test(g)) {
+        const clickMatch = g.match(/(?:click|press|go\s+to|navigate\s+to)\s+(?:the\s+)?["']?([^"']+)["']?/i);
+        const target = clickMatch ? clickMatch[1].replace(/\?+$/, '').trim() : undefined;
         return {
             supported: true,
             goalPattern: 'click_control',

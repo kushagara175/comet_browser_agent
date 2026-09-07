@@ -31,6 +31,7 @@ export interface BrowserAdapter {
 export class WebExtensionAdapter implements BrowserAdapter {
   private offscreenCreationPromise: Promise<void> | null = null;
   private offscreenCloseTimer: any = null;
+  private lastCaptureTime = 0;
   private get browserAPI() {
     // Cross-browser chrome or browser global
     if (typeof chrome !== 'undefined') return chrome;
@@ -45,45 +46,67 @@ export class WebExtensionAdapter implements BrowserAdapter {
       return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     }
 
-    return new Promise((resolve, reject) => {
-      try {
-        api.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl: string) => {
-          if (api.runtime.lastError) {
-            try {
-              api.tabs.captureVisibleTab({ format: 'png' }, (fallbackDataUrl: string) => {
-                if (api.runtime.lastError) {
-                  reject(new Error(api.runtime.lastError.message));
-                } else if (!fallbackDataUrl) {
-                  reject(new Error('Tab capture returned empty data'));
-                } else {
-                  resolve(fallbackDataUrl);
-                }
-              });
-            } catch (err: any) {
-              reject(new Error(err.message || api.runtime.lastError.message));
-            }
-          } else if (!dataUrl) {
-            reject(new Error('Tab capture returned empty data'));
-          } else {
-            resolve(dataUrl);
-          }
-        });
-      } catch (err: any) {
+    // Chrome MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND guard:
+    // Ensure at least 550ms between captures to prevent quota exhaustion
+    const now = Date.now();
+    const elapsed = now - this.lastCaptureTime;
+    if (elapsed < 550) {
+      await new Promise((r) => setTimeout(r, 550 - elapsed));
+    }
+    this.lastCaptureTime = Date.now();
+
+    const doCapture = (): Promise<string> => {
+      return new Promise((resolve, reject) => {
         try {
-          api.tabs.captureVisibleTab({ format: 'png' }, (dataUrl: string) => {
+          api.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl: string) => {
             if (api.runtime.lastError) {
-              reject(new Error(api.runtime.lastError.message));
+              try {
+                api.tabs.captureVisibleTab({ format: 'png' }, (fallbackDataUrl: string) => {
+                  if (api.runtime.lastError) {
+                    reject(new Error(api.runtime.lastError.message));
+                  } else if (!fallbackDataUrl) {
+                    reject(new Error('Tab capture returned empty data'));
+                  } else {
+                    resolve(fallbackDataUrl);
+                  }
+                });
+              } catch (err: any) {
+                reject(new Error(err.message || api.runtime.lastError.message));
+              }
             } else if (!dataUrl) {
               reject(new Error('Tab capture returned empty data'));
             } else {
               resolve(dataUrl);
             }
           });
-        } catch (e: any) {
-          reject(new Error(e.message || err.message));
+        } catch (err: any) {
+          try {
+            api.tabs.captureVisibleTab({ format: 'png' }, (dataUrl: string) => {
+              if (api.runtime.lastError) {
+                reject(new Error(api.runtime.lastError.message));
+              } else if (!dataUrl) {
+                reject(new Error('Tab capture returned empty data'));
+              } else {
+                resolve(dataUrl);
+              }
+            });
+          } catch (e: any) {
+            reject(new Error(e.message || err.message));
+          }
         }
+      });
+    };
+
+    try {
+      return await doCapture();
+    } catch (err: any) {
+      if (err.message && err.message.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND')) {
+        await new Promise((r) => setTimeout(r, 600));
+        this.lastCaptureTime = Date.now();
+        return await doCapture();
       }
-    });
+      throw err;
+    }
   }
 
   async sendMessageToTab<T = any>(tabId: number, message: any): Promise<T> {

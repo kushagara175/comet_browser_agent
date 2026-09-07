@@ -26,14 +26,15 @@ export interface ChatOutcome {
 export interface CoordinatorRunOptions {
     readonly maxSteps?: number;
     readonly maxStaleRetries?: number;
+    readonly runId?: string;
 }
 export interface CoordinatorListeners {
-    onStateChange?(state: AgentState, message?: string): void;
-    onSanitizationComplete?(raw: RawCapture, sanitized: SanitizedContext): void;
-    onActionProposed?(action: ActionProposal): void;
-    onActionConfirmedRequired?(action: ActionProposal): void;
-    onTelemetryUpdated?(telemetry: RunTelemetry): void;
-    onStepProgress?(step: number, maxSteps: number, message: string): void;
+    onStateChange?(state: AgentState, message?: string, runId?: string): void;
+    onSanitizationComplete?(raw: RawCapture, sanitized: SanitizedContext, runId?: string): void;
+    onActionProposed?(action: ActionProposal, runId?: string): void;
+    onActionConfirmedRequired?(action: ActionProposal, runId?: string): void;
+    onTelemetryUpdated?(telemetry: RunTelemetry, runId?: string): void;
+    onStepProgress?(step: number, maxSteps: number, message: string, runId?: string): void;
 }
 export interface E2EStepTrace {
     readonly step: number;
@@ -61,6 +62,7 @@ export interface E2EStepTrace {
     readonly timings: Record<string, number>;
 }
 export interface CoordinatorRunResult {
+    readonly runId?: string;
     readonly success: boolean;
     readonly state: AgentState;
     readonly message?: string;
@@ -106,13 +108,16 @@ export declare class RunCoordinator {
     private isCancelled;
     private stepsTrace;
     private currentTaskContract;
+    private currentRunId;
     constructor(browser?: BrowserAdapter, httpClient?: ReasoningHttpClient, auditLogger?: AuditLogger, options?: {
         defaultMaxSteps?: number;
         maxStaleRetries?: number;
     });
     setListeners(listeners: CoordinatorListeners): void;
     getState(): AgentState;
+    getCurrentRunId(): string;
     getLastResult(): CoordinatorRunResult | null;
+    private completeWithResult;
     cancelRun(): void;
     private transition;
     private recordActionHistory;
@@ -158,5 +163,6 @@ export declare class RunCoordinator {
      * Called when the user clicks 'Deny' on a protected action card.
      */
     denyPendingAction(): CoordinatorRunResult;
+    setServerUrl(url: string): void;
 }
 //# sourceMappingURL=coordinator.d.ts.map

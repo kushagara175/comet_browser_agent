@@ -464,3 +464,81 @@ test('Stage B: Fail-Closed Integration - Verification failure halts pipeline and
     globalThis.fetch = originalFetch;
   }
 });
+
+test('Stage B: PostRedactionVerifier fails closed when regions exist but no canvas is supplied', () => {
+  const region = {
+    id: 'pass_1',
+    category: 'password',
+    method: 'opaque_mask',
+    viewportBox: { space: 'viewportCssPixel', x: 20, y: 20, width: 50, height: 12 },
+    screenshotBox: { space: 'screenshotPixel', x: 40, y: 40, width: 100, height: 25 },
+    detectorSource: 'dom_semantic'
+  };
+
+  const res = PostRedactionVerifier.verify(
+    [region],
+    1,
+    [],
+    'Safe Page Title'
+    // canvases omitted!
+  );
+
+  assert.strictEqual(res.isValid, false, 'Must fail closed when regions exist without canvas');
+  assert.match(res.reason, /no sanitized canvas or pixel evidence was provided/);
+});
+
+test('Stage B: verifyCanvasRedaction fails closed on wrong-sized pixel buffer', () => {
+  const badCanvas = {
+    width: 200,
+    height: 100,
+    getContext: () => ({
+      getImageData: (x, y, w, h) => ({
+        // Deliberately return wrong-sized buffer (half of w * h * 4)
+        data: new Uint8ClampedArray((w * h * 4) / 2),
+        width: w,
+        height: h
+      })
+    })
+  };
+
+  const region = {
+    id: 'reg_bad_size',
+    category: 'password',
+    method: 'opaque_mask',
+    viewportBox: { space: 'viewportCssPixel', x: 10, y: 10, width: 40, height: 20 },
+    screenshotBox: { space: 'screenshotPixel', x: 10, y: 10, width: 40, height: 20 },
+    detectorSource: 'dom_semantic'
+  };
+
+  const report = verifyCanvasRedaction(badCanvas, null, [region]);
+  assert.strictEqual(report.allPassed, false, 'Wrong buffer size must fail verification');
+  assert.strictEqual(report.verdicts[0].covered, false);
+  assert.match(report.verdicts[0].failureReason, /Pixel buffer size mismatch/);
+});
+
+test('Stage B: verifyCanvasRedaction fails closed when getImageData throws exception', () => {
+  const throwingCanvas = {
+    width: 200,
+    height: 100,
+    getContext: () => ({
+      getImageData: () => {
+        throw new Error('Canvas security error or tainted context');
+      }
+    })
+  };
+
+  const region = {
+    id: 'reg_throw',
+    category: 'password',
+    method: 'opaque_mask',
+    viewportBox: { space: 'viewportCssPixel', x: 10, y: 10, width: 40, height: 20 },
+    screenshotBox: { space: 'screenshotPixel', x: 10, y: 10, width: 40, height: 20 },
+    detectorSource: 'dom_semantic'
+  };
+
+  const report = verifyCanvasRedaction(throwingCanvas, null, [region]);
+  assert.strictEqual(report.allPassed, false, 'Exception must fail closed');
+  assert.strictEqual(report.verdicts[0].covered, false);
+  assert.match(report.verdicts[0].failureReason, /Canvas getImageData extraction failed/);
+});
+

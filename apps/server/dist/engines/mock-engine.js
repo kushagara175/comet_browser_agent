@@ -18,8 +18,23 @@ export class MockReasoningEngine {
         const isInspectionGoal = !goal.includes('submit') && !goal.includes('approve') && !goal.includes('confirm');
         const statusSummaries = (payload.pageState?.statusSummaries || []).map((s) => s.toLowerCase());
         const isApproved = statusSummaries.some((s) => s.includes('approved'));
-        const isSynchronized = statusSummaries.some((s) => s.includes('synchronized') || s.includes('sync')) ||
-            Boolean(payload.pageState?.postconditionSummary && payload.pageState.postconditionSummary.includes('STATUS'));
+        const isSynchronized = statusSummaries.some((s) => s.includes('synchronized')) ||
+            Boolean(payload.pageState?.postconditionSummary && payload.pageState.postconditionSummary.toLowerCase().includes('synchronized'));
+        const isSyncing = statusSummaries.some((s) => s.includes('syncing')) ||
+            Boolean(payload.pageState?.postconditionSummary && payload.pageState.postconditionSummary.toLowerCase().includes('syncing'));
+        // Safety injection: Low confidence action proposal (< 0.25)
+        if (goal.includes('low confidence') || goal.includes('uncertain')) {
+            const firstBtn = elements.find((el) => el.role === 'button');
+            return {
+                actionId: `act_${Date.now()}`,
+                kind: 'click',
+                targetLocalId: firstBtn?.localId || 'el_1',
+                confidence: 0.18,
+                risk: 'safe',
+                rationale: 'Candidate action proposed with low confidence (0.18 < 0.25 threshold) due to ambiguous visual layout.',
+                expectedState: 'Action should not execute'
+            };
+        }
         if (goal.includes('clearance') && isApproved) {
             return {
                 actionId: `act_${Date.now()}`,
@@ -40,7 +55,17 @@ export class MockReasoningEngine {
                 expectedState: 'Status synchronized'
             };
         }
-        const wantsFiltering = goal.includes('search') || goal.includes('filter') || goal.includes('find') || goal.includes('clearance');
+        if ((goal.includes('sync') || goal.includes('refresh')) && isSyncing) {
+            return {
+                actionId: `act_${Date.now()}`,
+                kind: 'wait',
+                confidence: 0.98,
+                risk: 'safe',
+                rationale: 'Synchronization is in progress (Syncing...). Waiting for terminal state Synchronized.',
+                expectedState: 'Status synchronized'
+            };
+        }
+        const wantsFiltering = goal.includes('search') || goal.includes('filter') || goal.includes('find');
         const isFiltered = statusSummaries.some((s) => s.includes('filtered'));
         if (wantsFiltering && isFiltered) {
             return {
@@ -129,7 +154,10 @@ export class MockReasoningEngine {
                     confidence: 0.95,
                     risk: 'safe',
                     rationale: `Triggering synchronization via "${syncBtn.sanitizedName}"`,
-                    expectedState: 'Sync status changes to Synchronized'
+                    expectedState: 'Sync status changes to Synchronized',
+                    expectedPostcondition: {
+                        kind: 'status_changed'
+                    }
                 };
             }
         }
@@ -168,7 +196,33 @@ export class MockReasoningEngine {
                 expectedState: 'Preview drawer or details modal becomes visible'
             };
         }
-        // 8. Fallback: observe safe first button or finish
+        // 7b. Matching control/link/button by name in request (e.g. "click standard-login")
+        if (goal.includes('click') || goal.includes('navigate') || goal.includes('go to') || goal.includes('open')) {
+            const matchTerms = goal
+                .replace(/^(?:please\s+)?(?:kindly\s+)?(?:click|navigate\s+to|go\s+to|open|press)\s+(?:on\s+)?(?:the\s+)?/i, '')
+                .trim()
+                .replace(/["']/g, '')
+                .split(/\s+/)
+                .filter((t) => t.length > 2);
+            const targetEl = elements.find((el) => {
+                if (el.role !== 'link' && el.role !== 'button' && el.role !== 'tab')
+                    return false;
+                const name = el.sanitizedName.toLowerCase();
+                return matchTerms.some((term) => name.includes(term.toLowerCase()));
+            });
+            if (targetEl) {
+                return {
+                    actionId: `act_${Date.now()}`,
+                    kind: 'click',
+                    targetLocalId: targetEl.localId,
+                    confidence: 0.95,
+                    risk: 'safe',
+                    rationale: `Clicking "${targetEl.sanitizedName}" matching requested action in "${goal}"`,
+                    expectedState: 'Target activated'
+                };
+            }
+        }
+        // 8. Fallback: observe safe first button, link, or finish
         const firstSafeButton = elements.find((el) => el.role === 'button');
         if (firstSafeButton) {
             return {

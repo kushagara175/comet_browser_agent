@@ -29,6 +29,7 @@ export interface BrowserAdapter {
 export declare class WebExtensionAdapter implements BrowserAdapter {
     private offscreenCreationPromise;
     private offscreenCloseTimer;
+    private lastCaptureTime;
     private get browserAPI();
     captureVisibleTab(): Promise<string>;
     sendMessageToTab<T = any>(tabId: number, message: any): Promise<T>;

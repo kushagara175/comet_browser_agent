@@ -18,6 +18,35 @@ export function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+const ACTION_REQUEST_PREFIX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?)+/i;
+const ACTION_VERB = /^(?:click|open|type|fill|enter|write|set|press|select|choose|scroll|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log\s+in|buy|checkout|inspect|audit|check|go\s+to|navigate)(?:\b|\s)/i;
+
+/**
+ * Distinguishes an instruction to operate the current page from a question.
+ * Polite wrappers must not downgrade an imperative request into read-only chat.
+ */
+export function isBrowserActionRequest(message) {
+  if (typeof message !== 'string') return false;
+  let normalized = message.trim().toLowerCase();
+  let previous = '';
+  while (normalized && normalized !== previous) {
+    previous = normalized;
+    normalized = normalized.replace(ACTION_REQUEST_PREFIX, '').trim();
+  }
+  return ACTION_VERB.test(normalized);
+}
+
+export function calculateBase64ByteLength(dataUrlOrBase64) {
+  if (!dataUrlOrBase64 || typeof dataUrlOrBase64 !== 'string') return 0;
+  const commaIdx = dataUrlOrBase64.indexOf(',');
+  const b64 = commaIdx >= 0 ? dataUrlOrBase64.slice(commaIdx + 1) : dataUrlOrBase64;
+  if (!b64.length) return 0;
+  let padding = 0;
+  if (b64.endsWith('==')) padding = 2;
+  else if (b64.endsWith('=')) padding = 1;
+  return Math.max(0, Math.floor((b64.length * 3) / 4) - padding);
+}
+
 /**
  * Builds the exact minimized outgoing payload dispatched across the wire,
  * strictly omitting internal-only branded fields, raw captures, cookies, and tokens.
@@ -36,12 +65,13 @@ export function buildMinimizedWirePayload(sanitized, goal = null) {
   const rawScreenshot = isContext
     ? sanitized.sanitizedScreenshotDataUrl
     : (sanitized.screenshot || sanitized.sanitizedScreenshotDataUrl || '');
-  const digest = sanitized.payloadDigestSha256 || 'Not available';
+  const payloadStructureDigest = sanitized.payloadDigestSha256 || 'Not available';
+  const screenshotDigest = sanitized.screenshotDigestSha256 || payloadStructureDigest;
 
-  const byteCount = rawScreenshot ? Math.round(rawScreenshot.length * 0.75) : 0;
+  const byteCount = calculateBase64ByteLength(rawScreenshot);
   const kbCount = Math.round(byteCount / 1024);
   const screenshotDisplay = rawScreenshot
-    ? `[Screenshot base64 omitted from display: ${kbCount} KB (${byteCount} bytes), SHA-256 digest: ${digest}]`
+    ? `[Screenshot base64 omitted from display: ${kbCount} KB (${byteCount} bytes), Screenshot SHA-256: ${screenshotDigest}, Payload Structure SHA-256: ${payloadStructureDigest}]`
     : 'Not available';
 
   const payload = {
@@ -161,7 +191,12 @@ export function mapVisionProviderToBadge(provider) {
     case 'live':
     case 'openrouter':
     case 'ollama':
+    case 'vlm-cloud':
+    case 'lm-studio':
       return { text: 'Vision: Qwen (Live)', cssClass: 'provider-qwen-live' };
+    case 'mock':
+    case 'offline-reasoner':
+      return { text: 'Vision: Offline Reasoner', cssClass: 'provider-text-only' };
     case 'text_only':
     case 'text-only':
       return { text: 'Vision: Text-Only', cssClass: 'provider-text-only' };
@@ -180,6 +215,10 @@ export function mapVisionProviderToBadge(provider) {
 // Browser Extension DOM Logic (Runs only in browser environment)
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', () => {
+    // Root container for E2E matrix synchronization
+    const appRoot = document.querySelector('.app-container') || document.body;
+    let currentRunId = '';
+
     // Elements
     const shaderCanvas = document.getElementById('shaderCanvas');
     const loadingView = document.getElementById('loadingView');
@@ -373,6 +412,10 @@ if (typeof document !== 'undefined') {
 
     // Set Agent Status
     function setAgentStatus(state) {
+      if (appRoot) {
+        appRoot.setAttribute('data-agent-status', state);
+        appRoot.setAttribute('data-run-state', state);
+      }
       if (!agentStatusBadge) return;
       const info = mapAgentStateToStatusInfo(state);
       agentStatusBadge.className = `status-pill ${info.cssClass}`;
@@ -465,6 +508,10 @@ if (typeof document !== 'undefined') {
       if (typeof window !== 'undefined') {
         window.__lastAgentResult = res;
       }
+      if (appRoot && res) {
+        appRoot.setAttribute('data-last-completed-run-id', res.runId || currentRunId || '');
+        appRoot.setAttribute('data-last-result-state', res.state || '');
+      }
       if (!agentBubble) return;
 
       // 1. Awaiting User Confirmation (Pending Protected Action)
@@ -553,7 +600,11 @@ if (typeof document !== 'undefined') {
 
         if (res?.state === 'blocked-local-only' || errorMsg.toLowerCase().includes('blocked')) {
           statusState = 'blocked-local-only';
-          displayHtml = `🛡️ <strong>Blocked Locally:</strong> ${escapeHtml(errorMsg)}`;
+          let explanation = escapeHtml(errorMsg);
+          if (errorMsg.includes('chrome://')) {
+            explanation += '<br/><span style="color: #64748b; font-size: 10px; margin-top: 4px; display: inline-block;">ℹ️ <strong>Chrome Security Guard:</strong> Chrome strictly prevents all extensions from accessing or automating internal pages (<code style="background: #f1f5f9; padding: 1px 3px; border-radius: 3px;">chrome://</code>). Please switch to a web page (e.g. <a href="http://localhost:4500" target="_blank" style="color: #2563eb; text-decoration: underline;">localhost:4500</a> or any website) to use PrivaPilot.</span>';
+          }
+          displayHtml = `🛡️ <strong>Blocked Locally:</strong> ${explanation}`;
         } else if (errorMsg.toLowerCase().includes('stale')) {
           displayHtml = `⚠️ <strong>Stale Target:</strong> ${escapeHtml(errorMsg)}`;
         } else if (errorMsg.toLowerCase().includes('verification') || errorMsg.toLowerCase().includes('semantic')) {
@@ -659,9 +710,23 @@ if (typeof document !== 'undefined') {
 
       setAgentStatus('capturing');
 
-      // Detect if user input is an explicit UI action vs conversational query
-      const lower = goalText.toLowerCase().trim();
-      const isExplicitAction = /^(click|open|type|fill|press|select|choose|scroll|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log in|buy|checkout|find and click|go to|search for and click)\b/.test(lower);
+      // Reset any active confirmation modal from earlier runs
+      actionConfirmModal?.classList.add('hidden');
+      actionConfirmModal?.removeAttribute('data-confirm-run-id');
+
+      // Generate unique runId on task dispatch
+      currentRunId = 'run_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+      if (appRoot) {
+        appRoot.setAttribute('data-current-run-id', currentRunId);
+        appRoot.setAttribute('data-run-state', 'starting');
+        appRoot.removeAttribute('data-last-completed-run-id');
+        appRoot.removeAttribute('data-last-result-state');
+      }
+
+      // Route imperative browser requests into the execution loop. This recognizes
+      // polite natural phrasing such as "can you fill..." instead of sending it to
+      // read-only chat, where the model can only describe what it would do.
+      const isExplicitAction = isBrowserActionRequest(goalText);
 
       const needsPageContext = /\b(this page|current page|website|screen|tab|summari[sz]e|explain this|find on|shown here|review|inspect|read|analyze|scan|look at)\b/i.test(goalText);
 
@@ -685,7 +750,8 @@ if (typeof document !== 'undefined') {
 
         chrome.runtime.sendMessage({
           type: messageType,
-          [payloadKey]: goalText
+          [payloadKey]: goalText,
+          runId: currentRunId
         }, (res) => {
           if (settled) return;
           settled = true;
@@ -725,6 +791,13 @@ if (typeof document !== 'undefined') {
         chatInput.addEventListener(evt, updateSendBtn);
       });
 
+      sendBtn?.addEventListener('click', (e) => {
+        if (sendBtn.classList.contains('mode-send')) {
+          e.preventDefault();
+          chatForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        }
+      });
+
       chatForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const text = chatInput.value.trim();
@@ -738,6 +811,11 @@ if (typeof document !== 'undefined') {
     // Protected Action Approval Handlers
     approveActionBtn?.addEventListener('click', () => {
       actionConfirmModal?.classList.add('hidden');
+      actionConfirmModal?.removeAttribute('data-confirm-run-id');
+      if (appRoot) {
+        appRoot.removeAttribute('data-last-completed-run-id');
+        appRoot.removeAttribute('data-last-result-state');
+      }
       addAuditEntry('AUTH', 'User Approved Protected Action', 'pass');
       setAgentStatus('executing');
 
@@ -755,6 +833,11 @@ if (typeof document !== 'undefined') {
 
     denyActionBtn?.addEventListener('click', () => {
       actionConfirmModal?.classList.add('hidden');
+      actionConfirmModal?.removeAttribute('data-confirm-run-id');
+      if (appRoot) {
+        appRoot.removeAttribute('data-last-completed-run-id');
+        appRoot.removeAttribute('data-last-result-state');
+      }
       addAuditEntry('AUTH', 'User Denied Action', 'warn');
       setAgentStatus('idle');
 
@@ -818,6 +901,7 @@ if (typeof document !== 'undefined') {
             if (confirmTargetId) confirmTargetId.textContent = action.targetLocalId || 'page';
             if (confirmTargetName) confirmTargetName.textContent = action.sanitizedTargetName || action.targetLocalId || 'Protected Action';
             if (confirmRationale) confirmRationale.textContent = action.rationale || 'Action alters persistent state.';
+            actionConfirmModal?.setAttribute('data-confirm-run-id', message.runId || currentRunId);
             actionConfirmModal?.classList.remove('hidden');
             setAgentStatus('awaiting-user-confirmation');
             addAuditEntry('AUTH', `Confirmation requested for ${action.kind}`, 'warn');

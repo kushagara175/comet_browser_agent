@@ -19,23 +19,39 @@ export function toSanitizedNetworkPayload(context) {
         ...(context.redactionManifest ? { redactionManifest: context.redactionManifest } : {})
     };
 }
+export function calculateBase64ByteLength(dataUrlOrBase64) {
+    if (!dataUrlOrBase64 || typeof dataUrlOrBase64 !== 'string')
+        return 0;
+    const commaIdx = dataUrlOrBase64.indexOf(',');
+    const b64 = commaIdx >= 0 ? dataUrlOrBase64.slice(commaIdx + 1) : dataUrlOrBase64;
+    if (!b64.length)
+        return 0;
+    let padding = 0;
+    if (b64.endsWith('=='))
+        padding = 2;
+    else if (b64.endsWith('='))
+        padding = 1;
+    return Math.max(0, Math.floor((b64.length * 3) / 4) - padding);
+}
 /**
  * Generates canonical safe display projection directly from the exact canonical wire payload.
  * Never synthesizes fake run IDs, capture IDs, digests, viewports, or goals.
  * Displays 'Not available' for missing values.
  */
-export function toSanitizedDisplayPayload(payload, digest) {
+export function toSanitizedDisplayPayload(payload, options) {
     if (!payload) {
         return {
             protocolVersion: '1.0',
             status: 'Awaiting initial perception cycle'
         };
     }
+    const payloadDigest = typeof options === 'string' ? options : options?.payloadDigest || 'Not available';
+    const screenshotDigest = typeof options === 'object' ? options?.screenshotDigest || payloadDigest : payloadDigest;
     const screenshot = payload.screenshot || '';
-    const byteCount = screenshot ? Math.round(screenshot.length * 0.75) : 0;
+    const byteCount = calculateBase64ByteLength(screenshot);
     const kbCount = Math.round(byteCount / 1024);
     const screenshotDisplay = screenshot
-        ? `[Screenshot base64 omitted from display: ${kbCount} KB (${byteCount} bytes), SHA-256 digest: ${digest || 'Not available'}]`
+        ? `[Screenshot base64 omitted from display: ${kbCount} KB (${byteCount} bytes), Screenshot SHA-256: ${screenshotDigest}, Payload Structure SHA-256: ${payloadDigest}]`
         : 'Not available';
     return {
         protocolVersion: payload.protocolVersion || '1.0',

@@ -40,42 +40,7 @@ export class PostRedactionVerifier {
       };
     }
 
-    // 2. Validate per-region render records (Stage B2 & B8)
-    if (regionRecords) {
-      if (regionRecords.length !== regions.length) {
-        return {
-          isValid: false,
-          reason: `Region record count mismatch: expected ${regions.length}, got ${regionRecords.length}.`
-        };
-      }
-
-      const failedRecord = regionRecords.find((r) => !r.success);
-      if (failedRecord) {
-        return {
-          isValid: false,
-          reason: `Pixel mask failed for region '${failedRecord.regionId}': ${failedRecord.failureReason || 'unknown render failure'}`
-        };
-      }
-    }
-
-    // 3. Pixel-true canvas verification if canvas is available (Stage B4 & B5)
-    let pixelReport: CanvasVerificationReport | undefined;
-    if (canvases?.sanitizedCanvas && regions.length > 0) {
-      pixelReport = verifyCanvasRedaction(
-        canvases.sanitizedCanvas,
-        canvases.rawCanvas || null,
-        regions
-      );
-      if (!pixelReport.allPassed) {
-        return {
-          isValid: false,
-          reason: `Pixel verification failed: ${pixelReport.failureReason || 'one or more regions unmasked'}`,
-          pixelVerificationReport: pixelReport
-        };
-      }
-    }
-
-    // 4. Canary check in sanitized element names & page title
+    // 2. Canary check in sanitized element names & page title
     if (pageTitle.includes(CANARY_SECRET)) {
       return {
         isValid: false,
@@ -97,6 +62,48 @@ export class PostRedactionVerifier {
         return {
           isValid: false,
           reason: `Residual unredacted PII (${residualPii[0].category}) found in element '${el.localId}'.`
+        };
+      }
+    }
+
+    // 3. Validate per-region render records (Stage B2 & B8)
+    if (regionRecords) {
+      if (regionRecords.length !== regions.length) {
+        return {
+          isValid: false,
+          reason: `Region record count mismatch: expected ${regions.length}, got ${regionRecords.length}.`
+        };
+      }
+
+      const failedRecord = regionRecords.find((r) => !r.success);
+      if (failedRecord) {
+        return {
+          isValid: false,
+          reason: `Pixel mask failed for region '${failedRecord.regionId}': ${failedRecord.failureReason || 'unknown render failure'}`
+        };
+      }
+    }
+
+    // 4. Pixel-true canvas verification (fail closed if regions exist but no canvas evidence provided)
+    let pixelReport: CanvasVerificationReport | undefined;
+    if (regions.length > 0) {
+      if (!canvases?.sanitizedCanvas) {
+        return {
+          isValid: false,
+          reason: `Pixel verification failed: ${regions.length} sensitive regions exist but no sanitized canvas or pixel evidence was provided.`
+        };
+      }
+
+      pixelReport = verifyCanvasRedaction(
+        canvases.sanitizedCanvas,
+        canvases.rawCanvas || null,
+        regions
+      );
+      if (!pixelReport.allPassed) {
+        return {
+          isValid: false,
+          reason: `Pixel verification failed: ${pixelReport.failureReason || 'one or more regions unmasked'}`,
+          pixelVerificationReport: pixelReport
         };
       }
     }

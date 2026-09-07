@@ -14044,7 +14044,13 @@ function toSanitizedNetworkPayload(context) {
 
 // ../../packages/protocol/dist/action.js
 function resolveTaskContract(goal) {
-  const g = (goal || "").trim().toLowerCase();
+  let g = (goal || "").trim().toLowerCase();
+  let prev = "";
+  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?)+/i;
+  while (g && g !== prev) {
+    prev = g;
+    g = g.replace(ACTION_PREFIX_REGEX, "").trim();
+  }
   if (!g) {
     return {
       supported: false,
@@ -14077,9 +14083,9 @@ function resolveTaskContract(goal) {
       expectedTargetNameSubstring: "preview"
     };
   }
-  if (/(?:search|find|locate|type|filter|query|telemetry)/i.test(g)) {
-    const filterMatch = g.match(/(?:search|type|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query))?\s+["']?([^"']+)["']?/i);
-    const val = filterMatch ? filterMatch[1].trim() : "";
+  if (/(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry)/i.test(g)) {
+    const filterMatch = g.match(/(?:search|type|fill|enter|write|set|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query|the\s+search\s+field\s+with|the\s+field\s+with|the\s+input\s+with|this\s+field\s+with|this\s+input\s+with|the\s+input\s+to|in\s+this\s+field|into\s+this\s+field|in\s+the\s+field|with))?\s+["']?([^"']+)["']?/i);
+    const val = filterMatch ? filterMatch[1].replace(/\?+$/, "").trim() : "";
     return {
       supported: true,
       goalPattern: "search_filter",
@@ -14089,7 +14095,7 @@ function resolveTaskContract(goal) {
   }
   if (/(?:select|choose)(?:\s+(?:option))?/i.test(g)) {
     const selectMatch = g.match(/(?:select|choose)(?:\s+(?:option))?\s+["']?([^"']+)["']?/i);
-    const opt = selectMatch ? selectMatch[1].trim() : "";
+    const opt = selectMatch ? selectMatch[1].replace(/\?+$/, "").trim() : "";
     return {
       supported: true,
       goalPattern: "select_option",
@@ -14121,9 +14127,9 @@ function resolveTaskContract(goal) {
       expectedTargetNameSubstring: "approve"
     };
   }
-  if (/(?:click|press|button|link|item|admin|finish|sanitize|sensitive|login|navigate|navigation)/i.test(g)) {
-    const clickMatch = g.match(/click\s+(?:the\s+)?["']?([^"']+)["']?/i);
-    const target = clickMatch ? clickMatch[1].trim() : void 0;
+  if (/(?:click|press|button|link|item|admin|finish|sanitize|sensitive|login|navigate|navigation|go\s+to)/i.test(g)) {
+    const clickMatch = g.match(/(?:click|press|go\s+to|navigate\s+to)\s+(?:the\s+)?["']?([^"']+)["']?/i);
+    const target = clickMatch ? clickMatch[1].replace(/\?+$/, "").trim() : void 0;
     return {
       supported: true,
       goalPattern: "click_control",
@@ -15225,8 +15231,31 @@ function verifyCanvasRedaction(sanitizedCanvas, rawCanvas, regions) {
     const y = Math.max(0, Math.min(canvasHeight - 1, Math.floor(box.y)));
     const w = Math.max(1, Math.min(canvasWidth - x, Math.ceil(box.width)));
     const h = Math.max(1, Math.min(canvasHeight - y, Math.ceil(box.height)));
-    const sData = sCtx.getImageData(x, y, w, h).data;
-    const rData = rCtx ? rCtx.getImageData(x, y, w, h).data : null;
+    let sData;
+    let rData = null;
+    try {
+      sData = sCtx.getImageData(x, y, w, h).data;
+      if (sData.length !== w * h * 4) {
+        throw new Error(`Pixel buffer size mismatch: expected ${w * h * 4}, got ${sData.length}`);
+      }
+      if (rCtx) {
+        rData = rCtx.getImageData(x, y, w, h).data;
+      }
+    } catch (err) {
+      verdicts.push({
+        id: region.id,
+        covered: false,
+        method: region.method,
+        opaqueFraction: 0,
+        overlayFraction: 0,
+        residualVariance: 0,
+        rawVariance: 0,
+        varianceReduction: 0,
+        sampledPixels: 0,
+        failureReason: `Canvas getImageData extraction failed: ${err?.message || "unknown error"}`
+      });
+      continue;
+    }
     const verdict = verifyRegionPixelBuffer(sData, rData, region.method, region.id);
     verdicts.push(verdict);
   }
@@ -15488,36 +15517,6 @@ var PostRedactionVerifier = class {
         reason: `Mask count mismatch: detected ${regions.length} regions but rendered ${renderedMaskCount} masks.`
       };
     }
-    if (regionRecords) {
-      if (regionRecords.length !== regions.length) {
-        return {
-          isValid: false,
-          reason: `Region record count mismatch: expected ${regions.length}, got ${regionRecords.length}.`
-        };
-      }
-      const failedRecord = regionRecords.find((r) => !r.success);
-      if (failedRecord) {
-        return {
-          isValid: false,
-          reason: `Pixel mask failed for region '${failedRecord.regionId}': ${failedRecord.failureReason || "unknown render failure"}`
-        };
-      }
-    }
-    let pixelReport;
-    if (canvases?.sanitizedCanvas && regions.length > 0) {
-      pixelReport = verifyCanvasRedaction(
-        canvases.sanitizedCanvas,
-        canvases.rawCanvas || null,
-        regions
-      );
-      if (!pixelReport.allPassed) {
-        return {
-          isValid: false,
-          reason: `Pixel verification failed: ${pixelReport.failureReason || "one or more regions unmasked"}`,
-          pixelVerificationReport: pixelReport
-        };
-      }
-    }
     if (pageTitle.includes(CANARY_SECRET)) {
       return {
         isValid: false,
@@ -15536,6 +15535,42 @@ var PostRedactionVerifier = class {
         return {
           isValid: false,
           reason: `Residual unredacted PII (${residualPii[0].category}) found in element '${el2.localId}'.`
+        };
+      }
+    }
+    if (regionRecords) {
+      if (regionRecords.length !== regions.length) {
+        return {
+          isValid: false,
+          reason: `Region record count mismatch: expected ${regions.length}, got ${regionRecords.length}.`
+        };
+      }
+      const failedRecord = regionRecords.find((r) => !r.success);
+      if (failedRecord) {
+        return {
+          isValid: false,
+          reason: `Pixel mask failed for region '${failedRecord.regionId}': ${failedRecord.failureReason || "unknown render failure"}`
+        };
+      }
+    }
+    let pixelReport;
+    if (regions.length > 0) {
+      if (!canvases?.sanitizedCanvas) {
+        return {
+          isValid: false,
+          reason: `Pixel verification failed: ${regions.length} sensitive regions exist but no sanitized canvas or pixel evidence was provided.`
+        };
+      }
+      pixelReport = verifyCanvasRedaction(
+        canvases.sanitizedCanvas,
+        canvases.rawCanvas || null,
+        regions
+      );
+      if (!pixelReport.allPassed) {
+        return {
+          isValid: false,
+          reason: `Pixel verification failed: ${pixelReport.failureReason || "one or more regions unmasked"}`,
+          pixelVerificationReport: pixelReport
         };
       }
     }
@@ -16055,6 +16090,7 @@ var SanitizerPipeline = class {
 var WebExtensionAdapter = class {
   offscreenCreationPromise = null;
   offscreenCloseTimer = null;
+  lastCaptureTime = 0;
   get browserAPI() {
     if (typeof chrome !== "undefined") return chrome;
     if (typeof globalThis.browser !== "undefined") return globalThis.browser;
@@ -16065,45 +16101,63 @@ var WebExtensionAdapter = class {
     if (!api || !api.tabs || !api.tabs.captureVisibleTab) {
       return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
     }
-    return new Promise((resolve, reject) => {
-      try {
-        api.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {
-          if (api.runtime.lastError) {
-            try {
-              api.tabs.captureVisibleTab({ format: "png" }, (fallbackDataUrl) => {
-                if (api.runtime.lastError) {
-                  reject(new Error(api.runtime.lastError.message));
-                } else if (!fallbackDataUrl) {
-                  reject(new Error("Tab capture returned empty data"));
-                } else {
-                  resolve(fallbackDataUrl);
-                }
-              });
-            } catch (err) {
-              reject(new Error(err.message || api.runtime.lastError.message));
-            }
-          } else if (!dataUrl) {
-            reject(new Error("Tab capture returned empty data"));
-          } else {
-            resolve(dataUrl);
-          }
-        });
-      } catch (err) {
+    const now = Date.now();
+    const elapsed = now - this.lastCaptureTime;
+    if (elapsed < 550) {
+      await new Promise((r) => setTimeout(r, 550 - elapsed));
+    }
+    this.lastCaptureTime = Date.now();
+    const doCapture = () => {
+      return new Promise((resolve, reject) => {
         try {
-          api.tabs.captureVisibleTab({ format: "png" }, (dataUrl) => {
+          api.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {
             if (api.runtime.lastError) {
-              reject(new Error(api.runtime.lastError.message));
+              try {
+                api.tabs.captureVisibleTab({ format: "png" }, (fallbackDataUrl) => {
+                  if (api.runtime.lastError) {
+                    reject(new Error(api.runtime.lastError.message));
+                  } else if (!fallbackDataUrl) {
+                    reject(new Error("Tab capture returned empty data"));
+                  } else {
+                    resolve(fallbackDataUrl);
+                  }
+                });
+              } catch (err) {
+                reject(new Error(err.message || api.runtime.lastError.message));
+              }
             } else if (!dataUrl) {
               reject(new Error("Tab capture returned empty data"));
             } else {
               resolve(dataUrl);
             }
           });
-        } catch (e) {
-          reject(new Error(e.message || err.message));
+        } catch (err) {
+          try {
+            api.tabs.captureVisibleTab({ format: "png" }, (dataUrl) => {
+              if (api.runtime.lastError) {
+                reject(new Error(api.runtime.lastError.message));
+              } else if (!dataUrl) {
+                reject(new Error("Tab capture returned empty data"));
+              } else {
+                resolve(dataUrl);
+              }
+            });
+          } catch (e) {
+            reject(new Error(e.message || err.message));
+          }
         }
+      });
+    };
+    try {
+      return await doCapture();
+    } catch (err) {
+      if (err.message && err.message.includes("MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND")) {
+        await new Promise((r) => setTimeout(r, 600));
+        this.lastCaptureTime = Date.now();
+        return await doCapture();
       }
-    });
+      throw err;
+    }
   }
   async sendMessageToTab(tabId, message) {
     const api = this.browserAPI;
@@ -16685,6 +16739,9 @@ var ReasoningHttpClient = class {
   getServerBaseUrl() {
     return this.serverBaseUrl;
   }
+  setServerBaseUrl(url) {
+    this.serverBaseUrl = url.replace(/\/+$/, "");
+  }
   /**
    * Turns a transport failure into something the user can act on. A bare
    * "Failed to fetch" is the single most confusing symptom in this system:
@@ -16981,6 +17038,7 @@ var RunCoordinator = class {
   isCancelled = false;
   stepsTrace = [];
   currentTaskContract = null;
+  currentRunId = "";
   constructor(browser = new WebExtensionAdapter(), httpClient = new ReasoningHttpClient(), auditLogger = new AuditLogger(), options = {}) {
     this.browser = browser;
     this.httpClient = httpClient;
@@ -16994,8 +17052,19 @@ var RunCoordinator = class {
   getState() {
     return this.state;
   }
+  getCurrentRunId() {
+    return this.currentRunId;
+  }
   getLastResult() {
     return this.lastRunResult;
+  }
+  completeWithResult(res) {
+    const finalRes = {
+      ...res,
+      runId: res.runId || this.currentRunId || void 0
+    };
+    this.lastRunResult = finalRes;
+    return finalRes;
   }
   cancelRun() {
     this.isCancelled = true;
@@ -17004,7 +17073,7 @@ var RunCoordinator = class {
   transition(next, msg) {
     this.state = next;
     if (this.listeners.onStateChange) {
-      this.listeners.onStateChange(next, msg);
+      this.listeners.onStateChange(next, msg, this.currentRunId);
     }
   }
   recordActionHistory(proposal) {
@@ -17033,9 +17102,9 @@ var RunCoordinator = class {
   }
   tryResolveLocalSafeAction(goal, sanitized, step) {
     const trimmedGoal = (goal || "").trim().toLowerCase();
-    const scrollMatch = trimmedGoal.match(/^scroll\s+(down|up|top|bottom)/i);
-    if (scrollMatch) {
-      const dir = scrollMatch[1].toLowerCase();
+    const scrollContract = this.currentTaskContract?.expectedTerminal.kind === "scroll_changed" ? this.currentTaskContract.expectedTerminal : null;
+    if (scrollContract) {
+      const dir = scrollContract.direction;
       if (step > 1 && this.actionHistory.length > 0 && this.actionHistory[this.actionHistory.length - 1].kind === "scroll") {
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
@@ -17074,13 +17143,16 @@ var RunCoordinator = class {
       }
       const isStatusGoal = this.currentTaskContract.expectedTerminal.kind === "status_changed";
       const targetSub = (this.currentTaskContract.expectedTargetNameSubstring || "").toLowerCase();
-      if (isStatusGoal && lastAction.kind === "click" && (targetSub.includes("sync") || targetSub.includes("refresh"))) {
+      const statusSummaries = (sanitized.pageState?.statusSummaries || []).map((s) => s.toLowerCase());
+      const postSummary = (sanitized.pageState?.postconditionSummary || "").toLowerCase();
+      const isSynchronized = statusSummaries.some((s) => s.includes("synchronized")) || postSummary.includes("synchronized");
+      if (isStatusGoal && lastAction.kind === "click" && (targetSub.includes("sync") || targetSub.includes("refresh")) && isSynchronized) {
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
           kind: "finish",
           confidence: 1,
           risk: "safe",
-          rationale: `Status mutation for ${targetSub} verified; task completed locally`
+          rationale: `Status mutation for ${targetSub} verified: final status Synchronized; task completed locally`
         };
       }
       const isFilterGoal = this.currentTaskContract.goalPattern === "search_filter";
@@ -17127,6 +17199,9 @@ var RunCoordinator = class {
   }
   verifyTerminalPostcondition(contract, sanitized, actionHistory) {
     if (contract.isPassive) {
+      if (sanitized.elements.length === 0) {
+        return { satisfied: false, reason: "Observation contract unsatisfied: zero interactive elements observed on page" };
+      }
       return { satisfied: true };
     }
     if (actionHistory.length === 0) {
@@ -17150,10 +17225,7 @@ var RunCoordinator = class {
               reason: `Wrong dialog visible: expected dialog matching '${reqFragment}', but found '${dialogTitles.join(", ") || elementNames.join(", ")}'`
             };
           }
-          const hasClick2 = actionHistory.some((a) => a.kind === "click");
-          if (!hasClick2) {
-            return { satisfied: false, reason: `Expected dialog matching '${reqFragment}' is not visible` };
-          }
+          return { satisfied: false, reason: `Expected dialog matching '${reqFragment}' is not visible on page` };
         }
         const hasClick = actionHistory.some((a) => a.kind === "click");
         if (!hasClick) {
@@ -17189,9 +17261,25 @@ var RunCoordinator = class {
         return { satisfied: true };
       }
       case "status_changed": {
-        const lastAction = actionHistory[actionHistory.length - 1];
-        if (lastAction.kind === "wait") {
-          return { satisfied: false, reason: "Action history contains only wait" };
+        const hasMutatingAction = actionHistory.some((a) => a.kind === "click" || a.kind === "type" || a.kind === "select");
+        if (!hasMutatingAction) {
+          return { satisfied: false, reason: "Action history contains only wait without any preceding trigger action" };
+        }
+        const statusSummaries = (sanitized.pageState?.statusSummaries || []).map((s) => s.toLowerCase());
+        const postSummary = (sanitized.pageState?.postconditionSummary || "").toLowerCase();
+        if (term.statusId) {
+          const expected = term.statusId.toLowerCase();
+          const matches = statusSummaries.some((s) => s.includes(expected)) || postSummary.includes(expected);
+          if (!matches) {
+            return { satisfied: false, reason: `Status mutation unverified: expected '${term.statusId}', page indicates '${statusSummaries.join(", ") || postSummary}'` };
+          }
+        }
+        const targetSub = (contract.expectedTargetNameSubstring || "").toLowerCase();
+        if (targetSub.includes("sync") || targetSub.includes("refresh")) {
+          const isSynchronized = statusSummaries.some((s) => s.includes("synchronized")) || postSummary.includes("synchronized");
+          if (!isSynchronized) {
+            return { satisfied: false, reason: `Data synchronization is still in progress; terminal state 'Synchronized' not reached` };
+          }
         }
         return { satisfied: true };
       }
@@ -17205,7 +17293,7 @@ var RunCoordinator = class {
     this.cumulativeClientLatency += stepClientMs;
     this.cumulativeServerLatency += stepServerMs;
     return {
-      runId: `run_${this.t0_runStart}`,
+      runId: this.currentRunId || `run_${this.t0_runStart}`,
       t0_start: this.t0_runStart,
       t1_captureComplete: t1,
       t2_detectionComplete: t2,
@@ -17225,26 +17313,27 @@ var RunCoordinator = class {
    * Starts an automated bounded multi-step agent run for a specific user goal.
    */
   async startRun(goal, options) {
+    const requestedRunId = options?.runId || "run_" + Date.now() + "_" + Math.random().toString(36).slice(2, 9);
     if (this.state !== "idle" && this.state !== "complete" && this.state !== "failed-safe" && this.state !== "blocked-local-only" && this.state !== "awaiting-user-confirmation") {
       const errorMsg = "Cannot start new run: an agent run is already in progress";
-      const res = { success: false, state: this.state, error: errorMsg };
-      this.lastRunResult = res;
-      return res;
+      const res = { runId: requestedRunId, success: false, state: this.state, error: errorMsg };
+      return this.completeWithResult(res);
     }
+    this.currentRunId = requestedRunId;
     this.currentGoal = goal;
     this.currentTaskContract = resolveTaskContract(goal);
     if (!this.currentTaskContract.supported) {
       const errorMsg = this.currentTaskContract.abstentionReason || "Task abstained: Goal is outside closed supported task contracts";
       this.transition("failed-safe", errorMsg);
       const res = {
+        runId: this.currentRunId,
         success: false,
         state: "failed-safe",
         error: errorMsg,
         stepCount: 0,
         steps: []
       };
-      this.lastRunResult = res;
-      return res;
+      return this.completeWithResult(res);
     }
     this.currentStep = 0;
     this.currentMaxSteps = Math.max(1, Math.min(options?.maxSteps ?? this.defaultMaxSteps, 20));
@@ -17269,15 +17358,13 @@ var RunCoordinator = class {
     const goal = this.currentGoal;
     if (!goal) {
       const res2 = { success: false, state: "idle", error: "No active goal" };
-      this.lastRunResult = res2;
-      return res2;
+      return this.completeWithResult(res2);
     }
     while (this.currentStep < this.currentMaxSteps) {
       if (this.isCancelled) {
         this.transition("idle", "Run cancelled by user");
         const res2 = { success: false, state: "idle", message: "Run cancelled by user" };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
       }
       this.currentStep++;
       const step = this.currentStep;
@@ -17295,8 +17382,7 @@ var RunCoordinator = class {
           error: errorMsg2,
           stepCount: step
         };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
       }
       const captureId = `cap_${Date.now()}_${step}`;
       let domResponse;
@@ -17314,8 +17400,7 @@ var RunCoordinator = class {
           error: errorMsg2,
           stepCount: step
         };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
       }
       if (!domResponse || !domResponse.success) {
         const errorMsg2 = "Failed to extract DOM snapshot from content script. Please reload the tab.";
@@ -17326,8 +17411,7 @@ var RunCoordinator = class {
           error: errorMsg2,
           stepCount: step
         };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
       }
       let screenshotDataUrl;
       try {
@@ -17341,8 +17425,7 @@ var RunCoordinator = class {
           error: errorMsg2,
           stepCount: step
         };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
       }
       const t1_captureComplete = Date.now();
       const rawCapture = {
@@ -17374,13 +17457,12 @@ var RunCoordinator = class {
           diagnostic,
           stepCount: step
         };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
       }
       const t3_sanitizationValidated = Date.now();
       this.currentSanitizedContext = sanitized;
       if (this.listeners.onSanitizationComplete) {
-        this.listeners.onSanitizationComplete(rawCapture, sanitized);
+        this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
       }
       const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step);
       let proposal;
@@ -17408,8 +17490,7 @@ var RunCoordinator = class {
             sanitized,
             stepCount: step
           };
-          this.lastRunResult = res2;
-          return res2;
+          return this.completeWithResult(res2);
         }
         t4_reasoningReceived = Date.now();
       }
@@ -17427,8 +17508,7 @@ var RunCoordinator = class {
           proposal,
           stepCount: step
         };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
       }
       if (proposal.confidence < 0.25 && proposal.kind !== "finish" && proposal.kind !== "wait") {
         const errorMsg2 = `Action rejected: Proposal confidence (${proposal.confidence}) is below safe execution threshold (0.25)`;
@@ -17457,8 +17537,7 @@ var RunCoordinator = class {
           stepCount: step,
           steps: this.stepsTrace
         };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
       }
       if (proposal.targetLocalId && proposal.kind === "click") {
         const targetElement2 = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
@@ -17476,7 +17555,8 @@ var RunCoordinator = class {
         }
       }
       const targetElement = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
-      const riskLevel = classifyActionRisk(proposal, targetElement?.sanitizedName);
+      const classifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
+      const riskLevel = proposal.risk === "blocked" || classifiedRisk === "blocked" ? "blocked" : proposal.risk === "protected" || classifiedRisk === "protected" ? "protected" : "safe";
       if (riskLevel === "blocked") {
         const errorMsg2 = `Action blocked by client safety policy: ${proposal.rationale}`;
         this.transition("failed-safe", errorMsg2);
@@ -17504,15 +17584,14 @@ var RunCoordinator = class {
           stepCount: step,
           steps: this.stepsTrace
         };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
       }
       if (riskLevel === "protected") {
         this.pendingAction = proposal;
         const msg = `Protected action requires user consent: ${proposal.rationale}`;
         this.transition("awaiting-user-confirmation", msg);
         if (this.listeners.onActionConfirmedRequired) {
-          this.listeners.onActionConfirmedRequired(proposal);
+          this.listeners.onActionConfirmedRequired(proposal, this.currentRunId);
         }
         const stepTrace2 = {
           step,
@@ -17538,11 +17617,10 @@ var RunCoordinator = class {
           stepCount: step,
           steps: this.stepsTrace
         };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
       }
       if (this.listeners.onActionProposed) {
-        this.listeners.onActionProposed(proposal);
+        this.listeners.onActionProposed(proposal, this.currentRunId);
       }
       if (proposal.kind === "finish") {
         const terminalCheck = this.currentTaskContract ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory) : { satisfied: false, reason: "No task contract active" };
@@ -17578,13 +17656,12 @@ var RunCoordinator = class {
             stepCount: step,
             steps: this.stepsTrace
           };
-          this.lastRunResult = res3;
-          return res3;
+          return this.completeWithResult(res3);
         }
         const tFin = Date.now();
         const telemetry2 = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, tFin, tFin, step);
         if (this.listeners.onTelemetryUpdated) {
-          this.listeners.onTelemetryUpdated(telemetry2);
+          this.listeners.onTelemetryUpdated(telemetry2, this.currentRunId);
         }
         this.transition("complete", `Task completed: ${proposal.rationale}`);
         const stepTrace2 = {
@@ -17617,8 +17694,7 @@ var RunCoordinator = class {
           stepCount: step,
           steps: this.stepsTrace
         };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
       }
       const isDuplicate = this.isRepeatedAction(proposal);
       if (isDuplicate) {
@@ -17633,10 +17709,12 @@ var RunCoordinator = class {
           stepCount: step,
           steps: this.stepsTrace
         };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
       }
       this.transition("executing", `Step ${step}/${maxSteps}: Executing '${proposal.kind}' on ${proposal.targetLocalId || "page"}`);
+      if (proposal.kind === "wait") {
+        await new Promise((r) => setTimeout(r, 600));
+      }
       const execResponse = await this.browser.sendMessageToTab(activeTab.id, {
         type: "EXECUTE_ACTION",
         proposal,
@@ -17647,7 +17725,7 @@ var RunCoordinator = class {
       const t7_stateVerified = Date.now();
       const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
       if (this.listeners.onTelemetryUpdated) {
-        this.listeners.onTelemetryUpdated(telemetry);
+        this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
       }
       if (execResponse && execResponse.staleTarget) {
         if (proposal.risk !== "safe") {
@@ -17663,8 +17741,7 @@ var RunCoordinator = class {
             stepCount: step,
             steps: this.stepsTrace
           };
-          this.lastRunResult = res2;
-          return res2;
+          return this.completeWithResult(res2);
         }
         if (this.currentStaleRetries < this.maxStaleRetries) {
           this.currentStaleRetries++;
@@ -17683,8 +17760,7 @@ var RunCoordinator = class {
             stepCount: step,
             steps: this.stepsTrace
           };
-          this.lastRunResult = res2;
-          return res2;
+          return this.completeWithResult(res2);
         }
       }
       this.recordActionHistory(proposal);
@@ -17736,12 +17812,30 @@ var RunCoordinator = class {
           stepCount: step,
           steps: this.stepsTrace
         };
-        this.lastRunResult = res2;
-        return res2;
+        return this.completeWithResult(res2);
+      }
+      if (this.currentTaskContract?.expectedTerminal.kind === "scroll_changed" && proposal.kind === "scroll") {
+        const tFin = Date.now();
+        const telemetry2 = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
+        if (this.listeners.onTelemetryUpdated) {
+          this.listeners.onTelemetryUpdated(telemetry2, this.currentRunId);
+        }
+        this.transition("complete", `Scroll ${proposal.scrollDirection || "down"} executed and verified: navigation complete`);
+        const res2 = {
+          success: true,
+          state: "complete",
+          message: `Scroll ${proposal.scrollDirection || "down"} executed and verified`,
+          sanitized,
+          proposal,
+          telemetry: telemetry2,
+          stepCount: step,
+          steps: this.stepsTrace
+        };
+        return this.completeWithResult(res2);
       }
       this.currentStaleRetries = 0;
       if (this.listeners.onStepProgress) {
-        this.listeners.onStepProgress(step, maxSteps, proposal.rationale);
+        this.listeners.onStepProgress(step, maxSteps, proposal.rationale, this.currentRunId);
       }
     }
     const errorMsg = `Step budget exhausted (${this.currentMaxSteps} steps) without completing goal`;
@@ -17753,8 +17847,7 @@ var RunCoordinator = class {
       stepCount: this.currentStep,
       sanitized: this.currentSanitizedContext || void 0
     };
-    this.lastRunResult = res;
-    return res;
+    return this.completeWithResult(res);
   }
   /**
    * Reports whether the reasoning gateway and a model backend are reachable.
@@ -17813,7 +17906,7 @@ var RunCoordinator = class {
         return this.generalChat(userMessage);
       }
       if (this.listeners.onSanitizationComplete) {
-        this.listeners.onSanitizationComplete(rawCapture, sanitized);
+        this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
       }
       const chatRes = await this.httpClient.requestChat(sanitized, userMessage);
       return {
@@ -17872,8 +17965,7 @@ ${detail}`,
         state: "idle",
         error: "No pending action to approve"
       };
-      this.lastRunResult = res2;
-      return res2;
+      return this.completeWithResult(res2);
     }
     const action = this.pendingAction;
     const sanitized = this.currentSanitizedContext;
@@ -17889,8 +17981,7 @@ ${detail}`,
         proposal: action,
         stepCount: this.currentStep
       };
-      this.lastRunResult = res2;
-      return res2;
+      return this.completeWithResult(res2);
     }
     const activeTab = await this.browser.getActiveTab();
     const t0 = Date.now();
@@ -17911,13 +18002,12 @@ ${detail}`,
         proposal: action,
         stepCount: this.currentStep
       };
-      this.lastRunResult = res2;
-      return res2;
+      return this.completeWithResult(res2);
     }
     const now = Date.now();
     const telemetry = this.createTelemetry(t0, now, now, now, now, now, now, now, this.currentStep);
     if (this.listeners.onTelemetryUpdated) {
-      this.listeners.onTelemetryUpdated(telemetry);
+      this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
     }
     const isSuccess = Boolean(execResponse && execResponse.success && execResponse.semanticOutcomeVerified);
     if (!isSuccess) {
@@ -17932,8 +18022,7 @@ ${detail}`,
         telemetry,
         stepCount: this.currentStep
       };
-      this.lastRunResult = res2;
-      return res2;
+      return this.completeWithResult(res2);
     }
     this.recordActionHistory(action);
     const lastStepIndex = this.stepsTrace.length - 1;
@@ -17967,8 +18056,7 @@ ${detail}`,
       telemetry,
       stepCount: this.currentStep
     };
-    this.lastRunResult = res;
-    return res;
+    return this.completeWithResult(res);
   }
   /**
    * Called when the user clicks 'Deny' on a protected action card.
@@ -17987,8 +18075,10 @@ ${detail}`,
       sanitized: sanitized || void 0,
       stepCount: this.currentStep
     };
-    this.lastRunResult = res;
-    return res;
+    return this.completeWithResult(res);
+  }
+  setServerUrl(url) {
+    this.httpClient.setServerBaseUrl(url);
   }
 };
 
@@ -17999,16 +18089,17 @@ if (typeof chrome !== "undefined" && chrome.sidePanel && typeof chrome.sidePanel
   });
 }
 coordinator.setListeners({
-  onStateChange: (state, message) => {
+  onStateChange: (state, message, runId) => {
     if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: "COORDINATOR_STATE_CHANGED", state, message }).catch(() => {
+      chrome.runtime.sendMessage({ type: "COORDINATOR_STATE_CHANGED", state, message, runId }).catch(() => {
       });
     }
   },
-  onSanitizationComplete: (raw, sanitized) => {
+  onSanitizationComplete: (raw, sanitized, runId) => {
     if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
       chrome.runtime.sendMessage({
         type: "COORDINATOR_SANITIZATION_COMPLETE",
+        runId,
         networkPayload: toSanitizedNetworkPayload(sanitized),
         payloadDigestSha256: sanitized.payloadDigestSha256,
         maskCount: sanitized.maskCount,
@@ -18021,28 +18112,37 @@ coordinator.setListeners({
       });
     }
   },
-  onActionProposed: (action) => {
+  onActionProposed: (action, runId) => {
     if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: "COORDINATOR_ACTION_PROPOSED", action }).catch(() => {
+      chrome.runtime.sendMessage({ type: "COORDINATOR_ACTION_PROPOSED", action, runId }).catch(() => {
       });
     }
   },
-  onActionConfirmedRequired: (action) => {
+  onActionConfirmedRequired: (action, runId) => {
     if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: "COORDINATOR_CONFIRMATION_REQUIRED", action }).catch(() => {
+      chrome.runtime.sendMessage({ type: "COORDINATOR_CONFIRMATION_REQUIRED", action, runId }).catch(() => {
       });
     }
   },
-  onTelemetryUpdated: (telemetry) => {
+  onTelemetryUpdated: (telemetry, runId) => {
     if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: "COORDINATOR_TELEMETRY_UPDATED", telemetry }).catch(() => {
+      chrome.runtime.sendMessage({ type: "COORDINATOR_TELEMETRY_UPDATED", telemetry, runId }).catch(() => {
+      });
+    }
+  },
+  onStepProgress: (step, maxSteps, message, runId) => {
+    if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ type: "COORDINATOR_STEP_PROGRESS", step, maxSteps, message, runId }).catch(() => {
       });
     }
   }
 });
 async function handleSidepanelRequest(message) {
   if (message.type === "START_AGENT_RUN") {
-    return coordinator.startRun(message.goal || "Safe assistance");
+    return coordinator.startRun(message.goal || "Safe assistance", {
+      runId: message.runId,
+      maxSteps: message.maxSteps
+    });
   }
   if (message.type === "GENERAL_CHAT") {
     return coordinator.chatWithoutPage(message.message || "");
@@ -18083,7 +18183,10 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       return false;
     }
     if (message.type === "START_AGENT_RUN") {
-      coordinator.startRun(message.goal || "Safe assistance").then((result) => {
+      coordinator.startRun(message.goal || "Safe assistance", {
+        runId: message.runId,
+        maxSteps: message.maxSteps
+      }).then((result) => {
         sendResponse(result);
       }).catch((err) => {
         sendResponse({ success: false, state: "failed-safe", error: err.message });
@@ -18124,6 +18227,11 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       }).catch((err) => {
         sendResponse({ reachable: false, error: err?.message || "Model status check failed" });
       });
+      return true;
+    }
+    if (message.type === "SET_SERVER_URL") {
+      coordinator.setServerUrl(message.url);
+      sendResponse({ success: true, url: message.url });
       return true;
     }
     if (message.type === "APPROVE_ACTION") {

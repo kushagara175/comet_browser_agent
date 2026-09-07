@@ -7,7 +7,8 @@ import assert from 'node:assert';
 import {
   viewportToScreenshotBox,
   mergeBoundingBoxes,
-  classifyActionRisk
+  classifyActionRisk,
+  resolveTaskContract
 } from '../packages/protocol/dist/index.js';
 
 test('Coordinate Transformation - Handles DPR 2x Scaling and Clamping', () => {
@@ -55,6 +56,49 @@ test('Bounding Box Fusion - Merges Overlapping Rectangles', () => {
   assert.strictEqual(merged[0].width, 90); // 10 to 100
   assert.strictEqual(merged[0].height, 35); // 10 to 45
   assert.strictEqual(merged[1].x, 200);
+});
+
+test('Task Contracts - polite fill commands remain executable browser tasks', () => {
+  const commands = [
+    'fill the search field with telemetry',
+    'Please fill the search field with telemetry',
+    'Can you fill the search field with telemetry?',
+    'I want you to enter telemetry in the search input'
+  ];
+
+  for (const command of commands) {
+    const contract = resolveTaskContract(command);
+    assert.strictEqual(contract.supported, true, `Expected supported contract for: ${command}`);
+    assert.strictEqual(contract.goalPattern, 'search_filter');
+    assert.strictEqual(contract.expectedTerminal.kind, 'value_present');
+  }
+});
+
+test('Task Contracts - polite scroll commands resolve scroll_changed contract', () => {
+  const commands = [
+    'scroll down',
+    'Please scroll down',
+    'Could you please scroll down?',
+    'Hey PrivaPilot, please scroll down',
+    'I want you to scroll down',
+    'Can you scroll up?'
+  ];
+
+  for (const command of commands) {
+    const contract = resolveTaskContract(command);
+    assert.strictEqual(contract.supported, true, `Expected supported contract for: ${command}`);
+    assert.strictEqual(contract.goalPattern, 'scroll');
+    assert.strictEqual(contract.expectedTerminal.kind, 'scroll_changed');
+  }
+});
+
+test('Task Contracts - polite click and select commands resolve contracts', () => {
+  const clickContract = resolveTaskContract('Please click the Problem Statements link');
+  assert.strictEqual(clickContract.supported, true);
+
+  const selectContract = resolveTaskContract('Could you please select Pending?');
+  assert.strictEqual(selectContract.supported, true);
+  assert.strictEqual(selectContract.expectedTerminal.kind, 'select_changed');
 });
 
 test('Action Policy - Correctly Classifies Safe vs Protected vs Blocked Actions', () => {

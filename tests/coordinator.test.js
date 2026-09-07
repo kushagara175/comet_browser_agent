@@ -39,6 +39,8 @@ function createFakeBrowserAdapter(options = {}) {
   const elements = options.elements || createSampleElements();
   const sentMessages = [];
 
+  let actionExecuted = false;
+
   const adapter = {
     sentMessages,
     async captureVisibleTab() {
@@ -63,6 +65,7 @@ function createFakeBrowserAdapter(options = {}) {
       }
 
       if (message.type === 'EXECUTE_ACTION') {
+        actionExecuted = true;
         if (options.executeResponse) {
           return options.executeResponse;
         }
@@ -95,7 +98,13 @@ function createFakeBrowserAdapter(options = {}) {
         goal: request.goal,
         sanitizedScreenshotDataUrl: request.rawCapture.rawScreenshotDataUrl,
         elements,
-        pageState: { title: 'Test Portal', viewport: [1280, 720] },
+        pageState: {
+          title: 'Test Portal',
+          viewport: [1280, 720],
+          visibleDialogCount: actionExecuted ? 1 : 0,
+          dialogTitles: actionExecuted ? ['Safe Preview Drawer'] : [],
+          statusSummaries: actionExecuted ? ['Status: Approved'] : []
+        },
         maskCount: 1,
         payloadDigestSha256: 'sha256_mock',
         timestamp: Date.now()

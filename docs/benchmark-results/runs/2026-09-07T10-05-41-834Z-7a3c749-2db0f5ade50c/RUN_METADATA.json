@@ -3,12 +3,12 @@
   "cpuModel": "Apple M2",
   "cpuCores": 8,
   "totalRamMb": 16384,
-  "freeRamMb": 76,
+  "freeRamMb": 72,
   "nodeVersion": "v22.22.0",
   "browserVersion": "Chrome/152.0.7977.77",
   "chromePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "gitSha": "7a3c749",
   "gitDirty": true,
-  "dirtyPatchHash": "4ba0a383f811",
-  "sourceFingerprint": "3dde1666103c"
+  "dirtyPatchHash": "71ab3b381eea",
+  "sourceFingerprint": "2db0f5ade50c"
 }

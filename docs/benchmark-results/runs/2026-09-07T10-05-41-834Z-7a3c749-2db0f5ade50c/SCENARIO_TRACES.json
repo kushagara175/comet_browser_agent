@@ -8,7 +8,7 @@
     "assessableRegions": 2,
     "safePreserved": 1,
     "safeTotal": 1,
-    "clientLatencyMs": 35.7,
+    "clientLatencyMs": 32.8,
     "heapMb": 10.7,
     "privacyPassed": true
   },
@@ -21,7 +21,7 @@
     "assessableRegions": 2,
     "safePreserved": 1,
     "safeTotal": 1,
-    "clientLatencyMs": 33.4,
+    "clientLatencyMs": 32.3,
     "heapMb": 10.4,
     "privacyPassed": true
   },
@@ -34,7 +34,7 @@
     "assessableRegions": 3,
     "safePreserved": 1,
     "safeTotal": 1,
-    "clientLatencyMs": 31.6,
+    "clientLatencyMs": 33.8,
     "heapMb": 8.5,
     "privacyPassed": true
   },
@@ -47,7 +47,7 @@
     "assessableRegions": 4,
     "safePreserved": 2,
     "safeTotal": 2,
-    "clientLatencyMs": 31.6,
+    "clientLatencyMs": 34.1,
     "heapMb": 10.6,
     "privacyPassed": true
   },
@@ -60,7 +60,7 @@
     "assessableRegions": 2,
     "safePreserved": 1,
     "safeTotal": 1,
-    "clientLatencyMs": 34.5,
+    "clientLatencyMs": 35.9,
     "heapMb": 12.3,
     "privacyPassed": true
   },
@@ -73,8 +73,8 @@
     "assessableRegions": 1,
     "safePreserved": 1,
     "safeTotal": 1,
-    "clientLatencyMs": 30.1,
-    "heapMb": 14,
+    "clientLatencyMs": 26.1,
+    "heapMb": 13.8,
     "privacyPassed": true
   },
   {
@@ -86,8 +86,8 @@
     "assessableRegions": 1,
     "safePreserved": 1,
     "safeTotal": 1,
-    "clientLatencyMs": 32.8,
-    "heapMb": 8.6,
+    "clientLatencyMs": 33,
+    "heapMb": 8.5,
     "privacyPassed": true
   },
   {
@@ -99,8 +99,8 @@
     "assessableRegions": 1,
     "safePreserved": 1,
     "safeTotal": 1,
-    "clientLatencyMs": 36.5,
-    "heapMb": 9.7,
+    "clientLatencyMs": 36.3,
+    "heapMb": 9.6,
     "privacyPassed": true
   },
   {
@@ -112,8 +112,8 @@
     "assessableRegions": 0,
     "safePreserved": 1,
     "safeTotal": 1,
-    "clientLatencyMs": 26.5,
-    "heapMb": 9.8,
+    "clientLatencyMs": 26.6,
+    "heapMb": 9.7,
     "privacyPassed": true
   },
   {
@@ -125,8 +125,8 @@
     "assessableRegions": 0,
     "safePreserved": 2,
     "safeTotal": 2,
-    "clientLatencyMs": 27.1,
-    "heapMb": 11.3,
+    "clientLatencyMs": 27.6,
+    "heapMb": 9.8,
     "privacyPassed": true
   },
   {
@@ -138,7 +138,7 @@
     "assessableRegions": 0,
     "safePreserved": 1,
     "safeTotal": 1,
-    "clientLatencyMs": 26,
+    "clientLatencyMs": 29.8,
     "heapMb": 9.8,
     "privacyPassed": true
   },
@@ -151,8 +151,8 @@
     "assessableRegions": 1,
     "safePreserved": 1,
     "safeTotal": 1,
-    "clientLatencyMs": 29.7,
-    "heapMb": 11.4,
+    "clientLatencyMs": 30.5,
+    "heapMb": 9.9,
     "privacyPassed": true
   },
   {
@@ -164,8 +164,8 @@
     "assessableRegions": 1,
     "safePreserved": 2,
     "safeTotal": 2,
-    "clientLatencyMs": 30.2,
-    "heapMb": 10.1,
+    "clientLatencyMs": 31.6,
+    "heapMb": 8.9,
     "privacyPassed": true
   },
   {
@@ -177,8 +177,8 @@
     "assessableRegions": 0,
     "safePreserved": 2,
     "safeTotal": 2,
-    "clientLatencyMs": 28,
-    "heapMb": 10.1,
+    "clientLatencyMs": 29.4,
+    "heapMb": 9.2,
     "privacyPassed": true
   }
 ]

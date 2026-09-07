@@ -16,15 +16,16 @@ if (typeof chrome !== 'undefined' && chrome.sidePanel && typeof chrome.sidePanel
 
 // Stream coordinator lifecycle events to Extension UI (Sidepanel/HUD)
 coordinator.setListeners({
-  onStateChange: (state, message) => {
+  onStateChange: (state, message, runId) => {
     if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: 'COORDINATOR_STATE_CHANGED', state, message }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'COORDINATOR_STATE_CHANGED', state, message, runId }).catch(() => {});
     }
   },
-  onSanitizationComplete: (raw, sanitized) => {
+  onSanitizationComplete: (raw, sanitized, runId) => {
     if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
       chrome.runtime.sendMessage({
         type: 'COORDINATOR_SANITIZATION_COMPLETE',
+        runId,
         networkPayload: toSanitizedNetworkPayload(sanitized),
         payloadDigestSha256: sanitized.payloadDigestSha256,
         maskCount: sanitized.maskCount,
@@ -36,26 +37,34 @@ coordinator.setListeners({
       }).catch(() => {});
     }
   },
-  onActionProposed: (action) => {
+  onActionProposed: (action, runId) => {
     if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: 'COORDINATOR_ACTION_PROPOSED', action }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'COORDINATOR_ACTION_PROPOSED', action, runId }).catch(() => {});
     }
   },
-  onActionConfirmedRequired: (action) => {
+  onActionConfirmedRequired: (action, runId) => {
     if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: 'COORDINATOR_CONFIRMATION_REQUIRED', action }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'COORDINATOR_CONFIRMATION_REQUIRED', action, runId }).catch(() => {});
     }
   },
-  onTelemetryUpdated: (telemetry) => {
+  onTelemetryUpdated: (telemetry, runId) => {
     if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: 'COORDINATOR_TELEMETRY_UPDATED', telemetry }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'COORDINATOR_TELEMETRY_UPDATED', telemetry, runId }).catch(() => {});
+    }
+  },
+  onStepProgress: (step, maxSteps, message, runId) => {
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ type: 'COORDINATOR_STEP_PROGRESS', step, maxSteps, message, runId }).catch(() => {});
     }
   }
 });
 
 async function handleSidepanelRequest(message: any): Promise<any> {
   if (message.type === 'START_AGENT_RUN') {
-    return coordinator.startRun(message.goal || 'Safe assistance');
+    return coordinator.startRun(message.goal || 'Safe assistance', {
+      runId: message.runId,
+      maxSteps: message.maxSteps
+    });
   }
 
   if (message.type === 'GENERAL_CHAT') {
@@ -106,7 +115,10 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (message.type === 'START_AGENT_RUN') {
-      coordinator.startRun(message.goal || 'Safe assistance').then((result) => {
+      coordinator.startRun(message.goal || 'Safe assistance', {
+        runId: message.runId,
+        maxSteps: message.maxSteps
+      }).then((result) => {
         sendResponse(result);
       }).catch((err) => {
         sendResponse({ success: false, state: 'failed-safe', error: err.message });
@@ -150,6 +162,12 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       }).catch((err) => {
         sendResponse({ reachable: false, error: err?.message || 'Model status check failed' });
       });
+      return true;
+    }
+
+    if (message.type === 'SET_SERVER_URL') {
+      coordinator.setServerUrl(message.url);
+      sendResponse({ success: true, url: message.url });
       return true;
     }
 

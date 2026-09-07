@@ -25,6 +25,9 @@ export class ReasoningHttpClient {
     getServerBaseUrl() {
         return this.serverBaseUrl;
     }
+    setServerBaseUrl(url) {
+        this.serverBaseUrl = url.replace(/\/+$/, '');
+    }
     /**
      * Turns a transport failure into something the user can act on. A bare
      * "Failed to fetch" is the single most confusing symptom in this system:

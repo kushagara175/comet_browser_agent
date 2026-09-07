@@ -18,6 +18,7 @@ import {
   SanitizedContext,
   ActionProposal,
   classifyActionRisk,
+  RiskLevel,
   validateActionProposal,
   RunTelemetry,
   resolveTaskContract,
@@ -40,15 +41,16 @@ export interface ChatOutcome {
 export interface CoordinatorRunOptions {
   readonly maxSteps?: number;
   readonly maxStaleRetries?: number;
+  readonly runId?: string;
 }
 
 export interface CoordinatorListeners {
-  onStateChange?(state: AgentState, message?: string): void;
-  onSanitizationComplete?(raw: RawCapture, sanitized: SanitizedContext): void;
-  onActionProposed?(action: ActionProposal): void;
-  onActionConfirmedRequired?(action: ActionProposal): void;
-  onTelemetryUpdated?(telemetry: RunTelemetry): void;
-  onStepProgress?(step: number, maxSteps: number, message: string): void;
+  onStateChange?(state: AgentState, message?: string, runId?: string): void;
+  onSanitizationComplete?(raw: RawCapture, sanitized: SanitizedContext, runId?: string): void;
+  onActionProposed?(action: ActionProposal, runId?: string): void;
+  onActionConfirmedRequired?(action: ActionProposal, runId?: string): void;
+  onTelemetryUpdated?(telemetry: RunTelemetry, runId?: string): void;
+  onStepProgress?(step: number, maxSteps: number, message: string, runId?: string): void;
 }
 
 export interface E2EStepTrace {
@@ -78,6 +80,7 @@ export interface E2EStepTrace {
 }
 
 export interface CoordinatorRunResult {
+  readonly runId?: string;
   readonly success: boolean;
   readonly state: AgentState;
   readonly message?: string;
@@ -190,6 +193,7 @@ export class RunCoordinator {
   private isCancelled: boolean = false;
   private stepsTrace: E2EStepTrace[] = [];
   private currentTaskContract: TaskContract | null = null;
+  private currentRunId: string = '';
 
   constructor(
     browser: BrowserAdapter = new WebExtensionAdapter(),
@@ -212,8 +216,21 @@ export class RunCoordinator {
     return this.state;
   }
 
+  getCurrentRunId(): string {
+    return this.currentRunId;
+  }
+
   getLastResult(): CoordinatorRunResult | null {
     return this.lastRunResult;
+  }
+
+  private completeWithResult(res: CoordinatorRunResult): CoordinatorRunResult {
+    const finalRes: CoordinatorRunResult = {
+      ...res,
+      runId: res.runId || this.currentRunId || undefined
+    };
+    this.lastRunResult = finalRes;
+    return finalRes;
   }
 
   cancelRun(): void {
@@ -224,7 +241,7 @@ export class RunCoordinator {
   private transition(next: AgentState, msg?: string): void {
     this.state = next;
     if (this.listeners.onStateChange) {
-      this.listeners.onStateChange(next, msg);
+      this.listeners.onStateChange(next, msg, this.currentRunId);
     }
   }
 
@@ -269,10 +286,13 @@ export class RunCoordinator {
   ): ActionProposal | null {
     const trimmedGoal = (goal || '').trim().toLowerCase();
 
-    // 1. Explicit scroll command
-    const scrollMatch = trimmedGoal.match(/^scroll\s+(down|up|top|bottom)/i);
-    if (scrollMatch) {
-      const dir = scrollMatch[1].toLowerCase() as 'down' | 'up' | 'top' | 'bottom';
+    // 1. Explicit scroll command. Use the normalized task contract rather than
+    // reparsing raw wording, so "please/can you scroll down" stays deterministic.
+    const scrollContract = this.currentTaskContract?.expectedTerminal.kind === 'scroll_changed'
+      ? this.currentTaskContract.expectedTerminal
+      : null;
+    if (scrollContract) {
+      const dir = scrollContract.direction;
       if (step > 1 && this.actionHistory.length > 0 && this.actionHistory[this.actionHistory.length - 1].kind === 'scroll') {
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
@@ -317,13 +337,17 @@ export class RunCoordinator {
       // Local finish for status mutation when targeted button was clicked
       const isStatusGoal = this.currentTaskContract.expectedTerminal.kind === 'status_changed';
       const targetSub = (this.currentTaskContract.expectedTargetNameSubstring || '').toLowerCase();
-      if (isStatusGoal && lastAction.kind === 'click' && (targetSub.includes('sync') || targetSub.includes('refresh'))) {
+      const statusSummaries = (sanitized.pageState?.statusSummaries || []).map(s => s.toLowerCase());
+      const postSummary = (sanitized.pageState?.postconditionSummary || '').toLowerCase();
+      const isSynchronized = statusSummaries.some(s => s.includes('synchronized')) || postSummary.includes('synchronized');
+
+      if (isStatusGoal && lastAction.kind === 'click' && (targetSub.includes('sync') || targetSub.includes('refresh')) && isSynchronized) {
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
           kind: 'finish',
           confidence: 1.0,
           risk: 'safe',
-          rationale: `Status mutation for ${targetSub} verified; task completed locally`
+          rationale: `Status mutation for ${targetSub} verified: final status Synchronized; task completed locally`
         };
       }
 
@@ -385,6 +409,9 @@ export class RunCoordinator {
     actionHistory: ReadonlyArray<{ kind: string; targetLocalId?: string; textToType?: string; selectOptionValue?: string; scrollDirection?: string }>
   ): { satisfied: boolean; reason?: string } {
     if (contract.isPassive) {
+      if (sanitized.elements.length === 0) {
+        return { satisfied: false, reason: 'Observation contract unsatisfied: zero interactive elements observed on page' };
+      }
       return { satisfied: true };
     }
 
@@ -415,11 +442,7 @@ export class RunCoordinator {
               reason: `Wrong dialog visible: expected dialog matching '${reqFragment}', but found '${dialogTitles.join(', ') || elementNames.join(', ')}'`
             };
           }
-          // If no dialog detected on page yet, check if a click action was executed (e.g. in headless mock environments)
-          const hasClick = actionHistory.some(a => a.kind === 'click');
-          if (!hasClick) {
-            return { satisfied: false, reason: `Expected dialog matching '${reqFragment}' is not visible` };
-          }
+          return { satisfied: false, reason: `Expected dialog matching '${reqFragment}' is not visible on page` };
         }
 
         const hasClick = actionHistory.some(a => a.kind === 'click');
@@ -461,9 +484,26 @@ export class RunCoordinator {
       }
 
       case 'status_changed': {
-        const lastAction = actionHistory[actionHistory.length - 1];
-        if (lastAction.kind === 'wait') {
-          return { satisfied: false, reason: 'Action history contains only wait' };
+        const hasMutatingAction = actionHistory.some(a => a.kind === 'click' || a.kind === 'type' || a.kind === 'select');
+        if (!hasMutatingAction) {
+          return { satisfied: false, reason: 'Action history contains only wait without any preceding trigger action' };
+        }
+        const statusSummaries = (sanitized.pageState?.statusSummaries || []).map(s => s.toLowerCase());
+        const postSummary = (sanitized.pageState?.postconditionSummary || '').toLowerCase();
+        if (term.statusId) {
+          const expected = term.statusId.toLowerCase();
+          const matches = statusSummaries.some(s => s.includes(expected)) || postSummary.includes(expected);
+          if (!matches) {
+            return { satisfied: false, reason: `Status mutation unverified: expected '${term.statusId}', page indicates '${statusSummaries.join(', ') || postSummary}'` };
+          }
+        }
+        // Reject transitional 'syncing' for sync goals
+        const targetSub = (contract.expectedTargetNameSubstring || '').toLowerCase();
+        if (targetSub.includes('sync') || targetSub.includes('refresh')) {
+          const isSynchronized = statusSummaries.some(s => s.includes('synchronized')) || postSummary.includes('synchronized');
+          if (!isSynchronized) {
+            return { satisfied: false, reason: `Data synchronization is still in progress; terminal state 'Synchronized' not reached` };
+          }
         }
         return { satisfied: true };
       }
@@ -490,7 +530,7 @@ export class RunCoordinator {
     this.cumulativeServerLatency += stepServerMs;
 
     return {
-      runId: `run_${this.t0_runStart}`,
+      runId: this.currentRunId || `run_${this.t0_runStart}`,
       t0_start: this.t0_runStart,
       t1_captureComplete: t1,
       t2_detectionComplete: t2,
@@ -511,6 +551,7 @@ export class RunCoordinator {
    * Starts an automated bounded multi-step agent run for a specific user goal.
    */
   async startRun(goal: string, options?: CoordinatorRunOptions): Promise<CoordinatorRunResult> {
+    const requestedRunId = options?.runId || 'run_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
     if (
       this.state !== 'idle' &&
       this.state !== 'complete' &&
@@ -519,25 +560,25 @@ export class RunCoordinator {
       this.state !== 'awaiting-user-confirmation'
     ) {
       const errorMsg = 'Cannot start new run: an agent run is already in progress';
-      const res: CoordinatorRunResult = { success: false, state: this.state, error: errorMsg };
-      this.lastRunResult = res;
-      return res;
+      const res: CoordinatorRunResult = { runId: requestedRunId, success: false, state: this.state, error: errorMsg };
+      return this.completeWithResult(res);
     }
 
+    this.currentRunId = requestedRunId;
     this.currentGoal = goal;
     this.currentTaskContract = resolveTaskContract(goal);
     if (!this.currentTaskContract.supported) {
       const errorMsg = this.currentTaskContract.abstentionReason || 'Task abstained: Goal is outside closed supported task contracts';
       this.transition('failed-safe', errorMsg);
       const res: CoordinatorRunResult = {
+        runId: this.currentRunId,
         success: false,
         state: 'failed-safe',
         error: errorMsg,
         stepCount: 0,
         steps: []
       };
-      this.lastRunResult = res;
-      return res;
+      return this.completeWithResult(res);
     }
 
     this.currentStep = 0;
@@ -566,16 +607,14 @@ export class RunCoordinator {
     const goal = this.currentGoal;
     if (!goal) {
       const res: CoordinatorRunResult = { success: false, state: 'idle', error: 'No active goal' };
-      this.lastRunResult = res;
-      return res;
+      return this.completeWithResult(res);
     }
 
     while (this.currentStep < this.currentMaxSteps) {
       if (this.isCancelled) {
         this.transition('idle', 'Run cancelled by user');
         const res: CoordinatorRunResult = { success: false, state: 'idle', message: 'Run cancelled by user' };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
       }
 
       this.currentStep++;
@@ -598,8 +637,7 @@ export class RunCoordinator {
           error: errorMsg,
           stepCount: step
         };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
       }
 
       const captureId = `cap_${Date.now()}_${step}`;
@@ -618,8 +656,7 @@ export class RunCoordinator {
           error: errorMsg,
           stepCount: step
         };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
       }
 
       if (!domResponse || !domResponse.success) {
@@ -631,8 +668,7 @@ export class RunCoordinator {
           error: errorMsg,
           stepCount: step
         };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
       }
 
       let screenshotDataUrl: string;
@@ -647,8 +683,7 @@ export class RunCoordinator {
           error: errorMsg,
           stepCount: step
         };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
       }
       const t1_captureComplete = Date.now();
 
@@ -685,15 +720,14 @@ export class RunCoordinator {
           diagnostic,
           stepCount: step
         };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
       }
 
       const t3_sanitizationValidated = Date.now();
       this.currentSanitizedContext = sanitized;
 
       if (this.listeners.onSanitizationComplete) {
-        this.listeners.onSanitizationComplete(rawCapture, sanitized);
+        this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
       }
 
       // Step 3: Local Safe Action Router (Stage D6) vs Server Reasoning
@@ -725,8 +759,7 @@ export class RunCoordinator {
             sanitized,
             stepCount: step
           };
-          this.lastRunResult = res;
-          return res;
+          return this.completeWithResult(res);
         }
         t4_reasoningReceived = Date.now();
       }
@@ -747,8 +780,7 @@ export class RunCoordinator {
           proposal,
           stepCount: step
         };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
       }
 
       // Step 4b: Confidence Threshold Check (Ultra-low confidence cannot automatically execute)
@@ -779,8 +811,7 @@ export class RunCoordinator {
           stepCount: step,
           steps: this.stepsTrace
         };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
       }
 
       // Step 4c: Ambiguity Resolution (If proposal matches ambiguous duplicate targets)
@@ -802,7 +833,12 @@ export class RunCoordinator {
 
       // Step 5: Risk Classification
       const targetElement = sanitized.elements.find(e => e.localId === proposal.targetLocalId);
-      const riskLevel = classifyActionRisk(proposal, targetElement?.sanitizedName);
+      const classifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
+      const riskLevel: RiskLevel = (proposal.risk === 'blocked' || classifiedRisk === 'blocked')
+        ? 'blocked'
+        : (proposal.risk === 'protected' || classifiedRisk === 'protected')
+          ? 'protected'
+          : 'safe';
 
       if (riskLevel === 'blocked') {
         const errorMsg = `Action blocked by client safety policy: ${proposal.rationale}`;
@@ -831,8 +867,7 @@ export class RunCoordinator {
           stepCount: step,
           steps: this.stepsTrace
         };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
       }
 
       if (riskLevel === 'protected') {
@@ -840,7 +875,7 @@ export class RunCoordinator {
         const msg = `Protected action requires user consent: ${proposal.rationale}`;
         this.transition('awaiting-user-confirmation', msg);
         if (this.listeners.onActionConfirmedRequired) {
-          this.listeners.onActionConfirmedRequired(proposal);
+          this.listeners.onActionConfirmedRequired(proposal, this.currentRunId);
         }
         const stepTrace: E2EStepTrace = {
           step,
@@ -866,13 +901,12 @@ export class RunCoordinator {
           stepCount: step,
           steps: this.stepsTrace
         };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
       }
 
       // Step 6: Safe Action Execution
       if (this.listeners.onActionProposed) {
-        this.listeners.onActionProposed(proposal);
+        this.listeners.onActionProposed(proposal, this.currentRunId);
       }
 
       if (proposal.kind === 'finish') {
@@ -912,14 +946,13 @@ export class RunCoordinator {
             stepCount: step,
             steps: this.stepsTrace
           };
-          this.lastRunResult = res;
-          return res;
+          return this.completeWithResult(res);
         }
 
         const tFin = Date.now();
         const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, tFin, tFin, step);
         if (this.listeners.onTelemetryUpdated) {
-          this.listeners.onTelemetryUpdated(telemetry);
+          this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
         }
         this.transition('complete', `Task completed: ${proposal.rationale}`);
         const stepTrace: E2EStepTrace = {
@@ -953,8 +986,7 @@ export class RunCoordinator {
           stepCount: step,
           steps: this.stepsTrace
         };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
       }
 
       // Check repeated action loop
@@ -971,11 +1003,14 @@ export class RunCoordinator {
           stepCount: step,
           steps: this.stepsTrace
         };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
       }
       // Execute action via content script
       this.transition('executing', `Step ${step}/${maxSteps}: Executing '${proposal.kind}' on ${proposal.targetLocalId || 'page'}`);
+
+      if (proposal.kind === 'wait') {
+        await new Promise((r) => setTimeout(r, 600));
+      }
 
       const execResponse = await this.browser.sendMessageToTab(activeTab.id, {
         type: 'EXECUTE_ACTION',
@@ -990,7 +1025,7 @@ export class RunCoordinator {
 
       const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
       if (this.listeners.onTelemetryUpdated) {
-        this.listeners.onTelemetryUpdated(telemetry);
+        this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
       }
 
       // Handle Stale Target Recovery
@@ -1008,8 +1043,7 @@ export class RunCoordinator {
             stepCount: step,
             steps: this.stepsTrace
           };
-          this.lastRunResult = res;
-          return res;
+          return this.completeWithResult(res);
         }
 
         if (this.currentStaleRetries < this.maxStaleRetries) {
@@ -1029,8 +1063,7 @@ export class RunCoordinator {
             stepCount: step,
             steps: this.stepsTrace
           };
-          this.lastRunResult = res;
-          return res;
+          return this.completeWithResult(res);
         }
       }
 
@@ -1085,14 +1118,35 @@ export class RunCoordinator {
           stepCount: step,
           steps: this.stepsTrace
         };
-        this.lastRunResult = res;
-        return res;
+        return this.completeWithResult(res);
+      }
+
+      // Deterministic early completion: if the executed action satisfies the task contract
+      // (e.g. one-step scroll navigation directive), complete immediately without redundant perception cycles
+      if (this.currentTaskContract?.expectedTerminal.kind === 'scroll_changed' && proposal.kind === 'scroll') {
+        const tFin = Date.now();
+        const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
+        if (this.listeners.onTelemetryUpdated) {
+          this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
+        }
+        this.transition('complete', `Scroll ${proposal.scrollDirection || 'down'} executed and verified: navigation complete`);
+        const res: CoordinatorRunResult = {
+          success: true,
+          state: 'complete',
+          message: `Scroll ${proposal.scrollDirection || 'down'} executed and verified`,
+          sanitized,
+          proposal,
+          telemetry,
+          stepCount: step,
+          steps: this.stepsTrace
+        };
+        return this.completeWithResult(res);
       }
 
       this.currentStaleRetries = 0;
 
       if (this.listeners.onStepProgress) {
-        this.listeners.onStepProgress(step, maxSteps, proposal.rationale);
+        this.listeners.onStepProgress(step, maxSteps, proposal.rationale, this.currentRunId);
       }
     }
 
@@ -1106,8 +1160,7 @@ export class RunCoordinator {
       stepCount: this.currentStep,
       sanitized: this.currentSanitizedContext || undefined
     };
-    this.lastRunResult = res;
-    return res;
+    return this.completeWithResult(res);
   }
 
   /**
@@ -1183,7 +1236,7 @@ export class RunCoordinator {
       }
 
       if (this.listeners.onSanitizationComplete) {
-        this.listeners.onSanitizationComplete(rawCapture, sanitized);
+        this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
       }
 
       const chatRes = await this.httpClient.requestChat(sanitized, userMessage);
@@ -1244,8 +1297,7 @@ export class RunCoordinator {
         state: 'idle',
         error: 'No pending action to approve'
       };
-      this.lastRunResult = res;
-      return res;
+      return this.completeWithResult(res);
     }
 
     const action = this.pendingAction;
@@ -1264,8 +1316,7 @@ export class RunCoordinator {
         proposal: action,
         stepCount: this.currentStep
       };
-      this.lastRunResult = res;
-      return res;
+      return this.completeWithResult(res);
     }
 
     const activeTab = await this.browser.getActiveTab();
@@ -1290,14 +1341,13 @@ export class RunCoordinator {
         proposal: action,
         stepCount: this.currentStep
       };
-      this.lastRunResult = res;
-      return res;
+      return this.completeWithResult(res);
     }
 
     const now = Date.now();
     const telemetry = this.createTelemetry(t0, now, now, now, now, now, now, now, this.currentStep);
     if (this.listeners.onTelemetryUpdated) {
-      this.listeners.onTelemetryUpdated(telemetry);
+      this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
     }
 
     const isSuccess = Boolean(execResponse && execResponse.success && execResponse.semanticOutcomeVerified);
@@ -1313,8 +1363,7 @@ export class RunCoordinator {
         telemetry,
         stepCount: this.currentStep
       };
-      this.lastRunResult = res;
-      return res;
+      return this.completeWithResult(res);
     }
 
     this.recordActionHistory(action);
@@ -1351,8 +1400,7 @@ export class RunCoordinator {
       telemetry,
       stepCount: this.currentStep
     };
-    this.lastRunResult = res;
-    return res;
+    return this.completeWithResult(res);
   }
 
   /**
@@ -1372,8 +1420,11 @@ export class RunCoordinator {
       sanitized: sanitized || undefined,
       stepCount: this.currentStep
     };
-    this.lastRunResult = res;
-    return res;
+    return this.completeWithResult(res);
+  }
+
+  setServerUrl(url: string): void {
+    this.httpClient.setServerBaseUrl(url);
   }
 }
 

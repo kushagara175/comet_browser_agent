@@ -51,6 +51,7 @@ function createFakeBrowserAdapter(options = {}) {
   const elements = options.elements || createSampleElements();
   const sentMessages = [];
   let captureIndex = 0;
+  let executedCount = 0;
 
   const adapter = {
     sentMessages,
@@ -77,6 +78,7 @@ function createFakeBrowserAdapter(options = {}) {
       }
 
       if (message.type === 'EXECUTE_ACTION') {
+        executedCount++;
         if (options.executeHandler) {
           return options.executeHandler(message.proposal, sentMessages.filter(m => m.message.type === 'EXECUTE_ACTION').length);
         }
@@ -105,7 +107,13 @@ function createFakeBrowserAdapter(options = {}) {
         goal: request.goal,
         sanitizedScreenshotDataUrl: request.rawCapture.rawScreenshotDataUrl,
         elements,
-        pageState: { title: 'Test Portal', viewport: [1280, 720] },
+        pageState: {
+          title: 'Test Portal',
+          viewport: [1280, 720],
+          visibleDialogCount: executedCount > 0 ? 1 : 0,
+          dialogTitles: executedCount > 0 ? ['Safe Preview Drawer'] : [],
+          statusSummaries: executedCount > 0 ? ['Status: Approved'] : []
+        },
         maskCount: 0,
         payloadDigestSha256: 'sha256_mock',
         timestamp: Date.now()
@@ -145,6 +153,46 @@ function createSequenceHttpClient(proposals) {
 // ============================================================================
 // Multi-Step Agent Loop Test Suite
 // ============================================================================
+
+test('MultiStepCoordinator: polite scroll command executes once locally and completes', async () => {
+  const browser = createFakeBrowserAdapter();
+  const httpClient = createSequenceHttpClient(() => {
+    throw new Error('Polite scroll command must not call the reasoning server');
+  });
+  const coordinator = new RunCoordinator(browser, httpClient, undefined, { defaultMaxSteps: 4 });
+
+  const result = await coordinator.startRun('Please scroll down');
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.state, 'complete');
+  assert.strictEqual(result.stepCount, 1);
+  assert.strictEqual(httpClient.callCount, 0);
+
+  const execMessages = browser.sentMessages.filter(m => m.message.type === 'EXECUTE_ACTION');
+  assert.strictEqual(execMessages.length, 1);
+  assert.strictEqual(execMessages[0].message.proposal.kind, 'scroll');
+  assert.strictEqual(execMessages[0].message.proposal.scrollDirection, 'down');
+});
+
+test('MultiStepCoordinator: Hey PrivaPilot polite scroll command executes once locally and completes', async () => {
+  const browser = createFakeBrowserAdapter();
+  const httpClient = createSequenceHttpClient(() => {
+    throw new Error('Polite scroll command must not call the reasoning server');
+  });
+  const coordinator = new RunCoordinator(browser, httpClient, undefined, { defaultMaxSteps: 4 });
+
+  const result = await coordinator.startRun('Hey PrivaPilot, please scroll down');
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.state, 'complete');
+  assert.strictEqual(result.stepCount, 1);
+  assert.strictEqual(httpClient.callCount, 0);
+
+  const execMessages = browser.sentMessages.filter(m => m.message.type === 'EXECUTE_ACTION');
+  assert.strictEqual(execMessages.length, 1);
+  assert.strictEqual(execMessages[0].message.proposal.kind, 'scroll');
+  assert.strictEqual(execMessages[0].message.proposal.scrollDirection, 'down');
+});
 
 test('MultiStepCoordinator: Scenario 1 - Successful three-step workflow (type -> filter -> finish)', async () => {
   const browser = createFakeBrowserAdapter();

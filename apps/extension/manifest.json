@@ -35,7 +35,6 @@
   },
   "action": {
     "default_title": "Open PrivaPilot Mission Control",
-    "default_popup": "src/sidepanel/sidepanel.html",
     "default_icon": {
       "16": "assets/icon16.png",
       "48": "assets/icon48.png",

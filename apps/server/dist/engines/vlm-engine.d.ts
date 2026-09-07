@@ -25,6 +25,7 @@ export interface VlmConfig {
     readonly probeTimeoutMs?: number;
     /** Ollama context window. See the numCtx accessor for why the default is unusable. */
     readonly numCtx?: number;
+    readonly maxTokens?: number;
 }
 export interface EngineStatus {
     readonly provider: 'ollama' | 'lm-studio' | 'vlm-cloud' | 'mock';
@@ -53,10 +54,12 @@ export declare class VlmReasoningEngine {
     private readonly mockFallback;
     private cachedStatus;
     private lastProbeTime;
+    private cloudExhaustedUntil;
     constructor(config?: VlmConfig);
     /** Forces the next getStatus() call to re-probe every backend. */
     invalidateStatusCache(): void;
     private get inferenceTimeoutMs();
+    private get maxTokens();
     /**
      * Ollama context window. Its default (2048-4096) is far too small once a
      * screenshot is attached: Qwen2.5-VL turns a 1280x800 capture into thousands of
