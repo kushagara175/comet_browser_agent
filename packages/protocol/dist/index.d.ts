@@ -7,4 +7,5 @@ export * from './action.js';
 export * from './audit.js';
 export * from './states.js';
 export * from './perception.js';
+export * from './grounding.js';
 //# sourceMappingURL=index.d.ts.map

@@ -1,9 +1,39 @@
+import { tokenizeSemanticText } from './grounding.js';
+const GENERIC_CONTEXT_WORDS = new Set([
+    'pending',
+    'request',
+    'requests',
+    'item',
+    'items',
+    'row',
+    'user',
+    'the',
+    'a',
+    'an',
+    'this',
+    'that',
+    'safe',
+    'preview',
+    'details',
+    'result',
+    'results',
+    'table',
+    'page'
+]);
+export function cleanContextPhrase(phrase) {
+    if (!phrase)
+        return undefined;
+    const trimmed = phrase.trim();
+    if (GENERIC_CONTEXT_WORDS.has(trimmed.toLowerCase()))
+        return undefined;
+    return trimmed;
+}
 /**
  * Resolves a natural-language goal into a closed, structured task contract
  * binding expected semantic terminal postconditions to the run.
  */
 export function resolveTaskContract(goal) {
-    let g = (goal || '').trim().toLowerCase();
+    let g = (goal || '').trim().toLowerCase().replace(/[?!.]+$/, '').trim();
     let prev = '';
     const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?)+/i;
     while (g && g !== prev) {
@@ -33,38 +63,91 @@ export function resolveTaskContract(goal) {
             supported: true,
             goalPattern: 'observe_status',
             expectedTerminal: { kind: 'status_changed' },
+            structuredIntent: {
+                intent: 'observe',
+                targetTokens: []
+            },
             isPassive: true
         };
     }
     // 2. Preview / Drawer / Modal inspection
     if (/(?:open|inspect|view)\s+(?:.*?\s+)?(?:preview|drawer|details?|summary|profile|settings)/i.test(g) || /preview/i.test(g)) {
+        const contextMatch = g.match(/(?:preview|drawer|details?|summary|profile|settings)\s+(?:for|in|of|under)\s+([a-zA-Z0-9_-]+)/i);
+        const contextPhrase = cleanContextPhrase(contextMatch ? contextMatch[1].trim() : undefined);
+        let targetPhrase = 'preview';
+        let dialogId = 'preview';
+        if (g.includes('details')) {
+            targetPhrase = 'View Details';
+            dialogId = 'details';
+        }
+        else if (g.includes('drawer')) {
+            targetPhrase = 'drawer';
+            dialogId = 'drawer';
+        }
         return {
             supported: true,
             goalPattern: 'preview_drawer',
-            expectedTerminal: { kind: 'dialog_visible', dialogId: 'preview' },
-            expectedTargetNameSubstring: 'preview'
+            expectedTerminal: { kind: 'dialog_visible', dialogId },
+            expectedTargetNameSubstring: targetPhrase,
+            structuredIntent: {
+                intent: 'click',
+                targetPhrase,
+                roleHint: 'button',
+                targetTokens: tokenizeSemanticText(targetPhrase),
+                contextPhrase
+            }
         };
     }
     // 3. Search / Find / Locate / Type / Fill / Enter / Set / Write / Filter
     if (/(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry)/i.test(g)) {
-        const filterMatch = g.match(/(?:search|type|fill|enter|write|set|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query|the\s+search\s+field\s+with|the\s+field\s+with|the\s+input\s+with|this\s+field\s+with|this\s+input\s+with|the\s+input\s+to|in\s+this\s+field|into\s+this\s+field|in\s+the\s+field|with))?\s+["']?([^"']+)["']?/i);
-        const val = filterMatch ? filterMatch[1].replace(/\?+$/, '').trim() : '';
+        let targetPhrase = 'search';
+        let requestedValue = '';
+        // E.g. "type admin@example.com into email"
+        const intoMatch = g.match(/(?:type|fill|enter|write|set)\s+["']?([^"']+)["']?\s+(?:into|in)\s+(?:the\s+)?["']?([^"']+)["']?/i);
+        if (intoMatch) {
+            requestedValue = intoMatch[1].trim();
+            targetPhrase = intoMatch[2].trim();
+        }
+        else {
+            // E.g. "fill the search field with telemetry"
+            const filterMatch = g.match(/(?:search|type|fill|enter|write|set|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query|the\s+search\s+field\s+with|the\s+field\s+with|the\s+input\s+with|this\s+field\s+with|this\s+input\s+with|the\s+input\s+to|in\s+this\s+field|into\s+this\s+field|in\s+the\s+field|with))?\s+["']?([^"']+)["']?/i);
+            requestedValue = filterMatch ? filterMatch[1].replace(/\?+$/, '').trim() : '';
+            if (g.includes('search'))
+                targetPhrase = 'search';
+            else if (g.includes('filter'))
+                targetPhrase = 'filter';
+        }
         return {
             supported: true,
             goalPattern: 'search_filter',
-            expectedTerminal: { kind: 'value_present', expectedValueFragment: val || undefined },
-            expectedTargetNameSubstring: 'search'
+            expectedTerminal: { kind: 'value_present', expectedValueFragment: requestedValue || undefined },
+            expectedTargetNameSubstring: targetPhrase,
+            structuredIntent: {
+                intent: 'type',
+                targetPhrase,
+                roleHint: 'input',
+                targetTokens: tokenizeSemanticText(targetPhrase),
+                requestedValue
+            }
         };
     }
     // 4. Select option
     if (/(?:select|choose)(?:\s+(?:option))?/i.test(g)) {
-        const selectMatch = g.match(/(?:select|choose)(?:\s+(?:option))?\s+["']?([^"']+)["']?/i);
+        const selectMatch = g.match(/(?:select|choose)(?:\s+(?:option))?\s+["']?([^"']+)["']?(?:\s+(?:from|in)\s+(?:the\s+)?["']?([^"']+)["']?)?/i);
         const opt = selectMatch ? selectMatch[1].replace(/\?+$/, '').trim() : '';
+        const targetPhrase = selectMatch && selectMatch[2] ? selectMatch[2].trim() : 'select';
         return {
             supported: true,
             goalPattern: 'select_option',
             expectedTerminal: { kind: 'select_changed', expectedOptionValue: opt || undefined },
-            expectedTargetNameSubstring: 'select'
+            expectedTargetNameSubstring: targetPhrase,
+            structuredIntent: {
+                intent: 'select',
+                targetPhrase,
+                roleHint: 'select',
+                targetTokens: tokenizeSemanticText(targetPhrase),
+                requestedOption: opt
+            }
         };
     }
     // 5. Explicit Scroll (supports "scroll", "scroll down", "scroll up", "page down")
@@ -75,7 +158,11 @@ export function resolveTaskContract(goal) {
         return {
             supported: true,
             goalPattern: 'scroll',
-            expectedTerminal: { kind: 'scroll_changed', direction: dir }
+            expectedTerminal: { kind: 'scroll_changed', direction: dir },
+            structuredIntent: {
+                intent: 'scroll',
+                targetTokens: ['scroll']
+            }
         };
     }
     // 6. Dismiss modal / banner
@@ -83,7 +170,13 @@ export function resolveTaskContract(goal) {
         return {
             supported: true,
             goalPattern: 'dismiss_modal',
-            expectedTerminal: { kind: 'visibility_changed', state: 'hidden' }
+            expectedTerminal: { kind: 'visibility_changed', state: 'hidden' },
+            structuredIntent: {
+                intent: 'dismiss',
+                targetPhrase: 'close',
+                roleHint: 'button',
+                targetTokens: ['close', 'dismiss']
+            }
         };
     }
     // 7. Approval / Protected Actions (Pay, Submit, Authorize, Release, Delete, Purge)
@@ -92,25 +185,50 @@ export function resolveTaskContract(goal) {
             supported: true,
             goalPattern: 'approval_submission',
             expectedTerminal: { kind: 'status_changed', statusId: 'approved' },
-            expectedTargetNameSubstring: 'approve'
+            expectedTargetNameSubstring: 'approve',
+            structuredIntent: {
+                intent: 'click',
+                targetPhrase: 'approve',
+                roleHint: 'button',
+                targetTokens: ['approve', 'submit'],
+                isProtected: true
+            }
         };
     }
-    // 8. Generic clicking / interactions / navigation (button, link, item, admin, finish, sanitize, navigate, go to, show, open, tap, expand)
-    if (/(?:click|press|button|link|item|admin|finish|sanitize|sensitive|login|navigate|navigation|go\s+to|show|open|tap|expand|view|switch|toggle)/i.test(g)) {
-        const clickMatch = g.match(/(?:click|press|go\s+to|navigate\s+to|open|tap|show|expand)\s+(?:the\s+)?["']?([^"']+)["']?/i);
-        const target = clickMatch ? clickMatch[1].replace(/\?+$/, '').trim() : undefined;
-        return {
-            supported: true,
-            goalPattern: 'click_control',
-            expectedTerminal: { kind: 'status_changed' },
-            expectedTargetNameSubstring: target
-        };
+    // 8. Generic clicking / interactions / navigation (button, link, item, admin, finish, sanitize, navigate, go to, show, open, tap, expand, delete, remove)
+    // Extracts target phrase, role hints, and contextual qualifiers (e.g. "Open View Details for SIH26003")
+    const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|delete|remove)\s+(?:on\s+)?(?:the\s+)?/i);
+    const hasInteractionVerb = Boolean(verbMatch);
+    let cleanStr = hasInteractionVerb ? g.replace(verbMatch[0], '').trim() : g;
+    let roleHint;
+    if (/\b(?:link)\b/i.test(cleanStr))
+        roleHint = 'link';
+    else if (/\b(?:button)\b/i.test(cleanStr))
+        roleHint = 'button';
+    else if (/\b(?:tab)\b/i.test(cleanStr))
+        roleHint = 'tab';
+    if (roleHint) {
+        cleanStr = cleanStr.replace(new RegExp(`\\s+${roleHint}\\b`, 'i'), '').trim();
     }
-    // 9. General interaction on any webpage (rather than abstaining)
+    let contextPhrase;
+    let targetPhrase = hasInteractionVerb ? cleanStr : undefined;
+    const contextMatch = cleanStr.match(/^(.+?)\s+(?:for|in|of|under|associated\s+with)\s+([a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_-]+)*)$/i);
+    if (contextMatch) {
+        targetPhrase = contextMatch[1].trim();
+        contextPhrase = cleanContextPhrase(contextMatch[2].trim());
+    }
     return {
         supported: true,
         goalPattern: 'click_control',
-        expectedTerminal: { kind: 'status_changed' }
+        expectedTerminal: { kind: 'status_changed' },
+        expectedTargetNameSubstring: targetPhrase,
+        structuredIntent: {
+            intent: 'click',
+            targetPhrase: targetPhrase || (hasInteractionVerb ? cleanStr : undefined),
+            roleHint,
+            targetTokens: targetPhrase ? tokenizeSemanticText(targetPhrase) : (hasInteractionVerb ? tokenizeSemanticText(cleanStr) : []),
+            contextPhrase
+        }
     };
 }
 const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([

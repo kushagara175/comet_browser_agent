@@ -26,6 +26,9 @@ export interface LocalDomSnapshot {
         };
         readonly state: ReadonlyArray<any>;
         readonly actionCapabilities: ReadonlyArray<any>;
+        readonly containerContext?: string;
+        readonly nearestHeading?: string;
+        readonly isInsideDialog?: boolean;
     }>;
     readonly pageTitle: string;
     readonly visibleDialogCount?: number;

@@ -3,6 +3,7 @@
  *
  * Provides instant, zero-dependency reasoning over sanitized layout for tests and offline demos.
  */
+import { resolveTaskContract, groundTargetCandidates } from '@privapilot/protocol';
 export class MockReasoningEngine {
     async decideNextAction(payload) {
         const goal = (payload.goal || '').toLowerCase();
@@ -76,6 +77,65 @@ export class MockReasoningEngine {
                 rationale: 'Table search filtering is active and verified. Goal complete.',
                 expectedState: 'Results filtered'
             };
+        }
+        const contract = resolveTaskContract(payload.goal || '');
+        const intent = contract.structuredIntent;
+        // Structured target grounding if intent is present
+        if (intent && intent.intent === 'click') {
+            const grounding = groundTargetCandidates(elements, intent);
+            if (grounding.status === 'ambiguous_match' && grounding.bestCandidate) {
+                return {
+                    actionId: `act_${Date.now()}`,
+                    kind: 'click',
+                    targetLocalId: grounding.bestCandidate.element.localId,
+                    confidence: 0.95,
+                    risk: 'protected',
+                    rationale: `Multiple ambiguous elements found matching "${intent.targetPhrase}" (${grounding.candidates.length} candidates); requiring user confirmation before proceeding.`,
+                    expectedState: 'Confirmation requested'
+                };
+            }
+            if (grounding.bestCandidate && (grounding.status === 'unambiguous_match' || grounding.bestCandidate.score >= 50)) {
+                const target = grounding.bestCandidate.element;
+                if (hasVisibleDialog && isInspectionGoal && (target.sanitizedName.toLowerCase().includes('view') || target.sanitizedName.toLowerCase().includes('details'))) {
+                    return {
+                        actionId: `act_${Date.now()}`,
+                        kind: 'finish',
+                        confidence: 1.0,
+                        risk: 'safe',
+                        rationale: `Active dialog/modal is open and verified for "${target.sanitizedName}". Goal completed successfully.`,
+                        expectedState: 'Dialog open'
+                    };
+                }
+                const isProtected = intent.isProtected ||
+                    target.sanitizedName.toLowerCase().includes('submit') ||
+                    target.sanitizedName.toLowerCase().includes('approve') ||
+                    target.sanitizedName.toLowerCase().includes('confirm') ||
+                    target.sanitizedName.toLowerCase().includes('authorize') ||
+                    target.sanitizedName.toLowerCase().includes('delete');
+                return {
+                    actionId: `act_${Date.now()}`,
+                    kind: 'click',
+                    targetLocalId: target.localId,
+                    confidence: 0.96,
+                    risk: isProtected ? 'protected' : 'safe',
+                    rationale: `Grounded target "${target.sanitizedName}" (${grounding.status}, score ${grounding.bestCandidate.score}) for goal "${payload.goal}"`,
+                    expectedState: isProtected
+                        ? 'Protected action submitted, drawer dismissed and clearance approved'
+                        : (target.sanitizedName.toLowerCase().includes('preview') || target.sanitizedName.toLowerCase().includes('view') || target.sanitizedName.toLowerCase().includes('details'))
+                            ? 'Preview drawer or details modal becomes visible'
+                            : 'Target clicked'
+                };
+            }
+            if (intent.targetPhrase && grounding.status === 'no_match' && !goal.includes('pending') && !goal.includes('clearance') && !goal.includes('approval')) {
+                return {
+                    actionId: `act_${Date.now()}`,
+                    kind: 'finish',
+                    confidence: 0.95,
+                    risk: 'safe',
+                    rationale: `Requested target "${intent.targetPhrase}" was not found on the page.`,
+                    expectedState: 'Target not found'
+                };
+            }
         }
         // 2. Ambiguity check: repeated ambiguous buttons (e.g. "Click Inspect")
         const inspectButtons = elements.filter((el) => el.role === 'button' && el.sanitizedName.toLowerCase() === 'inspect');

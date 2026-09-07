@@ -148,7 +148,10 @@ export class SanitizerPipeline {
                 sanitizedName,
                 coarseBounds,
                 state: el.state,
-                actionCapabilities
+                actionCapabilities,
+                containerContext: el.containerContext,
+                nearestHeading: el.nearestHeading,
+                isInsideDialog: el.isInsideDialog
             };
         });
         const sanitizedTitle = sanitizeElementName(snapshot.pageTitle);

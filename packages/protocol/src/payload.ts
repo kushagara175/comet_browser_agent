@@ -85,6 +85,12 @@ export interface SanitizedElement {
   readonly coarseBounds: readonly [number, number, number, number];
   readonly state: ReadonlyArray<'enabled' | 'disabled' | 'visible' | 'checked' | 'focused'>;
   readonly actionCapabilities: ReadonlyArray<ActionCapability>;
+  /** Safe contextual text tokens from the enclosing row, card, or container (excluding sensitive inputs) */
+  readonly containerContext?: string;
+  /** Nearest preceding heading or section title */
+  readonly nearestHeading?: string;
+  /** Whether the element resides inside an active modal or dialog */
+  readonly isInsideDialog?: boolean;
 }
 
 export interface SanitizedPageState {

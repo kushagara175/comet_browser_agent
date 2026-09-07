@@ -14482,6 +14482,9 @@ as ORT format: ${n}`);
         const candidates = currentDoc.querySelectorAll('button, a, input, select, textarea, [role="button"], [tabindex="0"]');
         candidates.forEach((node) => {
           const el2 = node;
+          if (typeof el2.closest === "function" && el2.closest(".privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]") || typeof el2.getAttribute === "function" && el2.getAttribute("data-privapilot-ignore") === "true" || el2.classList && typeof el2.classList.contains === "function" && el2.classList.contains("privapilot-overlay")) {
+            return;
+          }
           const rect = el2.getBoundingClientRect();
           if (rect.width === 0 || rect.height === 0) return;
           this.counter++;
@@ -14489,10 +14492,10 @@ as ORT format: ${n}`);
           this.elementMap.set(localId, el2);
           let role = "generic";
           const tag = el2.tagName.toLowerCase();
-          if (tag === "button" || el2.getAttribute("role") === "button") role = "button";
+          if (tag === "button" || typeof el2.getAttribute === "function" && el2.getAttribute("role") === "button") role = "button";
           else if (tag === "a") role = "link";
           else if (tag === "input") {
-            const type = (el2.getAttribute("type") || "text").toLowerCase();
+            const type = (typeof el2.getAttribute === "function" ? el2.getAttribute("type") || "text" : "text").toLowerCase();
             if (type === "checkbox") role = "checkbox";
             else if (type === "radio") role = "radio";
             else role = "input";
@@ -14513,11 +14516,11 @@ as ORT format: ${n}`);
               }
             }
             if (!associatedLabelText) {
-              const parentLabel = el2.closest("label");
+              const parentLabel = typeof el2.closest === "function" ? el2.closest("label") : null;
               if (parentLabel) associatedLabelText = parentLabel.innerText?.trim() || "";
             }
             if (!associatedLabelText) {
-              const labelledBy = el2.getAttribute("aria-labelledby");
+              const labelledBy = typeof el2.getAttribute === "function" ? el2.getAttribute("aria-labelledby") : null;
               if (labelledBy) {
                 try {
                   const labelEl = currentDoc.getElementById?.(labelledBy);
@@ -14526,13 +14529,35 @@ as ORT format: ${n}`);
                 }
               }
             }
-            const ariaLabel = (el2.getAttribute("aria-label") || "").trim();
-            const placeholder = (el2.getAttribute("placeholder") || "").trim();
-            const title = (el2.getAttribute("title") || "").trim();
-            const nameAttr = (el2.getAttribute("name") || "").trim();
+            const ariaLabel = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-label") || "" : "").trim();
+            const placeholder = (typeof el2.getAttribute === "function" ? el2.getAttribute("placeholder") || "" : "").trim();
+            const title = (typeof el2.getAttribute === "function" ? el2.getAttribute("title") || "" : "").trim();
+            const nameAttr = (typeof el2.getAttribute === "function" ? el2.getAttribute("name") || "" : "").trim();
             rawName = associatedLabelText || ariaLabel || placeholder || title || nameAttr || role;
           } else {
-            rawName = el2.innerText?.trim() || el2.getAttribute("aria-label")?.trim() || el2.getAttribute("title")?.trim() || role;
+            rawName = el2.innerText?.trim() || (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-label")?.trim() || el2.getAttribute("title")?.trim() : "") || role;
+          }
+          let containerContext;
+          try {
+            const container = typeof el2.closest === "function" ? el2.closest('tr, [role="row"], li, .card, [role="article"], td, [role="gridcell"]') : null;
+            if (container) {
+              const rawContext = container.innerText || container.textContent || "";
+              const cleanTokens = rawContext.replace(rawName, "").replace(/\s+/g, " ").trim().slice(0, 180);
+              if (cleanTokens.length > 0) {
+                containerContext = cleanTokens;
+              }
+            }
+          } catch (_) {
+          }
+          const isInsideDialog = Boolean(typeof el2.closest === "function" && el2.closest('dialog, [role="dialog"], [role="alertdialog"], .modal, .dialog'));
+          let nearestHeading;
+          try {
+            const heading = typeof el2.closest === "function" ? el2.closest("section, article, div, main")?.querySelector?.('h1, h2, h3, h4, [role="heading"]') : null;
+            if (heading && heading !== el2) {
+              const hText = heading.innerText?.trim();
+              if (hText && hText.length < 80) nearestHeading = hText;
+            }
+          } catch (_) {
           }
           interactiveElements.push({
             localId,
@@ -14540,7 +14565,10 @@ as ORT format: ${n}`);
             rawName,
             boundingBox: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height },
             state: ["visible", el2.disabled ? "disabled" : "enabled"],
-            actionCapabilities: caps
+            actionCapabilities: caps,
+            containerContext,
+            nearestHeading,
+            isInsideDialog
           });
           if (tag === "input" || tag === "textarea" || tag === "select") {
             domElements.push({
@@ -16084,7 +16112,10 @@ as ORT format: ${n}`);
           sanitizedName,
           coarseBounds,
           state: el2.state,
-          actionCapabilities
+          actionCapabilities,
+          containerContext: el2.containerContext,
+          nearestHeading: el2.nearestHeading,
+          isInsideDialog: el2.isInsideDialog
         };
       });
       const sanitizedTitle = sanitizeElementName(snapshot.pageTitle);

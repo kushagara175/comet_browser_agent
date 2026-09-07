@@ -39,7 +39,10 @@ const ALLOWED_ELEMENT_KEYS = new Set([
   'sanitizedName',
   'coarseBounds',
   'state',
-  'actionCapabilities'
+  'actionCapabilities',
+  'containerContext',
+  'nearestHeading',
+  'isInsideDialog'
 ]);
 
 const ALLOWED_PAGE_STATE_KEYS = new Set([
@@ -252,6 +255,31 @@ function validateElement(
       }
       seenCaps.add(cap);
     }
+  }
+
+  // containerContext
+  if (el.containerContext !== undefined) {
+    if (typeof el.containerContext !== 'string' || el.containerContext.length > 300) {
+      return { isValid: false, errorMessage: `containerContext at index ${index} must be a string up to 300 chars` };
+    }
+    if (hasProhibitedScriptPattern(el.containerContext)) {
+      return { isValid: false, errorMessage: `Unsafe characters or script patterns prohibited in containerContext at index ${index}` };
+    }
+  }
+
+  // nearestHeading
+  if (el.nearestHeading !== undefined) {
+    if (typeof el.nearestHeading !== 'string' || el.nearestHeading.length > 120) {
+      return { isValid: false, errorMessage: `nearestHeading at index ${index} must be a string up to 120 chars` };
+    }
+    if (hasProhibitedScriptPattern(el.nearestHeading)) {
+      return { isValid: false, errorMessage: `Unsafe characters or script patterns prohibited in nearestHeading at index ${index}` };
+    }
+  }
+
+  // isInsideDialog
+  if (el.isInsideDialog !== undefined && typeof el.isInsideDialog !== 'boolean') {
+    return { isValid: false, errorMessage: `isInsideDialog at index ${index} must be a boolean` };
   }
 
   return { isValid: true };

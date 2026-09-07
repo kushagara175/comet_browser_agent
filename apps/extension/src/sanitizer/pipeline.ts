@@ -37,6 +37,9 @@ export interface LocalDomSnapshot {
     readonly boundingBox: { x: number; y: number; width: number; height: number };
     readonly state: ReadonlyArray<any>;
     readonly actionCapabilities: ReadonlyArray<any>;
+    readonly containerContext?: string;
+    readonly nearestHeading?: string;
+    readonly isInsideDialog?: boolean;
   }>;
   readonly pageTitle: string;
   readonly visibleDialogCount?: number;
@@ -195,7 +198,10 @@ export class SanitizerPipeline {
         sanitizedName,
         coarseBounds,
         state: el.state,
-        actionCapabilities
+        actionCapabilities,
+        containerContext: el.containerContext,
+        nearestHeading: el.nearestHeading,
+        isInsideDialog: el.isInsideDialog
       };
     });
 

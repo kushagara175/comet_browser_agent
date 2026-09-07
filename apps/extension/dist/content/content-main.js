@@ -462,6 +462,9 @@
         const candidates = currentDoc.querySelectorAll('button, a, input, select, textarea, [role="button"], [tabindex="0"]');
         candidates.forEach((node) => {
           const el = node;
+          if (typeof el.closest === "function" && el.closest(".privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]") || typeof el.getAttribute === "function" && el.getAttribute("data-privapilot-ignore") === "true" || el.classList && typeof el.classList.contains === "function" && el.classList.contains("privapilot-overlay")) {
+            return;
+          }
           const rect = el.getBoundingClientRect();
           if (rect.width === 0 || rect.height === 0) return;
           this.counter++;
@@ -469,10 +472,10 @@
           this.elementMap.set(localId, el);
           let role = "generic";
           const tag = el.tagName.toLowerCase();
-          if (tag === "button" || el.getAttribute("role") === "button") role = "button";
+          if (tag === "button" || typeof el.getAttribute === "function" && el.getAttribute("role") === "button") role = "button";
           else if (tag === "a") role = "link";
           else if (tag === "input") {
-            const type = (el.getAttribute("type") || "text").toLowerCase();
+            const type = (typeof el.getAttribute === "function" ? el.getAttribute("type") || "text" : "text").toLowerCase();
             if (type === "checkbox") role = "checkbox";
             else if (type === "radio") role = "radio";
             else role = "input";
@@ -493,11 +496,11 @@
               }
             }
             if (!associatedLabelText) {
-              const parentLabel = el.closest("label");
+              const parentLabel = typeof el.closest === "function" ? el.closest("label") : null;
               if (parentLabel) associatedLabelText = parentLabel.innerText?.trim() || "";
             }
             if (!associatedLabelText) {
-              const labelledBy = el.getAttribute("aria-labelledby");
+              const labelledBy = typeof el.getAttribute === "function" ? el.getAttribute("aria-labelledby") : null;
               if (labelledBy) {
                 try {
                   const labelEl = currentDoc.getElementById?.(labelledBy);
@@ -506,13 +509,35 @@
                 }
               }
             }
-            const ariaLabel = (el.getAttribute("aria-label") || "").trim();
-            const placeholder = (el.getAttribute("placeholder") || "").trim();
-            const title = (el.getAttribute("title") || "").trim();
-            const nameAttr = (el.getAttribute("name") || "").trim();
+            const ariaLabel = (typeof el.getAttribute === "function" ? el.getAttribute("aria-label") || "" : "").trim();
+            const placeholder = (typeof el.getAttribute === "function" ? el.getAttribute("placeholder") || "" : "").trim();
+            const title = (typeof el.getAttribute === "function" ? el.getAttribute("title") || "" : "").trim();
+            const nameAttr = (typeof el.getAttribute === "function" ? el.getAttribute("name") || "" : "").trim();
             rawName = associatedLabelText || ariaLabel || placeholder || title || nameAttr || role;
           } else {
-            rawName = el.innerText?.trim() || el.getAttribute("aria-label")?.trim() || el.getAttribute("title")?.trim() || role;
+            rawName = el.innerText?.trim() || (typeof el.getAttribute === "function" ? el.getAttribute("aria-label")?.trim() || el.getAttribute("title")?.trim() : "") || role;
+          }
+          let containerContext;
+          try {
+            const container = typeof el.closest === "function" ? el.closest('tr, [role="row"], li, .card, [role="article"], td, [role="gridcell"]') : null;
+            if (container) {
+              const rawContext = container.innerText || container.textContent || "";
+              const cleanTokens = rawContext.replace(rawName, "").replace(/\s+/g, " ").trim().slice(0, 180);
+              if (cleanTokens.length > 0) {
+                containerContext = cleanTokens;
+              }
+            }
+          } catch (_) {
+          }
+          const isInsideDialog = Boolean(typeof el.closest === "function" && el.closest('dialog, [role="dialog"], [role="alertdialog"], .modal, .dialog'));
+          let nearestHeading;
+          try {
+            const heading = typeof el.closest === "function" ? el.closest("section, article, div, main")?.querySelector?.('h1, h2, h3, h4, [role="heading"]') : null;
+            if (heading && heading !== el) {
+              const hText = heading.innerText?.trim();
+              if (hText && hText.length < 80) nearestHeading = hText;
+            }
+          } catch (_) {
           }
           interactiveElements.push({
             localId,
@@ -520,7 +545,10 @@
             rawName,
             boundingBox: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height },
             state: ["visible", el.disabled ? "disabled" : "enabled"],
-            actionCapabilities: caps
+            actionCapabilities: caps,
+            containerContext,
+            nearestHeading,
+            isInsideDialog
           });
           if (tag === "input" || tag === "textarea" || tag === "select") {
             domElements.push({
@@ -1792,6 +1820,8 @@
       if (!this.overlayContainer) {
         this.overlayContainer = document.createElement("div");
         this.overlayContainer.id = "privapilot-hud-overlay-root";
+        this.overlayContainer.className = "privapilot-overlay privapilot-hud";
+        this.overlayContainer.setAttribute("data-privapilot-ignore", "true");
         this.overlayContainer.style.position = "fixed";
         this.overlayContainer.style.top = "0";
         this.overlayContainer.style.left = "0";
@@ -1808,6 +1838,8 @@
       root.innerHTML = "";
       const rect = el.getBoundingClientRect();
       const box = document.createElement("div");
+      box.className = "privapilot-overlay";
+      box.setAttribute("data-privapilot-ignore", "true");
       box.style.position = "absolute";
       box.style.left = `${rect.left}px`;
       box.style.top = `${rect.top}px`;
@@ -1817,8 +1849,11 @@
       box.style.backgroundColor = "rgba(16, 185, 129, 0.15)";
       box.style.borderRadius = "4px";
       box.style.boxShadow = "0 0 10px rgba(16, 185, 129, 0.4)";
+      box.style.pointerEvents = "none";
       box.style.transition = "all 0.2s ease-in-out";
       const pill = document.createElement("span");
+      pill.className = "privapilot-overlay";
+      pill.setAttribute("data-privapilot-ignore", "true");
       pill.innerText = `PrivaPilot: ${label}`;
       pill.style.position = "absolute";
       pill.style.top = "-20px";
@@ -1830,6 +1865,7 @@
       pill.style.padding = "2px 6px";
       pill.style.borderRadius = "3px";
       pill.style.fontFamily = "monospace";
+      pill.style.pointerEvents = "none";
       box.appendChild(pill);
       root.appendChild(box);
       setTimeout(() => {

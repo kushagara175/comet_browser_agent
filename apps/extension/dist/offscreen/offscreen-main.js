@@ -15631,7 +15631,10 @@ as ORT format: ${n}`);
           sanitizedName,
           coarseBounds,
           state: el2.state,
-          actionCapabilities
+          actionCapabilities,
+          containerContext: el2.containerContext,
+          nearestHeading: el2.nearestHeading,
+          isInsideDialog: el2.isInsideDialog
         };
       });
       const sanitizedTitle = sanitizeElementName(snapshot.pageTitle);

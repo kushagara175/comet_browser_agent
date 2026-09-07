@@ -14042,9 +14042,233 @@ function toSanitizedNetworkPayload(context) {
   };
 }
 
+// ../../packages/protocol/dist/grounding.js
+function normalizeSemanticText(text) {
+  return (text || "").toLowerCase().replace(/[^a-z0-9\s_-]/g, " ").replace(/\s+/g, " ").trim();
+}
+function tokenizeSemanticText(text) {
+  const normalized = normalizeSemanticText(text);
+  if (!normalized)
+    return [];
+  return normalized.split(/\s+/).filter((t) => t.length > 0);
+}
+var GENERIC_CONTROL_NAMES = /* @__PURE__ */ new Set([
+  "button",
+  "link",
+  "click",
+  "press",
+  "submit",
+  "generic",
+  "input",
+  "field",
+  "select",
+  "item",
+  "control"
+]);
+function scoreCandidate(element, intent, activeDialogVisible = false) {
+  let requiredCap = null;
+  if (intent.intent === "click" || intent.intent === "dismiss")
+    requiredCap = "click";
+  else if (intent.intent === "type")
+    requiredCap = "type";
+  else if (intent.intent === "select")
+    requiredCap = "select";
+  if (requiredCap && !element.actionCapabilities.includes(requiredCap)) {
+    return {
+      score: 0,
+      confidence: 0,
+      rationale: `Missing required action capability '${requiredCap}'`,
+      isDisqualified: true
+    };
+  }
+  if (element.state.includes("disabled")) {
+    return {
+      score: 0,
+      confidence: 0,
+      rationale: "Element is in disabled state",
+      isDisqualified: true
+    };
+  }
+  const targetPhraseNorm = normalizeSemanticText(intent.targetPhrase || "");
+  const elNameNorm = normalizeSemanticText(element.sanitizedName || "");
+  const targetTokens = intent.targetTokens.length > 0 ? intent.targetTokens : tokenizeSemanticText(targetPhraseNorm);
+  const elTokens = tokenizeSemanticText(elNameNorm);
+  if (!targetPhraseNorm && targetTokens.length === 0) {
+    return {
+      score: 50,
+      confidence: 0.5,
+      rationale: "Generic element considered without specific target phrase",
+      isDisqualified: false
+    };
+  }
+  let score = 0;
+  const rationaleParts = [];
+  if (elNameNorm && targetPhraseNorm && elNameNorm === targetPhraseNorm) {
+    score += 100;
+    rationaleParts.push(`Exact name match ("${element.sanitizedName}")`);
+  } else if (elNameNorm && targetPhraseNorm && (elNameNorm.startsWith(targetPhraseNorm) || targetPhraseNorm.startsWith(elNameNorm))) {
+    score += 65;
+    rationaleParts.push(`Strong prefix match ("${element.sanitizedName}")`);
+  } else if (targetPhraseNorm && elNameNorm.includes(targetPhraseNorm)) {
+    score += 50;
+    rationaleParts.push(`Substring containment ("${element.sanitizedName}")`);
+  }
+  if (targetTokens.length > 0 && elTokens.length > 0) {
+    const matchedTokens = targetTokens.filter((t) => elTokens.includes(t));
+    const tokenRatio = matchedTokens.length / targetTokens.length;
+    if (tokenRatio === 1) {
+      score += 40;
+      rationaleParts.push(`All target tokens present [${matchedTokens.join(", ")}]`);
+    } else if (tokenRatio >= 0.5) {
+      score += Math.round(tokenRatio * 30);
+      rationaleParts.push(`Partial token overlap (${matchedTokens.length}/${targetTokens.length})`);
+    }
+    if (matchedTokens.length > 1) {
+      let isOrdered = true;
+      let lastIndex = -1;
+      for (const t of matchedTokens) {
+        const idx = elTokens.indexOf(t);
+        if (idx <= lastIndex) {
+          isOrdered = false;
+          break;
+        }
+        lastIndex = idx;
+      }
+      if (isOrdered) {
+        score += 15;
+        rationaleParts.push("Token sequence order preserved");
+      }
+    }
+  }
+  if (intent.roleHint) {
+    if (element.role === intent.roleHint) {
+      score += 20;
+      rationaleParts.push(`Role matches hint '${intent.roleHint}'`);
+    } else if (intent.roleHint === "button" && element.role === "link" || intent.roleHint === "link" && element.role === "button") {
+      score -= 5;
+    } else {
+      score -= 25;
+      rationaleParts.push(`Role mismatch (expected '${intent.roleHint}', got '${element.role}')`);
+    }
+  }
+  if (intent.contextPhrase) {
+    const contextNorm = normalizeSemanticText(intent.contextPhrase);
+    const containerNorm = normalizeSemanticText(element.containerContext || "");
+    if (containerNorm && contextNorm) {
+      if (containerNorm.includes(contextNorm)) {
+        score += 80;
+        rationaleParts.push(`Container context matches qualifier "${intent.contextPhrase}"`);
+      } else {
+        score -= 50;
+        rationaleParts.push(`Container context does not match qualifier "${intent.contextPhrase}"`);
+      }
+    } else {
+      score -= 20;
+    }
+  }
+  if (activeDialogVisible) {
+    if (element.isInsideDialog) {
+      score += 25;
+      rationaleParts.push("Element inside active modal/dialog");
+    } else {
+      score -= 20;
+      rationaleParts.push("Element outside active dialog while dialog is open");
+    }
+  }
+  if (GENERIC_CONTROL_NAMES.has(elNameNorm) && targetPhraseNorm && !GENERIC_CONTROL_NAMES.has(targetPhraseNorm)) {
+    score -= 30;
+    rationaleParts.push("Heavily penalized generic element name");
+  }
+  const finalScore = Math.max(0, score);
+  const confidence = Math.min(0.99, Math.max(0.1, Number((finalScore / 150).toFixed(2))));
+  return {
+    score: finalScore,
+    confidence,
+    rationale: rationaleParts.join("; ") || "Baseline candidate evaluation",
+    isDisqualified: finalScore === 0
+  };
+}
+function groundTargetCandidates(elements, intent, activeDialogVisible = false) {
+  if (intent.intent === "scroll" || intent.intent === "observe") {
+    return {
+      status: "passive_or_unscoped",
+      candidates: []
+    };
+  }
+  const scoredList = [];
+  for (const el2 of elements) {
+    const result = scoreCandidate(el2, intent, activeDialogVisible);
+    if (!result.isDisqualified && result.score >= 35) {
+      scoredList.push({
+        element: el2,
+        score: result.score,
+        confidence: result.confidence,
+        rationale: result.rationale
+      });
+    }
+  }
+  scoredList.sort((a, b) => b.score - a.score);
+  if (scoredList.length === 0) {
+    return {
+      status: "no_match",
+      candidates: []
+    };
+  }
+  const best = scoredList[0];
+  if (scoredList.length > 1) {
+    const runnerUp = scoredList[1];
+    const scoreDiff = best.score - runnerUp.score;
+    const sameName = normalizeSemanticText(best.element.sanitizedName) === normalizeSemanticText(runnerUp.element.sanitizedName);
+    const isAmbiguous = scoreDiff < 15 && best.score >= 50 && runnerUp.score >= 50 || sameName && !intent.contextPhrase && scoreDiff === 0;
+    if (isAmbiguous) {
+      const ambigReason = `Ambiguous candidates: multiple matching controls ("${best.element.sanitizedName}") found without distinguishing contextual qualifier.`;
+      return {
+        status: "ambiguous_match",
+        bestCandidate: best,
+        candidates: scoredList,
+        ambiguityReason: ambigReason
+      };
+    }
+  }
+  return {
+    status: "unambiguous_match",
+    bestCandidate: best,
+    candidates: scoredList
+  };
+}
+
 // ../../packages/protocol/dist/action.js
+var GENERIC_CONTEXT_WORDS = /* @__PURE__ */ new Set([
+  "pending",
+  "request",
+  "requests",
+  "item",
+  "items",
+  "row",
+  "user",
+  "the",
+  "a",
+  "an",
+  "this",
+  "that",
+  "safe",
+  "preview",
+  "details",
+  "result",
+  "results",
+  "table",
+  "page"
+]);
+function cleanContextPhrase(phrase) {
+  if (!phrase)
+    return void 0;
+  const trimmed = phrase.trim();
+  if (GENERIC_CONTEXT_WORDS.has(trimmed.toLowerCase()))
+    return void 0;
+  return trimmed;
+}
 function resolveTaskContract(goal) {
-  let g = (goal || "").trim().toLowerCase();
+  let g = (goal || "").trim().toLowerCase().replace(/[?!.]+$/, "").trim();
   let prev = "";
   const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?)+/i;
   while (g && g !== prev) {
@@ -14072,35 +14296,84 @@ function resolveTaskContract(goal) {
       supported: true,
       goalPattern: "observe_status",
       expectedTerminal: { kind: "status_changed" },
+      structuredIntent: {
+        intent: "observe",
+        targetTokens: []
+      },
       isPassive: true
     };
   }
   if (/(?:open|inspect|view)\s+(?:.*?\s+)?(?:preview|drawer|details?|summary|profile|settings)/i.test(g) || /preview/i.test(g)) {
+    const contextMatch2 = g.match(/(?:preview|drawer|details?|summary|profile|settings)\s+(?:for|in|of|under)\s+([a-zA-Z0-9_-]+)/i);
+    const contextPhrase2 = cleanContextPhrase(contextMatch2 ? contextMatch2[1].trim() : void 0);
+    let targetPhrase2 = "preview";
+    let dialogId = "preview";
+    if (g.includes("details")) {
+      targetPhrase2 = "View Details";
+      dialogId = "details";
+    } else if (g.includes("drawer")) {
+      targetPhrase2 = "drawer";
+      dialogId = "drawer";
+    }
     return {
       supported: true,
       goalPattern: "preview_drawer",
-      expectedTerminal: { kind: "dialog_visible", dialogId: "preview" },
-      expectedTargetNameSubstring: "preview"
+      expectedTerminal: { kind: "dialog_visible", dialogId },
+      expectedTargetNameSubstring: targetPhrase2,
+      structuredIntent: {
+        intent: "click",
+        targetPhrase: targetPhrase2,
+        roleHint: "button",
+        targetTokens: tokenizeSemanticText(targetPhrase2),
+        contextPhrase: contextPhrase2
+      }
     };
   }
   if (/(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry)/i.test(g)) {
-    const filterMatch = g.match(/(?:search|type|fill|enter|write|set|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query|the\s+search\s+field\s+with|the\s+field\s+with|the\s+input\s+with|this\s+field\s+with|this\s+input\s+with|the\s+input\s+to|in\s+this\s+field|into\s+this\s+field|in\s+the\s+field|with))?\s+["']?([^"']+)["']?/i);
-    const val = filterMatch ? filterMatch[1].replace(/\?+$/, "").trim() : "";
+    let targetPhrase2 = "search";
+    let requestedValue = "";
+    const intoMatch = g.match(/(?:type|fill|enter|write|set)\s+["']?([^"']+)["']?\s+(?:into|in)\s+(?:the\s+)?["']?([^"']+)["']?/i);
+    if (intoMatch) {
+      requestedValue = intoMatch[1].trim();
+      targetPhrase2 = intoMatch[2].trim();
+    } else {
+      const filterMatch = g.match(/(?:search|type|fill|enter|write|set|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query|the\s+search\s+field\s+with|the\s+field\s+with|the\s+input\s+with|this\s+field\s+with|this\s+input\s+with|the\s+input\s+to|in\s+this\s+field|into\s+this\s+field|in\s+the\s+field|with))?\s+["']?([^"']+)["']?/i);
+      requestedValue = filterMatch ? filterMatch[1].replace(/\?+$/, "").trim() : "";
+      if (g.includes("search"))
+        targetPhrase2 = "search";
+      else if (g.includes("filter"))
+        targetPhrase2 = "filter";
+    }
     return {
       supported: true,
       goalPattern: "search_filter",
-      expectedTerminal: { kind: "value_present", expectedValueFragment: val || void 0 },
-      expectedTargetNameSubstring: "search"
+      expectedTerminal: { kind: "value_present", expectedValueFragment: requestedValue || void 0 },
+      expectedTargetNameSubstring: targetPhrase2,
+      structuredIntent: {
+        intent: "type",
+        targetPhrase: targetPhrase2,
+        roleHint: "input",
+        targetTokens: tokenizeSemanticText(targetPhrase2),
+        requestedValue
+      }
     };
   }
   if (/(?:select|choose)(?:\s+(?:option))?/i.test(g)) {
-    const selectMatch = g.match(/(?:select|choose)(?:\s+(?:option))?\s+["']?([^"']+)["']?/i);
+    const selectMatch = g.match(/(?:select|choose)(?:\s+(?:option))?\s+["']?([^"']+)["']?(?:\s+(?:from|in)\s+(?:the\s+)?["']?([^"']+)["']?)?/i);
     const opt = selectMatch ? selectMatch[1].replace(/\?+$/, "").trim() : "";
+    const targetPhrase2 = selectMatch && selectMatch[2] ? selectMatch[2].trim() : "select";
     return {
       supported: true,
       goalPattern: "select_option",
       expectedTerminal: { kind: "select_changed", expectedOptionValue: opt || void 0 },
-      expectedTargetNameSubstring: "select"
+      expectedTargetNameSubstring: targetPhrase2,
+      structuredIntent: {
+        intent: "select",
+        targetPhrase: targetPhrase2,
+        roleHint: "select",
+        targetTokens: tokenizeSemanticText(targetPhrase2),
+        requestedOption: opt
+      }
     };
   }
   if (/scroll/i.test(g) || /page\s+(?:down|up)/i.test(g)) {
@@ -14110,14 +14383,24 @@ function resolveTaskContract(goal) {
     return {
       supported: true,
       goalPattern: "scroll",
-      expectedTerminal: { kind: "scroll_changed", direction: dir }
+      expectedTerminal: { kind: "scroll_changed", direction: dir },
+      structuredIntent: {
+        intent: "scroll",
+        targetTokens: ["scroll"]
+      }
     };
   }
   if (/(?:dismiss|close|accept|reject|hide)\s+(?:cookie|banner|notice|modal|dialog|disclosure|popup|overlay)/i.test(g)) {
     return {
       supported: true,
       goalPattern: "dismiss_modal",
-      expectedTerminal: { kind: "visibility_changed", state: "hidden" }
+      expectedTerminal: { kind: "visibility_changed", state: "hidden" },
+      structuredIntent: {
+        intent: "dismiss",
+        targetPhrase: "close",
+        roleHint: "button",
+        targetTokens: ["close", "dismiss"]
+      }
     };
   }
   if (/(?:approve|submit|pay|authorize|release|delete|order|purge|transfer)/i.test(g)) {
@@ -14125,23 +14408,48 @@ function resolveTaskContract(goal) {
       supported: true,
       goalPattern: "approval_submission",
       expectedTerminal: { kind: "status_changed", statusId: "approved" },
-      expectedTargetNameSubstring: "approve"
+      expectedTargetNameSubstring: "approve",
+      structuredIntent: {
+        intent: "click",
+        targetPhrase: "approve",
+        roleHint: "button",
+        targetTokens: ["approve", "submit"],
+        isProtected: true
+      }
     };
   }
-  if (/(?:click|press|button|link|item|admin|finish|sanitize|sensitive|login|navigate|navigation|go\s+to|show|open|tap|expand|view|switch|toggle)/i.test(g)) {
-    const clickMatch = g.match(/(?:click|press|go\s+to|navigate\s+to|open|tap|show|expand)\s+(?:the\s+)?["']?([^"']+)["']?/i);
-    const target = clickMatch ? clickMatch[1].replace(/\?+$/, "").trim() : void 0;
-    return {
-      supported: true,
-      goalPattern: "click_control",
-      expectedTerminal: { kind: "status_changed" },
-      expectedTargetNameSubstring: target
-    };
+  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|delete|remove)\s+(?:on\s+)?(?:the\s+)?/i);
+  const hasInteractionVerb = Boolean(verbMatch);
+  let cleanStr = hasInteractionVerb ? g.replace(verbMatch[0], "").trim() : g;
+  let roleHint;
+  if (/\b(?:link)\b/i.test(cleanStr))
+    roleHint = "link";
+  else if (/\b(?:button)\b/i.test(cleanStr))
+    roleHint = "button";
+  else if (/\b(?:tab)\b/i.test(cleanStr))
+    roleHint = "tab";
+  if (roleHint) {
+    cleanStr = cleanStr.replace(new RegExp(`\\s+${roleHint}\\b`, "i"), "").trim();
+  }
+  let contextPhrase;
+  let targetPhrase = hasInteractionVerb ? cleanStr : void 0;
+  const contextMatch = cleanStr.match(/^(.+?)\s+(?:for|in|of|under|associated\s+with)\s+([a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_-]+)*)$/i);
+  if (contextMatch) {
+    targetPhrase = contextMatch[1].trim();
+    contextPhrase = cleanContextPhrase(contextMatch[2].trim());
   }
   return {
     supported: true,
     goalPattern: "click_control",
-    expectedTerminal: { kind: "status_changed" }
+    expectedTerminal: { kind: "status_changed" },
+    expectedTargetNameSubstring: targetPhrase,
+    structuredIntent: {
+      intent: "click",
+      targetPhrase: targetPhrase || (hasInteractionVerb ? cleanStr : void 0),
+      roleHint,
+      targetTokens: targetPhrase ? tokenizeSemanticText(targetPhrase) : hasInteractionVerb ? tokenizeSemanticText(cleanStr) : [],
+      contextPhrase
+    }
   };
 }
 var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
@@ -16014,7 +16322,10 @@ var SanitizerPipeline = class {
         sanitizedName,
         coarseBounds,
         state: el2.state,
-        actionCapabilities
+        actionCapabilities,
+        containerContext: el2.containerContext,
+        nearestHeading: el2.nearestHeading,
+        isInsideDialog: el2.isInsideDialog
       };
     });
     const sanitizedTitle = sanitizeElementName(snapshot.pageTitle);
@@ -17227,6 +17538,16 @@ var RunCoordinator = class {
           }
           return { satisfied: false, reason: `Expected dialog matching '${reqFragment}' is not visible on page` };
         }
+        const contextQualifier = (contract.structuredIntent?.contextPhrase || "").toLowerCase();
+        if (contextQualifier) {
+          const hasContextInDialog = dialogTitles.some((t) => t.includes(contextQualifier)) || elementNames.some((n) => n.includes(contextQualifier)) || sanitized.elements.some((e) => e.isInsideDialog && (e.sanitizedName.toLowerCase().includes(contextQualifier) || e.containerContext && e.containerContext.toLowerCase().includes(contextQualifier)));
+          if (!hasContextInDialog) {
+            return {
+              satisfied: false,
+              reason: `Opened dialog does not correspond to requested context '${contract.structuredIntent?.contextPhrase || contextQualifier}'`
+            };
+          }
+        }
         const hasClick = actionHistory.some((a) => a.kind === "click");
         if (!hasClick) {
           return { satisfied: false, reason: "No click action executed to open requested dialog" };
@@ -17539,24 +17860,37 @@ var RunCoordinator = class {
         };
         return this.completeWithResult(res2);
       }
-      if (proposal.targetLocalId && proposal.kind === "click") {
-        const targetElement2 = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
-        if (targetElement2) {
-          const duplicates = sanitized.elements.filter(
-            (e) => e.localId !== targetElement2.localId && e.role === targetElement2.role && e.sanitizedName === targetElement2.sanitizedName
-          );
-          if (duplicates.length > 0) {
-            proposal = {
-              ...proposal,
-              risk: "protected",
-              rationale: `Ambiguous candidate: multiple controls with name "${targetElement2.sanitizedName}" present on page. User confirmation required.`
-            };
-          }
-        }
+      let targetElement = proposal.targetLocalId ? sanitized.elements.find((e) => e.localId === proposal.targetLocalId) : void 0;
+      if (proposal.targetLocalId && !targetElement) {
+        const errorMsg2 = `Action rejected: Model proposed non-existent target ID "${proposal.targetLocalId}".`;
+        this.transition("failed-safe", errorMsg2);
+        const stepTrace2 = {
+          step,
+          captureId: sanitized.captureId,
+          pageGeneration: sanitized.captureId,
+          maskCount: sanitized.maskCount,
+          sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+          decisionOrigin,
+          proposal,
+          riskDecision: "blocked",
+          confidenceDecision: "invalid_target_id",
+          executed: false,
+          networkRequestMade,
+          timings: { total: Date.now() - t0_step }
+        };
+        this.stepsTrace.push(stepTrace2);
+        return this.completeWithResult({
+          success: false,
+          state: "failed-safe",
+          error: errorMsg2,
+          sanitized,
+          proposal,
+          stepCount: step,
+          steps: this.stepsTrace
+        });
       }
-      const targetElement = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
       const classifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
-      const riskLevel = proposal.risk === "blocked" || classifiedRisk === "blocked" ? "blocked" : proposal.risk === "protected" || classifiedRisk === "protected" ? "protected" : "safe";
+      let riskLevel = proposal.risk === "blocked" || classifiedRisk === "blocked" ? "blocked" : proposal.risk === "protected" || classifiedRisk === "protected" ? "protected" : "safe";
       if (riskLevel === "blocked") {
         const errorMsg2 = `Action blocked by client safety policy: ${proposal.rationale}`;
         this.transition("failed-safe", errorMsg2);
@@ -17585,6 +17919,79 @@ var RunCoordinator = class {
           steps: this.stepsTrace
         };
         return this.completeWithResult(res2);
+      }
+      const structuredIntent = this.currentTaskContract?.structuredIntent;
+      if (structuredIntent && structuredIntent.targetPhrase && structuredIntent.intent === proposal.kind && targetElement) {
+        const grounding = groundTargetCandidates(
+          sanitized.elements,
+          structuredIntent,
+          Boolean(sanitized.pageState?.visibleDialogCount && sanitized.pageState.visibleDialogCount > 0)
+        );
+        if (grounding.status === "no_match" && this.currentTaskContract?.goalPattern === "click_control") {
+          const errorMsg2 = `Action rejected: Requested target "${structuredIntent.targetPhrase}" is not present on the current page.`;
+          this.transition("failed-safe", errorMsg2);
+          const stepTrace2 = {
+            step,
+            captureId: sanitized.captureId,
+            pageGeneration: sanitized.captureId,
+            maskCount: sanitized.maskCount,
+            sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+            decisionOrigin,
+            proposal,
+            riskDecision: "blocked",
+            confidenceDecision: "missing_target",
+            executed: false,
+            networkRequestMade,
+            timings: { total: Date.now() - t0_step }
+          };
+          this.stepsTrace.push(stepTrace2);
+          return this.completeWithResult({
+            success: false,
+            state: "failed-safe",
+            error: errorMsg2,
+            sanitized,
+            proposal,
+            stepCount: step,
+            steps: this.stepsTrace
+          });
+        }
+        if (grounding.status === "ambiguous_match") {
+          proposal = {
+            ...proposal,
+            risk: "protected",
+            rationale: grounding.ambiguityReason || `Ambiguous candidate: multiple controls matching "${structuredIntent.targetPhrase}". User confirmation required.`
+          };
+          riskLevel = "protected";
+        }
+        if (grounding.bestCandidate && proposal.targetLocalId !== grounding.bestCandidate.element.localId) {
+          const proposedEval = scoreCandidate(targetElement, structuredIntent, Boolean(sanitized.pageState?.visibleDialogCount));
+          if (proposedEval.isDisqualified || grounding.bestCandidate.score >= 50 && grounding.bestCandidate.score - proposedEval.score >= 35) {
+            console.warn(`[PrivaPilot:Grounding] Re-grounding model proposal (${proposal.targetLocalId}: "${targetElement.sanitizedName}", score ${proposedEval.score}) to semantically superior candidate (${grounding.bestCandidate.element.localId}: "${grounding.bestCandidate.element.sanitizedName}", score ${grounding.bestCandidate.score})`);
+            proposal = {
+              ...proposal,
+              targetLocalId: grounding.bestCandidate.element.localId,
+              rationale: `${grounding.bestCandidate.rationale} [semantically grounded]`
+            };
+            targetElement = grounding.bestCandidate.element;
+            const updatedClassifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
+            if (updatedClassifiedRisk === "protected" || proposal.risk === "protected") {
+              riskLevel = "protected";
+            }
+          }
+        }
+      }
+      if (targetElement && proposal.kind === "click") {
+        const duplicates = sanitized.elements.filter(
+          (e) => e.localId !== targetElement.localId && e.role === targetElement.role && e.sanitizedName.toLowerCase() === targetElement.sanitizedName.toLowerCase()
+        );
+        if (duplicates.length > 0 && !structuredIntent?.contextPhrase) {
+          proposal = {
+            ...proposal,
+            risk: "protected",
+            rationale: `Ambiguous candidate: multiple controls with name "${targetElement.sanitizedName}" present on page. User confirmation required.`
+          };
+          riskLevel = "protected";
+        }
       }
       if (riskLevel === "protected") {
         this.pendingAction = proposal;

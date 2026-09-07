@@ -23,7 +23,9 @@ import {
   RunTelemetry,
   resolveTaskContract,
   TaskContract,
-  ExpectedPostcondition
+  ExpectedPostcondition,
+  groundTargetCandidates,
+  scoreCandidate
 } from '@privapilot/protocol';
 import { BrowserAdapter, WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
@@ -445,6 +447,22 @@ export class RunCoordinator {
           return { satisfied: false, reason: `Expected dialog matching '${reqFragment}' is not visible on page` };
         }
 
+        const contextQualifier = (contract.structuredIntent?.contextPhrase || '').toLowerCase();
+        if (contextQualifier) {
+          const hasContextInDialog = dialogTitles.some(t => t.includes(contextQualifier)) ||
+            elementNames.some(n => n.includes(contextQualifier)) ||
+            sanitized.elements.some(e => e.isInsideDialog && (
+              e.sanitizedName.toLowerCase().includes(contextQualifier) ||
+              (e.containerContext && e.containerContext.toLowerCase().includes(contextQualifier))
+            ));
+          if (!hasContextInDialog) {
+            return {
+              satisfied: false,
+              reason: `Opened dialog does not correspond to requested context '${contract.structuredIntent?.contextPhrase || contextQualifier}'`
+            };
+          }
+        }
+
         const hasClick = actionHistory.some(a => a.kind === 'click');
         if (!hasClick) {
           return { satisfied: false, reason: 'No click action executed to open requested dialog' };
@@ -814,27 +832,43 @@ export class RunCoordinator {
         return this.completeWithResult(res);
       }
 
-      // Step 4c: Ambiguity Resolution (If proposal matches ambiguous duplicate targets)
-      if (proposal.targetLocalId && proposal.kind === 'click') {
-        const targetElement = sanitized.elements.find(e => e.localId === proposal.targetLocalId);
-        if (targetElement) {
-          const duplicates = sanitized.elements.filter(
-            e => e.localId !== targetElement.localId && e.role === targetElement.role && e.sanitizedName === targetElement.sanitizedName
-          );
-          if (duplicates.length > 0) {
-            proposal = {
-              ...proposal,
-              risk: 'protected',
-              rationale: `Ambiguous candidate: multiple controls with name "${targetElement.sanitizedName}" present on page. User confirmation required.`
-            };
-          }
-        }
+      // Step 4c: Target Lookup and Validation
+      let targetElement = proposal.targetLocalId
+        ? sanitized.elements.find(e => e.localId === proposal.targetLocalId)
+        : undefined;
+
+      if (proposal.targetLocalId && !targetElement) {
+        const errorMsg = `Action rejected: Model proposed non-existent target ID "${proposal.targetLocalId}".`;
+        this.transition('failed-safe', errorMsg);
+        const stepTrace: E2EStepTrace = {
+          step,
+          captureId: sanitized.captureId,
+          pageGeneration: sanitized.captureId,
+          maskCount: sanitized.maskCount,
+          sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+          decisionOrigin,
+          proposal,
+          riskDecision: 'blocked',
+          confidenceDecision: 'invalid_target_id',
+          executed: false,
+          networkRequestMade,
+          timings: { total: Date.now() - t0_step }
+        };
+        this.stepsTrace.push(stepTrace);
+        return this.completeWithResult({
+          success: false,
+          state: 'failed-safe',
+          error: errorMsg,
+          sanitized,
+          proposal,
+          stepCount: step,
+          steps: this.stepsTrace
+        });
       }
 
-      // Step 5: Risk Classification
-      const targetElement = sanitized.elements.find(e => e.localId === proposal.targetLocalId);
+      // Step 4d: Client Safety Policy (always evaluated before semantic grounding)
       const classifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
-      const riskLevel: RiskLevel = (proposal.risk === 'blocked' || classifiedRisk === 'blocked')
+      let riskLevel: RiskLevel = (proposal.risk === 'blocked' || classifiedRisk === 'blocked')
         ? 'blocked'
         : (proposal.risk === 'protected' || classifiedRisk === 'protected')
           ? 'protected'
@@ -868,6 +902,94 @@ export class RunCoordinator {
           steps: this.stepsTrace
         };
         return this.completeWithResult(res);
+      }
+
+      // Step 4e: Semantic Target Grounding, Disambiguation, and Candidate Ranking
+      const structuredIntent = this.currentTaskContract?.structuredIntent;
+      if (
+        structuredIntent &&
+        structuredIntent.targetPhrase &&
+        structuredIntent.intent === proposal.kind &&
+        targetElement
+      ) {
+        const grounding = groundTargetCandidates(
+          sanitized.elements,
+          structuredIntent,
+          Boolean(sanitized.pageState?.visibleDialogCount && sanitized.pageState.visibleDialogCount > 0)
+        );
+
+        // 1. Missing target check: User commanded an explicit target (e.g. "Click SIH99999") that does not exist on page
+        if (grounding.status === 'no_match' && this.currentTaskContract?.goalPattern === 'click_control') {
+          const errorMsg = `Action rejected: Requested target "${structuredIntent.targetPhrase}" is not present on the current page.`;
+          this.transition('failed-safe', errorMsg);
+          const stepTrace: E2EStepTrace = {
+            step,
+            captureId: sanitized.captureId,
+            pageGeneration: sanitized.captureId,
+            maskCount: sanitized.maskCount,
+            sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+            decisionOrigin,
+            proposal,
+            riskDecision: 'blocked',
+            confidenceDecision: 'missing_target',
+            executed: false,
+            networkRequestMade,
+            timings: { total: Date.now() - t0_step }
+          };
+          this.stepsTrace.push(stepTrace);
+          return this.completeWithResult({
+            success: false,
+            state: 'failed-safe',
+            error: errorMsg,
+            sanitized,
+            proposal,
+            stepCount: step,
+            steps: this.stepsTrace
+          });
+        }
+
+        // 2. Ambiguity resolution:
+        if (grounding.status === 'ambiguous_match') {
+          proposal = {
+            ...proposal,
+            risk: 'protected',
+            rationale: grounding.ambiguityReason || `Ambiguous candidate: multiple controls matching "${structuredIntent.targetPhrase}". User confirmation required.`
+          };
+          riskLevel = 'protected';
+        }
+
+        // 3. Re-grounding model proposal if semantically inferior:
+        if (grounding.bestCandidate && proposal.targetLocalId !== grounding.bestCandidate.element.localId) {
+          const proposedEval = scoreCandidate(targetElement, structuredIntent, Boolean(sanitized.pageState?.visibleDialogCount));
+          if (proposedEval.isDisqualified || (grounding.bestCandidate.score >= 50 && grounding.bestCandidate.score - proposedEval.score >= 35)) {
+            console.warn(`[PrivaPilot:Grounding] Re-grounding model proposal (${proposal.targetLocalId}: "${targetElement.sanitizedName}", score ${proposedEval.score}) to semantically superior candidate (${grounding.bestCandidate.element.localId}: "${grounding.bestCandidate.element.sanitizedName}", score ${grounding.bestCandidate.score})`);
+            proposal = {
+              ...proposal,
+              targetLocalId: grounding.bestCandidate.element.localId,
+              rationale: `${grounding.bestCandidate.rationale} [semantically grounded]`
+            };
+            targetElement = grounding.bestCandidate.element;
+            const updatedClassifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
+            if (updatedClassifiedRisk === 'protected' || proposal.risk === 'protected') {
+              riskLevel = 'protected';
+            }
+          }
+        }
+      }
+
+      // Step 4f: Unqualified Duplicate Candidate Ambiguity Gate
+      if (targetElement && proposal.kind === 'click') {
+        const duplicates = sanitized.elements.filter(
+          e => e.localId !== targetElement.localId && e.role === targetElement.role && e.sanitizedName.toLowerCase() === targetElement.sanitizedName.toLowerCase()
+        );
+        if (duplicates.length > 0 && !structuredIntent?.contextPhrase) {
+          proposal = {
+            ...proposal,
+            risk: 'protected',
+            rationale: `Ambiguous candidate: multiple controls with name "${targetElement.sanitizedName}" present on page. User confirmation required.`
+          };
+          riskLevel = 'protected';
+        }
       }
 
       if (riskLevel === 'protected') {

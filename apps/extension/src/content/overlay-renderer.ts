@@ -11,6 +11,8 @@ export class OverlayRenderer {
     if (!this.overlayContainer) {
       this.overlayContainer = document.createElement('div');
       this.overlayContainer.id = 'privapilot-hud-overlay-root';
+      this.overlayContainer.className = 'privapilot-overlay privapilot-hud';
+      this.overlayContainer.setAttribute('data-privapilot-ignore', 'true');
       this.overlayContainer.style.position = 'fixed';
       this.overlayContainer.style.top = '0';
       this.overlayContainer.style.left = '0';
@@ -29,6 +31,8 @@ export class OverlayRenderer {
 
     const rect = el.getBoundingClientRect();
     const box = document.createElement('div');
+    box.className = 'privapilot-overlay';
+    box.setAttribute('data-privapilot-ignore', 'true');
     box.style.position = 'absolute';
     box.style.left = `${rect.left}px`;
     box.style.top = `${rect.top}px`;
@@ -38,9 +42,12 @@ export class OverlayRenderer {
     box.style.backgroundColor = 'rgba(16, 185, 129, 0.15)';
     box.style.borderRadius = '4px';
     box.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.4)';
+    box.style.pointerEvents = 'none';
     box.style.transition = 'all 0.2s ease-in-out';
 
     const pill = document.createElement('span');
+    pill.className = 'privapilot-overlay';
+    pill.setAttribute('data-privapilot-ignore', 'true');
     pill.innerText = `PrivaPilot: ${label}`;
     pill.style.position = 'absolute';
     pill.style.top = '-20px';
@@ -52,6 +59,7 @@ export class OverlayRenderer {
     pill.style.padding = '2px 6px';
     pill.style.borderRadius = '3px';
     pill.style.fontFamily = 'monospace';
+    pill.style.pointerEvents = 'none';
 
     box.appendChild(pill);
     root.appendChild(box);

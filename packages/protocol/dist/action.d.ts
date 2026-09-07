@@ -1,4 +1,5 @@
 import { SanitizedElement } from './payload.js';
+import { StructuredTaskIntent } from './grounding.js';
 export type ActionKind = 'observe' | 'click' | 'type' | 'select' | 'scroll' | 'wait' | 'request_user_confirmation' | 'finish' | 'blocked';
 export type RiskLevel = 'safe' | 'protected' | 'blocked';
 export type ExpectedPostcondition = {
@@ -33,9 +34,11 @@ export interface TaskContract {
     readonly goalPattern: string;
     readonly expectedTerminal: ExpectedPostcondition;
     readonly expectedTargetNameSubstring?: string;
+    readonly structuredIntent?: StructuredTaskIntent;
     readonly isPassive?: boolean;
     readonly abstentionReason?: string;
 }
+export declare function cleanContextPhrase(phrase: string | undefined): string | undefined;
 /**
  * Resolves a natural-language goal into a closed, structured task contract
  * binding expected semantic terminal postconditions to the run.

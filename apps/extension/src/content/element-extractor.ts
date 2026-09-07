@@ -134,6 +134,16 @@ export class ElementExtractor {
 
       candidates.forEach((node) => {
         const el = node as HTMLElement;
+
+        // Overlay Safety: Never extract extension overlays, HUD controls, or debug containers
+        if (
+          (typeof el.closest === 'function' && el.closest('.privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]')) ||
+          (typeof el.getAttribute === 'function' && el.getAttribute('data-privapilot-ignore') === 'true') ||
+          (el.classList && typeof el.classList.contains === 'function' && el.classList.contains('privapilot-overlay'))
+        ) {
+          return;
+        }
+
         const rect = el.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return; // Skip hidden elements
 
@@ -144,10 +154,10 @@ export class ElementExtractor {
         // Determine role
         let role: ElementRole = 'generic';
         const tag = el.tagName.toLowerCase();
-        if (tag === 'button' || el.getAttribute('role') === 'button') role = 'button';
+        if (tag === 'button' || (typeof el.getAttribute === 'function' && el.getAttribute('role') === 'button')) role = 'button';
         else if (tag === 'a') role = 'link';
         else if (tag === 'input') {
-          const type = (el.getAttribute('type') || 'text').toLowerCase();
+          const type = (typeof el.getAttribute === 'function' ? el.getAttribute('type') || 'text' : 'text').toLowerCase();
           if (type === 'checkbox') role = 'checkbox';
           else if (type === 'radio') role = 'radio';
           else role = 'input';
@@ -174,12 +184,12 @@ export class ElementExtractor {
           }
           // 2. Parent/wrapping <label>
           if (!associatedLabelText) {
-            const parentLabel = el.closest('label');
+            const parentLabel = typeof el.closest === 'function' ? el.closest('label') : null;
             if (parentLabel) associatedLabelText = parentLabel.innerText?.trim() || '';
           }
           // 3. aria-labelledby
           if (!associatedLabelText) {
-            const labelledBy = el.getAttribute('aria-labelledby');
+            const labelledBy = typeof el.getAttribute === 'function' ? el.getAttribute('aria-labelledby') : null;
             if (labelledBy) {
               try {
                 const labelEl = (currentDoc as any).getElementById?.(labelledBy);
@@ -188,16 +198,44 @@ export class ElementExtractor {
             }
           }
 
-          const ariaLabel = (el.getAttribute('aria-label') || '').trim();
-          const placeholder = (el.getAttribute('placeholder') || '').trim();
-          const title = (el.getAttribute('title') || '').trim();
-          const nameAttr = (el.getAttribute('name') || '').trim();
+          const ariaLabel = (typeof el.getAttribute === 'function' ? el.getAttribute('aria-label') || '' : '').trim();
+          const placeholder = (typeof el.getAttribute === 'function' ? el.getAttribute('placeholder') || '' : '').trim();
+          const title = (typeof el.getAttribute === 'function' ? el.getAttribute('title') || '' : '').trim();
+          const nameAttr = (typeof el.getAttribute === 'function' ? el.getAttribute('name') || '' : '').trim();
 
           rawName = associatedLabelText || ariaLabel || placeholder || title || nameAttr || role;
         } else {
           // For buttons, links, custom clickable controls
-          rawName = el.innerText?.trim() || el.getAttribute('aria-label')?.trim() || el.getAttribute('title')?.trim() || role;
+          rawName = el.innerText?.trim() || (typeof el.getAttribute === 'function' ? el.getAttribute('aria-label')?.trim() || el.getAttribute('title')?.trim() : '') || role;
         }
+
+        // Extract container / row context (e.g. table row, card, list item)
+        let containerContext: string | undefined;
+        try {
+          const container = typeof el.closest === 'function' ? el.closest('tr, [role="row"], li, .card, [role="article"], td, [role="gridcell"]') : null;
+          if (container) {
+            const rawContext = (container as HTMLElement).innerText || (container as HTMLElement).textContent || '';
+            const cleanTokens = rawContext
+              .replace(rawName, '')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, 180);
+            if (cleanTokens.length > 0) {
+              containerContext = cleanTokens;
+            }
+          }
+        } catch (_) {}
+
+        // Active Dialog & Heading context
+        const isInsideDialog = Boolean(typeof el.closest === 'function' && el.closest('dialog, [role="dialog"], [role="alertdialog"], .modal, .dialog'));
+        let nearestHeading: string | undefined;
+        try {
+          const heading = typeof el.closest === 'function' ? el.closest('section, article, div, main')?.querySelector?.('h1, h2, h3, h4, [role="heading"]') : null;
+          if (heading && heading !== el) {
+            const hText = (heading as HTMLElement).innerText?.trim();
+            if (hText && hText.length < 80) nearestHeading = hText;
+          }
+        } catch (_) {}
 
         interactiveElements.push({
           localId,
@@ -205,7 +243,10 @@ export class ElementExtractor {
           rawName,
           boundingBox: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height },
           state: ['visible', (el as any).disabled ? 'disabled' : 'enabled'],
-          actionCapabilities: caps
+          actionCapabilities: caps,
+          containerContext,
+          nearestHeading,
+          isInsideDialog
         });
 
         // Also record descriptor for DOM sensitivity analysis (zero live values)
