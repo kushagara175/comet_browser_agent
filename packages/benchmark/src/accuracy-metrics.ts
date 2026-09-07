@@ -121,8 +121,6 @@ export function computeAccuracyMetrics(
         const boxExt = ext.coarseBounds || [ext.normX, ext.normY, ext.normW, ext.normH];
         const boxGt = [gt.normX, gt.normY, gt.normW, gt.normH];
         iouScores.push(computeBoxIoU(boxExt, boxGt as any));
-      } else {
-        iouScores.push(1.0);
       }
     }
   }

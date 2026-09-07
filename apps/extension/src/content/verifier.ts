@@ -49,6 +49,7 @@ export interface SafePreActionSnapshot {
   readonly openDialogIds: ReadonlySet<string>;
   readonly landmarkCounts: Record<string, number>;
   readonly statusRegionCount: number;
+  readonly statusRegionTextSummary?: string;
   readonly targetState?: TargetSemanticState;
   readonly documentElementCount: number;
 }
@@ -93,6 +94,174 @@ function checkPostconditions(
 ): { matched: boolean; reasonCode: VerificationReasonCode; message: string; matchedCondition?: string } {
   const kind = proposal.kind;
   const exp = (proposal.expectedState || '').toLowerCase();
+
+  // 0. Structured ExpectedPostcondition Evaluation
+  if (proposal.expectedPostcondition) {
+    const pc = proposal.expectedPostcondition;
+    switch (pc.kind) {
+      case 'dialog_visible': {
+        const dialog = pc.dialogId ? doc.getElementById(pc.dialogId) : null;
+        if (dialog && isElementVisible(dialog)) {
+          return {
+            matched: true,
+            reasonCode: 'MODAL_DRAWER_VISIBILITY_VERIFIED',
+            message: `Dialog "${pc.dialogId}" became visible`,
+            matchedCondition: 'dialog_visible'
+          };
+        }
+        const anyOpen = doc.querySelectorAll?.('dialog[open], .modal:not([hidden]):not(.hidden), .drawer:not([hidden]):not(.hidden), [role="dialog"], [aria-modal="true"]') || [];
+        for (let i = 0; i < anyOpen.length; i++) {
+          if (isElementVisible(anyOpen[i] as HTMLElement)) {
+            return {
+              matched: true,
+              reasonCode: 'MODAL_DRAWER_VISIBILITY_VERIFIED',
+              message: 'Modal or drawer dialog is visible',
+              matchedCondition: 'dialog_visible'
+            };
+          }
+        }
+        return {
+          matched: false,
+          reasonCode: 'CONDITION_NOT_MET',
+          message: 'Expected dialog is not visible'
+        };
+      }
+      case 'url_changed': {
+        const currentPath = (typeof window !== 'undefined' ? window.location.pathname + window.location.hash : '');
+        if (currentPath !== preSnapshot.pathFingerprint) {
+          if (!pc.expectedPathFragment || currentPath.includes(pc.expectedPathFragment)) {
+            return {
+              matched: true,
+              reasonCode: 'SAFE_NAVIGATION_VERIFIED',
+              message: 'URL path fingerprint changed as expected',
+              matchedCondition: 'url_changed'
+            };
+          }
+        }
+        return {
+          matched: false,
+          reasonCode: 'CONDITION_NOT_MET',
+          message: 'URL path did not change to expected destination'
+        };
+      }
+      case 'attribute_changed': {
+        if (!targetEl) {
+          return { matched: false, reasonCode: 'TARGET_ELEMENT_MISSING', message: 'Target element missing for attribute check' };
+        }
+        const currentAttr = targetEl.getAttribute(pc.attributeName);
+        if (pc.expectedValue !== undefined) {
+          if (currentAttr === pc.expectedValue || (pc.attributeName === 'class' && targetEl.classList.contains(pc.expectedValue))) {
+            return {
+              matched: true,
+              reasonCode: 'TARGET_STATE_MUTATION_VERIFIED',
+              message: `Attribute ${pc.attributeName} updated to ${pc.expectedValue}`,
+              matchedCondition: 'attribute_changed'
+            };
+          }
+        } else if (currentAttr !== (preSnapshot.targetState as any)?.[pc.attributeName]) {
+          return {
+            matched: true,
+            reasonCode: 'TARGET_STATE_MUTATION_VERIFIED',
+            message: `Attribute ${pc.attributeName} mutated`,
+            matchedCondition: 'attribute_changed'
+          };
+        }
+        return { matched: false, reasonCode: 'CONDITION_NOT_MET', message: `Attribute ${pc.attributeName} did not match expected value` };
+      }
+      case 'value_present': {
+        if (!targetEl) {
+          return { matched: false, reasonCode: 'TARGET_ELEMENT_MISSING', message: 'Target element missing for value check' };
+        }
+        const val = 'value' in targetEl ? (targetEl as HTMLInputElement).value : (targetEl.textContent || '');
+        if (val && (!pc.expectedValueFragment || val.includes(pc.expectedValueFragment))) {
+          return {
+            matched: true,
+            reasonCode: 'INPUT_VALUE_MUTATION_VERIFIED',
+            message: 'Target value is present as expected',
+            matchedCondition: 'value_present'
+          };
+        }
+        return { matched: false, reasonCode: 'CONDITION_NOT_MET', message: 'Target value was not present or did not match' };
+      }
+      case 'select_changed': {
+        if (!targetEl || targetEl.tagName.toLowerCase() !== 'select') {
+          return { matched: false, reasonCode: 'TARGET_ELEMENT_MISSING', message: 'Target select element missing' };
+        }
+        const sel = targetEl as HTMLSelectElement;
+        if (!pc.expectedOptionValue || sel.value === pc.expectedOptionValue) {
+          return {
+            matched: true,
+            reasonCode: 'TARGET_STATE_MUTATION_VERIFIED',
+            message: 'Select option updated as expected',
+            matchedCondition: 'select_changed'
+          };
+        }
+        return { matched: false, reasonCode: 'CONDITION_NOT_MET', message: 'Select option did not change to expected value' };
+      }
+      case 'status_changed': {
+        const statusEls = doc.querySelectorAll?.('[role="status"], [role="alert"], [aria-live]:not([aria-live="off"]), .status-message, .alert, .badge') || [];
+        const count = statusEls.length;
+        const currentText = Array.from(statusEls).map(e => (e.textContent || '').trim()).join('|');
+        if (count !== preSnapshot.statusRegionCount || (preSnapshot.statusRegionTextSummary !== undefined && currentText !== preSnapshot.statusRegionTextSummary)) {
+          return {
+            matched: true,
+            reasonCode: 'STATUS_REGION_MUTATION_VERIFIED',
+            message: 'Status or alert region updated',
+            matchedCondition: 'status_changed'
+          };
+        }
+        // Also check if any status/approved badge changed on page or target
+        if (targetEl) {
+          const currentBadgeText = (targetEl.textContent || '').trim();
+          if (currentBadgeText && preSnapshot.targetState && currentBadgeText !== (preSnapshot.targetState as any).textSummary) {
+            return {
+              matched: true,
+              reasonCode: 'TARGET_STATE_MUTATION_VERIFIED',
+              message: 'Target status updated',
+              matchedCondition: 'status_changed'
+            };
+          }
+        }
+        return { matched: false, reasonCode: 'CONDITION_NOT_MET', message: 'Status region did not update' };
+      }
+      case 'scroll_changed': {
+        const scrolled = typeof window !== 'undefined' ? (window.scrollY !== 0 || window.scrollX !== 0) : true;
+        if (scrolled) {
+          return {
+            matched: true,
+            reasonCode: 'PASSIVE_ACTION_VERIFIED',
+            message: `Scroll in direction ${pc.direction} verified`,
+            matchedCondition: 'scroll_changed'
+          };
+        }
+        return { matched: false, reasonCode: 'CONDITION_NOT_MET', message: 'Scroll did not alter viewport offset' };
+      }
+      case 'visibility_changed': {
+        const el = pc.targetLocalId ? (doc.getElementById(pc.targetLocalId) || targetEl) : targetEl;
+        if (!el) {
+          if (pc.state === 'hidden') {
+            return {
+              matched: true,
+              reasonCode: 'TARGET_STATE_MUTATION_VERIFIED',
+              message: 'Target is detached/hidden as expected',
+              matchedCondition: 'visibility_changed'
+            };
+          }
+          return { matched: false, reasonCode: 'TARGET_ELEMENT_MISSING', message: 'Target element missing for visibility check' };
+        }
+        const visible = isElementVisible(el);
+        if ((pc.state === 'visible' && visible) || (pc.state === 'hidden' && !visible)) {
+          return {
+            matched: true,
+            reasonCode: 'TARGET_STATE_MUTATION_VERIFIED',
+            message: `Target element visibility is now ${pc.state}`,
+            matchedCondition: 'visibility_changed'
+          };
+        }
+        return { matched: false, reasonCode: 'CONDITION_NOT_MET', message: `Target element is not ${pc.state}` };
+      }
+    }
+  }
 
   // 1. Passive actions (finish, wait, observe, scroll)
   if (kind === 'finish' || kind === 'wait' || kind === 'observe' || kind === 'scroll') {
@@ -167,7 +336,8 @@ function checkPostconditions(
   let newlyOpenedFound = false;
   for (let i = 0; i < dialogEls.length; i++) {
     const el = dialogEls[i] as HTMLElement;
-    if (isElementVisible(el)) {
+    const vis = isElementVisible(el);
+    if (vis) {
       currentOpenCount++;
       const id = el.id || `dialog_${i}`;
       if (!preSnapshot.openDialogIds.has(id)) {
@@ -275,8 +445,12 @@ function checkPostconditions(
   }
 
   // 7. Status Region Mutation
-  const currentStatusEls = doc.querySelectorAll?.('[role="status"], [role="alert"], [aria-live]:not([aria-live="off"])') || [];
-  if (currentStatusEls.length !== preSnapshot.statusRegionCount) {
+  const currentStatusEls = doc.querySelectorAll?.('[role="status"], [role="alert"], [aria-live]:not([aria-live="off"]), .status-message, .alert, .badge') || [];
+  const currentStatusText = Array.from(currentStatusEls).map(e => (e.textContent || '').trim()).join('|');
+  if (
+    currentStatusEls.length !== preSnapshot.statusRegionCount ||
+    (preSnapshot.statusRegionTextSummary !== undefined && currentStatusText !== preSnapshot.statusRegionTextSummary)
+  ) {
     return {
       matched: true,
       reasonCode: 'STATUS_REGION_MUTATION_VERIFIED',
@@ -372,8 +546,9 @@ export class SemanticStateVerifier {
       if (count > 0) landmarkCounts[tag] = count;
     }
 
-    const statusEls = doc.querySelectorAll?.('[role="status"], [role="alert"], [aria-live]:not([aria-live="off"])') || [];
+    const statusEls = doc.querySelectorAll?.('[role="status"], [role="alert"], [aria-live]:not([aria-live="off"]), .status-message, .alert, .badge') || [];
     const statusRegionCount = statusEls.length;
+    const statusRegionTextSummary = Array.from(statusEls).map(e => (e.textContent || '').trim()).join('|');
 
     let targetState: TargetSemanticState | undefined = undefined;
     if (targetEl) {
@@ -407,6 +582,7 @@ export class SemanticStateVerifier {
       openDialogIds,
       landmarkCounts,
       statusRegionCount,
+      statusRegionTextSummary,
       targetState,
       documentElementCount
     };
@@ -422,7 +598,7 @@ export class SemanticStateVerifier {
     options?: VerificationOptions
   ): Promise<VerificationOutcome> {
     const doc = options?.doc || (targetEl?.ownerDocument as Document) || (typeof document !== 'undefined' ? document : null);
-    const timeoutMs = options?.timeoutMs ?? 150;
+    const timeoutMs = options?.timeoutMs ?? 2500;
     const startTime = Date.now();
 
     const baseline = preSnapshot || SemanticStateVerifier.captureSnapshot(targetEl, doc || undefined);
@@ -512,7 +688,7 @@ export class SemanticStateVerifier {
           childList: true,
           subtree: true,
           attributes: true,
-          characterData: false
+          characterData: true
         });
       } catch (_) {
         // Fallback

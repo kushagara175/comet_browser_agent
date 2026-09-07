@@ -614,9 +614,13 @@
             textNode = textWalker.nextNode();
           }
         }
-        const images = currentDoc.querySelectorAll('img, svg, .avatar, [class*="avatar"], [class*="profile"]');
+        const images = currentDoc.querySelectorAll('img, svg, [role="img"], .avatar, .profile-photo, .profile-pic');
         images.forEach((img, idx) => {
           const el = img;
+          const tagName = (el.tagName || "").toUpperCase();
+          const role = el.getAttribute?.("role") || "";
+          const isVisualMedia = tagName === "IMG" || tagName === "SVG" || role === "img" || el.classList?.contains("avatar") || el.classList?.contains("profile-photo") || el.classList?.contains("profile-pic");
+          if (!isVisualMedia) return;
           const rect = el.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
             const classText = (el.getAttribute?.("class") ?? (typeof el.className === "string" ? el.className : "")).toLowerCase();
@@ -700,7 +704,9 @@
             }
           }
         });
-        const textImages = currentDoc.querySelectorAll('img[class*="receipt"], img[class*="invoice"], img[class*="document"], img[class*="statement"], img[class*="card"], [data-has-text="true"]');
+        const textImages = currentDoc.querySelectorAll(
+          'img[class*="receipt"], img[class*="invoice"], img[class*="document"], img[class*="statement"], img[class*="card"], img[class*="scanned"], img[class*="id"], img[class*="doc"], [data-has-text="true"], img[alt*="scanned" i], img[alt*="document" i], img[alt*="sensitive" i]'
+        );
         textImages.forEach((img) => {
           const rect = img.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
@@ -756,6 +762,35 @@
         });
       };
       processDocumentLevel(doc, { x: 0, y: 0 }, 0);
+      let visibleDialogCount = 0;
+      const dialogTitles = [];
+      try {
+        const dialogCandidates = doc.querySelectorAll('dialog, [role="dialog"], [aria-modal="true"], [id*="drawer"], [class*="drawer"]');
+        dialogCandidates.forEach((node) => {
+          const el = node;
+          const isHidden = el.hidden || el.getAttribute?.("aria-hidden") === "true" || el.classList?.contains("hidden") || typeof getComputedStyle !== "undefined" && getComputedStyle(el).display === "none" || typeof getComputedStyle !== "undefined" && getComputedStyle(el).visibility === "hidden";
+          if (!isHidden && (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0)) {
+            visibleDialogCount++;
+            const title = el.getAttribute("aria-label") || el.querySelector('h1, h2, h3, h4, [class*="title"]')?.textContent?.trim() || "";
+            if (title) {
+              dialogTitles.push(title.slice(0, 100));
+            }
+          }
+        });
+      } catch {
+      }
+      const statusSummaries = [];
+      try {
+        const statusNodes = doc.querySelectorAll('[role="status"], [role="alert"], .badge');
+        statusNodes.forEach((node) => {
+          const text = (node.textContent || "").trim().slice(0, 150);
+          if (text) {
+            statusSummaries.push(text);
+          }
+        });
+      } catch {
+      }
+      const routeFingerprint = typeof doc.location !== "undefined" && doc.location?.pathname ? doc.location.pathname.slice(0, 50) : "/";
       return {
         snapshot: {
           domElements,
@@ -763,7 +798,11 @@
           imageElements,
           surfaces,
           interactiveElements,
-          pageTitle: doc.title || "Page"
+          pageTitle: doc.title || "Page",
+          visibleDialogCount,
+          dialogTitles,
+          statusSummaries,
+          routeFingerprint
         },
         elementMap: this.elementMap
       };
@@ -814,13 +853,13 @@
       if (proposal.kind === "scroll") {
         if (typeof window !== "undefined") {
           if (proposal.scrollDirection === "down") {
-            window.scrollBy({ top: 400, behavior: "smooth" });
+            window.scrollBy(0, 400);
           } else if (proposal.scrollDirection === "up") {
-            window.scrollBy({ top: -400, behavior: "smooth" });
+            window.scrollBy(0, -400);
           } else if (proposal.scrollDirection === "top") {
-            window.scrollTo({ top: 0, behavior: "smooth" });
+            window.scrollTo(0, 0);
           } else {
-            window.scrollTo({ top: document.body?.scrollHeight || 1e3, behavior: "smooth" });
+            window.scrollTo(0, document.body?.scrollHeight || 1e3);
           }
         }
         return {
@@ -1102,6 +1141,16 @@
           } else {
             targetEl.value = proposal.selectOptionValue;
           }
+          const selectEl = targetEl;
+          const val = proposal.selectOptionValue.toLowerCase().trim();
+          for (let i = 0; i < selectEl.options.length; i++) {
+            const opt = selectEl.options[i];
+            if (opt.value.toLowerCase() === val || opt.text.toLowerCase() === val) {
+              selectEl.selectedIndex = i;
+              opt.selected = true;
+              break;
+            }
+          }
           if (EventCtor) {
             targetEl.dispatchEvent(new EventCtor("input", { bubbles: true, cancelable: true, composed: true }));
             targetEl.dispatchEvent(new EventCtor("change", { bubbles: true, cancelable: true }));
@@ -1111,7 +1160,7 @@
             success: true,
             timestamp,
             semanticOutcomeVerified: true,
-            message: `Selected option '${proposal.selectOptionValue}'`
+            message: `Selected option '${proposal.selectOptionValue}' in element '${proposal.targetLocalId}'`
           };
         }
         return {
@@ -1152,6 +1201,171 @@
   function checkPostconditions(proposal, targetEl, preSnapshot, doc) {
     const kind = proposal.kind;
     const exp = (proposal.expectedState || "").toLowerCase();
+    if (proposal.expectedPostcondition) {
+      const pc = proposal.expectedPostcondition;
+      switch (pc.kind) {
+        case "dialog_visible": {
+          const dialog = pc.dialogId ? doc.getElementById(pc.dialogId) : null;
+          if (dialog && isElementVisible(dialog)) {
+            return {
+              matched: true,
+              reasonCode: "MODAL_DRAWER_VISIBILITY_VERIFIED",
+              message: `Dialog "${pc.dialogId}" became visible`,
+              matchedCondition: "dialog_visible"
+            };
+          }
+          const anyOpen = doc.querySelectorAll?.('dialog[open], .modal:not([hidden]):not(.hidden), .drawer:not([hidden]):not(.hidden), [role="dialog"], [aria-modal="true"]') || [];
+          for (let i = 0; i < anyOpen.length; i++) {
+            if (isElementVisible(anyOpen[i])) {
+              return {
+                matched: true,
+                reasonCode: "MODAL_DRAWER_VISIBILITY_VERIFIED",
+                message: "Modal or drawer dialog is visible",
+                matchedCondition: "dialog_visible"
+              };
+            }
+          }
+          return {
+            matched: false,
+            reasonCode: "CONDITION_NOT_MET",
+            message: "Expected dialog is not visible"
+          };
+        }
+        case "url_changed": {
+          const currentPath = typeof window !== "undefined" ? window.location.pathname + window.location.hash : "";
+          if (currentPath !== preSnapshot.pathFingerprint) {
+            if (!pc.expectedPathFragment || currentPath.includes(pc.expectedPathFragment)) {
+              return {
+                matched: true,
+                reasonCode: "SAFE_NAVIGATION_VERIFIED",
+                message: "URL path fingerprint changed as expected",
+                matchedCondition: "url_changed"
+              };
+            }
+          }
+          return {
+            matched: false,
+            reasonCode: "CONDITION_NOT_MET",
+            message: "URL path did not change to expected destination"
+          };
+        }
+        case "attribute_changed": {
+          if (!targetEl) {
+            return { matched: false, reasonCode: "TARGET_ELEMENT_MISSING", message: "Target element missing for attribute check" };
+          }
+          const currentAttr = targetEl.getAttribute(pc.attributeName);
+          if (pc.expectedValue !== void 0) {
+            if (currentAttr === pc.expectedValue || pc.attributeName === "class" && targetEl.classList.contains(pc.expectedValue)) {
+              return {
+                matched: true,
+                reasonCode: "TARGET_STATE_MUTATION_VERIFIED",
+                message: `Attribute ${pc.attributeName} updated to ${pc.expectedValue}`,
+                matchedCondition: "attribute_changed"
+              };
+            }
+          } else if (currentAttr !== preSnapshot.targetState?.[pc.attributeName]) {
+            return {
+              matched: true,
+              reasonCode: "TARGET_STATE_MUTATION_VERIFIED",
+              message: `Attribute ${pc.attributeName} mutated`,
+              matchedCondition: "attribute_changed"
+            };
+          }
+          return { matched: false, reasonCode: "CONDITION_NOT_MET", message: `Attribute ${pc.attributeName} did not match expected value` };
+        }
+        case "value_present": {
+          if (!targetEl) {
+            return { matched: false, reasonCode: "TARGET_ELEMENT_MISSING", message: "Target element missing for value check" };
+          }
+          const val = "value" in targetEl ? targetEl.value : targetEl.textContent || "";
+          if (val && (!pc.expectedValueFragment || val.includes(pc.expectedValueFragment))) {
+            return {
+              matched: true,
+              reasonCode: "INPUT_VALUE_MUTATION_VERIFIED",
+              message: "Target value is present as expected",
+              matchedCondition: "value_present"
+            };
+          }
+          return { matched: false, reasonCode: "CONDITION_NOT_MET", message: "Target value was not present or did not match" };
+        }
+        case "select_changed": {
+          if (!targetEl || targetEl.tagName.toLowerCase() !== "select") {
+            return { matched: false, reasonCode: "TARGET_ELEMENT_MISSING", message: "Target select element missing" };
+          }
+          const sel = targetEl;
+          if (!pc.expectedOptionValue || sel.value === pc.expectedOptionValue) {
+            return {
+              matched: true,
+              reasonCode: "TARGET_STATE_MUTATION_VERIFIED",
+              message: "Select option updated as expected",
+              matchedCondition: "select_changed"
+            };
+          }
+          return { matched: false, reasonCode: "CONDITION_NOT_MET", message: "Select option did not change to expected value" };
+        }
+        case "status_changed": {
+          const statusEls = doc.querySelectorAll?.('[role="status"], [role="alert"], [aria-live]:not([aria-live="off"]), .status-message, .alert, .badge') || [];
+          const count = statusEls.length;
+          const currentText = Array.from(statusEls).map((e) => (e.textContent || "").trim()).join("|");
+          if (count !== preSnapshot.statusRegionCount || preSnapshot.statusRegionTextSummary !== void 0 && currentText !== preSnapshot.statusRegionTextSummary) {
+            return {
+              matched: true,
+              reasonCode: "STATUS_REGION_MUTATION_VERIFIED",
+              message: "Status or alert region updated",
+              matchedCondition: "status_changed"
+            };
+          }
+          if (targetEl) {
+            const currentBadgeText = (targetEl.textContent || "").trim();
+            if (currentBadgeText && preSnapshot.targetState && currentBadgeText !== preSnapshot.targetState.textSummary) {
+              return {
+                matched: true,
+                reasonCode: "TARGET_STATE_MUTATION_VERIFIED",
+                message: "Target status updated",
+                matchedCondition: "status_changed"
+              };
+            }
+          }
+          return { matched: false, reasonCode: "CONDITION_NOT_MET", message: "Status region did not update" };
+        }
+        case "scroll_changed": {
+          const scrolled = typeof window !== "undefined" ? window.scrollY !== 0 || window.scrollX !== 0 : true;
+          if (scrolled) {
+            return {
+              matched: true,
+              reasonCode: "PASSIVE_ACTION_VERIFIED",
+              message: `Scroll in direction ${pc.direction} verified`,
+              matchedCondition: "scroll_changed"
+            };
+          }
+          return { matched: false, reasonCode: "CONDITION_NOT_MET", message: "Scroll did not alter viewport offset" };
+        }
+        case "visibility_changed": {
+          const el = pc.targetLocalId ? doc.getElementById(pc.targetLocalId) || targetEl : targetEl;
+          if (!el) {
+            if (pc.state === "hidden") {
+              return {
+                matched: true,
+                reasonCode: "TARGET_STATE_MUTATION_VERIFIED",
+                message: "Target is detached/hidden as expected",
+                matchedCondition: "visibility_changed"
+              };
+            }
+            return { matched: false, reasonCode: "TARGET_ELEMENT_MISSING", message: "Target element missing for visibility check" };
+          }
+          const visible = isElementVisible(el);
+          if (pc.state === "visible" && visible || pc.state === "hidden" && !visible) {
+            return {
+              matched: true,
+              reasonCode: "TARGET_STATE_MUTATION_VERIFIED",
+              message: `Target element visibility is now ${pc.state}`,
+              matchedCondition: "visibility_changed"
+            };
+          }
+          return { matched: false, reasonCode: "CONDITION_NOT_MET", message: `Target element is not ${pc.state}` };
+        }
+      }
+    }
     if (kind === "finish" || kind === "wait" || kind === "observe" || kind === "scroll") {
       return {
         matched: true,
@@ -1217,7 +1431,8 @@
     let newlyOpenedFound = false;
     for (let i = 0; i < dialogEls.length; i++) {
       const el = dialogEls[i];
-      if (isElementVisible(el)) {
+      const vis = isElementVisible(el);
+      if (vis) {
         currentOpenCount++;
         const id = el.id || `dialog_${i}`;
         if (!preSnapshot.openDialogIds.has(id)) {
@@ -1310,8 +1525,9 @@
         };
       }
     }
-    const currentStatusEls = doc.querySelectorAll?.('[role="status"], [role="alert"], [aria-live]:not([aria-live="off"])') || [];
-    if (currentStatusEls.length !== preSnapshot.statusRegionCount) {
+    const currentStatusEls = doc.querySelectorAll?.('[role="status"], [role="alert"], [aria-live]:not([aria-live="off"]), .status-message, .alert, .badge') || [];
+    const currentStatusText = Array.from(currentStatusEls).map((e) => (e.textContent || "").trim()).join("|");
+    if (currentStatusEls.length !== preSnapshot.statusRegionCount || preSnapshot.statusRegionTextSummary !== void 0 && currentStatusText !== preSnapshot.statusRegionTextSummary) {
       return {
         matched: true,
         reasonCode: "STATUS_REGION_MUTATION_VERIFIED",
@@ -1385,8 +1601,9 @@
         const count = doc.getElementsByTagName?.(tag)?.length || 0;
         if (count > 0) landmarkCounts[tag] = count;
       }
-      const statusEls = doc.querySelectorAll?.('[role="status"], [role="alert"], [aria-live]:not([aria-live="off"])') || [];
+      const statusEls = doc.querySelectorAll?.('[role="status"], [role="alert"], [aria-live]:not([aria-live="off"]), .status-message, .alert, .badge') || [];
       const statusRegionCount = statusEls.length;
+      const statusRegionTextSummary = Array.from(statusEls).map((e) => (e.textContent || "").trim()).join("|");
       let targetState = void 0;
       if (targetEl) {
         const isInput = targetEl.tagName?.toLowerCase() === "input";
@@ -1416,6 +1633,7 @@
         openDialogIds,
         landmarkCounts,
         statusRegionCount,
+        statusRegionTextSummary,
         targetState,
         documentElementCount
       };
@@ -1425,7 +1643,7 @@
      */
     static async verifyOutcome(proposal, targetEl, preSnapshot, options) {
       const doc = options?.doc || targetEl?.ownerDocument || (typeof document !== "undefined" ? document : null);
-      const timeoutMs = options?.timeoutMs ?? 150;
+      const timeoutMs = options?.timeoutMs ?? 2500;
       const startTime = Date.now();
       const baseline = preSnapshot || _SemanticStateVerifier.captureSnapshot(targetEl, doc || void 0);
       if (!doc) {
@@ -1503,7 +1721,7 @@
             childList: true,
             subtree: true,
             attributes: true,
-            characterData: false
+            characterData: true
           });
         } catch (_) {
         }
@@ -1675,14 +1893,20 @@
           reasonCode: execResult.reasonCode || "EXECUTION_FAILED"
         };
       }
-      const verification = await SemanticStateVerifier.verifyOutcome(proposal, targetEl, preSnapshot);
+      const verification = await SemanticStateVerifier.verifyOutcome(proposal, targetEl, preSnapshot, { timeoutMs: 2500 });
       const isSuccess = execResult.success && verification.verified;
       return {
         success: isSuccess,
         actionId: proposal.actionId,
         semanticOutcomeVerified: verification.verified,
         reasonCode: verification.reasonCode,
-        message: isSuccess ? execResult.message : verification.message
+        message: isSuccess ? execResult.message : verification.message,
+        verification: {
+          verified: verification.verified,
+          reasonCode: verification.reasonCode,
+          durationMs: verification.details?.durationMs,
+          matchedCondition: verification.details?.matchedCondition
+        }
       };
     }
     if (message.type === "CLEAR_OVERLAYS") {

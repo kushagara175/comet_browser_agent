@@ -21,7 +21,8 @@ const ALLOWED_REASONING_ROOT_KEYS = new Set([
   'goal',
   'screenshot',
   'elements',
-  'pageState'
+  'pageState',
+  'redactionManifest'
 ]);
 
 const ALLOWED_CHAT_ROOT_KEYS = new Set([
@@ -43,7 +44,29 @@ const ALLOWED_ELEMENT_KEYS = new Set([
 
 const ALLOWED_PAGE_STATE_KEYS = new Set([
   'title',
-  'viewport'
+  'viewport',
+  'visibleDialogCount',
+  'dialogTitles',
+  'statusSummaries',
+  'routeFingerprint',
+  'postconditionSummary'
+]);
+
+const ALLOWED_MANIFEST_KEYS = new Set([
+  'manifestVersion',
+  'totalRegions',
+  'categoryCounts',
+  'methodCounts',
+  'placeholderConvention',
+  'geometrySemantics',
+  'pixelVerificationPerformed',
+  'pixelVerificationPassed',
+  'uninspectableSurfacePolicy',
+  'visionAttempted',
+  'visionSucceeded',
+  'visionProvider',
+  'visionModel',
+  'durationMs'
 ]);
 
 const VALID_ROLES = new Set([
@@ -57,6 +80,7 @@ const VALID_ROLES = new Set([
   'menuitem',
   'tab',
   'heading',
+  'dialog',
   'generic'
 ]);
 
@@ -338,6 +362,110 @@ export function validateSanitizedPayload(body: any): ValidationResult<SanitizedN
     vpHeight > 100000
   ) {
     return { isValid: false, errorMessage: 'pageState.viewport dimensions must be positive finite numbers' };
+  }
+
+  if (body.pageState.visibleDialogCount !== undefined) {
+    if (typeof body.pageState.visibleDialogCount !== 'number' || !Number.isInteger(body.pageState.visibleDialogCount) || body.pageState.visibleDialogCount < 0) {
+      return { isValid: false, errorMessage: 'pageState.visibleDialogCount must be a non-negative integer' };
+    }
+  }
+
+  if (body.pageState.dialogTitles !== undefined) {
+    if (!Array.isArray(body.pageState.dialogTitles) || body.pageState.dialogTitles.length > 50) {
+      return { isValid: false, errorMessage: 'pageState.dialogTitles must be an array up to 50 items' };
+    }
+    for (const title of body.pageState.dialogTitles) {
+      if (typeof title !== 'string' || title.length > 200 || hasProhibitedScriptPattern(title)) {
+        return { isValid: false, errorMessage: 'pageState.dialogTitles contains invalid or unsafe string' };
+      }
+    }
+  }
+
+  if (body.pageState.statusSummaries !== undefined) {
+    if (!Array.isArray(body.pageState.statusSummaries) || body.pageState.statusSummaries.length > 50) {
+      return { isValid: false, errorMessage: 'pageState.statusSummaries must be an array up to 50 items' };
+    }
+    for (const summary of body.pageState.statusSummaries) {
+      if (typeof summary !== 'string' || summary.length > 300 || hasProhibitedScriptPattern(summary)) {
+        return { isValid: false, errorMessage: 'pageState.statusSummaries contains invalid or unsafe string' };
+      }
+    }
+  }
+
+  if (body.pageState.routeFingerprint !== undefined) {
+    if (typeof body.pageState.routeFingerprint !== 'string' || body.pageState.routeFingerprint.length > 200 || hasProhibitedScriptPattern(body.pageState.routeFingerprint)) {
+      return { isValid: false, errorMessage: 'pageState.routeFingerprint must be a safe string up to 200 characters' };
+    }
+  }
+
+  if (body.pageState.postconditionSummary !== undefined) {
+    if (typeof body.pageState.postconditionSummary !== 'string' || body.pageState.postconditionSummary.length > 500 || hasProhibitedScriptPattern(body.pageState.postconditionSummary)) {
+      return { isValid: false, errorMessage: 'pageState.postconditionSummary must be a safe string up to 500 characters' };
+    }
+  }
+
+  // 6b. Validate redactionManifest if present
+  if (body.redactionManifest !== undefined) {
+    if (!isPlainObject(body.redactionManifest)) {
+      return { isValid: false, errorMessage: 'Field "redactionManifest" must be an object' };
+    }
+    const manifestKeys = Object.getOwnPropertyNames(body.redactionManifest);
+    for (const mKey of manifestKeys) {
+      if (PROHIBITED_PROPERTY_NAMES.has(mKey) || !ALLOWED_MANIFEST_KEYS.has(mKey)) {
+        return { isValid: false, errorMessage: 'Closed schema violation: Unknown redactionManifest property' };
+      }
+    }
+    const m = body.redactionManifest;
+    if (m.manifestVersion !== '1.0') {
+      return { isValid: false, errorMessage: 'redactionManifest.manifestVersion must be "1.0"' };
+    }
+    if (typeof m.totalRegions !== 'number' || m.totalRegions < 0 || !Number.isInteger(m.totalRegions)) {
+      return { isValid: false, errorMessage: 'redactionManifest.totalRegions must be a non-negative integer' };
+    }
+    if (m.placeholderConvention !== undefined && m.placeholderConvention !== '[REDACTED]') {
+      return { isValid: false, errorMessage: 'redactionManifest.placeholderConvention must be "[REDACTED]"' };
+    }
+    if (m.geometrySemantics !== undefined && m.geometrySemantics !== 'clamped_css_pixels') {
+      return { isValid: false, errorMessage: 'redactionManifest.geometrySemantics must be "clamped_css_pixels"' };
+    }
+    if (m.uninspectableSurfacePolicy !== undefined && m.uninspectableSurfacePolicy !== 'fail_closed') {
+      return { isValid: false, errorMessage: 'redactionManifest.uninspectableSurfacePolicy must be "fail_closed"' };
+    }
+
+    // Validate categoryCounts consistency
+    if (m.categoryCounts !== undefined) {
+      if (!isPlainObject(m.categoryCounts)) {
+        return { isValid: false, errorMessage: 'redactionManifest.categoryCounts must be an object' };
+      }
+      const cc = m.categoryCounts;
+      const piiText = typeof cc.piiText === 'number' ? cc.piiText : 0;
+      const domInput = typeof cc.domInput === 'number' ? cc.domInput : 0;
+      const face = typeof cc.face === 'number' ? cc.face : 0;
+      const surface = typeof cc.surface === 'number' ? cc.surface : 0;
+      if (piiText + domInput + face + surface !== m.totalRegions) {
+        return { isValid: false, errorMessage: 'Contradictory manifest: categoryCounts sum does not match totalRegions' };
+      }
+    }
+
+    // Validate methodCounts consistency
+    if (m.methodCounts !== undefined) {
+      if (!isPlainObject(m.methodCounts)) {
+        return { isValid: false, errorMessage: 'redactionManifest.methodCounts must be an object' };
+      }
+      const mc = m.methodCounts;
+      const opaqueBox = typeof mc.opaqueBox === 'number' ? mc.opaqueBox : 0;
+      const spatialBlur = typeof mc.spatialBlur === 'number' ? mc.spatialBlur : 0;
+      if (opaqueBox + spatialBlur !== m.totalRegions) {
+        return { isValid: false, errorMessage: 'Contradictory manifest: methodCounts sum does not match totalRegions' };
+      }
+    }
+
+    // Screenshot transmission requires verified passed pixel check
+    if (body.screenshot && m.pixelVerificationPerformed !== undefined) {
+      if (!m.pixelVerificationPerformed || !m.pixelVerificationPassed) {
+        return { isValid: false, errorMessage: 'Privacy violation: Screenshot payload requires passed pixel verification gate' };
+      }
+    }
   }
 
   // 7. Validate Elements

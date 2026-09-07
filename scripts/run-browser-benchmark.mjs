@@ -122,7 +122,14 @@ async function main() {
 
     // --- Visual context accuracy (25%) ---
     for (const el of result.extract.snapshot.interactiveElements || []) {
-      allExtractedElements.push({ role: el.role, name: el.rawName, coarseBounds: [0, 0, 0, 0] });
+      const b = el.boundingBox;
+      const coarseBounds = b ? [
+        Math.max(0, Math.min(1, b.y / VIEWPORT.height)),
+        Math.max(0, Math.min(1, b.x / VIEWPORT.width)),
+        Math.max(0, Math.min(1, (b.y + b.height) / VIEWPORT.height)),
+        Math.max(0, Math.min(1, (b.x + b.width) / VIEWPORT.width))
+      ] : [0, 0, 0, 0];
+      allExtractedElements.push({ role: el.role, name: el.rawName, coarseBounds });
     }
     for (const ge of gt.groundTruthElements) allGroundTruthElements.push(ge);
 

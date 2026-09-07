@@ -23,7 +23,7 @@ body {
   color: var(--text-dark);
   font-family: var(--font-family);
   font-size: 13px;
-  min-height: 100vh;
+  min-height: 1600px;
 }
 
 .portal-wrapper {

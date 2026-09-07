@@ -40,9 +40,9 @@
         </div>
         <div class="header-right-badges">
           <!-- Vision Execution Provider Badge -->
-          <span id="visionProviderBadge" class="provider-pill provider-wasm" title="On-Device Vision Execution Provider">
+          <span id="visionProviderBadge" class="provider-pill provider-not-run" title="On-Device Vision Execution Provider">
             <span class="provider-dot"></span>
-            <span id="visionProviderText">Vision: WASM</span>
+            <span id="visionProviderText">Vision: Not Run</span>
           </span>
           <!-- Agent Lifecycle Status Badge -->
           <span id="agentStatusBadge" class="status-pill status-idle">IDLE</span>
@@ -80,10 +80,11 @@
             <input
               type="text"
               id="chatInput"
+              name="taskInput"
               placeholder="Ask PrivaPilot on this page..."
               autocomplete="off"
             />
-            <button type="submit" id="sendBtn" class="send-btn mode-mic" title="Send Instruction">
+            <button type="submit" id="sendBtn" class="send-btn mode-mic" title="Send Instruction" aria-label="Start Run">
               <svg class="icon-mic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -164,11 +165,11 @@
       <div id="tabPayloadContent" class="tab-pane hidden">
         <div class="payload-wrapper">
           <div class="payload-header-row">
-            <span class="payload-title">Exact Minimized Wire Payload (JSON)</span>
+            <span class="payload-title">Minimized Wire Payload Projection (JSON)</span>
             <button id="copyPayloadBtn" class="btn-copy-payload">Copy JSON</button>
           </div>
           <p class="payload-desc">
-            This represents the exact JSON dispatched over HTTPS. Internal variables, raw screenshots, cookies, tokens, and raw DOM trees are strictly excluded.
+            This represents the exact JSON schema dispatched to the reasoning server. Raw screenshots, cookies, tokens, and raw DOM trees are strictly excluded. Screenshot base64 data URL is omitted from this display.
           </p>
           <div class="payload-code-container">
             <pre id="wirePayloadJson" class="payload-json-block"><code>{\n  "status": "Awaiting initial perception cycle"\n}</code></pre>

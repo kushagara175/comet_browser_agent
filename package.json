@@ -18,6 +18,8 @@
     "benchmark:browser": "node scripts/run-browser-benchmark.mjs",
     "compare:models": "node --env-file-if-exists=.env scripts/compare-models.mjs",
     "test:e2e": "node scripts/run-e2e-extension.mjs",
+    "test:e2e:matrix": "node scripts/run-e2e-matrix.mjs",
+    "validate:production": "node scripts/run-production-validation.mjs",
     "dev:server": "node --env-file-if-exists=.env apps/server/dist/index.js",
     "dev:portal": "node apps/demo-portal/server.js",
     "lint": "node scripts/typecheck.js && node scripts/check-repo-integrity.mjs"

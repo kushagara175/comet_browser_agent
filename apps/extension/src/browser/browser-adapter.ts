@@ -235,12 +235,12 @@ export class WebExtensionAdapter implements BrowserAdapter {
     }
 
     const offscreenUrl = api.runtime.getURL ? api.runtime.getURL('src/offscreen/offscreen.html') : 'src/offscreen/offscreen.html';
-
     this.offscreenCreationPromise = api.offscreen.createDocument({
       url: offscreenUrl,
       reasons: ['BLOBS', 'DOM_PARSER'],
       justification: 'On-device privacy mask rendering on screenshot canvas'
     }).catch((err: any) => {
+      console.error('[PrivaPilot SW] createDocument error:', err?.message || err);
       // Ignore error if document already exists
       if (!err.message?.includes('Only a single offscreen document may be created')) {
         throw err;
@@ -282,33 +282,99 @@ export class WebExtensionAdapter implements BrowserAdapter {
       });
 
       const messagePromise = new Promise<SanitizedContext>((resolve, reject) => {
-        api.runtime.sendMessage(
-          {
-            target: 'privapilot-offscreen',
-            type: 'SANITIZE_CAPTURE',
-            correlationId,
-            payload: request
-          },
-          (response: any) => {
-            if (api.runtime.lastError) {
-              reject(new Error(`Offscreen Message Error: ${api.runtime.lastError.message}`));
+        let attempts = 0;
+        const maxAttempts = 15;
+        let settled = false;
+
+        const attemptSend = () => {
+          attempts++;
+
+          // Attempt 1-to-1 dedicated Port connection if available
+          if (typeof api.runtime.connect === 'function') {
+            try {
+              const port = api.runtime.connect({ name: 'privapilot-offscreen' });
+              let portReceivedResponse = false;
+
+              port.onMessage.addListener((response: any) => {
+                if (settled) return;
+                portReceivedResponse = true;
+                settled = true;
+                try { port.disconnect(); } catch (_) {}
+
+                if (!response || response.correlationId !== correlationId) {
+                  reject(new Error(`Correlation ID mismatch: expected ${correlationId}, got ${response?.correlationId}`));
+                  return;
+                }
+                if (!response.success || !response.sanitized) {
+                  reject(new Error(response.error || 'Sanitization failed in offscreen document'));
+                  return;
+                }
+                resolve(response.sanitized);
+              });
+
+              port.onDisconnect.addListener(() => {
+                if (!portReceivedResponse && !settled) {
+                  // Port closed before responding; document may still be mounting or bundle loading
+                  if (attempts < maxAttempts) {
+                    setTimeout(attemptSend, 200);
+                  } else {
+                    settled = true;
+                    reject(new Error('Offscreen port disconnected before sanitization completed'));
+                  }
+                }
+              });
+
+              port.postMessage({
+                target: 'privapilot-offscreen',
+                type: 'SANITIZE_CAPTURE',
+                correlationId,
+                payload: request
+              });
               return;
+            } catch (err) {
+              console.warn('[PrivaPilot SW] Port connection attempt failed, using runtime.sendMessage:', err);
             }
-            if (!response) {
-              reject(new Error('Offscreen document returned empty response'));
-              return;
-            }
-            if (response.correlationId !== correlationId) {
-              reject(new Error(`Correlation ID mismatch: expected ${correlationId}, got ${response.correlationId}`));
-              return;
-            }
-            if (!response.success || !response.sanitized) {
-              reject(new Error(response.error || 'Sanitization failed in offscreen document'));
-              return;
-            }
-            resolve(response.sanitized);
           }
-        );
+
+          // Fallback to runtime.sendMessage
+          api.runtime.sendMessage(
+            {
+              target: 'privapilot-offscreen',
+              type: 'SANITIZE_CAPTURE',
+              correlationId,
+              payload: request
+            },
+            (response: any) => {
+              if (settled) return;
+              if (api.runtime.lastError || !response) {
+                if (attempts < maxAttempts) {
+                  // Offscreen script is still mounting/parsing the bundle: retry shortly
+                  setTimeout(attemptSend, 200);
+                  return;
+                }
+                settled = true;
+                if (api.runtime.lastError) {
+                  reject(new Error(`Offscreen Message Error: ${api.runtime.lastError.message}`));
+                } else {
+                  reject(new Error('Offscreen document returned empty response'));
+                }
+                return;
+              }
+              settled = true;
+              if (response.correlationId !== correlationId) {
+                reject(new Error(`Correlation ID mismatch: expected ${correlationId}, got ${response.correlationId}`));
+                return;
+              }
+              if (!response.success || !response.sanitized) {
+                reject(new Error(response.error || 'Sanitization failed in offscreen document'));
+                return;
+              }
+              resolve(response.sanitized);
+            }
+          );
+        };
+
+        attemptSend();
       });
 
       return Promise.race([messagePromise, timeoutPromise]);

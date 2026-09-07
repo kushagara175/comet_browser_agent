@@ -12,7 +12,7 @@
  *
  * Bundled by scripts/build.js as an IIFE under the global `__privapilot`.
  */
-import { SanitizedContext, ViewportMetadata } from '@privapilot/protocol';
+import { SanitizedContext, ViewportMetadata, RedactionMethod } from '@privapilot/protocol';
 /**
  * Must match protocol ViewportMetadata exactly. Emitting innerWidth/innerHeight
  * instead of viewportWidth/viewportHeight silently produces NaN boxes downstream:
@@ -49,6 +49,7 @@ export interface RegionProbe {
     readonly normY: number;
     readonly normW: number;
     readonly normH: number;
+    readonly method?: RedactionMethod;
 }
 export interface RegionVerdict {
     readonly id: string;
@@ -59,17 +60,13 @@ export interface RegionVerdict {
     readonly rawVariance: number;
     readonly varianceReduction: number;
     readonly sampledPixels: number;
+    readonly failureReason?: string;
 }
 /**
  * Pixel-true redaction check.
  *
- * The shipped PostRedactionVerifier only compares detected-region count to
- * rendered-mask count and never reads a pixel, so a mask drawn at the wrong
- * coordinates passes it. This reads the actual output image and asks the question
- * the rubric asks: is this region genuinely destroyed?
- *
- * A region counts as covered if it is painted with the opaque mask fill, or if
- * most of its original detail is gone relative to the raw capture (the blur path).
+ * Calls the unified production verifyRegionPixelBuffer so benchmark and production
+ * share identical failure modes, thresholds, and opacity checks.
  */
 export declare function verifyRedaction(rawDataUrl: string, sanitizedDataUrl: string, regions: ReadonlyArray<RegionProbe>): Promise<RegionVerdict[]>;
 export declare function resolveSelectorBoxes(entries: ReadonlyArray<{

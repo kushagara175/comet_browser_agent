@@ -95,16 +95,18 @@ Honest state, updated as work lands. **No performance number appears in this rep
 
 | Component | State |
 | :--- | :--- |
-| Monorepo build & test suite | ✅ Clean build, 149/149 unit & integration tests passing |
-| Protocol & type-enforced privacy boundary | ✅ `packages/protocol/` |
+| Monorepo build & test suite | ✅ Clean build, 198/198 unit & integration tests passing (`npm test`) |
+| Protocol & type-enforced privacy boundary | ✅ `packages/protocol/` (`RedactionManifest`, `E2EStepTrace`) |
 | Deterministic PII detectors (DOM + regex + Luhn + Verhoeff) | ✅ `packages/pii-rules/` |
-| Server gateway, closed schema, canary scanner | ✅ `apps/server/` |
-| Action risk policy & confirmation gate | ✅ `packages/protocol/src/action.ts` |
+| Server gateway, closed schema, canary scanner | ✅ `apps/server/` (pixel verification enforcement) |
+| Action risk policy & confirmation gate | ✅ `packages/protocol/src/action.ts` (closed postconditions, fresh confirmation) |
 | Pixel redaction running inside extension | ✅ Offscreen document canvas host (`apps/extension/src/offscreen/`) |
-| On-device vision face model | ✅ UltraFace ONNX (Wasm/CPU with WebGPU fallback) (`packages/pii-rules/src/face-onnx.ts`) |
-| Benchmark against authored ground truth | ✅ Non-circular benchmark with dev & held-out splits (`packages/benchmark/`) |
-| Bounded multi-step agent loop | ✅ Bounded agent loop with stale recovery and protected pause (`apps/extension/src/background/coordinator.ts`) |
-| Browser compatibility | ✅ Chrome Manifest V3 active; Firefox MV3 architecture ready |
+| Production pixel verifier & face fallback | ✅ `apps/extension/src/sanitizer/pixel-verifier.ts` (fail-closed `#0f172a` fallback) |
+| On-device visual UI candidate generator | ✅ `apps/extension/src/vision/visual-candidate-generator.ts` (edge/gradient proposals) |
+| Perception fusion & routing | ✅ `apps/extension/src/vision/perception-fuser.ts` (dom-only, vision-only, fused) |
+| Benchmark against authored ground truth | ✅ Real Chrome browser benchmark (`npm run benchmark:browser`: 100% covered) |
+| Bounded multi-step agent loop & local router | ✅ Bounded agent loop with local safe router (`apps/extension/src/background/coordinator.ts`) |
+| Browser compatibility | ✅ Chrome Manifest V3 active; Firefox experimental (per submission rubric) |
 
 Detailed benchmark metrics and test outcomes are tracked in **[`docs/benchmark-results/`](docs/benchmark-results/EVALUATION_REPORT.md)**.
 
@@ -279,10 +281,14 @@ wholesale. Absence of readable DOM text is not evidence that a region is safe.
 ## Testing
 
 ```bash
-npm test             # 149 unit, integration & adversarial tests
-npm run test:canary  # asserts a planted secret never appears in any outbound payload
-npm run benchmark    # the five official metrics against authored ground truth
-npm run test:e2e     # real Chrome via CDP, measured latencies
+npm test                      # 198 unit, integration & adversarial tests
+npm run lint                  # TypeScript typecheck + 4 repository integrity checks
+npm run verify:redaction      # pixel-true verification of redaction masks on canvas
+npm run benchmark:browser     # real Chrome CDP benchmark (100% pixel-verified coverage)
+npm run benchmark             # metrics against authored ground truth
+npm run validate:production   # Stage F/G real-world validation across dev & held-out splits
+npm run test:e2e              # real Chrome MV3 extension E2E run with live VLM server
+npm run test:canary           # asserts planted secrets never appear in any outbound payload
 ```
 
 The adversarial suite encodes attacks the system must survive:

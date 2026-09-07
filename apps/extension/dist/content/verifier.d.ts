@@ -33,6 +33,7 @@ export interface SafePreActionSnapshot {
     readonly openDialogIds: ReadonlySet<string>;
     readonly landmarkCounts: Record<string, number>;
     readonly statusRegionCount: number;
+    readonly statusRegionTextSummary?: string;
     readonly targetState?: TargetSemanticState;
     readonly documentElementCount: number;
 }

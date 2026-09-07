@@ -1,8 +1,8 @@
 # PrivaPilot — Browser Benchmark Report
 
 **Harness:** real Chrome via CDP · **Split:** all · **Fixtures:** 14
-**Generated:** 2026-09-02T04:23:55.411Z · **Commit:** `df79c92`
-**Environment:** win32 x64 (Node v22.19.0) · **Viewport:** 1280x800 @1x
+**Generated:** 2026-09-06T21:14:42.813Z · **Commit:** `bd2de10`
+**Environment:** darwin arm64 (Node v22.22.0) · **Viewport:** 1280x800 @1x
 **Command:** `npm run benchmark:browser`
 
 > Every number here was produced by the shipped client pipeline executing in a real
@@ -18,18 +18,16 @@
 | Metric | Weight | Measured |
 | :--- | :---: | :--- |
 | Visual context accuracy | 25% | 78.6% recall / 78.6% precision |
-| Redaction precision (pixel-verified) | 20% | **83.3% coverage**, 3 under-masked |
+| Redaction precision (pixel-verified) | 20% | **100% coverage**, 0 under-masked |
 | Safe-control preservation | — | 100% (18/18) |
-| Client perception latency | part of 15% | 55 ms p50 / 99 ms p95 |
-| Client memory | part of 20% | 3.94 MB peak, 3.79 MB median |
+| Client perception latency | part of 15% | 30 ms p50 / 40 ms p95 |
+| Client memory | part of 20% | 4.11 MB peak, 3.88 MB median |
 
 ### Under-masked regions
 
 | Fixture | Region | Overlay coverage |
 | :--- | :--- | ---: |
-| `face-gallery` | `s0:face` | 7.4% |
-| `face-gallery` | `s1:face` | 5.4% |
-| `image-pii` | `s0:high_risk_surface` | 0.0% |
+| _none_ | | |
 
 ---
 
@@ -37,20 +35,20 @@
 
 | Fixture | Split | Elements | Masks | Regions covered | Client | Heap | Status |
 | :--- | :--- | ---: | ---: | :---: | ---: | ---: | :--- |
-| `standard-login` | dev | 3 | 2 | 2/2 | 53 ms | 3.91 MB | ok |
-| `misleading-field-names` | dev | 3 | 2 | 2/2 | 54.7 ms | 3.79 MB | ok |
-| `payment-portal` | dev | 5 | 3 | 3/3 | 57.6 ms | 3.81 MB | ok |
-| `profile-pii` | dev | 2 | 5 | 4/4 | 99.4 ms | 3.94 MB | ok |
-| `face-gallery` | dev | 1 | 2 | 0/2 | 59.4 ms | 3.72 MB | ok |
-| `image-pii` | dev | 1 | 0 | 0/1 | 58.5 ms | 3.61 MB | ok |
-| `canvas-pii` | dev | 1 | 1 | 1/1 | 63 ms | 3.64 MB | ok |
-| `cross-origin-iframe` | dev | 1 | 1 | 1/1 | 56.1 ms | 3.56 MB | ok |
-| `shadow-dom` | dev | 1 | 0 | 0/0 | 53 ms | 3.62 MB | ok |
-| `controlled-react-input` | held-out | 2 | 0 | 0/0 | 48.5 ms | 3.86 MB | ok |
-| `long-scroll` | held-out | 2 | 1 | 0/0 | 50.8 ms | 3.7 MB | ok |
-| `dark-mode` | held-out | 2 | 1 | 1/1 | 45.3 ms | 3.86 MB | ok |
-| `modal-dialog` | held-out | 2 | 1 | 1/1 | 48.7 ms | 3.84 MB | ok |
-| `cookie-banner` | held-out | 2 | 0 | 0/0 | 43.7 ms | 3.67 MB | ok |
+| `standard-login` | dev | 3 | 2 | 2/2 | 29.8 ms | 4.11 MB | ok |
+| `misleading-field-names` | dev | 3 | 2 | 2/2 | 29.7 ms | 3.89 MB | ok |
+| `payment-portal` | dev | 5 | 3 | 3/3 | 31.4 ms | 3.98 MB | ok |
+| `profile-pii` | dev | 2 | 4 | 4/4 | 32.2 ms | 3.36 MB | ok |
+| `face-gallery` | dev | 1 | 2 | 2/2 | 32.6 ms | 3.92 MB | ok |
+| `image-pii` | dev | 1 | 1 | 1/1 | 27.9 ms | 3.78 MB | ok |
+| `canvas-pii` | dev | 1 | 1 | 1/1 | 32.8 ms | 3.8 MB | ok |
+| `cross-origin-iframe` | dev | 1 | 1 | 1/1 | 40.2 ms | 3.5 MB | ok |
+| `shadow-dom` | dev | 1 | 0 | 0/0 | 29.2 ms | 3.42 MB | ok |
+| `controlled-react-input` | held-out | 2 | 0 | 0/0 | 29.1 ms | 3.96 MB | ok |
+| `long-scroll` | held-out | 2 | 0 | 0/0 | 29.7 ms | 3.72 MB | ok |
+| `dark-mode` | held-out | 2 | 1 | 1/1 | 28.9 ms | 3.88 MB | ok |
+| `modal-dialog` | held-out | 2 | 1 | 1/1 | 30.8 ms | 3.9 MB | ok |
+| `cookie-banner` | held-out | 2 | 0 | 0/0 | 25.6 ms | 3.76 MB | ok |
 
 ---
 

@@ -15,7 +15,13 @@
 
 import { ElementExtractor } from '../content/element-extractor.js';
 import { SanitizerPipeline } from '../sanitizer/pipeline.js';
-import { RawCapture, SanitizedContext, ViewportMetadata } from '@privapilot/protocol';
+import { RawCapture, SanitizedContext, ViewportMetadata, RedactionMethod } from '@privapilot/protocol';
+import {
+  varianceOf,
+  opaqueFractionOf,
+  overlayFractionOf,
+  verifyRegionPixelBuffer
+} from '../sanitizer/pixel-verifier.js';
 
 /**
  * Must match protocol ViewportMetadata exactly. Emitting innerWidth/innerHeight
@@ -145,6 +151,7 @@ export interface RegionProbe {
   readonly normY: number;
   readonly normW: number;
   readonly normH: number;
+  readonly method?: RedactionMethod;
 }
 
 export interface RegionVerdict {
@@ -156,82 +163,16 @@ export interface RegionVerdict {
   readonly rawVariance: number;
   readonly varianceReduction: number;
   readonly sampledPixels: number;
+  readonly failureReason?: string;
 }
 
-/** Mean luminance variance over a pixel block - a proxy for "is there still detail here". */
-function varianceOf(data: Uint8ClampedArray): number {
-  const n = data.length / 4;
-  if (n === 0) return 0;
-  let sum = 0;
-  let sumSq = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    sum += lum;
-    sumSq += lum * lum;
-  }
-  const mean = sum / n;
-  return Math.max(0, sumSq / n - mean * mean);
-}
-
-/** Fraction of pixels matching the opaque mask fill #0f172a within tolerance. */
-function opaqueFractionOf(data: Uint8ClampedArray, tolerance = 24): number {
-  const n = data.length / 4;
-  if (n === 0) return 0;
-  let hits = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    if (
-      Math.abs(data[i] - 0x0f) <= tolerance &&
-      Math.abs(data[i + 1] - 0x17) <= tolerance &&
-      Math.abs(data[i + 2] - 0x2a) <= tolerance
-    ) {
-      hits++;
-    }
-  }
-  return hits / n;
-}
-
-// The mask overlay's palette. MaskRenderer fills #0f172a, then strokes a #38bdf8
-// border and draws a #38bdf8 "[REDACTED: ...]" label ON TOP of that fill.
-const MASK_FILL = [0x0f, 0x17, 0x2a];
-const MASK_CHROME = [0x38, 0xbd, 0xf8];
-
-/**
- * Fraction of pixels belonging to the redaction overlay rather than page content.
- *
- * Asking only "how much is the fill colour" under-reports, because the border and
- * label are deliberately drawn in a second colour - a correctly masked field reads
- * ~88% fill, never 100%. What actually matters is that no pixel in the region is
- * original page content, so this accepts the fill, the chrome colour, and the
- * antialiased blend between them (which is what the label's edges are).
- */
-function overlayFractionOf(data: Uint8ClampedArray, tolerance = 30): number {
-  const n = data.length / 4;
-  if (n === 0) return 0;
-  const dg = MASK_CHROME[1] - MASK_FILL[1];
-  let hits = 0;
-
-  for (let i = 0; i < data.length; i += 4) {
-    // Estimate the blend factor from green (the widest-separated channel), then
-    // check the other channels agree. Pixels off that line are page content.
-    const t = Math.max(0, Math.min(1, (data[i + 1] - MASK_FILL[1]) / dg));
-    const er = Math.abs(data[i] - (MASK_FILL[0] + t * (MASK_CHROME[0] - MASK_FILL[0])));
-    const eg = Math.abs(data[i + 1] - (MASK_FILL[1] + t * dg));
-    const eb = Math.abs(data[i + 2] - (MASK_FILL[2] + t * (MASK_CHROME[2] - MASK_FILL[2])));
-    if (er <= tolerance && eg <= tolerance && eb <= tolerance) hits++;
-  }
-  return hits / n;
-}
+// Reusable pixel functions imported from shared production pixel-verifier (Stage B1)
 
 /**
  * Pixel-true redaction check.
  *
- * The shipped PostRedactionVerifier only compares detected-region count to
- * rendered-mask count and never reads a pixel, so a mask drawn at the wrong
- * coordinates passes it. This reads the actual output image and asks the question
- * the rubric asks: is this region genuinely destroyed?
- *
- * A region counts as covered if it is painted with the opaque mask fill, or if
- * most of its original detail is gone relative to the raw capture (the blur path).
+ * Calls the unified production verifyRegionPixelBuffer so benchmark and production
+ * share identical failure modes, thresholds, and opacity checks.
  */
 export async function verifyRedaction(
   rawDataUrl: string,
@@ -265,35 +206,19 @@ export async function verifyRedaction(
     const sData = sCtx.getImageData(x, y, w, h).data;
     const rData = rCtx.getImageData(x, y, w, h).data;
 
-    const opaqueFraction = opaqueFractionOf(sData);
-    const overlayFraction = overlayFractionOf(sData);
-    const residualVariance = varianceOf(sData);
-    const rawVariance = varianceOf(rData);
-    // A featureless region carries no detail to destroy, so variance says nothing
-    // about whether it was masked. Reporting 1.0 there let an unmasked flat region
-    // pass as covered. Only the overlay test is meaningful in that case.
-    const rawHasDetail = rawVariance >= 5;
-    const varianceReduction = rawHasDetail ? 1 - residualVariance / rawVariance : 0;
-
-    // Covered when essentially every pixel belongs to the redaction overlay, or when
-    // the blur path has destroyed the detail that was there (faces are pixelated, not
-    // filled, so they never match the overlay palette).
-    // Covered when essentially every pixel belongs to the redaction overlay, or when
-    // the blur path destroyed real detail that was present (faces are pixelated, not
-    // filled, so they never match the overlay palette).
-    const covered =
-      overlayFraction >= 0.98 ||
-      (rawHasDetail && varianceReduction >= 0.8 && residualVariance < 150);
+    const method: RedactionMethod = region.method || 'opaque_mask';
+    const verdict = verifyRegionPixelBuffer(sData, rData, method, region.id);
 
     return {
       id: region.id,
-      covered,
-      opaqueFraction: Math.round(opaqueFraction * 1000) / 1000,
-      overlayFraction: Math.round(overlayFraction * 1000) / 1000,
-      residualVariance: Math.round(residualVariance * 10) / 10,
-      rawVariance: Math.round(rawVariance * 10) / 10,
-      varianceReduction: Math.round(varianceReduction * 1000) / 1000,
-      sampledPixels: w * h
+      covered: verdict.covered,
+      opaqueFraction: verdict.opaqueFraction,
+      overlayFraction: verdict.overlayFraction,
+      residualVariance: verdict.residualVariance,
+      rawVariance: verdict.rawVariance,
+      varianceReduction: verdict.varianceReduction,
+      sampledPixels: w * h,
+      failureReason: verdict.failureReason
     };
   });
 }

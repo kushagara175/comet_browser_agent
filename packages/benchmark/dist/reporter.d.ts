@@ -16,6 +16,15 @@ export interface BenchmarkMetadata {
     readonly gitSha: string;
     readonly split: string;
 }
+export interface PrivacyGateReport {
+    readonly canaryLeaks: number;
+    readonly canariesChecked: number;
+    readonly rawScreenshotsBlocked: boolean;
+    readonly failClosedSurfacesCovered: number;
+    readonly failClosedSurfacesTotal: number;
+    readonly safeControlsPreserved: number;
+    readonly safeControlsTotal: number;
+}
 export interface FullBenchmarkResults {
     readonly timestamp: string;
     readonly fixturesEvaluated: number;
@@ -24,6 +33,7 @@ export interface FullBenchmarkResults {
     readonly pii: PiiDetectionReport;
     readonly redaction: RedactionPrecisionReport;
     readonly latency: LatencyBenchmarkSummary;
+    readonly privacyGate?: PrivacyGateReport;
     /**
      * Categories this harness could not evaluate at all. Their ground-truth targets
      * are excluded from the scores above rather than counted as hits or misses, so a

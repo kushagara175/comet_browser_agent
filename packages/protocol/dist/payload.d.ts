@@ -39,7 +39,7 @@ export interface DetectionReport {
     readonly requiresFailClosedBlock: boolean;
     readonly failClosedReason?: string;
 }
-export type ElementRole = 'button' | 'link' | 'input' | 'select' | 'textarea' | 'checkbox' | 'radio' | 'menuitem' | 'tab' | 'heading' | 'generic';
+export type ElementRole = 'button' | 'link' | 'input' | 'select' | 'textarea' | 'checkbox' | 'radio' | 'menuitem' | 'tab' | 'heading' | 'dialog' | 'generic';
 export type ActionCapability = 'click' | 'type' | 'select' | 'scroll';
 export interface SanitizedElement {
     readonly localId: string;
@@ -53,6 +53,35 @@ export interface SanitizedElement {
 export interface SanitizedPageState {
     readonly title: string;
     readonly viewport: readonly [number, number];
+    readonly visibleDialogCount?: number;
+    readonly dialogTitles?: ReadonlyArray<string>;
+    readonly statusSummaries?: ReadonlyArray<string>;
+    readonly routeFingerprint?: string;
+    readonly postconditionSummary?: string;
+}
+export interface RedactionManifest {
+    readonly manifestVersion: '1.0';
+    readonly totalRegions: number;
+    readonly categoryCounts: {
+        readonly piiText: number;
+        readonly domInput: number;
+        readonly face: number;
+        readonly surface: number;
+    };
+    readonly methodCounts: {
+        readonly opaqueBox: number;
+        readonly spatialBlur: number;
+    };
+    readonly placeholderConvention: '[REDACTED]';
+    readonly geometrySemantics: 'clamped_css_pixels';
+    readonly pixelVerificationPerformed: boolean;
+    readonly pixelVerificationPassed: boolean;
+    readonly uninspectableSurfacePolicy: 'fail_closed';
+    readonly visionAttempted: boolean;
+    readonly visionSucceeded: boolean;
+    readonly visionProvider: 'None' | 'WASM' | 'WebGPU' | 'ModelRunner';
+    readonly visionModel?: string;
+    readonly durationMs?: number;
 }
 /**
  * Sanitized context produced by local redaction pipeline. Safe to pass to Network client.
@@ -70,6 +99,7 @@ export interface SanitizedContext {
     readonly maskCount: number;
     readonly payloadDigestSha256: string;
     readonly timestamp: number;
+    readonly redactionManifest?: RedactionManifest;
 }
 /**
  * Closed Network Payload schema sent over the wire to Centralized Reasoning Server.
@@ -81,7 +111,30 @@ export interface SanitizedNetworkPayload {
     readonly screenshot: string;
     readonly elements: ReadonlyArray<SanitizedElement>;
     readonly pageState: SanitizedPageState;
+    readonly redactionManifest?: RedactionManifest;
 }
+/**
+ * Converts verified SanitizedContext into canonical wire-ready SanitizedNetworkPayload.
+ */
+export declare function toSanitizedNetworkPayload(context: SanitizedContext): SanitizedNetworkPayload;
+export interface SanitizedDisplayPayload {
+    readonly protocolVersion: string;
+    readonly runId: string;
+    readonly goal: string;
+    readonly screenshot: string;
+    readonly elements: ReadonlyArray<SanitizedElement>;
+    readonly pageState: SanitizedPageState | 'Not available';
+    readonly redactionManifest?: RedactionManifest;
+}
+/**
+ * Generates canonical safe display projection directly from the exact canonical wire payload.
+ * Never synthesizes fake run IDs, capture IDs, digests, viewports, or goals.
+ * Displays 'Not available' for missing values.
+ */
+export declare function toSanitizedDisplayPayload(payload: SanitizedNetworkPayload | null | undefined, digest?: string): SanitizedDisplayPayload | {
+    protocolVersion: string;
+    status: string;
+};
 /**
  * Closed Page-Aware Chat Payload schema. Derived strictly from SanitizedContext.
  */

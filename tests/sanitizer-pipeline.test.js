@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { SanitizerPipeline } from '../apps/extension/dist/sanitizer/pipeline.js';
 import { PostRedactionVerifier } from '../apps/extension/dist/sanitizer/post-redaction-verifier.js';
-import { SECRET_CANARY } from '../packages/test-fixtures/dist/index.js';
+import { SECRET_CANARY, createMockCanvas } from '../packages/test-fixtures/dist/index.js';
 
 test('Sanitizer Pipeline - Produces Verified SanitizedContext and Redacts PII', async () => {
   const rawCapture = {
@@ -66,16 +66,7 @@ test('Sanitizer Pipeline - Produces Verified SanitizedContext and Redacts PII', 
     pageTitle: 'Mission Portal Dashboard'
   };
 
-  const testCanvas = {
-    getContext: () => ({
-      save: () => {},
-      restore: () => {},
-      fillRect: () => {},
-      strokeRect: () => {},
-      fillText: () => {}
-    }),
-    toDataURL: () => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-  };
+  const testCanvas = createMockCanvas(2560, 1440);
 
   const sanitized = await SanitizerPipeline.sanitize(
     rawCapture,

@@ -153,6 +153,9 @@ async function main() {
   console.log(`  success         : ${result.success}`);
   console.log(`  state           : ${result.state}`);
   if (result.error) console.log(`  error           : ${result.error}`);
+  if (result.diagnostic) {
+    console.log(`  diagnostic      : ${result.diagnostic.failureClass} (${result.diagnostic.sanitizedDetail})`);
+  }
   if (run.lastError) console.log(`  runtime error   : ${run.lastError}`);
   if (result.proposal) {
     console.log(`  action          : ${result.proposal.kind} -> ${result.proposal.targetLocalId || 'page'} (${result.proposal.risk})`);
@@ -189,6 +192,7 @@ async function main() {
     success: result.success === true,
     state: result.state,
     error: result.error || run.lastError || null,
+    diagnostic: result.diagnostic || null,
     proposal: result.proposal || null,
     maskCount: result.sanitized ? result.sanitized.maskCount : null,
     elementsTransmitted: result.sanitized && result.sanitized.elements ? result.sanitized.elements.length : null,
@@ -196,6 +200,7 @@ async function main() {
       ? Math.round(result.sanitized.sanitizedScreenshotDataUrl.length * 0.75)
       : null,
     telemetry,
+    steps: result.steps || [],
     wallClockMs: totalMs
   };
 

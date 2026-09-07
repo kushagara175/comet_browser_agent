@@ -508,6 +508,27 @@ html, body {
 }
 .provider-unavailable .provider-dot { background: #94a3b8; }
 
+.provider-not-run {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #64748b;
+}
+.provider-not-run .provider-dot { background: #94a3b8; }
+
+.provider-text-only {
+  background: #fdf4ff;
+  border: 1px solid #f0abfc;
+  color: #a21caf;
+}
+.provider-text-only .provider-dot { background: #c026d3; }
+
+.provider-qwen-live {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+}
+.provider-qwen-live .provider-dot { background: #10b981; }
+
 .status-pill {
   display: inline-block;
   padding: 2px 7px;

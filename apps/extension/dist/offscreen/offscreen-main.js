@@ -14470,6 +14470,7 @@ as ORT format: ${n}`);
           height: el2.boundingClientRect.height
         };
         const screenshotBox = transformer.toScreenshotBox(viewportBox, 6);
+        if (screenshotBox.width <= 0 || screenshotBox.height <= 0) continue;
         regions.push({
           id: `dom_sens_${el2.id}`,
           category: decision.category,
@@ -14502,6 +14503,7 @@ as ORT format: ${n}`);
                 height: rect.height
               };
               const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
+              if (screenshotBox.width <= 0 || screenshotBox.height <= 0) continue;
               unmergedRegions.push({
                 id: `text_pii_${node.id}_${i}_${rIdx}`,
                 category: rangeMatch.category,
@@ -14522,15 +14524,17 @@ as ORT format: ${n}`);
               height: fallbackRect.height
             };
             const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
-            unmergedRegions.push({
-              id: `text_pii_${node.id}_${i}_fallback`,
-              category: rangeMatch.category,
-              viewportBox,
-              screenshotBox,
-              detectorSource: "text_pii_regex",
-              method: "opaque_mask",
-              label: rangeMatch.category.toUpperCase()
-            });
+            if (screenshotBox.width > 0 && screenshotBox.height > 0) {
+              unmergedRegions.push({
+                id: `text_pii_${node.id}_${i}_fallback`,
+                category: rangeMatch.category,
+                viewportBox,
+                screenshotBox,
+                detectorSource: "text_pii_regex",
+                method: "opaque_mask",
+                label: rangeMatch.category.toUpperCase()
+              });
+            }
           }
         }
       } else {
@@ -14546,15 +14550,17 @@ as ORT format: ${n}`);
               height: node.boundingClientRect.height
             };
             const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
-            unmergedRegions.push({
-              id: `text_pii_${node.id}_${i}`,
-              category: match.category,
-              viewportBox,
-              screenshotBox,
-              detectorSource: "text_pii_regex",
-              method: "opaque_mask",
-              label: match.category.toUpperCase()
-            });
+            if (screenshotBox.width > 0 && screenshotBox.height > 0) {
+              unmergedRegions.push({
+                id: `text_pii_${node.id}_${i}`,
+                category: match.category,
+                viewportBox,
+                screenshotBox,
+                detectorSource: "text_pii_regex",
+                method: "opaque_mask",
+                label: match.category.toUpperCase()
+              });
+            }
           }
         }
       }
@@ -14661,6 +14667,7 @@ as ORT format: ${n}`);
         height: surface.boundingClientRect.height
       };
       const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
+      if (screenshotBox.width <= 0 || screenshotBox.height <= 0) continue;
       const surfaceLabel = surface.surfaceType ? surface.surfaceType.toUpperCase() : "UNKNOWN_SURFACE";
       regions.push({
         id: `surface_${surface.surfaceType || "unknown"}_${surface.id}`,
@@ -14675,6 +14682,185 @@ as ORT format: ${n}`);
     return regions;
   }
 
+  // src/sanitizer/pixel-verifier.ts
+  var MASK_FILL_RGB = [15, 23, 42];
+  var MASK_CHROME_RGB = [56, 189, 248];
+  function validateRegionGeometry(box, canvasWidth, canvasHeight) {
+    if (box.space !== "screenshotPixel") {
+      return { isValid: false, reason: `Invalid coordinate space '${box.space}', expected 'screenshotPixel'` };
+    }
+    if (isNaN(box.x) || isNaN(box.y) || isNaN(box.width) || isNaN(box.height) || !isFinite(box.x) || !isFinite(box.y) || !isFinite(box.width) || !isFinite(box.height)) {
+      return { isValid: false, reason: `Non-finite coordinate values in box [${box.x}, ${box.y}, ${box.width}, ${box.height}]` };
+    }
+    if (box.width <= 0 || box.height <= 0) {
+      return { isValid: false, reason: `Non-positive box dimensions (${box.width}x${box.height})` };
+    }
+    if (box.width <= 1 && box.height <= 1) {
+      return { isValid: false, reason: `Degenerate 1-pixel box (${box.width}x${box.height}) rejected` };
+    }
+    if (box.x + box.width <= 0 || box.y + box.height <= 0 || box.x >= canvasWidth || box.y >= canvasHeight) {
+      return { isValid: false, reason: `Box is completely outside canvas boundaries (${canvasWidth}x${canvasHeight})` };
+    }
+    return { isValid: true };
+  }
+  function computeLuminanceVariance(data) {
+    const n = data.length / 4;
+    if (n === 0) return 0;
+    let sum = 0;
+    let sumSq = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      sum += lum;
+      sumSq += lum * lum;
+    }
+    const mean = sum / n;
+    return Math.max(0, sumSq / n - mean * mean);
+  }
+  var varianceOf = computeLuminanceVariance;
+  function opaqueFractionOf(data, tolerance = 24) {
+    const n = data.length / 4;
+    if (n === 0) return 0;
+    let hits = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (Math.abs(data[i] - MASK_FILL_RGB[0]) <= tolerance && Math.abs(data[i + 1] - MASK_FILL_RGB[1]) <= tolerance && Math.abs(data[i + 2] - MASK_FILL_RGB[2]) <= tolerance) {
+        hits++;
+      }
+    }
+    return hits / n;
+  }
+  function overlayFractionOf(data, tolerance = 30) {
+    const n = data.length / 4;
+    if (n === 0) return 0;
+    const dg2 = MASK_CHROME_RGB[1] - MASK_FILL_RGB[1];
+    let hits = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const t = Math.max(0, Math.min(1, (data[i + 1] - MASK_FILL_RGB[1]) / dg2));
+      const er = Math.abs(data[i] - (MASK_FILL_RGB[0] + t * (MASK_CHROME_RGB[0] - MASK_FILL_RGB[0])));
+      const eg2 = Math.abs(data[i + 1] - (MASK_FILL_RGB[1] + t * dg2));
+      const eb2 = Math.abs(data[i + 2] - (MASK_FILL_RGB[2] + t * (MASK_CHROME_RGB[2] - MASK_FILL_RGB[2])));
+      if (er <= tolerance && eg2 <= tolerance && eb2 <= tolerance) {
+        hits++;
+      }
+    }
+    return hits / n;
+  }
+  function verifyRegionPixelBuffer(sanitizedData, rawData, method, regionId = "region") {
+    const sampledPixels = sanitizedData.length / 4;
+    if (sampledPixels === 0) {
+      return {
+        id: regionId,
+        covered: false,
+        method,
+        opaqueFraction: 0,
+        overlayFraction: 0,
+        residualVariance: 0,
+        rawVariance: 0,
+        varianceReduction: 0,
+        sampledPixels: 0,
+        failureReason: "Empty pixel buffer for region"
+      };
+    }
+    const hasAnyData = sanitizedData.some((v) => v !== 0);
+    if (!hasAnyData) {
+      return {
+        id: regionId,
+        covered: false,
+        method,
+        opaqueFraction: 0,
+        overlayFraction: 0,
+        residualVariance: 0,
+        rawVariance: 0,
+        varianceReduction: 0,
+        sampledPixels,
+        failureReason: "Zero-filled unrendered pixel buffer; no redaction overlay found"
+      };
+    }
+    const opaqueFrac = opaqueFractionOf(sanitizedData);
+    const overlayFrac = overlayFractionOf(sanitizedData);
+    const residualVar = varianceOf(sanitizedData);
+    const rawVar = rawData ? varianceOf(rawData) : 0;
+    const rawHasDetail = rawVar >= 5;
+    const varianceRed = rawHasDetail && rawData ? 1 - residualVar / rawVar : 0;
+    if (method === "opaque_mask") {
+      const covered2 = overlayFrac >= 0.95;
+      return {
+        id: regionId,
+        covered: covered2,
+        method,
+        opaqueFraction: Math.round(opaqueFrac * 1e3) / 1e3,
+        overlayFraction: Math.round(overlayFrac * 1e3) / 1e3,
+        residualVariance: Math.round(residualVar * 10) / 10,
+        rawVariance: Math.round(rawVar * 10) / 10,
+        varianceReduction: Math.round(varianceRed * 1e3) / 1e3,
+        sampledPixels,
+        ...!covered2 ? { failureReason: `Opaque mask incomplete: overlay fraction ${Math.round(overlayFrac * 100)}% < 95%` } : {}
+      };
+    }
+    const blurEffective = rawHasDetail && varianceRed >= 0.8 && residualVar < 150;
+    const fallbackApplied = overlayFrac >= 0.95;
+    const covered = blurEffective || fallbackApplied;
+    return {
+      id: regionId,
+      covered,
+      method,
+      opaqueFraction: Math.round(opaqueFrac * 1e3) / 1e3,
+      overlayFraction: Math.round(overlayFrac * 1e3) / 1e3,
+      residualVariance: Math.round(residualVar * 10) / 10,
+      rawVariance: Math.round(rawVar * 10) / 10,
+      varianceReduction: Math.round(varianceRed * 1e3) / 1e3,
+      sampledPixels,
+      fallbackApplied,
+      ...!covered ? { failureReason: `Blur verification failed: variance reduction ${Math.round(varianceRed * 100)}% insufficient and no opaque fallback` } : {}
+    };
+  }
+  function verifyCanvasRedaction(sanitizedCanvas, rawCanvas, regions) {
+    const sCtx = sanitizedCanvas.getContext("2d");
+    const rCtx = rawCanvas ? rawCanvas.getContext("2d") : null;
+    if (!sCtx || typeof sCtx.getImageData !== "function") {
+      return {
+        allPassed: false,
+        verdicts: [],
+        failureReason: "Canvas 2D context or getImageData is unavailable - failing closed"
+      };
+    }
+    const canvasWidth = sanitizedCanvas.width;
+    const canvasHeight = sanitizedCanvas.height;
+    const verdicts = [];
+    for (const region of regions) {
+      const box = region.screenshotBox;
+      const geom = validateRegionGeometry(box, canvasWidth, canvasHeight);
+      if (!geom.isValid) {
+        verdicts.push({
+          id: region.id,
+          covered: false,
+          method: region.method,
+          opaqueFraction: 0,
+          overlayFraction: 0,
+          residualVariance: 0,
+          rawVariance: 0,
+          varianceReduction: 0,
+          sampledPixels: 0,
+          failureReason: geom.reason
+        });
+        continue;
+      }
+      const x = Math.max(0, Math.min(canvasWidth - 1, Math.floor(box.x)));
+      const y = Math.max(0, Math.min(canvasHeight - 1, Math.floor(box.y)));
+      const w = Math.max(1, Math.min(canvasWidth - x, Math.ceil(box.width)));
+      const h = Math.max(1, Math.min(canvasHeight - y, Math.ceil(box.height)));
+      const sData = sCtx.getImageData(x, y, w, h).data;
+      const rData = rCtx ? rCtx.getImageData(x, y, w, h).data : null;
+      const verdict = verifyRegionPixelBuffer(sData, rData, region.method, region.id);
+      verdicts.push(verdict);
+    }
+    const failed = verdicts.find((v) => !v.covered);
+    return {
+      allPassed: !failed,
+      verdicts,
+      failureReason: failed ? `Region '${failed.id}' failed verification: ${failed.failureReason}` : void 0
+    };
+  }
+
   // src/sanitizer/mask-renderer.ts
   var MaskRenderer = class {
     /**
@@ -14682,10 +14868,10 @@ as ORT format: ${n}`);
      *
      * Enforces:
      * 1. Two-pass rendering: Blur pass first, opaque mask pass second (opaque masks always win).
-     * 2. Strict bounds clamping to prevent sampling outside canvas boundaries.
-     * 3. Irreversible block pixelation and color averaging for human faces.
+     * 2. Strict geometry validation: Rejects NaN, Inf, non-positive dimensions, off-canvas, or 1px degenerate boxes.
+     * 3. Irreversible block pixelation and color averaging for human faces with automatic opaque fallback if unproven.
      * 4. 100% opaque deep-slate blackouts for credentials, PII, payment data, and uninspectable surfaces.
-     * 5. Fail-closed error handling if canvas operations fail.
+     * 5. Per-region forensic audit records.
      */
     static renderMasks(imageCanvas, regions) {
       const ctx = imageCanvas.getContext("2d");
@@ -14694,21 +14880,37 @@ as ORT format: ${n}`);
       }
       const canvasWidth = imageCanvas.width || 1280;
       const canvasHeight = imageCanvas.height || 720;
+      const regionRecords = [];
       const blurRegions = regions.filter((r) => r.method === "gaussian_blur" && r.category === "face");
       const opaqueRegions = regions.filter((r) => r.method !== "gaussian_blur" || r.category !== "face");
       let maskCount = 0;
       for (const region of blurRegions) {
         const box = region.screenshotBox;
+        const geom = validateRegionGeometry(box, canvasWidth, canvasHeight);
+        if (!geom.isValid) {
+          regionRecords.push({
+            regionId: region.id,
+            requestedBox: box,
+            clampedBox: { x: 0, y: 0, width: 0, height: 0 },
+            method: "gaussian_blur",
+            success: false,
+            failureReason: `Invalid geometry: ${geom.reason}`
+          });
+          continue;
+        }
         const padding = 8;
         const x = Math.max(0, Math.min(canvasWidth - 1, Math.floor(box.x - padding)));
         const y = Math.max(0, Math.min(canvasHeight - 1, Math.floor(box.y - padding)));
         const w = Math.max(1, Math.min(canvasWidth - x, Math.ceil(box.width + padding * 2)));
         const h = Math.max(1, Math.min(canvasHeight - y, Math.ceil(box.height + padding * 2)));
-        if (w <= 0 || h <= 0) continue;
+        const clampedBox = { x, y, width: w, height: h };
         try {
+          let fallbackNeeded = false;
           if (typeof ctx.getImageData === "function" && typeof ctx.putImageData === "function") {
             const imgData = ctx.getImageData(x, y, w, h);
             const data = imgData.data;
+            const rawVariance = computeLuminanceVariance(data);
+            const rawHasDetail = rawVariance >= 5;
             const blockSize = Math.max(8, Math.min(24, Math.floor(Math.min(w, h) / 4)));
             for (let by = 0; by < h; by += blockSize) {
               for (let bx = 0; bx < w; bx += blockSize) {
@@ -14741,37 +14943,96 @@ as ORT format: ${n}`);
                 }
               }
             }
+            const residualVariance = computeLuminanceVariance(data);
+            const varianceReduction = rawHasDetail ? 1 - residualVariance / rawVariance : 0;
             ctx.putImageData(imgData, x, y);
-          } else {
             ctx.save();
-            ctx.fillStyle = "rgba(120, 140, 160, 0.98)";
+            ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, w, h);
+            if (w >= 40 && h >= 16) {
+              ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+              ctx.fillRect(x + 2, y + 2, Math.min(w - 4, 85), 14);
+              ctx.fillStyle = "#38bdf8";
+              ctx.font = "bold 9px sans-serif";
+              ctx.fillText("[FACE BLUR]", x + 5, y + 12);
+            }
+            ctx.restore();
+            if (!rawHasDetail || varianceReduction < 0.8 || residualVariance >= 150) {
+              fallbackNeeded = true;
+            }
+          } else {
+            fallbackNeeded = true;
+          }
+          if (fallbackNeeded) {
+            ctx.save();
+            ctx.fillStyle = "#0f172a";
             ctx.fillRect(x, y, w, h);
+            ctx.strokeStyle = "#38bdf8";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, w, h);
+            if (w > 45 && h > 12) {
+              ctx.fillStyle = "#38bdf8";
+              ctx.font = "bold 9px sans-serif";
+              ctx.fillText("[REDACTED: FACE]", x + 3, y + Math.min(11, h - 2));
+            }
             ctx.restore();
           }
-          ctx.save();
-          ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x, y, w, h);
-          if (w >= 40 && h >= 16) {
-            ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
-            ctx.fillRect(x + 2, y + 2, Math.min(w - 4, 85), 14);
-            ctx.fillStyle = "#38bdf8";
-            ctx.font = "bold 9px sans-serif";
-            ctx.fillText("[FACE BLUR]", x + 5, y + 12);
+          let success = true;
+          let failureReason;
+          if (typeof ctx.getImageData === "function") {
+            const finalData = ctx.getImageData(x, y, w, h).data;
+            const hasAnyData = finalData.some((v) => v !== 0);
+            if (hasAnyData && fallbackNeeded) {
+              const overlayFrac = overlayFractionOf(finalData);
+              if (overlayFrac < 0.85) {
+                success = false;
+                failureReason = `Opaque fallback overlay fraction ${Math.round(overlayFrac * 100)}% < 85%`;
+              }
+            }
           }
-          ctx.restore();
-          maskCount++;
+          if (success) {
+            maskCount++;
+          }
+          regionRecords.push({
+            regionId: region.id,
+            requestedBox: box,
+            clampedBox,
+            method: "gaussian_blur",
+            success,
+            fallbackApplied: fallbackNeeded,
+            failureReason
+          });
         } catch (err) {
-          throw new Error(`Face blur rendering failed at (${x}, ${y}, ${w}, ${h}): ${err.message}`);
+          regionRecords.push({
+            regionId: region.id,
+            requestedBox: box,
+            clampedBox,
+            method: "gaussian_blur",
+            success: false,
+            failureReason: `Face render error: ${err.message}`
+          });
         }
       }
       for (const region of opaqueRegions) {
         const box = region.screenshotBox;
+        const geom = validateRegionGeometry(box, canvasWidth, canvasHeight);
+        if (!geom.isValid) {
+          regionRecords.push({
+            regionId: region.id,
+            requestedBox: box,
+            clampedBox: { x: 0, y: 0, width: 0, height: 0 },
+            method: "opaque_mask",
+            success: false,
+            failureReason: `Invalid geometry: ${geom.reason}`
+          });
+          continue;
+        }
         const x = Math.max(0, Math.min(canvasWidth - 1, Math.floor(box.x)));
         const y = Math.max(0, Math.min(canvasHeight - 1, Math.floor(box.y)));
         const w = Math.max(1, Math.min(canvasWidth - x, Math.ceil(box.width)));
         const h = Math.max(1, Math.min(canvasHeight - y, Math.ceil(box.height)));
-        if (w <= 0 || h <= 0) continue;
+        const clampedBox = { x, y, width: w, height: h };
         try {
           ctx.save();
           ctx.fillStyle = "#0f172a";
@@ -14786,9 +15047,39 @@ as ORT format: ${n}`);
             ctx.fillText(label, x + 3, y + Math.min(11, h - 2));
           }
           ctx.restore();
-          maskCount++;
+          let success = true;
+          let failureReason;
+          if (typeof ctx.getImageData === "function") {
+            const finalData = ctx.getImageData(x, y, w, h).data;
+            const hasAnyData = finalData.some((v) => v !== 0);
+            if (hasAnyData) {
+              const overlayFrac = overlayFractionOf(finalData);
+              if (overlayFrac < 0.85) {
+                success = false;
+                failureReason = `Opaque mask overlay fraction ${Math.round(overlayFrac * 100)}% < 85%`;
+              }
+            }
+          }
+          if (success) {
+            maskCount++;
+          }
+          regionRecords.push({
+            regionId: region.id,
+            requestedBox: box,
+            clampedBox,
+            method: "opaque_mask",
+            success,
+            failureReason
+          });
         } catch (err) {
-          throw new Error(`Opaque mask rendering failed at (${x}, ${y}, ${w}, ${h}): ${err.message}`);
+          regionRecords.push({
+            regionId: region.id,
+            requestedBox: box,
+            clampedBox,
+            method: "opaque_mask",
+            success: false,
+            failureReason: `Opaque mask render error: ${err.message}`
+          });
         }
       }
       let dataUrl;
@@ -14802,7 +15093,8 @@ as ORT format: ${n}`);
       }
       return {
         sanitizedScreenshotDataUrl: dataUrl,
-        renderedMaskCount: maskCount
+        renderedMaskCount: maskCount,
+        regionRecords
       };
     }
   };
@@ -14812,12 +15104,42 @@ as ORT format: ${n}`);
     /**
      * Runs local post-redaction assertions.
      */
-    static verify(regions, renderedMaskCount, sanitizedElements, pageTitle) {
+    static verify(regions, renderedMaskCount, sanitizedElements, pageTitle, regionRecords, canvases) {
       if (regions.length !== renderedMaskCount) {
         return {
           isValid: false,
           reason: `Mask count mismatch: detected ${regions.length} regions but rendered ${renderedMaskCount} masks.`
         };
+      }
+      if (regionRecords) {
+        if (regionRecords.length !== regions.length) {
+          return {
+            isValid: false,
+            reason: `Region record count mismatch: expected ${regions.length}, got ${regionRecords.length}.`
+          };
+        }
+        const failedRecord = regionRecords.find((r) => !r.success);
+        if (failedRecord) {
+          return {
+            isValid: false,
+            reason: `Pixel mask failed for region '${failedRecord.regionId}': ${failedRecord.failureReason || "unknown render failure"}`
+          };
+        }
+      }
+      let pixelReport;
+      if (canvases?.sanitizedCanvas && regions.length > 0) {
+        pixelReport = verifyCanvasRedaction(
+          canvases.sanitizedCanvas,
+          canvases.rawCanvas || null,
+          regions
+        );
+        if (!pixelReport.allPassed) {
+          return {
+            isValid: false,
+            reason: `Pixel verification failed: ${pixelReport.failureReason || "one or more regions unmasked"}`,
+            pixelVerificationReport: pixelReport
+          };
+        }
       }
       if (pageTitle.includes(CANARY_SECRET)) {
         return {
@@ -14840,7 +15162,10 @@ as ORT format: ${n}`);
           };
         }
       }
-      return { isValid: true };
+      return {
+        isValid: true,
+        ...pixelReport ? { pixelVerificationReport: pixelReport } : {}
+      };
     }
   };
 
@@ -15130,7 +15455,12 @@ as ORT format: ${n}`);
       maskCount: Number(payload.maskCount || 0),
       pageState: {
         title: String(payload.pageState?.title || ""),
-        viewport: Array.isArray(payload.pageState?.viewport) ? [Number(payload.pageState.viewport[0] || 0), Number(payload.pageState.viewport[1] || 0)] : [1280, 800]
+        viewport: Array.isArray(payload.pageState?.viewport) ? [Number(payload.pageState.viewport[0] || 0), Number(payload.pageState.viewport[1] || 0)] : [1280, 800],
+        ...payload.pageState?.visibleDialogCount !== void 0 ? { visibleDialogCount: Number(payload.pageState.visibleDialogCount) } : {},
+        ...Array.isArray(payload.pageState?.dialogTitles) ? { dialogTitles: payload.pageState.dialogTitles.map(String) } : {},
+        ...Array.isArray(payload.pageState?.statusSummaries) ? { statusSummaries: payload.pageState.statusSummaries.map(String) } : {},
+        ...payload.pageState?.routeFingerprint ? { routeFingerprint: String(payload.pageState.routeFingerprint) } : {},
+        ...payload.pageState?.postconditionSummary ? { postconditionSummary: String(payload.pageState.postconditionSummary) } : {}
       },
       elements: Array.isArray(payload.elements) ? payload.elements.map((el2) => ({
         localId: String(el2.localId || ""),
@@ -15185,10 +15515,14 @@ as ORT format: ${n}`);
       };
       let sanitizedDataUrl;
       let renderedCount = 0;
+      let regionRecords = [];
+      let workingCanvas = null;
       if (imageCanvas) {
+        workingCanvas = imageCanvas;
         const renderResult = MaskRenderer.renderMasks(imageCanvas, allRegions);
         sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
         renderedCount = renderResult.renderedMaskCount;
+        regionRecords = renderResult.regionRecords;
       } else if (typeof document !== "undefined" && rawCapture.rawScreenshotDataUrl && rawCapture.rawScreenshotDataUrl.startsWith("data:image")) {
         const canvas = document.createElement("canvas");
         canvas.width = rawCapture.metadata.screenshotWidth;
@@ -15204,9 +15538,11 @@ as ORT format: ${n}`);
           img.src = rawCapture.rawScreenshotDataUrl;
         });
         ctx.drawImage(img, 0, 0);
+        workingCanvas = canvas;
         const renderResult = MaskRenderer.renderMasks(canvas, allRegions);
         sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
         renderedCount = renderResult.renderedMaskCount;
+        regionRecords = renderResult.regionRecords;
       } else {
         throw new Error("Sanitization Blocked: No canvas host available. Rendering must execute in an offscreen document with DOM access.");
       }
@@ -15274,19 +15610,50 @@ as ORT format: ${n}`);
         allRegions,
         renderedCount,
         sanitizedElements,
-        sanitizedTitle
+        sanitizedTitle,
+        regionRecords,
+        workingCanvas ? { sanitizedCanvas: workingCanvas } : void 0
       );
       if (!verification.isValid) {
         throw new Error(`Sanitization Blocked: ${verification.reason}`);
       }
+      const redactionManifest = {
+        manifestVersion: "1.0",
+        totalRegions: allRegions.length,
+        categoryCounts: {
+          piiText: textRegions.length,
+          domInput: domRegions.length,
+          face: faceRegions.length,
+          surface: surfaceRegions.length
+        },
+        methodCounts: {
+          opaqueBox: allRegions.filter((r) => r.method === "opaque_mask").length,
+          spatialBlur: allRegions.filter((r) => r.method === "gaussian_blur").length
+        },
+        placeholderConvention: "[REDACTED]",
+        geometrySemantics: "clamped_css_pixels",
+        pixelVerificationPerformed: true,
+        pixelVerificationPassed: verification.isValid,
+        uninspectableSurfacePolicy: "fail_closed",
+        visionAttempted: faceRegions.length > 0,
+        visionSucceeded: faceRegions.length > 0,
+        visionProvider: faceRegions.length > 0 ? "ModelRunner" : "None",
+        durationMs: Date.now() - (rawCapture.timestamp || Date.now())
+      };
+      const pageStateObj = {
+        title: sanitizedTitle,
+        viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight],
+        ...snapshot.visibleDialogCount !== void 0 ? { visibleDialogCount: snapshot.visibleDialogCount } : {},
+        ...snapshot.dialogTitles && snapshot.dialogTitles.length > 0 ? { dialogTitles: snapshot.dialogTitles.map((t) => sanitizeElementName(t)) } : {},
+        ...snapshot.statusSummaries && snapshot.statusSummaries.length > 0 ? { statusSummaries: snapshot.statusSummaries.map((s) => sanitizeElementName(s)) } : {},
+        ...snapshot.routeFingerprint ? { routeFingerprint: snapshot.routeFingerprint } : {},
+        ...snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {}
+      };
       const safeCanonicalData = {
         captureId: rawCapture.captureId,
         goal: sanitizeElementName(goal),
         maskCount: allRegions.length,
-        pageState: {
-          title: sanitizedTitle,
-          viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight]
-        },
+        pageState: pageStateObj,
         elements: sanitizedElements
       };
       const payloadDigestSha256 = await computePayloadDigestSha256(safeCanonicalData);
@@ -15298,13 +15665,11 @@ as ORT format: ${n}`);
         goal: sanitizeElementName(goal),
         sanitizedScreenshotDataUrl: sanitizedDataUrl,
         elements: sanitizedElements,
-        pageState: {
-          title: sanitizedTitle,
-          viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight]
-        },
+        pageState: pageStateObj,
         maskCount: allRegions.length,
         payloadDigestSha256,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        redactionManifest
       };
     }
   };
@@ -15362,6 +15727,24 @@ as ORT format: ${n}`);
       };
     }
   }
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onConnect) {
+    chrome.runtime.onConnect.addListener((port) => {
+      if (port.name !== "privapilot-offscreen") return;
+      port.onMessage.addListener((message) => {
+        if (message && message.type === "SANITIZE_CAPTURE") {
+          handleSanitizeRequest(message).then((response) => {
+            port.postMessage(response);
+          }).catch((err) => {
+            port.postMessage({
+              correlationId: message.correlationId || "unknown",
+              success: false,
+              error: err?.message || "Fatal offscreen exception"
+            });
+          });
+        }
+      });
+    });
+  }
   if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener(
       (message, _sender, sendResponse) => {
@@ -15372,7 +15755,7 @@ as ORT format: ${n}`);
             sendResponse({
               correlationId: message.correlationId || "unknown",
               success: false,
-              error: err.message || "Fatal offscreen exception"
+              error: err?.message || "Fatal offscreen exception"
             });
           });
           return true;

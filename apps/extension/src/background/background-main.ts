@@ -3,6 +3,7 @@
  */
 
 import { RunCoordinator } from './coordinator.js';
+import { toSanitizedNetworkPayload } from '@privapilot/protocol';
 
 declare const chrome: any;
 
@@ -24,6 +25,8 @@ coordinator.setListeners({
     if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
       chrome.runtime.sendMessage({
         type: 'COORDINATOR_SANITIZATION_COMPLETE',
+        networkPayload: toSanitizedNetworkPayload(sanitized),
+        payloadDigestSha256: sanitized.payloadDigestSha256,
         maskCount: sanitized.maskCount,
         elementCount: sanitized.elements.length,
         sanitizedScreenshot: sanitized.sanitizedScreenshotDataUrl,
@@ -167,6 +170,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 
     if (message.type === 'GET_STATE') {
       sendResponse({ state: coordinator.getState() });
+      return true;
+    }
+
+    if (message.type === 'GET_LAST_RESULT') {
+      sendResponse(coordinator.getLastResult());
       return true;
     }
 

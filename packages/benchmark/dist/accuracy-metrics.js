@@ -91,9 +91,6 @@ export function computeAccuracyMetrics(extractedElements, groundTruthElements) {
                 const boxGt = [gt.normX, gt.normY, gt.normW, gt.normH];
                 iouScores.push(computeBoxIoU(boxExt, boxGt));
             }
-            else {
-                iouScores.push(1.0);
-            }
         }
     }
     const tp = matchedGtIndices.size;

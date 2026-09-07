@@ -53,10 +53,14 @@ export class SanitizerPipeline {
         // 2. Render Redaction Masks onto Canvas (Strictly Fail-Closed: Zero 1x1 or permissive fallbacks)
         let sanitizedDataUrl;
         let renderedCount = 0;
+        let regionRecords = [];
+        let workingCanvas = null;
         if (imageCanvas) {
+            workingCanvas = imageCanvas;
             const renderResult = MaskRenderer.renderMasks(imageCanvas, allRegions);
             sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
             renderedCount = renderResult.renderedMaskCount;
+            regionRecords = renderResult.regionRecords;
         }
         else if (typeof document !== 'undefined' && rawCapture.rawScreenshotDataUrl && rawCapture.rawScreenshotDataUrl.startsWith('data:image')) {
             const canvas = document.createElement('canvas');
@@ -73,9 +77,11 @@ export class SanitizerPipeline {
                 img.src = rawCapture.rawScreenshotDataUrl;
             });
             ctx.drawImage(img, 0, 0);
+            workingCanvas = canvas;
             const renderResult = MaskRenderer.renderMasks(canvas, allRegions);
             sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
             renderedCount = renderResult.renderedMaskCount;
+            regionRecords = renderResult.regionRecords;
         }
         else {
             throw new Error('Sanitization Blocked: No canvas host available. Rendering must execute in an offscreen document with DOM access.');
@@ -147,18 +153,47 @@ export class SanitizerPipeline {
         });
         const sanitizedTitle = sanitizeElementName(snapshot.pageTitle);
         // 4. Post-Redaction Fail-Closed Verification
-        const verification = PostRedactionVerifier.verify(allRegions, renderedCount, sanitizedElements, sanitizedTitle);
+        const verification = PostRedactionVerifier.verify(allRegions, renderedCount, sanitizedElements, sanitizedTitle, regionRecords, workingCanvas ? { sanitizedCanvas: workingCanvas } : undefined);
         if (!verification.isValid) {
             throw new Error(`Sanitization Blocked: ${verification.reason}`);
         }
+        const redactionManifest = {
+            manifestVersion: '1.0',
+            totalRegions: allRegions.length,
+            categoryCounts: {
+                piiText: textRegions.length,
+                domInput: domRegions.length,
+                face: faceRegions.length,
+                surface: surfaceRegions.length
+            },
+            methodCounts: {
+                opaqueBox: allRegions.filter((r) => r.method === 'opaque_mask').length,
+                spatialBlur: allRegions.filter((r) => r.method === 'gaussian_blur').length
+            },
+            placeholderConvention: '[REDACTED]',
+            geometrySemantics: 'clamped_css_pixels',
+            pixelVerificationPerformed: true,
+            pixelVerificationPassed: verification.isValid,
+            uninspectableSurfacePolicy: 'fail_closed',
+            visionAttempted: faceRegions.length > 0,
+            visionSucceeded: faceRegions.length > 0,
+            visionProvider: faceRegions.length > 0 ? 'ModelRunner' : 'None',
+            durationMs: Date.now() - (rawCapture.timestamp || Date.now())
+        };
+        const pageStateObj = {
+            title: sanitizedTitle,
+            viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight],
+            ...(snapshot.visibleDialogCount !== undefined ? { visibleDialogCount: snapshot.visibleDialogCount } : {}),
+            ...(snapshot.dialogTitles && snapshot.dialogTitles.length > 0 ? { dialogTitles: snapshot.dialogTitles.map(t => sanitizeElementName(t)) } : {}),
+            ...(snapshot.statusSummaries && snapshot.statusSummaries.length > 0 ? { statusSummaries: snapshot.statusSummaries.map(s => sanitizeElementName(s)) } : {}),
+            ...(snapshot.routeFingerprint ? { routeFingerprint: snapshot.routeFingerprint } : {}),
+            ...(snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {})
+        };
         const safeCanonicalData = {
             captureId: rawCapture.captureId,
             goal: sanitizeElementName(goal),
             maskCount: allRegions.length,
-            pageState: {
-                title: sanitizedTitle,
-                viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight]
-            },
+            pageState: pageStateObj,
             elements: sanitizedElements
         };
         const payloadDigestSha256 = await computePayloadDigestSha256(safeCanonicalData);
@@ -170,13 +205,11 @@ export class SanitizerPipeline {
             goal: sanitizeElementName(goal),
             sanitizedScreenshotDataUrl: sanitizedDataUrl,
             elements: sanitizedElements,
-            pageState: {
-                title: sanitizedTitle,
-                viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight]
-            },
+            pageState: pageStateObj,
             maskCount: allRegions.length,
             payloadDigestSha256,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            redactionManifest
         };
     }
 }

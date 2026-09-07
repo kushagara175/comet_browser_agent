@@ -31,11 +31,16 @@ test('Face Pixelation - Output face pixels differ from original input pixels', (
     }
   }
 
-  // Set distinct "eye" pixels at (30, 30)
+  // Set distinct "eye" feature regions
+  for (let r = 26; r <= 34; r++) {
+    for (let c = 26; c <= 34; c++) {
+      const idx = (r * width + c) * 4;
+      pixelBuffer[idx] = 20;
+      pixelBuffer[idx + 1] = 20;
+      pixelBuffer[idx + 2] = 20;
+    }
+  }
   const eyeIdx = (30 * width + 30) * 4;
-  pixelBuffer[eyeIdx] = 0;
-  pixelBuffer[eyeIdx + 1] = 0;
-  pixelBuffer[eyeIdx + 2] = 0;
 
   // Clone original to compare
   const originalBuffer = new Uint8ClampedArray(pixelBuffer);
@@ -46,7 +51,19 @@ test('Face Pixelation - Output face pixels differ from original input pixels', (
     getContext: () => ({
       save: () => {},
       restore: () => {},
-      fillRect: () => {},
+      fillRect: (x, y, w, h) => {
+        for (let row = 0; row < h; row++) {
+          for (let col = 0; col < w; col++) {
+            const dstIdx = ((y + row) * width + (x + col)) * 4;
+            if (dstIdx >= 0 && dstIdx + 3 < pixelBuffer.length) {
+              pixelBuffer[dstIdx] = 15;
+              pixelBuffer[dstIdx + 1] = 23;
+              pixelBuffer[dstIdx + 2] = 42;
+              pixelBuffer[dstIdx + 3] = 255;
+            }
+          }
+        }
+      },
       strokeRect: () => {},
       fillText: () => {},
       getImageData: (x, y, w, h) => {

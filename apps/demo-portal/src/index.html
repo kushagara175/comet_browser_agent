@@ -83,6 +83,12 @@
             </div>
             <div class="search-bar">
               <input type="text" id="searchRequests" placeholder="Search requests..." aria-label="Search requests" />
+              <select id="filterStatus" aria-label="Filter status">
+                <option value="all">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Completed</option>
+                <option value="review">Under Review</option>
+              </select>
               <button id="searchBtn" class="btn-primary-action">Filter</button>
               <button id="mutateRowBtn" class="btn-table" title="Simulate DOM node replacement for stale-target recovery testing">Mutate Row (Stale Demo)</button>
             </div>
@@ -103,8 +109,8 @@
                 <td><code>#REQ-1041</code></td>
                 <td>Data Pipeline Synchronization</td>
                 <td>Alex Rivera</td>
-                <td><span class="badge approved">Completed</span></td>
-                <td><button class="btn-table" disabled>Done</button></td>
+                <td><span id="statusReq1041" class="badge approved">Completed</span></td>
+                <td><button id="delayedSyncBtn" class="btn-table">Refresh Sync</button></td>
               </tr>
               <tr id="rowReq1044" class="active-row">
                 <td><code>#REQ-1044</code></td>
@@ -120,7 +126,14 @@
                 <td>Quarterly Server Infrastructure Audit</td>
                 <td>Rohan Sharma</td>
                 <td><span class="badge review">Under Review</span></td>
-                <td><button class="btn-table">Inspect</button></td>
+                <td><button id="inspectAuditBtn" class="btn-table">Inspect</button></td>
+              </tr>
+              <tr id="rowReq1052">
+                <td><code>#REQ-1052</code></td>
+                <td>Telemetry Network Endpoint Validation</td>
+                <td>Elena Vance</td>
+                <td><span class="badge review">Under Review</span></td>
+                <td><button id="inspectTelemetryBtn" class="btn-table">Inspect</button></td>
               </tr>
             </tbody>
           </table>

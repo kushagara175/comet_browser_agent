@@ -105,7 +105,26 @@ export async function handleSanitizeRequest(
   }
 }
 
-// Register internal runtime message listener
+// Dedicated Port channel for robust, collision-free MV3 communication
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onConnect) {
+  chrome.runtime.onConnect.addListener((port: any) => {
+    if (port.name !== 'privapilot-offscreen') return;
+    port.onMessage.addListener((message: any) => {
+      if (message && message.type === 'SANITIZE_CAPTURE') {
+        handleSanitizeRequest(message).then((response) => {
+          port.postMessage(response);
+        }).catch((err) => {
+          port.postMessage({
+            correlationId: message.correlationId || 'unknown',
+            success: false,
+            error: err?.message || 'Fatal offscreen exception'
+          });
+        });
+      }
+    });
+  });
+}
+
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener(
     (message: any, _sender: any, sendResponse: (res: SanitizerOffscreenResponse) => void) => {
@@ -116,7 +135,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
           sendResponse({
             correlationId: message.correlationId || 'unknown',
             success: false,
-            error: err.message || 'Fatal offscreen exception'
+            error: err?.message || 'Fatal offscreen exception'
           });
         });
         return true; // Keep message channel open for async response

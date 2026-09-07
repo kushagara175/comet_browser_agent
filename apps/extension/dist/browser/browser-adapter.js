@@ -78,20 +78,42 @@ export class WebExtensionAdapter {
         if (!api || !api.tabs || !api.tabs.sendMessage) {
             return {};
         }
-        return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                reject(new Error('Content script did not respond within 3000ms'));
-            }, 3000);
-            api.tabs.sendMessage(tabId, message, (response) => {
-                clearTimeout(timer);
-                if (api.runtime.lastError) {
-                    reject(new Error(api.runtime.lastError.message));
-                }
-                else {
-                    resolve(response);
-                }
+        const trySend = () => {
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    reject(new Error('Content script did not respond within 3000ms'));
+                }, 3000);
+                api.tabs.sendMessage(tabId, message, (response) => {
+                    clearTimeout(timer);
+                    if (api.runtime.lastError) {
+                        reject(new Error(api.runtime.lastError.message));
+                    }
+                    else {
+                        resolve(response);
+                    }
+                });
             });
-        });
+        };
+        try {
+            return await trySend();
+        }
+        catch (initialErr) {
+            // If content script was detached during extension reload, auto-inject and retry
+            if (api.scripting && typeof api.scripting.executeScript === 'function') {
+                try {
+                    await api.scripting.executeScript({
+                        target: { tabId },
+                        files: ['dist/content/content-main.js']
+                    });
+                    await new Promise((r) => setTimeout(r, 150));
+                    return await trySend();
+                }
+                catch {
+                    throw initialErr;
+                }
+            }
+            throw initialErr;
+        }
     }
     async sendMessageToRuntime(message) {
         const api = this.browserAPI;
@@ -197,6 +219,7 @@ export class WebExtensionAdapter {
             reasons: ['BLOBS', 'DOM_PARSER'],
             justification: 'On-device privacy mask rendering on screenshot canvas'
         }).catch((err) => {
+            console.error('[PrivaPilot SW] createDocument error:', err?.message || err);
             // Ignore error if document already exists
             if (!err.message?.includes('Only a single offscreen document may be created')) {
                 throw err;
@@ -233,30 +256,96 @@ export class WebExtensionAdapter {
                 }, 15000);
             });
             const messagePromise = new Promise((resolve, reject) => {
-                api.runtime.sendMessage({
-                    target: 'privapilot-offscreen',
-                    type: 'SANITIZE_CAPTURE',
-                    correlationId,
-                    payload: request
-                }, (response) => {
-                    if (api.runtime.lastError) {
-                        reject(new Error(`Offscreen Message Error: ${api.runtime.lastError.message}`));
-                        return;
+                let attempts = 0;
+                const maxAttempts = 15;
+                let settled = false;
+                const attemptSend = () => {
+                    attempts++;
+                    // Attempt 1-to-1 dedicated Port connection if available
+                    if (typeof api.runtime.connect === 'function') {
+                        try {
+                            const port = api.runtime.connect({ name: 'privapilot-offscreen' });
+                            let portReceivedResponse = false;
+                            port.onMessage.addListener((response) => {
+                                if (settled)
+                                    return;
+                                portReceivedResponse = true;
+                                settled = true;
+                                try {
+                                    port.disconnect();
+                                }
+                                catch (_) { }
+                                if (!response || response.correlationId !== correlationId) {
+                                    reject(new Error(`Correlation ID mismatch: expected ${correlationId}, got ${response?.correlationId}`));
+                                    return;
+                                }
+                                if (!response.success || !response.sanitized) {
+                                    reject(new Error(response.error || 'Sanitization failed in offscreen document'));
+                                    return;
+                                }
+                                resolve(response.sanitized);
+                            });
+                            port.onDisconnect.addListener(() => {
+                                if (!portReceivedResponse && !settled) {
+                                    // Port closed before responding; document may still be mounting or bundle loading
+                                    if (attempts < maxAttempts) {
+                                        setTimeout(attemptSend, 200);
+                                    }
+                                    else {
+                                        settled = true;
+                                        reject(new Error('Offscreen port disconnected before sanitization completed'));
+                                    }
+                                }
+                            });
+                            port.postMessage({
+                                target: 'privapilot-offscreen',
+                                type: 'SANITIZE_CAPTURE',
+                                correlationId,
+                                payload: request
+                            });
+                            return;
+                        }
+                        catch (err) {
+                            console.warn('[PrivaPilot SW] Port connection attempt failed, using runtime.sendMessage:', err);
+                        }
                     }
-                    if (!response) {
-                        reject(new Error('Offscreen document returned empty response'));
-                        return;
-                    }
-                    if (response.correlationId !== correlationId) {
-                        reject(new Error(`Correlation ID mismatch: expected ${correlationId}, got ${response.correlationId}`));
-                        return;
-                    }
-                    if (!response.success || !response.sanitized) {
-                        reject(new Error(response.error || 'Sanitization failed in offscreen document'));
-                        return;
-                    }
-                    resolve(response.sanitized);
-                });
+                    // Fallback to runtime.sendMessage
+                    api.runtime.sendMessage({
+                        target: 'privapilot-offscreen',
+                        type: 'SANITIZE_CAPTURE',
+                        correlationId,
+                        payload: request
+                    }, (response) => {
+                        if (settled)
+                            return;
+                        if (api.runtime.lastError || !response) {
+                            if (attempts < maxAttempts) {
+                                // Offscreen script is still mounting/parsing the bundle: retry shortly
+                                setTimeout(attemptSend, 200);
+                                return;
+                            }
+                            settled = true;
+                            if (api.runtime.lastError) {
+                                reject(new Error(`Offscreen Message Error: ${api.runtime.lastError.message}`));
+                            }
+                            else {
+                                reject(new Error('Offscreen document returned empty response'));
+                            }
+                            return;
+                        }
+                        settled = true;
+                        if (response.correlationId !== correlationId) {
+                            reject(new Error(`Correlation ID mismatch: expected ${correlationId}, got ${response.correlationId}`));
+                            return;
+                        }
+                        if (!response.success || !response.sanitized) {
+                            reject(new Error(response.error || 'Sanitization failed in offscreen document'));
+                            return;
+                        }
+                        resolve(response.sanitized);
+                    });
+                };
+                attemptSend();
             });
             return Promise.race([messagePromise, timeoutPromise]);
         }

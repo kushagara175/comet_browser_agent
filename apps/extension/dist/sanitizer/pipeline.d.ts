@@ -28,6 +28,11 @@ export interface LocalDomSnapshot {
         readonly actionCapabilities: ReadonlyArray<any>;
     }>;
     readonly pageTitle: string;
+    readonly visibleDialogCount?: number;
+    readonly dialogTitles?: ReadonlyArray<string>;
+    readonly statusSummaries?: ReadonlyArray<string>;
+    readonly routeFingerprint?: string;
+    readonly postconditionSummary?: string;
 }
 export declare class SanitizerPipeline {
     /**

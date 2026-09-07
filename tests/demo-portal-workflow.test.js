@@ -8,22 +8,13 @@ import { ActionExecutor } from '../apps/extension/dist/content/action-executor.j
 import { SemanticStateVerifier } from '../apps/extension/dist/content/verifier.js';
 import { SanitizerPipeline } from '../apps/extension/dist/sanitizer/pipeline.js';
 import { MockReasoningEngine } from '../apps/server/dist/engines/mock-engine.js';
-import { assertNoCanaryLeak, SECRET_CANARY } from '../packages/test-fixtures/dist/canaries.js';
+import { assertNoCanaryLeak, SECRET_CANARY, createMockCanvas } from '../packages/test-fixtures/dist/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEMO_PORTAL_HTML = fs.readFileSync(path.join(__dirname, '../apps/demo-portal/src/index.html'), 'utf-8');
 
-const testCanvas = {
-  getContext: () => ({
-    save: () => {},
-    restore: () => {},
-    fillRect: () => {},
-    strokeRect: () => {},
-    fillText: () => {}
-  }),
-  toDataURL: () => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-};
+const testCanvas = createMockCanvas(2560, 1440);
 
 // ============================================================================
 // Lightweight Mock DOM Implementation for Unit & Integration Testing

@@ -9,6 +9,9 @@ import { RunTelemetry } from '@privapilot/protocol';
 export interface ResourceMetrics {
   readonly peakMemoryMb: number;
   readonly cpuLoadPct: number;
+  readonly heapUsedMb?: number;
+  readonly heapTotalMb?: number;
+  readonly memoryScope?: string;
 }
 
 export interface LatencyBenchmarkSummary {
@@ -22,6 +25,9 @@ export interface LatencyBenchmarkSummary {
   readonly p50ActionExecutionMs: number;
   readonly peakMemoryMb: number;
   readonly cpuLoadPct: number;
+  readonly heapUsedMb?: number;
+  readonly heapTotalMb?: number;
+  readonly memoryScope?: string;
 }
 
 function calculatePercentile(values: number[], percentile: number): number {
@@ -34,6 +40,8 @@ function calculatePercentile(values: number[], percentile: number): number {
 export function measureCurrentProcessResources(startCpu?: NodeJS.CpuUsage, startTimeMs?: number): ResourceMetrics {
   const mem = process.memoryUsage();
   const peakMemoryMb = Math.round((mem.rss / (1024 * 1024)) * 10) / 10;
+  const heapUsedMb = Math.round((mem.heapUsed / (1024 * 1024)) * 10) / 10;
+  const heapTotalMb = Math.round((mem.heapTotal / (1024 * 1024)) * 10) / 10;
 
   let cpuLoadPct = 0;
   if (startCpu && startTimeMs) {
@@ -44,7 +52,13 @@ export function measureCurrentProcessResources(startCpu?: NodeJS.CpuUsage, start
     cpuLoadPct = Math.round((totalCpuTimeMs / elapsedMs) * 1000) / 10;
   }
 
-  return { peakMemoryMb, cpuLoadPct };
+  return {
+    peakMemoryMb,
+    cpuLoadPct,
+    heapUsedMb,
+    heapTotalMb,
+    memoryScope: 'Node.js test process (RSS + V8 Heap)'
+  };
 }
 
 export function computeLatencyBenchmark(
@@ -64,7 +78,10 @@ export function computeLatencyBenchmark(
       p95ServerReasoningMs: 0,
       p50ActionExecutionMs: 0,
       peakMemoryMb: currentRes.peakMemoryMb,
-      cpuLoadPct: currentRes.cpuLoadPct
+      cpuLoadPct: currentRes.cpuLoadPct,
+      heapUsedMb: currentRes.heapUsedMb,
+      heapTotalMb: currentRes.heapTotalMb,
+      memoryScope: currentRes.memoryScope
     };
   }
 
@@ -83,7 +100,10 @@ export function computeLatencyBenchmark(
     p95ServerReasoningMs: calculatePercentile(servers, 0.95),
     p50ActionExecutionMs: calculatePercentile(actions, 0.50),
     peakMemoryMb: currentRes.peakMemoryMb,
-    cpuLoadPct: currentRes.cpuLoadPct
+    cpuLoadPct: currentRes.cpuLoadPct,
+    heapUsedMb: currentRes.heapUsedMb,
+    heapTotalMb: currentRes.heapTotalMb,
+    memoryScope: currentRes.memoryScope
   };
 }
 

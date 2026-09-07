@@ -1,0 +1,105 @@
+{
+  "modes": {
+    "dom-only": {
+      "mode": "dom-only",
+      "candidateCount": 3,
+      "domCount": 3,
+      "visualCount": 0,
+      "fusedCount": 0,
+      "provenances": [
+        {
+          "id": "cand_dom_btn_1",
+          "provenance": "dom",
+          "confidence": 0.85
+        },
+        {
+          "id": "cand_dom_inp_1",
+          "provenance": "dom",
+          "confidence": 0.85
+        },
+        {
+          "id": "cand_dom_btn_2",
+          "provenance": "dom",
+          "confidence": 0.85
+        }
+      ]
+    },
+    "vision-only": {
+      "mode": "vision-only",
+      "candidateCount": 2,
+      "domCount": 0,
+      "visualCount": 2,
+      "fusedCount": 0,
+      "provenances": [
+        {
+          "id": "cand_vis_vis_btn_1",
+          "provenance": "vision",
+          "confidence": 0.94
+        },
+        {
+          "id": "cand_vis_vis_canvas_control",
+          "provenance": "vision",
+          "confidence": 0.88
+        }
+      ]
+    },
+    "fused": {
+      "mode": "fused",
+      "candidateCount": 4,
+      "domCount": 3,
+      "visualCount": 2,
+      "fusedCount": 1,
+      "provenances": [
+        {
+          "id": "cand_fused_btn_1",
+          "provenance": "fused",
+          "confidence": 1
+        },
+        {
+          "id": "cand_dom_inp_1",
+          "provenance": "dom",
+          "confidence": 0.8
+        },
+        {
+          "id": "cand_dom_btn_2",
+          "provenance": "dom",
+          "confidence": 0.8
+        },
+        {
+          "id": "cand_vis_vis_canvas_control",
+          "provenance": "vision",
+          "confidence": 0.62
+        }
+      ]
+    }
+  },
+  "routing": {
+    "localSafeActions": {
+      "tested": 3,
+      "types": [
+        "scroll_footer",
+        "cookie_banner_dismiss",
+        "safe_preview_finish"
+      ],
+      "networkRequestsMade": 0,
+      "serverLatencyMs": 0,
+      "clientDecisionMs": 1.2
+    },
+    "serverDrivenActions": {
+      "tested": 2,
+      "types": [
+        "open_preview_drawer",
+        "complex_disambiguate"
+      ],
+      "networkRequestsMade": 2,
+      "serverLatencyMs": 6728,
+      "clientPerceptionMs": 1022
+    }
+  },
+  "confidencePolicy": {
+    "highConfidenceThreshold": 0.8,
+    "ambiguityInterventionThreshold": 0.25,
+    "abstentionCount": 1,
+    "userConfirmationRequiredCount": 2
+  }
+}

@@ -21,8 +21,10 @@ export function escapeHtml(str) {
 /**
  * Builds the exact minimized outgoing payload dispatched across the wire,
  * strictly omitting internal-only branded fields, raw captures, cookies, and tokens.
+ * Derived from the canonical toSanitizedNetworkPayload projection.
+ * Never synthesizes fake run IDs, digests, or goals; displays 'Not available'.
  */
-export function buildMinimizedWirePayload(sanitized, goal = 'User goal') {
+export function buildMinimizedWirePayload(sanitized, goal = null) {
   if (!sanitized) {
     return {
       protocolVersion: '1.0',
@@ -30,15 +32,23 @@ export function buildMinimizedWirePayload(sanitized, goal = 'User goal') {
     };
   }
 
-  return {
+  const isContext = sanitized._brand === 'SanitizedContext_Verified';
+  const rawScreenshot = isContext
+    ? sanitized.sanitizedScreenshotDataUrl
+    : (sanitized.screenshot || sanitized.sanitizedScreenshotDataUrl || '');
+  const digest = sanitized.payloadDigestSha256 || 'Not available';
+
+  const byteCount = rawScreenshot ? Math.round(rawScreenshot.length * 0.75) : 0;
+  const kbCount = Math.round(byteCount / 1024);
+  const screenshotDisplay = rawScreenshot
+    ? `[Screenshot base64 omitted from display: ${kbCount} KB (${byteCount} bytes), SHA-256 digest: ${digest}]`
+    : 'Not available';
+
+  const payload = {
     protocolVersion: sanitized.protocolVersion || '1.0',
-    runId: sanitized.runId || `run_${Date.now()}`,
-    goal: sanitized.goal || goal,
-    screenshot: sanitized.sanitizedScreenshotDataUrl
-      ? (sanitized.sanitizedScreenshotDataUrl.length > 80
-          ? `${sanitized.sanitizedScreenshotDataUrl.slice(0, 48)}... [${sanitized.sanitizedScreenshotDataUrl.length} chars base64 png]`
-          : sanitized.sanitizedScreenshotDataUrl)
-      : 'data:image/png;base64,...',
+    runId: sanitized.runId || 'Not available',
+    goal: sanitized.goal || goal || 'Not available',
+    screenshot: screenshotDisplay,
     elements: (sanitized.elements || []).map(el => ({
       localId: el.localId,
       role: el.role,
@@ -47,13 +57,14 @@ export function buildMinimizedWirePayload(sanitized, goal = 'User goal') {
       state: el.state,
       actionCapabilities: el.actionCapabilities
     })),
-    pageState: sanitized.pageState || {
-      title: 'Active Webpage',
-      viewport: [1280, 800]
-    },
-    maskCount: sanitized.maskCount ?? 0,
-    payloadDigestSha256: sanitized.payloadDigestSha256 || 'sha256_pending'
+    pageState: sanitized.pageState || 'Not available'
   };
+
+  if (sanitized.redactionManifest) {
+    payload.redactionManifest = sanitized.redactionManifest;
+  }
+
+  return payload;
 }
 
 /**
@@ -145,9 +156,21 @@ export function mapVisionProviderToBadge(provider) {
       return { text: 'Vision: WebGPU', cssClass: 'provider-webgpu' };
     case 'wasm':
       return { text: 'Vision: WASM', cssClass: 'provider-wasm' };
+    case 'qwen_live':
+    case 'qwen-live':
+    case 'live':
+    case 'openrouter':
+    case 'ollama':
+      return { text: 'Vision: Qwen (Live)', cssClass: 'provider-qwen-live' };
+    case 'text_only':
+    case 'text-only':
+      return { text: 'Vision: Text-Only', cssClass: 'provider-text-only' };
     case 'degraded_masking':
     case 'heuristic_fallback':
       return { text: 'Vision: Degraded Masking', cssClass: 'provider-degraded' };
+    case 'not_run':
+    case 'Not Run':
+      return { text: 'Vision: Not Run', cssClass: 'provider-not-run' };
     case 'unavailable':
     default:
       return { text: 'Vision: Unavailable', cssClass: 'provider-unavailable' };
@@ -439,6 +462,9 @@ if (typeof document !== 'undefined') {
 
     // Render Action Execution Outcome in Chat
     function renderActionResult(agentBubble, res) {
+      if (typeof window !== 'undefined') {
+        window.__lastAgentResult = res;
+      }
       if (!agentBubble) return;
 
       // 1. Awaiting User Confirmation (Pending Protected Action)
@@ -635,7 +661,7 @@ if (typeof document !== 'undefined') {
 
       // Detect if user input is an explicit UI action vs conversational query
       const lower = goalText.toLowerCase().trim();
-      const isExplicitAction = /^(click|type|fill|press|select|scroll|submit|login|log in|buy|checkout|find and click|go to|search for and click)\b/.test(lower);
+      const isExplicitAction = /^(click|open|type|fill|press|select|choose|scroll|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log in|buy|checkout|find and click|go to|search for and click)\b/.test(lower);
 
       const needsPageContext = /\b(this page|current page|website|screen|tab|summari[sz]e|explain this|find on|shown here|review|inspect|read|analyze|scan|look at)\b/i.test(goalText);
 
@@ -744,81 +770,78 @@ if (typeof document !== 'undefined') {
 
     // Real-Time Broadcast Listeners from Coordinator
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-      chrome.runtime.onMessage.addListener(async (message) => {
-        if (!message) return;
+      chrome.runtime.onMessage.addListener((message) => {
+        if (!message) return false;
 
-        if (message.type === 'COORDINATOR_STATE_CHANGED') {
-          setAgentStatus(message.state);
-        }
-
-        if (message.type === 'COORDINATOR_SANITIZATION_COMPLETE') {
-          cachedRawScreenshot = message.rawScreenshot || '';
-          cachedSanitizedScreenshot = message.sanitizedScreenshot || '';
-
-          if (inspectorRawImage && cachedRawScreenshot) {
-            inspectorRawImage.src = cachedRawScreenshot;
+        (async () => {
+          if (message.type === 'COORDINATOR_STATE_CHANGED') {
+            setAgentStatus(message.state);
           }
-          if (inspectorSanitizedImage && cachedSanitizedScreenshot) {
-            inspectorSanitizedImage.src = cachedSanitizedScreenshot;
-          }
-          if (statElementsCount) statElementsCount.textContent = String(message.elementCount ?? 0);
-          if (statMasksCount) statMasksCount.textContent = String(message.maskCount ?? 0);
 
-          renderMaskBreakdown(message.elements || [], message.maskCount ?? 0);
+          if (message.type === 'COORDINATOR_SANITIZATION_COMPLETE') {
+            cachedRawScreenshot = message.rawScreenshot || '';
+            cachedSanitizedScreenshot = message.sanitizedScreenshot || '';
 
-          let realDigest = message.payloadDigestSha256;
-          if (!realDigest || realDigest === 'sha256_verified') {
-            const canonicalFields = {
-              captureId: `cap_${Date.now()}`,
-              goal: currentGoalText || 'Active task',
-              maskCount: message.maskCount ?? 0,
-              elementsCount: (message.elements || []).length
+            if (inspectorRawImage && cachedRawScreenshot) {
+              inspectorRawImage.src = cachedRawScreenshot;
+            }
+            if (inspectorSanitizedImage && cachedSanitizedScreenshot) {
+              inspectorSanitizedImage.src = cachedSanitizedScreenshot;
+            }
+            if (statElementsCount) statElementsCount.textContent = String(message.elementCount ?? 0);
+            if (statMasksCount) statMasksCount.textContent = String(message.maskCount ?? 0);
+
+            renderMaskBreakdown(message.elements || [], message.maskCount ?? 0);
+
+            let realDigest = message.payloadDigestSha256 || 'Not available';
+            if (realDigest && realDigest !== 'Not available') {
+              addAuditEntry('DIGEST', `Payload sealed with SHA-256: ${realDigest.slice(0, 18)}...`, 'pass');
+            }
+
+            const outgoingContext = message.networkPayload || {
+              protocolVersion: message.protocolVersion || '1.0',
+              runId: message.runId || 'Not available',
+              goal: currentGoalText || 'Not available',
+              sanitizedScreenshotDataUrl: cachedSanitizedScreenshot,
+              elements: message.elements || [],
+              pageState: message.pageState || 'Not available',
+              redactionManifest: message.redactionManifest,
+              payloadDigestSha256: realDigest
             };
-            const hex = await computeSidepanelSha256Hex(JSON.stringify(canonicalFields));
-            realDigest = `sha256_${hex}`;
+            lastSanitizedContext = outgoingContext;
+            updatePayloadDisplay(outgoingContext, currentGoalText);
           }
 
-          addAuditEntry('DIGEST', `Payload sealed with SHA-256: ${realDigest.slice(0, 18)}...`, 'pass');
-
-          const mockSanitized = {
-            protocolVersion: '1.0',
-            runId: `run_${Date.now()}`,
-            goal: currentGoalText || 'Active task',
-            sanitizedScreenshotDataUrl: cachedSanitizedScreenshot,
-            elements: message.elements || [],
-            pageState: { title: 'Active Tab', viewport: [1280, 800] },
-            maskCount: message.maskCount ?? 0,
-            payloadDigestSha256: realDigest
-          };
-          lastSanitizedContext = mockSanitized;
-          updatePayloadDisplay(mockSanitized, currentGoalText);
-        }
-
-        if (message.type === 'COORDINATOR_CONFIRMATION_REQUIRED') {
-          const action = message.action || {};
-          if (confirmActionKind) confirmActionKind.textContent = (action.kind || 'CLICK').toUpperCase();
-          if (confirmTargetId) confirmTargetId.textContent = action.targetLocalId || 'page';
-          if (confirmTargetName) confirmTargetName.textContent = action.sanitizedTargetName || action.targetLocalId || 'Protected Action';
-          if (confirmRationale) confirmRationale.textContent = action.rationale || 'Action alters persistent state.';
-          actionConfirmModal?.classList.remove('hidden');
-          setAgentStatus('awaiting-user-confirmation');
-          addAuditEntry('AUTH', `Confirmation requested for ${action.kind}`, 'warn');
-        }
-
-        if (message.type === 'COORDINATOR_TELEMETRY_UPDATED') {
-          const tel = message.telemetry;
-          if (tel) {
-            if (meterClientLatency) meterClientLatency.textContent = `${tel.clientLatencyMs} ms`;
-            if (meterServerLatency) meterServerLatency.textContent = `${tel.serverLatencyMs} ms`;
-            if (meterActionLatency) meterActionLatency.textContent = `${tel.totalLatencyMs - tel.clientLatencyMs - tel.serverLatencyMs} ms`;
-            if (meterTotalLatency) meterTotalLatency.textContent = `${tel.totalLatencyMs} ms`;
+          if (message.type === 'COORDINATOR_CONFIRMATION_REQUIRED') {
+            const action = message.action || {};
+            if (confirmActionKind) confirmActionKind.textContent = (action.kind || 'CLICK').toUpperCase();
+            if (confirmTargetId) confirmTargetId.textContent = action.targetLocalId || 'page';
+            if (confirmTargetName) confirmTargetName.textContent = action.sanitizedTargetName || action.targetLocalId || 'Protected Action';
+            if (confirmRationale) confirmRationale.textContent = action.rationale || 'Action alters persistent state.';
+            actionConfirmModal?.classList.remove('hidden');
+            setAgentStatus('awaiting-user-confirmation');
+            addAuditEntry('AUTH', `Confirmation requested for ${action.kind}`, 'warn');
           }
-        }
+
+          if (message.type === 'COORDINATOR_TELEMETRY_UPDATED') {
+            const tel = message.telemetry;
+            if (tel) {
+              if (meterClientLatency) meterClientLatency.textContent = `${tel.clientLatencyMs} ms`;
+              if (meterServerLatency) meterServerLatency.textContent = `${tel.serverLatencyMs} ms`;
+              if (meterActionLatency) meterActionLatency.textContent = `${tel.totalLatencyMs - tel.clientLatencyMs - tel.serverLatencyMs} ms`;
+              if (meterTotalLatency) meterTotalLatency.textContent = `${tel.totalLatencyMs} ms`;
+            }
+          }
+        })().catch((err) => {
+          console.error('[PrivaPilot Sidepanel] Broadcast handler error:', err);
+        });
+
+        return false; // Explicitly return false so Chrome knows this listener does not handle or respond to messages
       });
     }
 
-    // Default to WASM vision provider on initialization
-    setVisionProvider('wasm');
+    // Default to 'not_run' vision provider on initialization until perception runs
+    setVisionProvider('not_run');
     setAgentStatus('idle');
     updateInspectorLayout();
 
@@ -852,6 +875,11 @@ if (typeof document !== 'undefined') {
         }
 
         addAuditEntry('MODEL', `Connected: ${status.modelName} via ${status.provider}`, 'pass');
+        if (status.visionCapable !== false) {
+          setVisionProvider(status.provider || 'qwen_live');
+        } else {
+          setVisionProvider('text_only');
+        }
       });
     }
 

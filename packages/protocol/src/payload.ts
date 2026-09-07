@@ -72,6 +72,7 @@ export type ElementRole =
   | 'menuitem'
   | 'tab'
   | 'heading'
+  | 'dialog'
   | 'generic';
 
 export type ActionCapability = 'click' | 'type' | 'select' | 'scroll';
@@ -89,6 +90,36 @@ export interface SanitizedElement {
 export interface SanitizedPageState {
   readonly title: string;
   readonly viewport: readonly [number, number];
+  readonly visibleDialogCount?: number;
+  readonly dialogTitles?: ReadonlyArray<string>;
+  readonly statusSummaries?: ReadonlyArray<string>;
+  readonly routeFingerprint?: string;
+  readonly postconditionSummary?: string;
+}
+
+export interface RedactionManifest {
+  readonly manifestVersion: '1.0';
+  readonly totalRegions: number;
+  readonly categoryCounts: {
+    readonly piiText: number;
+    readonly domInput: number;
+    readonly face: number;
+    readonly surface: number;
+  };
+  readonly methodCounts: {
+    readonly opaqueBox: number;
+    readonly spatialBlur: number;
+  };
+  readonly placeholderConvention: '[REDACTED]';
+  readonly geometrySemantics: 'clamped_css_pixels';
+  readonly pixelVerificationPerformed: boolean;
+  readonly pixelVerificationPassed: boolean;
+  readonly uninspectableSurfacePolicy: 'fail_closed';
+  readonly visionAttempted: boolean;
+  readonly visionSucceeded: boolean;
+  readonly visionProvider: 'None' | 'WASM' | 'WebGPU' | 'ModelRunner';
+  readonly visionModel?: string;
+  readonly durationMs?: number;
 }
 
 /**
@@ -107,6 +138,7 @@ export interface SanitizedContext {
   readonly maskCount: number;
   readonly payloadDigestSha256: string;
   readonly timestamp: number;
+  readonly redactionManifest?: RedactionManifest;
 }
 
 /**
@@ -119,6 +151,66 @@ export interface SanitizedNetworkPayload {
   readonly screenshot: string; // Base64 data URL
   readonly elements: ReadonlyArray<SanitizedElement>;
   readonly pageState: SanitizedPageState;
+  readonly redactionManifest?: RedactionManifest;
+}
+
+/**
+ * Converts verified SanitizedContext into canonical wire-ready SanitizedNetworkPayload.
+ */
+export function toSanitizedNetworkPayload(context: SanitizedContext): SanitizedNetworkPayload {
+  return {
+    protocolVersion: '1.0',
+    runId: context.runId,
+    goal: context.goal,
+    screenshot: context.sanitizedScreenshotDataUrl,
+    elements: context.elements,
+    pageState: context.pageState,
+    ...(context.redactionManifest ? { redactionManifest: context.redactionManifest } : {})
+  };
+}
+
+export interface SanitizedDisplayPayload {
+  readonly protocolVersion: string;
+  readonly runId: string;
+  readonly goal: string;
+  readonly screenshot: string;
+  readonly elements: ReadonlyArray<SanitizedElement>;
+  readonly pageState: SanitizedPageState | 'Not available';
+  readonly redactionManifest?: RedactionManifest;
+}
+
+/**
+ * Generates canonical safe display projection directly from the exact canonical wire payload.
+ * Never synthesizes fake run IDs, capture IDs, digests, viewports, or goals.
+ * Displays 'Not available' for missing values.
+ */
+export function toSanitizedDisplayPayload(
+  payload: SanitizedNetworkPayload | null | undefined,
+  digest?: string
+): SanitizedDisplayPayload | { protocolVersion: string; status: string } {
+  if (!payload) {
+    return {
+      protocolVersion: '1.0',
+      status: 'Awaiting initial perception cycle'
+    };
+  }
+
+  const screenshot = payload.screenshot || '';
+  const byteCount = screenshot ? Math.round(screenshot.length * 0.75) : 0;
+  const kbCount = Math.round(byteCount / 1024);
+  const screenshotDisplay = screenshot
+    ? `[Screenshot base64 omitted from display: ${kbCount} KB (${byteCount} bytes), SHA-256 digest: ${digest || 'Not available'}]`
+    : 'Not available';
+
+  return {
+    protocolVersion: payload.protocolVersion || '1.0',
+    runId: payload.runId || 'Not available',
+    goal: payload.goal || 'Not available',
+    screenshot: screenshotDisplay,
+    elements: payload.elements || [],
+    pageState: payload.pageState || 'Not available',
+    ...(payload.redactionManifest ? { redactionManifest: payload.redactionManifest } : {})
+  };
 }
 
 /**

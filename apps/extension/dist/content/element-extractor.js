@@ -280,17 +280,17 @@ export class ElementExtractor {
                     textNode = textWalker.nextNode();
                 }
             }
-            // 3. Extract Images / Avatars for Face Detection
-            const images = currentDoc.querySelectorAll('img, svg, .avatar, [class*="avatar"], [class*="profile"]');
+            // 3. Extract Images / Avatars for Face Detection (Only actual visual media, not layout cards)
+            const images = currentDoc.querySelectorAll('img, svg, [role="img"], .avatar, .profile-photo, .profile-pic');
             images.forEach((img, idx) => {
                 const el = img;
+                const tagName = (el.tagName || '').toUpperCase();
+                const role = el.getAttribute?.('role') || '';
+                const isVisualMedia = tagName === 'IMG' || tagName === 'SVG' || role === 'img' || el.classList?.contains('avatar') || el.classList?.contains('profile-photo') || el.classList?.contains('profile-pic');
+                if (!isVisualMedia)
+                    return;
                 const rect = el.getBoundingClientRect();
                 if (rect.width > 0 && rect.height > 0) {
-                    // On SVG elements `className` is an SVGAnimatedString, not a string, so
-                    // calling toLowerCase() on it throws and aborts the whole snapshot. This
-                    // selector explicitly includes `svg`, so that is not a rare edge case - it
-                    // broke extraction on any page containing an inline SVG. Prefer the
-                    // class attribute, which is always a string on every element type.
                     const classText = (el.getAttribute?.('class') ??
                         (typeof el.className === 'string' ? el.className : '')).toLowerCase();
                     const isAvatar = classText.includes('avatar') || classText.includes('profile');
@@ -379,7 +379,7 @@ export class ElementExtractor {
                 }
             });
             // 4e. Images Likely to Contain Sensitive Text
-            const textImages = currentDoc.querySelectorAll('img[class*="receipt"], img[class*="invoice"], img[class*="document"], img[class*="statement"], img[class*="card"], [data-has-text="true"]');
+            const textImages = currentDoc.querySelectorAll('img[class*="receipt"], img[class*="invoice"], img[class*="document"], img[class*="statement"], img[class*="card"], img[class*="scanned"], img[class*="id"], img[class*="doc"], [data-has-text="true"], img[alt*="scanned" i], img[alt*="document" i], img[alt*="sensitive" i]');
             textImages.forEach((img) => {
                 const rect = img.getBoundingClientRect();
                 if (rect.width > 0 && rect.height > 0) {
@@ -441,6 +441,46 @@ export class ElementExtractor {
         };
         // Execute top-level extraction
         processDocumentLevel(doc, { x: 0, y: 0 }, 0);
+        // Extract structured page-state landmarks
+        let visibleDialogCount = 0;
+        const dialogTitles = [];
+        try {
+            const dialogCandidates = doc.querySelectorAll('dialog, [role="dialog"], [aria-modal="true"], [id*="drawer"], [class*="drawer"]');
+            dialogCandidates.forEach((node) => {
+                const el = node;
+                const isHidden = el.hidden ||
+                    el.getAttribute?.('aria-hidden') === 'true' ||
+                    el.classList?.contains('hidden') ||
+                    (typeof getComputedStyle !== 'undefined' && getComputedStyle(el).display === 'none') ||
+                    (typeof getComputedStyle !== 'undefined' && getComputedStyle(el).visibility === 'hidden');
+                if (!isHidden && (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0)) {
+                    visibleDialogCount++;
+                    const title = el.getAttribute('aria-label') || el.querySelector('h1, h2, h3, h4, [class*="title"]')?.textContent?.trim() || '';
+                    if (title) {
+                        dialogTitles.push(title.slice(0, 100));
+                    }
+                }
+            });
+        }
+        catch {
+            // Bounded fallback in non-standard DOM environments
+        }
+        const statusSummaries = [];
+        try {
+            const statusNodes = doc.querySelectorAll('[role="status"], [role="alert"], .badge');
+            statusNodes.forEach((node) => {
+                const text = (node.textContent || '').trim().slice(0, 150);
+                if (text) {
+                    statusSummaries.push(text);
+                }
+            });
+        }
+        catch {
+            // Bounded fallback
+        }
+        const routeFingerprint = typeof doc.location !== 'undefined' && doc.location?.pathname
+            ? doc.location.pathname.slice(0, 50)
+            : '/';
         return {
             snapshot: {
                 domElements,
@@ -448,7 +488,11 @@ export class ElementExtractor {
                 imageElements,
                 surfaces,
                 interactiveElements,
-                pageTitle: doc.title || 'Page'
+                pageTitle: doc.title || 'Page',
+                visibleDialogCount,
+                dialogTitles,
+                statusSummaries,
+                routeFingerprint
             },
             elementMap: this.elementMap
         };

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-03T20:52:29.445Z",
+  "timestamp": "2026-09-06T21:09:15.977Z",
   "harness": "extension-e2e",
   "measured": true,
   "metadata": {
@@ -7,7 +7,7 @@
     "environment": "darwin arm64 (Node v22.22.0)",
     "chromePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "extensionId": "knnfeljhnohhfjiecikkaeibfecekiem",
-    "gitSha": "9f099ef",
+    "gitSha": "bd2de10",
     "model": {
       "name": "qwen/qwen2.5-vl-72b-instruct",
       "provider": "vlm-cloud",
@@ -15,36 +15,105 @@
     }
   },
   "goal": "Open the safe preview for the pending request",
-  "success": false,
-  "state": "failed-safe",
-  "error": "Semantic verification failed: bounded timeout expired without observing expected postcondition",
+  "success": true,
+  "state": "complete",
+  "error": null,
+  "diagnostic": null,
   "proposal": {
-    "actionId": "act_1",
-    "kind": "click",
-    "targetLocalId": "el_6",
-    "confidence": 0.95,
+    "actionId": "act_local_finish_2_1788728955954",
+    "kind": "finish",
+    "confidence": 1,
     "risk": "safe",
-    "rationale": "Clicking 'Open Safe Preview' aligns with the goal to view the pending request safely.",
-    "expectedState": "The safe preview for the pending request should now be displayed."
+    "rationale": "Safe preview drawer is visible and inspected; task completed locally"
   },
-  "maskCount": 6,
+  "maskCount": 5,
   "elementsTransmitted": 10,
-  "sanitizedScreenshotBytes": 264380,
+  "sanitizedScreenshotBytes": 246650,
   "telemetry": {
-    "runId": "run_1788468742798",
-    "t0_start": 1788468742798,
-    "t1_captureComplete": 1788468745269,
-    "t2_detectionComplete": 1788468745269,
-    "t3_sanitizationValidated": 1788468745295,
-    "t4_reasoningReceived": 1788468749252,
-    "t5_actionValidated": 1788468749252,
-    "t6_actionExecuted": 1788468749407,
-    "t7_stateVerified": 1788468749407,
-    "totalLatencyMs": 6609,
-    "clientLatencyMs": 668,
-    "serverLatencyMs": 5939,
+    "runId": "run_1788728951172",
+    "t0_start": 1788728951172,
+    "t1_captureComplete": 1788728955923,
+    "t2_detectionComplete": 1788728955923,
+    "t3_sanitizationValidated": 1788728955952,
+    "t4_reasoningReceived": 1788728955954,
+    "t5_actionValidated": 1788728955954,
+    "t6_actionExecuted": 1788728955954,
+    "t7_stateVerified": 1788728955954,
+    "totalLatencyMs": 4782,
+    "clientLatencyMs": 364,
+    "serverLatencyMs": 4417,
     "stepCount": 10,
     "stepsCompleted": 2
   },
-  "wallClockMs": 6851
+  "steps": [
+    {
+      "step": 1,
+      "captureId": "cap_1788728951173_1",
+      "pageGeneration": "cap_1788728951173_1",
+      "maskCount": 5,
+      "sanitizedScreenshotBytes": 328034,
+      "decisionOrigin": "server",
+      "proposal": {
+        "actionId": "act_1",
+        "kind": "click",
+        "targetLocalId": "el_6",
+        "confidence": 0.95,
+        "risk": "safe",
+        "rationale": "Clicking 'Open Safe Preview' aligns with the goal to view the pending request safely.",
+        "expectedState": "Safe preview for the pending request should open."
+      },
+      "riskDecision": "safe",
+      "confidenceDecision": "accepted",
+      "executed": true,
+      "executionResult": {
+        "success": true,
+        "staleTarget": false,
+        "reasonCode": "EXECUTION_SUCCESS"
+      },
+      "verification": {
+        "verified": true,
+        "reasonCode": "MODAL_DRAWER_VISIBILITY_VERIFIED",
+        "matchedCondition": "modal_drawer_opened",
+        "durationMs": 1
+      },
+      "networkRequestMade": true,
+      "timings": {
+        "tCapture": 16,
+        "tDetection": 0,
+        "tSanitization": 277,
+        "tReasoning": 4415,
+        "tExecution": 7,
+        "tVerification": 0,
+        "total": 4715
+      }
+    },
+    {
+      "step": 2,
+      "captureId": "cap_1788728955889_2",
+      "pageGeneration": "cap_1788728955889_2",
+      "maskCount": 5,
+      "sanitizedScreenshotBytes": 328866,
+      "decisionOrigin": "local",
+      "proposal": {
+        "actionId": "act_local_finish_2_1788728955954",
+        "kind": "finish",
+        "confidence": 1,
+        "risk": "safe",
+        "rationale": "Safe preview drawer is visible and inspected; task completed locally"
+      },
+      "riskDecision": "safe",
+      "confidenceDecision": "accepted",
+      "executed": false,
+      "verification": {
+        "verified": true,
+        "reasonCode": "GOAL_POSTCONDITION_VERIFIED",
+        "durationMs": 0
+      },
+      "networkRequestMade": false,
+      "timings": {
+        "total": 66
+      }
+    }
+  ],
+  "wallClockMs": 5010
 }

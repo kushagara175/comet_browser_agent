@@ -35,6 +35,31 @@ export interface CoordinatorListeners {
     onTelemetryUpdated?(telemetry: RunTelemetry): void;
     onStepProgress?(step: number, maxSteps: number, message: string): void;
 }
+export interface E2EStepTrace {
+    readonly step: number;
+    readonly captureId: string;
+    readonly pageGeneration: string;
+    readonly maskCount: number;
+    readonly sanitizedScreenshotBytes: number;
+    readonly decisionOrigin: 'local' | 'server';
+    readonly proposal: ActionProposal;
+    readonly riskDecision: string;
+    readonly confidenceDecision: string;
+    readonly executed: boolean;
+    readonly executionResult?: {
+        readonly success: boolean;
+        readonly staleTarget: boolean;
+        readonly reasonCode?: string;
+    };
+    readonly verification?: {
+        readonly verified: boolean;
+        readonly reasonCode: string;
+        readonly matchedCondition?: string;
+        readonly durationMs: number;
+    };
+    readonly networkRequestMade: boolean;
+    readonly timings: Record<string, number>;
+}
 export interface CoordinatorRunResult {
     readonly success: boolean;
     readonly state: AgentState;
@@ -44,7 +69,16 @@ export interface CoordinatorRunResult {
     readonly proposal?: ActionProposal;
     readonly telemetry?: RunTelemetry;
     readonly stepCount?: number;
+    readonly diagnostic?: SanitizerDiagnostic;
+    readonly steps?: ReadonlyArray<E2EStepTrace>;
 }
+export type SanitizerFailureClass = 'OFFSCREEN_UNAVAILABLE' | 'SCREENSHOT_DECODE_FAILED' | 'CANVAS_UNAVAILABLE' | 'MASK_RENDER_FAILED' | 'MASK_VERIFICATION_FAILED' | 'DIGEST_FAILED' | 'SANITIZER_TIMEOUT' | 'UNKNOWN_SANITIZER_FAILURE';
+export interface SanitizerDiagnostic {
+    readonly failureClass: SanitizerFailureClass;
+    readonly sanitizedDetail: string;
+}
+export declare function sanitizeErrorDetail(rawMessage: string): string;
+export declare function classifySanitizerError(err: any): SanitizerDiagnostic;
 export declare function isRestrictedBrowserUrl(urlStr?: string): {
     isRestricted: boolean;
     reason?: string;
@@ -70,6 +104,8 @@ export declare class RunCoordinator {
     private cumulativeClientLatency;
     private cumulativeServerLatency;
     private isCancelled;
+    private stepsTrace;
+    private currentTaskContract;
     constructor(browser?: BrowserAdapter, httpClient?: ReasoningHttpClient, auditLogger?: AuditLogger, options?: {
         defaultMaxSteps?: number;
         maxStaleRetries?: number;
@@ -81,6 +117,8 @@ export declare class RunCoordinator {
     private transition;
     private recordActionHistory;
     private isRepeatedAction;
+    private tryResolveLocalSafeAction;
+    private verifyTerminalPostcondition;
     private createTelemetry;
     /**
      * Starts an automated bounded multi-step agent run for a specific user goal.

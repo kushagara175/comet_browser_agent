@@ -25,6 +25,11 @@ export interface SafePayloadDigestFields {
     pageState: {
         title: string;
         viewport: readonly [number, number] | number[];
+        visibleDialogCount?: number;
+        dialogTitles?: ReadonlyArray<string> | string[];
+        statusSummaries?: ReadonlyArray<string> | string[];
+        routeFingerprint?: string;
+        postconditionSummary?: string;
     };
     elements: ReadonlyArray<{
         localId: string;

@@ -145,10 +145,17 @@ export const TEST_FIXTURES: Record<string, TestFixture> = {
     html: `
       <!DOCTYPE html>
       <html>
-      <head><title>Scanned Docs</title></head>
+      <head>
+        <title>Scanned Docs</title>
+        <style>
+          .doc-viewer { padding: 24px; font-family: sans-serif; }
+          .scanned-id { width: 480px; height: 260px; display: block; margin-bottom: 16px; border: 1px solid #cbd5e1; border-radius: 4px; }
+          button { padding: 8px 16px; cursor: pointer; }
+        </style>
+      </head>
       <body>
         <div class="doc-viewer">
-          <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" class="scanned-id" alt="Scanned Document with sensitive text" />
+          <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='480' height='260' viewBox='0 0 480 260'><rect width='480' height='260' fill='%23f8fafc'/><rect x='20' y='20' width='440' height='50' fill='%23e2e8f0'/><text x='35' y='52' font-family='sans-serif' font-weight='bold' font-size='18' fill='%231e293b'>GOVERNMENT ISSUED IDENTITY CARD</text><text x='35' y='110' font-family='sans-serif' font-size='14' fill='%23334155'>DOCUMENT NO: 4920-8392-1092</text><text x='35' y='140' font-family='sans-serif' font-size='14' fill='%23334155'>FULL NAME: AADITYA VERMA</text><text x='35' y='170' font-family='sans-serif' font-size='14' fill='%23334155'>DATE OF BIRTH: 22-09-1985</text><rect x='340' y='95' width='100' height='120' fill='%2394a3b8'/></svg>" class="scanned-id" alt="Scanned Document with sensitive text" />
           <button id="openSafePreview">Open Safe Preview</button>
         </div>
       </body>

@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-09-02T06:00:21.282Z",
+  "timestamp": "2026-09-06T21:09:19.213Z",
   "fixturesEvaluated": 14,
   "metadata": {
     "command": "/Users/kushagrasingh/dev/SIH_26209/scripts/run-benchmarks.js",
-    "date": "2026-09-02T06:00:21.282Z",
+    "date": "2026-09-06T21:09:19.213Z",
     "environment": "darwin arm64 (Node v22.22.0)",
     "browserVersion": "Google Chrome / Chromium Headless (CDP Engine)",
     "modelProvider": "UltraFace ONNX (Wasm/CPU) + Local PII Regex/Luhn Engine",
-    "gitSha": "ca1252e",
+    "gitSha": "bd2de10",
     "split": "all"
   },
   "accuracy": {
@@ -95,9 +95,9 @@
         "truePositives": 0,
         "falsePositives": 0,
         "falseNegatives": 0,
-        "recall": 100,
-        "precision": 100,
-        "f1Score": 100
+        "recall": null,
+        "precision": null,
+        "f1Score": null
       },
       "high_risk_surface": {
         "category": "high_risk_surface",
@@ -119,25 +119,37 @@
     "totalSafeElements": 19
   },
   "latency": {
-    "sampleCount": 14,
-    "p50TotalLatencyMs": 385,
-    "p95TotalLatencyMs": 385,
-    "p50ClientPerceptionMs": 35,
-    "p95ClientPerceptionMs": 35,
-    "p50ServerReasoningMs": 350,
-    "p95ServerReasoningMs": 350,
-    "p50ActionExecutionMs": 0,
-    "peakMemoryMb": 49.7,
-    "cpuLoadPct": 110.6
+    "sampleCount": 1,
+    "p50TotalLatencyMs": 4782,
+    "p95TotalLatencyMs": 4782,
+    "p50ClientPerceptionMs": 364,
+    "p95ClientPerceptionMs": 364,
+    "p50ServerReasoningMs": 4417,
+    "p95ServerReasoningMs": 4417,
+    "p50ActionExecutionMs": 1,
+    "peakMemoryMb": 49.8,
+    "cpuLoadPct": 99.7,
+    "heapUsedMb": 5,
+    "heapTotalMb": 7.4,
+    "memoryScope": "Node.js test process (RSS + V8 Heap)"
   },
-  "latencyMeasured": false,
+  "latencyMeasured": true,
+  "privacyGate": {
+    "canaryLeaks": 0,
+    "canariesChecked": 4,
+    "rawScreenshotsBlocked": true,
+    "failClosedSurfacesCovered": 3,
+    "failClosedSurfacesTotal": 3,
+    "safeControlsPreserved": 19,
+    "safeControlsTotal": 19
+  },
   "unmeasuredCategories": [
     "face"
   ],
   "unmeasuredNotes": [
     "Face detection (UltraFace ONNX) requires a rendered canvas and the onnxruntime-web WASM/WebGPU runtime. It cannot execute in this Node harness, so face targets are excluded from the scores rather than assumed correct.",
     "Region geometry is synthetic: a fixture is an HTML string with no layout. PII detections are matched to ground truth by the secret they found, not by position. Positional/IoU accuracy and true redaction coverage of rendered pixels require the browser harness.",
-    "End-to-end latency here is estimated with a nominal server figure, not measured against a real model. Real client-side perception latency is measured by \"npm run benchmark:browser\", which runs the shipped pipeline in real Chrome.",
+    "End-to-end latency here is read from live E2E run telemetry (docs/benchmark-results/E2E_EXTENSION_RUN.json). Real client-side perception latency is measured by \"npm run benchmark:browser\", which runs the shipped pipeline in real Chrome.",
     "CPU and memory reflect this Node process running the detectors, not the browser extension under real perception load."
   ]
 }

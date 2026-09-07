@@ -94,7 +94,7 @@ export async function handleMessage(message: any): Promise<any> {
     }
 
     // 4. Semantically verify post-action state with explicit bounded postconditions
-    const verification = await SemanticStateVerifier.verifyOutcome(proposal, targetEl, preSnapshot);
+    const verification = await SemanticStateVerifier.verifyOutcome(proposal, targetEl, preSnapshot, { timeoutMs: 2500 });
     const isSuccess = execResult.success && verification.verified;
 
     return {
@@ -102,7 +102,13 @@ export async function handleMessage(message: any): Promise<any> {
       actionId: proposal.actionId,
       semanticOutcomeVerified: verification.verified,
       reasonCode: verification.reasonCode,
-      message: isSuccess ? execResult.message : verification.message
+      message: isSuccess ? execResult.message : verification.message,
+      verification: {
+        verified: verification.verified,
+        reasonCode: verification.reasonCode,
+        durationMs: verification.details?.durationMs,
+        matchedCondition: verification.details?.matchedCondition
+      }
     };
   }
 

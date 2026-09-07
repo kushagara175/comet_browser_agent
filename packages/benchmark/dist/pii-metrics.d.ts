@@ -9,9 +9,9 @@ export interface CategoryMetric {
     readonly truePositives: number;
     readonly falsePositives: number;
     readonly falseNegatives: number;
-    readonly recall: number;
-    readonly precision: number;
-    readonly f1Score: number;
+    readonly recall: number | null;
+    readonly precision: number | null;
+    readonly f1Score: number | null;
 }
 export interface PiiDetectionReport {
     readonly aggregateRecall: number;

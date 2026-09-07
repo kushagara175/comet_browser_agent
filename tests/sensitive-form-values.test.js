@@ -9,6 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { SanitizerPipeline } from '../apps/extension/dist/sanitizer/pipeline.js';
 import { ElementExtractor } from '../apps/extension/dist/content/element-extractor.js';
+import { createMockCanvas } from '../packages/test-fixtures/dist/index.js';
 
 test('Sensitive Values Leak Prevention: Live input value secrets do NOT enter SanitizedContext', async () => {
   const arbitrarySecret = 'correct horse battery staple';
@@ -124,16 +125,7 @@ test('Sensitive Values Leak Prevention: Live input value secrets do NOT enter Sa
     pageTitle: 'Secure Portal'
   };
 
-  const testCanvas = {
-    getContext: () => ({
-      save: () => {},
-      restore: () => {},
-      fillRect: () => {},
-      strokeRect: () => {},
-      fillText: () => {}
-    }),
-    toDataURL: () => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-  };
+  const testCanvas = createMockCanvas(2560, 1440);
 
   const sanitized = await SanitizerPipeline.sanitize(
     rawCapture,

@@ -1,3 +1,112 @@
+/**
+ * Resolves a natural-language goal into a closed, structured task contract
+ * binding expected semantic terminal postconditions to the run.
+ */
+export function resolveTaskContract(goal) {
+    const g = (goal || '').trim().toLowerCase();
+    if (!g) {
+        return {
+            supported: false,
+            goalPattern: 'empty',
+            expectedTerminal: { kind: 'status_changed' },
+            abstentionReason: 'EMPTY_GOAL: Goal cannot be empty'
+        };
+    }
+    // Explicit out-of-domain rejection
+    if (/(?:poem|story|recipe|joke|capital of|calculate|solve math|2\+2|weather|song|quantum)/i.test(g)) {
+        return {
+            supported: false,
+            goalPattern: 'out_of_domain',
+            expectedTerminal: { kind: 'status_changed' },
+            abstentionReason: 'UNSUPPORTED_TASK_GOAL: Goal is outside closed supported browser task contracts; abstaining safely.'
+        };
+    }
+    // 1. Passive observation or immediate finish task
+    if (/^(?:observe|check|inspect|finish)\b/i.test(g)) {
+        return {
+            supported: true,
+            goalPattern: 'observe_status',
+            expectedTerminal: { kind: 'status_changed' },
+            isPassive: true
+        };
+    }
+    // 2. Preview / Drawer / Modal inspection
+    if (/(?:open|inspect|view)\s+(?:.*?\s+)?(?:preview|drawer|details?|summary|profile|settings)/i.test(g) || /preview/i.test(g)) {
+        return {
+            supported: true,
+            goalPattern: 'preview_drawer',
+            expectedTerminal: { kind: 'dialog_visible', dialogId: 'preview' },
+            expectedTargetNameSubstring: 'preview'
+        };
+    }
+    // 3. Search / Find / Locate / Type / Filter
+    if (/(?:search|find|locate|type|filter|query|telemetry)/i.test(g)) {
+        const filterMatch = g.match(/(?:search|type|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query))?\s+["']?([^"']+)["']?/i);
+        const val = filterMatch ? filterMatch[1].trim() : '';
+        return {
+            supported: true,
+            goalPattern: 'search_filter',
+            expectedTerminal: { kind: 'value_present', expectedValueFragment: val || undefined },
+            expectedTargetNameSubstring: 'search'
+        };
+    }
+    // 4. Select option
+    if (/(?:select|choose)(?:\s+(?:option))?/i.test(g)) {
+        const selectMatch = g.match(/(?:select|choose)(?:\s+(?:option))?\s+["']?([^"']+)["']?/i);
+        const opt = selectMatch ? selectMatch[1].trim() : '';
+        return {
+            supported: true,
+            goalPattern: 'select_option',
+            expectedTerminal: { kind: 'select_changed', expectedOptionValue: opt || undefined },
+            expectedTargetNameSubstring: 'select'
+        };
+    }
+    // 5. Explicit Scroll
+    if (/scroll\s+(down|up|top|bottom)/i.test(g)) {
+        const scrollMatch = g.match(/scroll\s+(down|up|top|bottom)/i);
+        const dir = scrollMatch ? scrollMatch[1].toLowerCase() : 'down';
+        return {
+            supported: true,
+            goalPattern: 'scroll',
+            expectedTerminal: { kind: 'scroll_changed', direction: dir }
+        };
+    }
+    // 6. Dismiss modal / banner
+    if (/(?:dismiss|close|accept)\s+(?:cookie|banner|notice|modal|dialog|disclosure)/i.test(g)) {
+        return {
+            supported: true,
+            goalPattern: 'dismiss_modal',
+            expectedTerminal: { kind: 'visibility_changed', state: 'hidden' }
+        };
+    }
+    // 7. Approval / Protected Actions (Pay, Submit, Authorize, Release, Delete, Purge)
+    if (/(?:approve|submit|pay|authorize|release|delete|order|purge|transfer)/i.test(g)) {
+        return {
+            supported: true,
+            goalPattern: 'approval_submission',
+            expectedTerminal: { kind: 'status_changed', statusId: 'approved' },
+            expectedTargetNameSubstring: 'approve'
+        };
+    }
+    // 8. Generic clicking / interactions (button, link, item, admin, finish, sanitize, navigate, navigation)
+    if (/(?:click|press|button|link|item|admin|finish|sanitize|sensitive|login|navigate|navigation)/i.test(g)) {
+        const clickMatch = g.match(/click\s+(?:the\s+)?["']?([^"']+)["']?/i);
+        const target = clickMatch ? clickMatch[1].trim() : undefined;
+        return {
+            supported: true,
+            goalPattern: 'click_control',
+            expectedTerminal: { kind: 'status_changed' },
+            expectedTargetNameSubstring: target
+        };
+    }
+    // Unsupported free-form goal -> must abstain!
+    return {
+        supported: false,
+        goalPattern: 'unsupported_freeform',
+        expectedTerminal: { kind: 'status_changed' },
+        abstentionReason: 'UNSUPPORTED_TASK_GOAL: Goal is outside closed supported task contracts; abstaining safely.'
+    };
+}
 const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
     'actionId',
     'kind',
@@ -6,6 +115,7 @@ const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
     'risk',
     'rationale',
     'expectedState',
+    'expectedPostcondition',
     'textToType',
     'selectOptionValue',
     'scrollDirection'
@@ -139,6 +249,50 @@ export function validateActionProposal(proposal, validElements) {
         }
         if (hasProhibitedScriptPattern(proposal.expectedState) || hasProhibitedUrlPattern(proposal.expectedState)) {
             return { isValid: false, errorMessage: 'expectedState contains prohibited script or URL patterns' };
+        }
+    }
+    // 7b. expectedPostcondition (structured closed schema, no arbitrary scripts/selectors)
+    if (proposal.expectedPostcondition !== undefined) {
+        if (typeof proposal.expectedPostcondition !== 'object' || proposal.expectedPostcondition === null || Array.isArray(proposal.expectedPostcondition)) {
+            return { isValid: false, errorMessage: 'Field "expectedPostcondition" must be a structured object' };
+        }
+        const pc = proposal.expectedPostcondition;
+        const allowedKinds = new Set([
+            'dialog_visible',
+            'url_changed',
+            'attribute_changed',
+            'value_present',
+            'select_changed',
+            'status_changed',
+            'scroll_changed',
+            'visibility_changed'
+        ]);
+        if (!allowedKinds.has(pc.kind)) {
+            return { isValid: false, errorMessage: `Invalid expectedPostcondition kind "${pc.kind}"` };
+        }
+        if (pc.kind === 'attribute_changed') {
+            const allowedAttrs = new Set(['aria-expanded', 'aria-checked', 'aria-selected', 'disabled', 'open', 'class']);
+            if (!allowedAttrs.has(pc.attributeName)) {
+                return { isValid: false, errorMessage: `Prohibited or untrusted attributeName "${pc.attributeName}" in postcondition` };
+            }
+        }
+        if (pc.kind === 'scroll_changed') {
+            const allowedDirs = new Set(['up', 'down', 'top', 'bottom']);
+            if (!allowedDirs.has(pc.direction)) {
+                return { isValid: false, errorMessage: `Invalid scroll direction "${pc.direction}" in postcondition` };
+            }
+        }
+        if (pc.kind === 'visibility_changed') {
+            if (pc.state !== 'visible' && pc.state !== 'hidden') {
+                return { isValid: false, errorMessage: `Invalid visibility state "${pc.state}" in postcondition` };
+            }
+        }
+        for (const [key, val] of Object.entries(pc)) {
+            if (typeof val === 'string') {
+                if (hasProhibitedScriptPattern(val) || hasProhibitedUrlPattern(val) || hasProhibitedSelectorPattern(val)) {
+                    return { isValid: false, errorMessage: `Postcondition field "${key}" contains prohibited script, URL, or selector pattern` };
+                }
+            }
         }
     }
     // 8. scrollDirection

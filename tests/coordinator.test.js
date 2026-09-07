@@ -393,3 +393,99 @@ test('Coordinator: Valid finish action completes without dispatching DOM interac
   const execMessages = browser.sentMessages.filter(m => m.message.type === 'EXECUTE_ACTION');
   assert.strictEqual(execMessages.length, 0);
 });
+
+test('Coordinator Safety: Ultra-low confidence action (0.01) cannot automatically click and fails safe', async () => {
+  const browser = createFakeBrowserAdapter();
+  const lowConfidenceProposal = {
+    actionId: 'act_low_1',
+    kind: 'click',
+    targetLocalId: 'el_btn_1',
+    confidence: 0.01,
+    risk: 'safe',
+    rationale: 'Uncertain click attempt'
+  };
+  const httpClient = createFakeHttpClient(lowConfidenceProposal);
+  const coordinator = new RunCoordinator(browser, httpClient);
+
+  const result = await coordinator.startRun('Click button with low confidence');
+
+  assert.strictEqual(result.success, false);
+  assert.strictEqual(result.state, 'failed-safe');
+  assert.ok(result.error?.includes('below safe execution threshold'));
+
+  // Ensure EXECUTE_ACTION was NEVER sent
+  const execMessages = browser.sentMessages.filter(m => m.message.type === 'EXECUTE_ACTION');
+  assert.strictEqual(execMessages.length, 0);
+});
+
+test('Coordinator Safety: Premature finish proposal on action task fails safe and rejects false finish', async () => {
+  const browser = createFakeBrowserAdapter();
+  const prematureFinishProposal = {
+    actionId: 'act_premature_finish',
+    kind: 'finish',
+    confidence: 1.0,
+    risk: 'safe',
+    rationale: 'I claim the task is done without doing anything'
+  };
+  const httpClient = createFakeHttpClient(prematureFinishProposal);
+  const coordinator = new RunCoordinator(browser, httpClient);
+
+  const result = await coordinator.startRun('Open the safe preview for pending request');
+
+  assert.strictEqual(result.success, false);
+  assert.strictEqual(result.state, 'failed-safe');
+  assert.ok(result.error?.includes('before required action postconditions were established or verified'));
+  assert.ok(result.steps);
+  assert.strictEqual(result.steps.length, 1);
+  assert.strictEqual(result.steps[0].verification?.reasonCode, 'FALSE_FINISH_NO_POSTCONDITION');
+});
+
+test('Coordinator Tracing: Ordered multi-step trace captures click, execution, verification, and valid finish', async () => {
+  const browser = createFakeBrowserAdapter();
+  const step1Proposal = {
+    actionId: 'act_click_1',
+    kind: 'click',
+    targetLocalId: 'el_btn_1',
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Click preview button'
+  };
+  const step2Proposal = {
+    actionId: 'act_finish_2',
+    kind: 'finish',
+    confidence: 1.0,
+    risk: 'safe',
+    rationale: 'Preview drawer is open'
+  };
+
+  let stepCall = 0;
+  const multiStepHttpClient = {
+    async requestReasoningAction() {
+      stepCall++;
+      return stepCall === 1 ? step1Proposal : step2Proposal;
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, multiStepHttpClient);
+  const result = await coordinator.startRun('Open the safe preview for pending request');
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.state, 'complete');
+  assert.ok(result.steps);
+  assert.strictEqual(result.steps.length, 2);
+
+  // Step 1 check
+  assert.strictEqual(result.steps[0].step, 1);
+  assert.strictEqual(result.steps[0].proposal.kind, 'click');
+  assert.strictEqual(result.steps[0].executed, true);
+  assert.strictEqual(result.steps[0].executionResult?.success, true);
+  assert.strictEqual(result.steps[0].verification?.verified, true);
+
+  // Step 2 check
+  assert.strictEqual(result.steps[1].step, 2);
+  assert.strictEqual(result.steps[1].proposal.kind, 'finish');
+  assert.strictEqual(result.steps[1].executed, false);
+  assert.strictEqual(result.steps[1].verification?.verified, true);
+});
+
+

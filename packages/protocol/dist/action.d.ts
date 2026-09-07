@@ -1,6 +1,46 @@
 import { SanitizedElement } from './payload.js';
 export type ActionKind = 'observe' | 'click' | 'type' | 'select' | 'scroll' | 'wait' | 'request_user_confirmation' | 'finish' | 'blocked';
 export type RiskLevel = 'safe' | 'protected' | 'blocked';
+export type ExpectedPostcondition = {
+    readonly kind: 'dialog_visible';
+    readonly dialogId?: string;
+} | {
+    readonly kind: 'url_changed';
+    readonly expectedPathFragment?: string;
+} | {
+    readonly kind: 'attribute_changed';
+    readonly attributeName: 'aria-expanded' | 'aria-checked' | 'aria-selected' | 'disabled' | 'open' | 'class';
+    readonly expectedValue?: string;
+} | {
+    readonly kind: 'value_present';
+    readonly expectedValueFragment?: string;
+} | {
+    readonly kind: 'select_changed';
+    readonly expectedOptionValue?: string;
+} | {
+    readonly kind: 'status_changed';
+    readonly statusId?: string;
+} | {
+    readonly kind: 'scroll_changed';
+    readonly direction: 'up' | 'down' | 'top' | 'bottom';
+} | {
+    readonly kind: 'visibility_changed';
+    readonly targetLocalId?: string;
+    readonly state: 'visible' | 'hidden';
+};
+export interface TaskContract {
+    readonly supported: boolean;
+    readonly goalPattern: string;
+    readonly expectedTerminal: ExpectedPostcondition;
+    readonly expectedTargetNameSubstring?: string;
+    readonly isPassive?: boolean;
+    readonly abstentionReason?: string;
+}
+/**
+ * Resolves a natural-language goal into a closed, structured task contract
+ * binding expected semantic terminal postconditions to the run.
+ */
+export declare function resolveTaskContract(goal: string): TaskContract;
 export interface ActionProposal {
     readonly actionId: string;
     readonly kind: ActionKind;
@@ -9,6 +49,7 @@ export interface ActionProposal {
     readonly risk: RiskLevel;
     readonly rationale: string;
     readonly expectedState?: string;
+    readonly expectedPostcondition?: ExpectedPostcondition;
     readonly textToType?: string;
     readonly selectOptionValue?: string;
     readonly scrollDirection?: 'up' | 'down' | 'top' | 'bottom';

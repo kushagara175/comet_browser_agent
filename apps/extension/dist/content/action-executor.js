@@ -54,16 +54,16 @@ export class ActionExecutor {
         if (proposal.kind === 'scroll') {
             if (typeof window !== 'undefined') {
                 if (proposal.scrollDirection === 'down') {
-                    window.scrollBy({ top: 400, behavior: 'smooth' });
+                    window.scrollBy(0, 400);
                 }
                 else if (proposal.scrollDirection === 'up') {
-                    window.scrollBy({ top: -400, behavior: 'smooth' });
+                    window.scrollBy(0, -400);
                 }
                 else if (proposal.scrollDirection === 'top') {
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    window.scrollTo(0, 0);
                 }
                 else {
-                    window.scrollTo({ top: document.body?.scrollHeight || 1000, behavior: 'smooth' });
+                    window.scrollTo(0, document.body?.scrollHeight || 1000);
                 }
             }
             return {
@@ -374,6 +374,16 @@ export class ActionExecutor {
                 else {
                     targetEl.value = proposal.selectOptionValue;
                 }
+                const selectEl = targetEl;
+                const val = proposal.selectOptionValue.toLowerCase().trim();
+                for (let i = 0; i < selectEl.options.length; i++) {
+                    const opt = selectEl.options[i];
+                    if (opt.value.toLowerCase() === val || opt.text.toLowerCase() === val) {
+                        selectEl.selectedIndex = i;
+                        opt.selected = true;
+                        break;
+                    }
+                }
                 if (EventCtor) {
                     targetEl.dispatchEvent(new EventCtor('input', { bubbles: true, cancelable: true, composed: true }));
                     targetEl.dispatchEvent(new EventCtor('change', { bubbles: true, cancelable: true }));
@@ -383,7 +393,7 @@ export class ActionExecutor {
                     success: true,
                     timestamp,
                     semanticOutcomeVerified: true,
-                    message: `Selected option '${proposal.selectOptionValue}'`
+                    message: `Selected option '${proposal.selectOptionValue}' in element '${proposal.targetLocalId}'`
                 };
             }
             return {

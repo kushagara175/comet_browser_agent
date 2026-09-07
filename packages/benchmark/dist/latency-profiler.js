@@ -13,6 +13,8 @@ function calculatePercentile(values, percentile) {
 export function measureCurrentProcessResources(startCpu, startTimeMs) {
     const mem = process.memoryUsage();
     const peakMemoryMb = Math.round((mem.rss / (1024 * 1024)) * 10) / 10;
+    const heapUsedMb = Math.round((mem.heapUsed / (1024 * 1024)) * 10) / 10;
+    const heapTotalMb = Math.round((mem.heapTotal / (1024 * 1024)) * 10) / 10;
     let cpuLoadPct = 0;
     if (startCpu && startTimeMs) {
         const elapsedMs = Math.max(1, Date.now() - startTimeMs);
@@ -21,7 +23,13 @@ export function measureCurrentProcessResources(startCpu, startTimeMs) {
         // Normalized CPU % over elapsed time
         cpuLoadPct = Math.round((totalCpuTimeMs / elapsedMs) * 1000) / 10;
     }
-    return { peakMemoryMb, cpuLoadPct };
+    return {
+        peakMemoryMb,
+        cpuLoadPct,
+        heapUsedMb,
+        heapTotalMb,
+        memoryScope: 'Node.js test process (RSS + V8 Heap)'
+    };
 }
 export function computeLatencyBenchmark(telemetries, resourceOverride) {
     const currentRes = resourceOverride || measureCurrentProcessResources();
@@ -36,7 +44,10 @@ export function computeLatencyBenchmark(telemetries, resourceOverride) {
             p95ServerReasoningMs: 0,
             p50ActionExecutionMs: 0,
             peakMemoryMb: currentRes.peakMemoryMb,
-            cpuLoadPct: currentRes.cpuLoadPct
+            cpuLoadPct: currentRes.cpuLoadPct,
+            heapUsedMb: currentRes.heapUsedMb,
+            heapTotalMb: currentRes.heapTotalMb,
+            memoryScope: currentRes.memoryScope
         };
     }
     const totals = telemetries.map(t => t.totalLatencyMs || 0);
@@ -53,7 +64,10 @@ export function computeLatencyBenchmark(telemetries, resourceOverride) {
         p95ServerReasoningMs: calculatePercentile(servers, 0.95),
         p50ActionExecutionMs: calculatePercentile(actions, 0.50),
         peakMemoryMb: currentRes.peakMemoryMb,
-        cpuLoadPct: currentRes.cpuLoadPct
+        cpuLoadPct: currentRes.cpuLoadPct,
+        heapUsedMb: currentRes.heapUsedMb,
+        heapTotalMb: currentRes.heapTotalMb,
+        memoryScope: currentRes.memoryScope
     };
 }
 //# sourceMappingURL=latency-profiler.js.map

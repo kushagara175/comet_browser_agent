@@ -67,7 +67,12 @@ export async function computePayloadDigestSha256(payload) {
             title: String(payload.pageState?.title || ''),
             viewport: Array.isArray(payload.pageState?.viewport)
                 ? [Number(payload.pageState.viewport[0] || 0), Number(payload.pageState.viewport[1] || 0)]
-                : [1280, 800]
+                : [1280, 800],
+            ...(payload.pageState?.visibleDialogCount !== undefined ? { visibleDialogCount: Number(payload.pageState.visibleDialogCount) } : {}),
+            ...(Array.isArray(payload.pageState?.dialogTitles) ? { dialogTitles: payload.pageState.dialogTitles.map(String) } : {}),
+            ...(Array.isArray(payload.pageState?.statusSummaries) ? { statusSummaries: payload.pageState.statusSummaries.map(String) } : {}),
+            ...(payload.pageState?.routeFingerprint ? { routeFingerprint: String(payload.pageState.routeFingerprint) } : {}),
+            ...(payload.pageState?.postconditionSummary ? { postconditionSummary: String(payload.pageState.postconditionSummary) } : {})
         },
         elements: Array.isArray(payload.elements)
             ? payload.elements.map((el) => ({

@@ -2,11 +2,28 @@
  * @privapilot/extension - Mask and Blur Canvas Renderer
  *
  * Renders opaque privacy masks and face blurs directly onto the screenshot pixel buffer.
+ * Validates geometry, enforces pixel-true coverage, and triggers opaque fallbacks
+ * when face blur cannot be proven.
  */
-import { SensitiveRegion } from '@privapilot/protocol';
+import { SensitiveRegion, ScreenshotPixelBox, RedactionMethod } from '@privapilot/protocol';
+export interface RegionRenderRecord {
+    readonly regionId: string;
+    readonly requestedBox: ScreenshotPixelBox;
+    readonly clampedBox: {
+        readonly x: number;
+        readonly y: number;
+        readonly width: number;
+        readonly height: number;
+    };
+    readonly method: RedactionMethod;
+    readonly success: boolean;
+    readonly fallbackApplied?: boolean;
+    readonly failureReason?: string;
+}
 export interface RenderResult {
     readonly sanitizedScreenshotDataUrl: string;
     readonly renderedMaskCount: number;
+    readonly regionRecords: ReadonlyArray<RegionRenderRecord>;
 }
 export declare class MaskRenderer {
     /**
@@ -14,10 +31,10 @@ export declare class MaskRenderer {
      *
      * Enforces:
      * 1. Two-pass rendering: Blur pass first, opaque mask pass second (opaque masks always win).
-     * 2. Strict bounds clamping to prevent sampling outside canvas boundaries.
-     * 3. Irreversible block pixelation and color averaging for human faces.
+     * 2. Strict geometry validation: Rejects NaN, Inf, non-positive dimensions, off-canvas, or 1px degenerate boxes.
+     * 3. Irreversible block pixelation and color averaging for human faces with automatic opaque fallback if unproven.
      * 4. 100% opaque deep-slate blackouts for credentials, PII, payment data, and uninspectable surfaces.
-     * 5. Fail-closed error handling if canvas operations fail.
+     * 5. Per-region forensic audit records.
      */
     static renderMasks(imageCanvas: HTMLCanvasElement | OffscreenCanvas, regions: ReadonlyArray<SensitiveRegion>): RenderResult;
 }

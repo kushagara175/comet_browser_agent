@@ -50,27 +50,39 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // 2. Search & Filter Table Rows
+  const filterStatus = document.getElementById('filterStatus');
+
   function filterRows() {
     const query = (searchInput?.value || '').trim().toLowerCase();
+    const statusVal = (filterStatus?.value || 'all').toLowerCase();
     const rows = requestsTableBody?.querySelectorAll('tr') || [];
 
     rows.forEach((row) => {
-      if (!query) {
-        row.style.display = '';
-        return;
+      let matchesQuery = true;
+      if (query) {
+        const text = row.textContent?.toLowerCase() || '';
+        matchesQuery = text.includes(query);
       }
-      const text = row.textContent?.toLowerCase() || '';
-      row.style.display = text.includes(query) ? '' : 'none';
+      let matchesStatus = true;
+      if (statusVal && statusVal !== 'all') {
+        const badge = row.querySelector('.badge');
+        const badgeText = badge ? badge.textContent?.toLowerCase() || '' : '';
+        const badgeClass = badge ? badge.className.toLowerCase() : '';
+        matchesStatus = badgeText.includes(statusVal) || badgeClass.includes(statusVal);
+      }
+
+      row.style.display = (matchesQuery && matchesStatus) ? '' : 'none';
     });
 
-    if (statusRegion && query) {
-      statusRegion.textContent = `Filtered table for "${query}"`;
+    if (statusRegion && (query || (statusVal && statusVal !== 'all'))) {
+      statusRegion.textContent = `Filtered table for "${query || statusVal}"`;
       statusRegion.classList.remove('hidden');
     }
   }
 
   searchInput?.addEventListener('input', filterRows);
   searchBtn?.addEventListener('click', filterRows);
+  filterStatus?.addEventListener('change', filterRows);
 
   // 3. Open Safe Preview Drawer
   function openDrawer() {
@@ -123,7 +135,29 @@ document.addEventListener('DOMContentLoaded', () => {
     closeDrawer();
   });
 
-  // 6. Stale Target Mutation Handler (Simulates DOM replacement for stale recovery)
+  // 6. Delayed Status Mutation Handler (Bounded verification testing)
+  const delayedSyncBtn = document.getElementById('delayedSyncBtn');
+  const statusReq1041 = document.getElementById('statusReq1041');
+  delayedSyncBtn?.addEventListener('click', () => {
+    if (statusReq1041) {
+      statusReq1041.textContent = 'Syncing...';
+      statusReq1041.className = 'badge review';
+    }
+    // Mutate asynchronously after 400ms delay to exercise bounded MutationObserver verification
+    setTimeout(() => {
+      if (statusReq1041) {
+        statusReq1041.textContent = 'Synchronized';
+        statusReq1041.className = 'badge approved';
+      }
+      if (statusRegion) {
+        statusRegion.textContent = 'Data Pipeline Synchronization complete';
+        statusRegion.className = 'status-alert-box success';
+        statusRegion.classList.remove('hidden');
+      }
+    }, 400);
+  });
+
+  // 7. Stale Target Mutation Handler (Simulates DOM replacement for stale recovery)
   mutateRowBtn?.addEventListener('click', () => {
     const row = document.getElementById('rowReq1044');
     if (row && row.parentNode) {

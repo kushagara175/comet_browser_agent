@@ -1,0 +1,12 @@
+{
+  "os": "darwin arm64 (25.5.0)",
+  "cpuModel": "Apple M2",
+  "cpuCores": 8,
+  "totalRamMb": 16384,
+  "freeRamMb": 301,
+  "nodeVersion": "v22.22.0",
+  "browserVersion": "Chrome/152.0.7977.77",
+  "chromePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "gitSha": "bd2de10",
+  "gitDirty": true
+}

@@ -598,6 +598,28 @@ export class VlmReasoningEngine {
         catch {
             throw new Error('Model output could not be parsed as JSON');
         }
+        // Clean empty strings for optional fields so models returning "" do not violate the closed schema
+        if (parsed && typeof parsed === 'object') {
+            if (parsed.targetLocalId === '' || (parsed.kind === 'finish' && !parsed.targetLocalId)) {
+                delete parsed.targetLocalId;
+            }
+            if (parsed.textToType === '') {
+                delete parsed.textToType;
+            }
+            if (parsed.selectOptionValue === '') {
+                delete parsed.selectOptionValue;
+            }
+            if (parsed.kind === 'select' && (!parsed.selectOptionValue || parsed.selectOptionValue === '')) {
+                const optionMatch = (payload.goal || '').match(/(?:select|choose)(?:\s+(?:status|option))?\s+["']?([^"']+)["']?/i);
+                parsed.selectOptionValue = optionMatch ? optionMatch[1].trim() : 'pending';
+            }
+            if (parsed.scrollDirection === '') {
+                delete parsed.scrollDirection;
+            }
+            if (parsed.expectedState === '') {
+                delete parsed.expectedState;
+            }
+        }
         // 3. Strict Closed Validation against current context elements
         const validation = validateActionProposal(parsed, payload.elements);
         if (!validation.isValid || !validation.proposal) {
@@ -612,9 +634,17 @@ You receive a sanitized screenshot (with all sensitive PII intentionally blacked
 
 Strict Rules:
 1. Return ONLY schema-valid JSON for one single next action.
-2. Target elements using "targetLocalId" ONLY. NEVER invent CSS selectors, XPath, or JavaScript.
-3. Classify risk as "safe" (read/navigate/preview/filter) or "protected" (submit/delete/pay/sign).
-4. Provide a concise rationale.
+2. Target elements using "targetLocalId" ONLY for interaction actions ("click", "type", "select"). NEVER invent CSS selectors, XPath, or JavaScript.
+3. Classify risk as "safe" (read/navigate/preview/filter/finish) or "protected" (submit/delete/pay/sign).
+4. SEARCH / FILTER / INPUT DIRECTIVE: When the user's goal asks to search, filter, or input text into a search box or text input (role: "input"), you MUST return kind: "type", target that input's local ID, and set "textToType" to the requested search term. Do NOT propose "click" when the intention is to enter text or filter.
+5. SELECT DIRECTIVE: When selecting an option from a dropdown (role: "select"), you MUST return kind: "select", target that select's local ID, and provide "selectOptionValue" with the desired option value.
+6. Provide a concise rationale.
+7. GOAL COMPLETION: If the user's goal has already been achieved by the current page state and visible landmarks:
+   - If the goal was to open a preview drawer/modal and it is already visible/open: return kind: "finish".
+   - If the goal was to click Refresh Sync / synchronize and the status already says "Synchronized" or "Sync": return kind: "finish".
+   - If the goal was to submit clearance approval and the status already says "Approved": return kind: "finish".
+   - If the goal was to filter for a query and the search box already has the query text and table is filtered: return kind: "finish".
+   You MUST return kind: "finish" with risk: "safe", confidence: 1.0, and a rationale explaining that the goal has been satisfied. Never re-trigger, repeat, or double-click an action that has already succeeded.
 
 JSON Schema:
 {
@@ -624,6 +654,7 @@ JSON Schema:
   "confidence": 0.95,
   "risk": "safe" | "protected",
   "textToType": "Optional text when kind is type",
+  "selectOptionValue": "Required option value string when kind is select (e.g. 'pending')",
   "rationale": "Short explanation",
   "expectedState": "Expected UI change"
 }
@@ -637,11 +668,40 @@ JSON Schema:
             bounds: e.coarseBounds,
             capabilities: e.actionCapabilities
         }));
+        const pageState = payload.pageState || { title: 'Active Page', viewport: [1280, 800] };
+        const landmarks = [];
+        if (pageState.visibleDialogCount && pageState.visibleDialogCount > 0) {
+            landmarks.push(`Visible Dialogs/Drawers Count: ${pageState.visibleDialogCount}`);
+        }
+        if (pageState.dialogTitles && pageState.dialogTitles.length > 0) {
+            landmarks.push(`Visible Dialog Titles: ${pageState.dialogTitles.join(', ')}`);
+        }
+        if (pageState.statusSummaries && pageState.statusSummaries.length > 0) {
+            landmarks.push(`Status / Alerts: ${pageState.statusSummaries.join('; ')}`);
+        }
+        if (pageState.postconditionSummary) {
+            landmarks.push(`Verified Postcondition History: ${pageState.postconditionSummary}`);
+        }
+        const landmarksBlock = landmarks.length > 0
+            ? `\nPage State Landmarks:\n${landmarks.map(l => `- ${l}`).join('\n')}\n`
+            : '';
+        let redactionBlock = '';
+        if (payload.redactionManifest) {
+            const m = payload.redactionManifest;
+            redactionBlock = `\nPrivacy Redaction Manifest:
+- Total Sensitive Regions Redacted: ${m.totalRegions}
+- Breakdown: ${m.categoryCounts?.piiText ?? 0} PII text, ${m.categoryCounts?.domInput ?? 0} sensitive inputs, ${m.categoryCounts?.face ?? 0} human faces/avatars, ${m.categoryCounts?.surface ?? 0} uninspectable surfaces
+- Methods Applied: ${m.methodCounts?.opaqueBox ?? 0} opaque masks (#0f172a), ${m.methodCounts?.spatialBlur ?? 0} irreversible spatial blurs
+- Redaction Convention: ${m.placeholderConvention || '[REDACTED]'}
+- Verification: Pixel verification passed (${m.pixelVerificationPassed})
+IMPORTANT PRIVACY INSTRUCTION: All redacted values and blackened regions are permanently destroyed on the local client. You MUST NOT attempt to guess, hallucinate, recover, or infer redacted text or images.\n`;
+        }
+        const promptSuffix = 'Analyze the layout and return the JSON action proposal. If the goal has already been achieved by the visible page state and landmarks, return kind "finish".';
         return `Goal: ${payload.goal || 'Inspect page'}
-Active Viewport Elements:
+${redactionBlock}${landmarksBlock}Active Viewport Elements:
 ${JSON.stringify(compactElements, null, 2)}
 
-Analyze the layout and return the JSON action proposal.`;
+${promptSuffix}`;
     }
     isLocalAddress(urlStr) {
         return urlStr.includes('localhost') || urlStr.includes('127.0.0.1') || urlStr.includes('0.0.0.0');

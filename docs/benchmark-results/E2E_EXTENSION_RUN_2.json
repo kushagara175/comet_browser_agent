@@ -1,0 +1,49 @@
+{
+  "timestamp": "2026-09-06T20:12:52.233Z",
+  "harness": "extension-e2e",
+  "measured": true,
+  "metadata": {
+    "command": "npm run test:e2e",
+    "environment": "darwin arm64 (Node v22.22.0)",
+    "chromePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "extensionId": "knnfeljhnohhfjiecikkaeibfecekiem",
+    "gitSha": "bd2de10",
+    "model": {
+      "name": "qwen/qwen2.5-vl-72b-instruct",
+      "provider": "vlm-cloud",
+      "connected": true
+    }
+  },
+  "goal": "Open the safe preview for the pending request",
+  "success": true,
+  "state": "complete",
+  "error": null,
+  "diagnostic": null,
+  "proposal": {
+    "actionId": "act_1",
+    "kind": "finish",
+    "confidence": 1,
+    "risk": "safe",
+    "rationale": "The safe preview for the pending request is already open and visible."
+  },
+  "maskCount": 6,
+  "elementsTransmitted": 10,
+  "sanitizedScreenshotBytes": 246359,
+  "telemetry": {
+    "runId": "run_1788725564279",
+    "t0_start": 1788725564279,
+    "t1_captureComplete": 1788725568872,
+    "t2_detectionComplete": 1788725568872,
+    "t3_sanitizationValidated": 1788725568903,
+    "t4_reasoningReceived": 1788725572209,
+    "t5_actionValidated": 1788725572210,
+    "t6_actionExecuted": 1788725572210,
+    "t7_stateVerified": 1788725572210,
+    "totalLatencyMs": 7931,
+    "clientLatencyMs": 990,
+    "serverLatencyMs": 6938,
+    "stepCount": 10,
+    "stepsCompleted": 2
+  },
+  "wallClockMs": 7956
+}

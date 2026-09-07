@@ -73,17 +73,21 @@ export function computePiiMetrics(detections, groundTruth) {
         totalTp += tp;
         totalFp += fp;
         totalFn += fn;
-        const recall = catGroundTruth.length > 0 ? (tp / catGroundTruth.length) * 100 : 100;
-        const precision = catDetections.length > 0 ? (tp / catDetections.length) * 100 : 100;
-        const f1 = (precision + recall) > 0 ? (2 * precision * recall) / (precision + recall) : 100;
+        const recall = catGroundTruth.length > 0 ? (tp / catGroundTruth.length) * 100 : null;
+        const precision = catDetections.length > 0
+            ? (tp / catDetections.length) * 100
+            : (catGroundTruth.length > 0 ? 0 : null);
+        const f1 = (precision !== null && recall !== null && (precision + recall) > 0)
+            ? (2 * precision * recall) / (precision + recall)
+            : (precision !== null && recall !== null ? 0 : null);
         breakdown[cat] = {
             category: cat,
             truePositives: tp,
             falsePositives: fp,
             falseNegatives: fn,
-            recall: Math.round(recall * 10) / 10,
-            precision: Math.round(precision * 10) / 10,
-            f1Score: Math.round(f1 * 10) / 10
+            recall: recall !== null ? Math.round(recall * 10) / 10 : null,
+            precision: precision !== null ? Math.round(precision * 10) / 10 : null,
+            f1Score: f1 !== null ? Math.round(f1 * 10) / 10 : null
         };
     }
     const aggregateRecall = (totalTp + totalFn) > 0 ? (totalTp / (totalTp + totalFn)) * 100 : 100;

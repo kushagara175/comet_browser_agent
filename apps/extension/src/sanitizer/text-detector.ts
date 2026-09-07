@@ -76,6 +76,7 @@ export function detectTextSensitiveRegions(
 
             // Small documented safety padding: 2px CSS padding for font ascenders/descenders/anti-aliasing
             const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
+            if (screenshotBox.width <= 0 || screenshotBox.height <= 0) continue;
 
             unmergedRegions.push({
               id: `text_pii_${node.id}_${i}_${rIdx}`,
@@ -99,16 +100,17 @@ export function detectTextSensitiveRegions(
           };
 
           const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
-
-          unmergedRegions.push({
-            id: `text_pii_${node.id}_${i}_fallback`,
-            category: rangeMatch.category,
-            viewportBox,
-            screenshotBox,
-            detectorSource: 'text_pii_regex',
-            method: 'opaque_mask',
-            label: rangeMatch.category.toUpperCase()
-          });
+          if (screenshotBox.width > 0 && screenshotBox.height > 0) {
+            unmergedRegions.push({
+              id: `text_pii_${node.id}_${i}_fallback`,
+              category: rangeMatch.category,
+              viewportBox,
+              screenshotBox,
+              detectorSource: 'text_pii_regex',
+              method: 'opaque_mask',
+              label: rangeMatch.category.toUpperCase()
+            });
+          }
         }
       }
     } else {
@@ -126,16 +128,17 @@ export function detectTextSensitiveRegions(
           };
 
           const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
-
-          unmergedRegions.push({
-            id: `text_pii_${node.id}_${i}`,
-            category: match.category,
-            viewportBox,
-            screenshotBox,
-            detectorSource: 'text_pii_regex',
-            method: 'opaque_mask',
-            label: match.category.toUpperCase()
-          });
+          if (screenshotBox.width > 0 && screenshotBox.height > 0) {
+            unmergedRegions.push({
+              id: `text_pii_${node.id}_${i}`,
+              category: match.category,
+              viewportBox,
+              screenshotBox,
+              detectorSource: 'text_pii_regex',
+              method: 'opaque_mask',
+              label: match.category.toUpperCase()
+            });
+          }
         }
       }
     }
