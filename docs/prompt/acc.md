@@ -1116,7 +1116,7 @@ When implementation and validation are complete, return:
    - exact commands,
    - exit codes,
    - pass/fail counts.
-
+,
 6. Real Chrome results:
    - command,
    - expected target,

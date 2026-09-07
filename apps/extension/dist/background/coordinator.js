@@ -276,6 +276,80 @@ export class RunCoordinator {
                 };
             }
         }
+        // 4. Local resolution for direct typing/chatbox directives (e.g. "type in the chatbox hi and sent")
+        const isExplicitTypeGoal = /^(?:(?:please|kindly)\s+)?(?:type|enter|write)\s+/i.test(trimmedGoal) ||
+            Boolean(this.currentTaskContract?.structuredIntent?.submitAfter) ||
+            this.currentTaskContract?.structuredIntent?.targetPhrase === 'chatbox';
+        if (isExplicitTypeGoal &&
+            step === 1 &&
+            this.currentTaskContract?.structuredIntent?.intent === 'type' &&
+            this.currentTaskContract.structuredIntent.requestedValue) {
+            const intent = this.currentTaskContract.structuredIntent;
+            const grounding = groundTargetCandidates(sanitized.elements, intent);
+            const target = (grounding.bestCandidate && (grounding.status === 'unambiguous_match' || grounding.bestCandidate.score >= 50))
+                ? grounding.bestCandidate.element
+                : sanitized.elements.find(el => el.actionCapabilities.includes('type') && !el.state.includes('disabled'));
+            if (target) {
+                return {
+                    actionId: `act_local_type_${step}_${Date.now()}`,
+                    kind: 'type',
+                    targetLocalId: target.localId,
+                    textToType: intent.requestedValue,
+                    confidence: 0.95,
+                    risk: 'safe',
+                    rationale: `Locally resolved typing "${intent.requestedValue}" into "${target.sanitizedName}"`,
+                    pressEnter: Boolean(intent.pressEnter)
+                };
+            }
+        }
+        // 5. Follow-up for explicit typing goals
+        if (isExplicitTypeGoal &&
+            step === 2 &&
+            this.actionHistory.length > 0 &&
+            this.actionHistory[0].kind === 'type' &&
+            this.currentTaskContract?.structuredIntent?.intent === 'type') {
+            const intent = this.currentTaskContract.structuredIntent;
+            if (intent.submitAfter) {
+                const sendBtn = sanitized.elements.find(e => {
+                    if (e.role !== 'button' || e.state.includes('disabled'))
+                        return false;
+                    const name = (e.sanitizedName || '').toLowerCase().trim();
+                    if (name.startsWith('sending') || name.includes('draft') || name.includes('accordion'))
+                        return false;
+                    return /\b(?:send|submit|post)\b/i.test(name) || name === '↑' || name.includes('arrow');
+                });
+                if (sendBtn) {
+                    return {
+                        actionId: `act_local_send_${step}_${Date.now()}`,
+                        kind: 'click',
+                        targetLocalId: sendBtn.localId,
+                        confidence: 0.95,
+                        risk: 'safe',
+                        userApproved: true,
+                        rationale: `Clicking send/submit button "${sendBtn.sanitizedName}" following message entry`
+                    };
+                }
+            }
+            return {
+                actionId: `act_local_finish_${step}_${Date.now()}`,
+                kind: 'finish',
+                confidence: 1.0,
+                risk: 'safe',
+                rationale: `Typed "${intent.requestedValue || ''}" into target field; directive completed`
+            };
+        }
+        if (isExplicitTypeGoal &&
+            step > 2 &&
+            this.actionHistory.length > 0 &&
+            this.currentTaskContract?.structuredIntent?.intent === 'type') {
+            return {
+                actionId: `act_local_finish_${step}_${Date.now()}`,
+                kind: 'finish',
+                confidence: 1.0,
+                risk: 'safe',
+                rationale: `Directive completed`
+            };
+        }
         return null;
     }
     verifyTerminalPostcondition(contract, sanitized, actionHistory) {

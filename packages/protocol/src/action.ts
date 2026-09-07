@@ -167,23 +167,46 @@ export function resolveTaskContract(goal: string): TaskContract {
     };
   }
 
-  // 3. Search / Find / Locate / Type / Fill / Enter / Set / Write / Filter
+  // 3. Search / Find / Locate / Type / Fill / Enter / Set / Write / Filter / Chatbox
   const isExplicitClickVerb = /^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+/i.test(g) && !/(?:type|fill|enter|write)\s+/i.test(g);
-  if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry)/i.test(g)) {
+  if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry|chatbox|chat\b)/i.test(g)) {
+    const hasSubmitSuffix = /\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i.test(g);
+    let cleanGoal = g.replace(/\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i, '').trim();
+    cleanGoal = cleanGoal.replace(/^(?:can\s+you|could\s+you|please|kindly|i\s+want\s+you\s+to)\s+/i, '').replace(/\?+$/, '').trim();
+
     let targetPhrase = 'search';
     let requestedValue = '';
 
-    // E.g. "type admin@example.com into email"
-    const intoMatch = g.match(/(?:type|fill|enter|write|set)\s+["']?([^"']+)["']?\s+(?:into|in)\s+(?:the\s+)?["']?([^"']+)["']?/i);
-    if (intoMatch) {
-      requestedValue = intoMatch[1].trim();
-      targetPhrase = intoMatch[2].trim();
+    // Pattern 1: type in/into (the) <target> <value> (e.g. "type in the chatbox hi", "type in search cats")
+    const inTargetMatch = cleanGoal.match(/^(?:type|fill|enter|write|set)\s+(?:in|into)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+(?:to\s+be\s+|as\s+)?(?:["']([^"']+)["']|([a-zA-Z0-9_@.-]+))$/i);
+
+    // Pattern 2: fill (the) <target> with <value> (e.g. "fill the search field with telemetry")
+    const fillWithMatch = cleanGoal.match(/^(?:fill|type|enter|write|set)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+with\s+["']?([^"']+)["']?$/i);
+
+    // Pattern 3: type <value> in/into (the) <target> (e.g. "type admin@example.com into email", "type hi into chat")
+    const valInTargetMatch = cleanGoal.match(/^(?:type|fill|enter|write|set)\s+["']?([^"']+)["']?\s+(?:into|in)\s+(?:the\s+)?["']?([^"']+)["']?$/i);
+
+    // Pattern 4: search for <value> (e.g. "search for test")
+    const searchForMatch = cleanGoal.match(/^(?:search|filter|find|locate)(?:\s+(?:requests\s+for|for|query|text))?\s+["']?([^"']+)["']?$/i);
+
+    if (inTargetMatch) {
+      targetPhrase = inTargetMatch[1].trim();
+      requestedValue = (inTargetMatch[2] || inTargetMatch[3]).trim();
+    } else if (fillWithMatch) {
+      targetPhrase = fillWithMatch[1].trim();
+      requestedValue = fillWithMatch[2].trim();
+    } else if (valInTargetMatch) {
+      requestedValue = valInTargetMatch[1].trim();
+      targetPhrase = valInTargetMatch[2].trim();
+    } else if (searchForMatch) {
+      targetPhrase = 'search';
+      requestedValue = searchForMatch[1].trim();
     } else {
-      // E.g. "fill the search field with telemetry"
-      const filterMatch = g.match(/(?:search|type|fill|enter|write|set|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query|the\s+search\s+field\s+with|the\s+field\s+with|the\s+input\s+with|this\s+field\s+with|this\s+input\s+with|the\s+input\s+to|in\s+this\s+field|into\s+this\s+field|in\s+the\s+field|with))?\s+["']?([^"']+)["']?/i);
+      const filterMatch = cleanGoal.match(/(?:search|type|fill|enter|write|set|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query|the\s+search\s+field\s+with|the\s+field\s+with|the\s+input\s+with|this\s+field\s+with|this\s+input\s+with|the\s+input\s+to|in\s+this\s+field|into\s+this\s+field|in\s+the\s+field|with))?\s+["']?([^"']+)["']?/i);
       requestedValue = filterMatch ? filterMatch[1].replace(/\?+$/, '').trim() : '';
-      if (g.includes('search')) targetPhrase = 'search';
-      else if (g.includes('filter')) targetPhrase = 'filter';
+      if (cleanGoal.includes('search')) targetPhrase = 'search';
+      else if (cleanGoal.includes('filter')) targetPhrase = 'filter';
+      else if (cleanGoal.includes('chat')) targetPhrase = 'chatbox';
     }
 
     return {
@@ -196,7 +219,9 @@ export function resolveTaskContract(goal: string): TaskContract {
         targetPhrase,
         roleHint: 'input',
         targetTokens: tokenizeSemanticText(targetPhrase),
-        requestedValue
+        requestedValue,
+        submitAfter: hasSubmitSuffix,
+        pressEnter: hasSubmitSuffix
       }
     };
   }
@@ -323,6 +348,7 @@ export interface ActionProposal {
   readonly selectOptionValue?: string;
   readonly scrollDirection?: 'up' | 'down' | 'top' | 'bottom';
   readonly userApproved?: boolean;
+  readonly pressEnter?: boolean;
 }
 
 export interface ActionExecutionResult {
@@ -352,7 +378,9 @@ const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
   'expectedPostcondition',
   'textToType',
   'selectOptionValue',
-  'scrollDirection'
+  'scrollDirection',
+  'userApproved',
+  'pressEnter'
 ]);
 
 const VALID_ACTION_KINDS = new Set([
@@ -613,6 +641,14 @@ export function validateActionProposal(
     }
   }
 
+  // 9b. userApproved & pressEnter validation
+  if (proposal.userApproved !== undefined && typeof proposal.userApproved !== 'boolean') {
+    return { isValid: false, errorMessage: 'Field "userApproved" must be a boolean' };
+  }
+  if (proposal.pressEnter !== undefined && typeof proposal.pressEnter !== 'boolean') {
+    return { isValid: false, errorMessage: 'Field "pressEnter" must be a boolean' };
+  }
+
   // 10. Context & Capability Validation against Sanitized Elements (if supplied)
   if (validElements) {
     if (proposal.targetLocalId) {
@@ -687,6 +723,11 @@ export function classifyActionRisk(
     ))
   ) {
     return 'blocked';
+  }
+
+  // Explicitly user-approved actions (prompt authorized or modal confirmed)
+  if (proposal.userApproved) {
+    return 'safe';
   }
 
   // Protected actions requiring human confirmation

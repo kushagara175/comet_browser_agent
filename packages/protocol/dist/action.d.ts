@@ -60,6 +60,7 @@ export interface ActionProposal {
     readonly selectOptionValue?: string;
     readonly scrollDirection?: 'up' | 'down' | 'top' | 'bottom';
     readonly userApproved?: boolean;
+    readonly pressEnter?: boolean;
 }
 export interface ActionExecutionResult {
     readonly actionId: string;

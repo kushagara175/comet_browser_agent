@@ -67,6 +67,14 @@ export function isFuzzyTokenMatch(a, b) {
     const dist = levenshteinDistance(a, b);
     return dist <= (Math.max(lenA, lenB) >= 6 ? 2 : 1);
 }
+export const SEMANTIC_SYNONYMS = {
+    chatbox: ['chat', 'message', 'ask', 'follow-up', 'followup', 'prompt', 'reply', 'question', 'input', 'textbox', 'searchbox', 'textarea', 'conversation', 'say'],
+    chat: ['chatbox', 'message', 'ask', 'follow-up', 'followup', 'prompt', 'reply', 'question', 'input', 'textbox', 'conversation', 'say'],
+    message: ['chat', 'chatbox', 'ask', 'reply', 'say', 'text', 'input', 'prompt'],
+    searchbox: ['search', 'find', 'query', 'filter', 'input', 'textbox'],
+    search: ['searchbox', 'find', 'query', 'filter', 'lookup', 'input'],
+    input: ['chatbox', 'searchbox', 'field', 'box', 'textbox', 'textarea', 'prompt', 'ask']
+};
 const GENERIC_CONTROL_NAMES = new Set([
     'button',
     'link',
@@ -148,13 +156,20 @@ export function scoreCandidate(element, intent, activeDialogVisible = false) {
         const matchedTokens = [];
         const fuzzyMatchedTokens = [];
         for (const t of targetTokens) {
+            const synonyms = SEMANTIC_SYNONYMS[t] || [];
             if (elTokens.includes(t)) {
                 matchedTokens.push(t);
             }
             else {
-                const fuzzy = elTokens.find((elT) => isFuzzyTokenMatch(t, elT));
-                if (fuzzy) {
-                    fuzzyMatchedTokens.push({ target: t, matched: fuzzy });
+                const synMatch = synonyms.find((s) => elTokens.includes(s) || elTokens.some((elT) => isFuzzyTokenMatch(s, elT)));
+                if (synMatch) {
+                    fuzzyMatchedTokens.push({ target: t, matched: synMatch });
+                }
+                else {
+                    const fuzzy = elTokens.find((elT) => isFuzzyTokenMatch(t, elT));
+                    if (fuzzy) {
+                        fuzzyMatchedTokens.push({ target: t, matched: fuzzy });
+                    }
                 }
             }
         }

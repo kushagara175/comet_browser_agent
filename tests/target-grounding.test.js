@@ -776,3 +776,218 @@ test('Grounding 16: Single-click directive completes after 1 step without enteri
   assert.equal(stepsExecuted, 1, 'Direct single click must finish in 1 step without redundant Step 2 perception cycles');
 });
 
+// ----------------------------------------------------------------------------
+// Test 17: Natural Typing Intent Parsing & Chatbox Semantic Grounding
+// ----------------------------------------------------------------------------
+test('Grounding 17: "type in the chatbox hi and sent" resolves to chat input and ignores misleading approval buttons', () => {
+  const contract = resolveTaskContract('type in the chatbox hi and sent');
+  assert.equal(contract.supported, true);
+  assert.equal(contract.structuredIntent.intent, 'type');
+  assert.equal(contract.structuredIntent.targetPhrase, 'chatbox');
+  assert.equal(contract.structuredIntent.requestedValue, 'hi');
+  assert.equal(contract.structuredIntent.submitAfter, true);
+  assert.equal(contract.structuredIntent.pressEnter, true);
+
+  const elements = [
+    {
+      localId: 'el_draft_accordion',
+      role: 'button',
+      sanitizedName: 'Sending approved draft',
+      coarseBounds: [0.2, 0.4, 0.4, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    },
+    {
+      localId: 'el_chatbox_input',
+      role: 'input',
+      sanitizedName: 'Ask a follow-up...',
+      coarseBounds: [0.2, 0.85, 0.5, 0.06],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['type', 'click']
+    },
+    {
+      localId: 'el_send_btn',
+      role: 'button',
+      sanitizedName: 'Send (↑)',
+      coarseBounds: [0.72, 0.85, 0.05, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    }
+  ];
+
+  const grounding = groundTargetCandidates(elements, contract.structuredIntent);
+  assert.ok(grounding.bestCandidate);
+  assert.equal(grounding.bestCandidate.element.localId, 'el_chatbox_input');
+  assert.ok(grounding.bestCandidate.score >= 50);
+});
+
+// ----------------------------------------------------------------------------
+// Test 18: MockReasoningEngine Offline Fallback Handles Chat Typing Safely
+// ----------------------------------------------------------------------------
+test('Grounding 18: MockReasoningEngine proposes typing into chatbox and ignores "Sending approved draft"', async () => {
+  const { MockReasoningEngine } = await import('../apps/server/dist/engines/mock-engine.js');
+  const engine = new MockReasoningEngine();
+
+  const payload = {
+    _brand: 'SanitizedNetworkPayload_Verified',
+    protocolVersion: '1.0',
+    runId: 'run_chat',
+    captureId: 'cap_chat_1',
+    goal: 'type in the chatbox hi and sent',
+    sanitizedScreenshotDataUrl: 'data:image/png;base64,mock',
+    elements: [
+      {
+        localId: 'el_47',
+        role: 'button',
+        sanitizedName: 'Sending approved draft',
+        coarseBounds: [0.2, 0.4, 0.4, 0.05],
+        state: ['visible', 'enabled'],
+        actionCapabilities: ['click']
+      },
+      {
+        localId: 'el_chat',
+        role: 'input',
+        sanitizedName: 'Ask a follow-up...',
+        coarseBounds: [0.2, 0.85, 0.5, 0.06],
+        state: ['visible', 'enabled'],
+        actionCapabilities: ['type', 'click']
+      },
+      {
+        localId: 'el_send',
+        role: 'button',
+        sanitizedName: 'Send',
+        coarseBounds: [0.72, 0.85, 0.05, 0.05],
+        state: ['visible', 'enabled'],
+        actionCapabilities: ['click']
+      }
+    ],
+    pageState: { title: 'Dashboard', viewport: [1280, 720] }
+  };
+
+  const proposal = await engine.decideNextAction(payload);
+  assert.equal(proposal.kind, 'type');
+  assert.equal(proposal.targetLocalId, 'el_chat');
+  assert.equal(proposal.textToType, 'hi');
+  assert.notEqual(proposal.targetLocalId, 'el_47');
+});
+
+// ----------------------------------------------------------------------------
+// Test 19: Coordinator Executes Chatbox Typing & Send End-to-End
+// ----------------------------------------------------------------------------
+test('Grounding 19: Coordinator resolves and executes "type in the chatbox hi and sent"', async () => {
+  const executedActions = [];
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 1, url: 'https://allel.co/dashboard', title: 'Dashboard' };
+    },
+    async sendMessageToTab(tabId, message) {
+      if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
+        return {
+          success: true,
+          captureId: message.captureId || 'cap_chat',
+          snapshot: {
+            elements: [
+              {
+                localId: 'el_47',
+                role: 'button',
+                sanitizedName: 'Sending approved draft',
+                coarseBounds: [0.2, 0.4, 0.4, 0.05],
+                state: ['visible', 'enabled'],
+                actionCapabilities: ['click']
+              },
+              {
+                localId: 'el_chat',
+                role: 'input',
+                sanitizedName: 'Ask a follow-up...',
+                coarseBounds: [0.2, 0.85, 0.5, 0.06],
+                state: ['visible', 'enabled'],
+                actionCapabilities: ['type', 'click']
+              },
+              {
+                localId: 'el_send',
+                role: 'button',
+                sanitizedName: 'Send',
+                coarseBounds: [0.72, 0.85, 0.05, 0.05],
+                state: ['visible', 'enabled'],
+                actionCapabilities: ['click']
+              }
+            ]
+          }
+        };
+      }
+      if (message.type === 'EXECUTE_ACTION') {
+        executedActions.push(message.proposal);
+        return {
+          success: true,
+          actionId: message.proposal.actionId,
+          semanticOutcomeVerified: true,
+          message: `Executed ${message.proposal.kind}`
+        };
+      }
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_chat',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements: [
+          {
+            localId: 'el_47',
+            role: 'button',
+            sanitizedName: 'Sending approved draft',
+            coarseBounds: [0.2, 0.4, 0.4, 0.05],
+            state: ['visible', 'enabled'],
+            actionCapabilities: ['click']
+          },
+          {
+            localId: 'el_chat',
+            role: 'input',
+            sanitizedName: 'Ask a follow-up...',
+            coarseBounds: [0.2, 0.85, 0.5, 0.06],
+            state: ['visible', 'enabled'],
+            actionCapabilities: ['type', 'click']
+          },
+          {
+            localId: 'el_send',
+            role: 'button',
+            sanitizedName: 'Send',
+            coarseBounds: [0.72, 0.85, 0.05, 0.05],
+            state: ['visible', 'enabled'],
+            actionCapabilities: ['click']
+          }
+        ],
+        pageState: { title: 'Dashboard', viewport: [1280, 720] },
+        maskCount: 0,
+        payloadDigestSha256: 'sha256_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  const httpClient = {
+    async requestReasoningAction() {
+      throw new Error('Should resolve locally without network requirement');
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, httpClient, undefined, { defaultMaxSteps: 5 });
+  const result = await coordinator.startRun('type in the chatbox hi and sent');
+
+  assert.equal(result.success, true);
+  assert.equal(result.state, 'complete');
+  assert.ok(executedActions.length >= 2, 'Should execute type then send');
+  assert.equal(executedActions[0].kind, 'type');
+  assert.equal(executedActions[0].targetLocalId, 'el_chat');
+  assert.equal(executedActions[0].textToType, 'hi');
+  assert.equal(executedActions[1].kind, 'click');
+  assert.equal(executedActions[1].targetLocalId, 'el_send');
+});
+
+

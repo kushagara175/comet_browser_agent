@@ -137,6 +137,42 @@ export class MockReasoningEngine {
                 };
             }
         }
+        // Structured typing grounding if intent is type
+        if (intent && intent.intent === 'type') {
+            const grounding = groundTargetCandidates(elements, intent);
+            const textToType = goal.includes('clearance')
+                ? 'Security Clearance'
+                : (intent.requestedValue || '');
+            if (grounding.bestCandidate && (grounding.status === 'unambiguous_match' || grounding.bestCandidate.score >= 50)) {
+                const target = grounding.bestCandidate.element;
+                return {
+                    actionId: `act_${Date.now()}`,
+                    kind: 'type',
+                    targetLocalId: target.localId,
+                    textToType,
+                    confidence: 0.95,
+                    risk: 'safe',
+                    rationale: `Typing "${textToType}" into "${target.sanitizedName}" (${grounding.bestCandidate.rationale})`,
+                    pressEnter: Boolean(intent.pressEnter),
+                    expectedState: 'Text entered into input field'
+                };
+            }
+            // Fallback: find any editable input or textarea if none matched by name
+            const fallbackInput = elements.find((el) => el.actionCapabilities.includes('type') && !el.state.includes('disabled'));
+            if (fallbackInput) {
+                return {
+                    actionId: `act_${Date.now()}`,
+                    kind: 'type',
+                    targetLocalId: fallbackInput.localId,
+                    textToType,
+                    confidence: 0.90,
+                    risk: 'safe',
+                    rationale: `Typing "${textToType}" into active field "${fallbackInput.sanitizedName}"`,
+                    pressEnter: Boolean(intent.pressEnter),
+                    expectedState: 'Text entered into input field'
+                };
+            }
+        }
         // 2. Ambiguity check: repeated ambiguous buttons (e.g. "Click Inspect")
         const inspectButtons = elements.filter((el) => el.role === 'button' && el.sanitizedName.toLowerCase() === 'inspect');
         if (goal.includes('inspect') && inspectButtons.length > 1) {
@@ -150,8 +186,10 @@ export class MockReasoningEngine {
                 expectedState: 'Confirmation requested'
             };
         }
-        // 3. Active modal / drawer with submit/approval button
-        if (submitOrApproveBtn) {
+        // 3. Active modal / drawer with submit/approval button (only if goal is an approval/submit goal)
+        const isApprovalOrSubmitGoal = /(?:approve|submit|confirm|authorize|pay|order|release|clearance)/i.test(goal) ||
+            Boolean(intent?.isProtected);
+        if (submitOrApproveBtn && isApprovalOrSubmitGoal) {
             if (hasVisibleDialog && isInspectionGoal) {
                 return {
                     actionId: `act_${Date.now()}`,

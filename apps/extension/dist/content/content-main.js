@@ -1152,6 +1152,11 @@
                 key: "Process"
               })
             );
+            if (proposal.pressEnter) {
+              targetEl.dispatchEvent(new KeyboardEventCtor("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+              targetEl.dispatchEvent(new KeyboardEventCtor("keypress", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+              targetEl.dispatchEvent(new KeyboardEventCtor("keyup", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+            }
           }
           return {
             actionId: proposal.actionId,

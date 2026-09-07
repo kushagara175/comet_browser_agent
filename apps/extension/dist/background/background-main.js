@@ -14087,6 +14087,14 @@ function isFuzzyTokenMatch(a, b) {
   const dist = levenshteinDistance(a, b);
   return dist <= (Math.max(lenA, lenB) >= 6 ? 2 : 1);
 }
+var SEMANTIC_SYNONYMS = {
+  chatbox: ["chat", "message", "ask", "follow-up", "followup", "prompt", "reply", "question", "input", "textbox", "searchbox", "textarea", "conversation", "say"],
+  chat: ["chatbox", "message", "ask", "follow-up", "followup", "prompt", "reply", "question", "input", "textbox", "conversation", "say"],
+  message: ["chat", "chatbox", "ask", "reply", "say", "text", "input", "prompt"],
+  searchbox: ["search", "find", "query", "filter", "input", "textbox"],
+  search: ["searchbox", "find", "query", "filter", "lookup", "input"],
+  input: ["chatbox", "searchbox", "field", "box", "textbox", "textarea", "prompt", "ask"]
+};
 var GENERIC_CONTROL_NAMES = /* @__PURE__ */ new Set([
   "button",
   "link",
@@ -14155,12 +14163,18 @@ function scoreCandidate(element, intent, activeDialogVisible = false) {
     const matchedTokens = [];
     const fuzzyMatchedTokens = [];
     for (const t of targetTokens) {
+      const synonyms = SEMANTIC_SYNONYMS[t] || [];
       if (elTokens.includes(t)) {
         matchedTokens.push(t);
       } else {
-        const fuzzy = elTokens.find((elT) => isFuzzyTokenMatch(t, elT));
-        if (fuzzy) {
-          fuzzyMatchedTokens.push({ target: t, matched: fuzzy });
+        const synMatch = synonyms.find((s) => elTokens.includes(s) || elTokens.some((elT) => isFuzzyTokenMatch(s, elT)));
+        if (synMatch) {
+          fuzzyMatchedTokens.push({ target: t, matched: synMatch });
+        } else {
+          const fuzzy = elTokens.find((elT) => isFuzzyTokenMatch(t, elT));
+          if (fuzzy) {
+            fuzzyMatchedTokens.push({ target: t, matched: fuzzy });
+          }
         }
       }
     }
@@ -14402,20 +14416,37 @@ function resolveTaskContract(goal) {
     };
   }
   const isExplicitClickVerb = /^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+/i.test(g) && !/(?:type|fill|enter|write)\s+/i.test(g);
-  if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry)/i.test(g)) {
+  if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry|chatbox|chat\b)/i.test(g)) {
+    const hasSubmitSuffix = /\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i.test(g);
+    let cleanGoal = g.replace(/\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i, "").trim();
+    cleanGoal = cleanGoal.replace(/^(?:can\s+you|could\s+you|please|kindly|i\s+want\s+you\s+to)\s+/i, "").replace(/\?+$/, "").trim();
     let targetPhrase2 = "search";
     let requestedValue = "";
-    const intoMatch = g.match(/(?:type|fill|enter|write|set)\s+["']?([^"']+)["']?\s+(?:into|in)\s+(?:the\s+)?["']?([^"']+)["']?/i);
-    if (intoMatch) {
-      requestedValue = intoMatch[1].trim();
-      targetPhrase2 = intoMatch[2].trim();
+    const inTargetMatch = cleanGoal.match(/^(?:type|fill|enter|write|set)\s+(?:in|into)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+(?:to\s+be\s+|as\s+)?(?:["']([^"']+)["']|([a-zA-Z0-9_@.-]+))$/i);
+    const fillWithMatch = cleanGoal.match(/^(?:fill|type|enter|write|set)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+with\s+["']?([^"']+)["']?$/i);
+    const valInTargetMatch = cleanGoal.match(/^(?:type|fill|enter|write|set)\s+["']?([^"']+)["']?\s+(?:into|in)\s+(?:the\s+)?["']?([^"']+)["']?$/i);
+    const searchForMatch = cleanGoal.match(/^(?:search|filter|find|locate)(?:\s+(?:requests\s+for|for|query|text))?\s+["']?([^"']+)["']?$/i);
+    if (inTargetMatch) {
+      targetPhrase2 = inTargetMatch[1].trim();
+      requestedValue = (inTargetMatch[2] || inTargetMatch[3]).trim();
+    } else if (fillWithMatch) {
+      targetPhrase2 = fillWithMatch[1].trim();
+      requestedValue = fillWithMatch[2].trim();
+    } else if (valInTargetMatch) {
+      requestedValue = valInTargetMatch[1].trim();
+      targetPhrase2 = valInTargetMatch[2].trim();
+    } else if (searchForMatch) {
+      targetPhrase2 = "search";
+      requestedValue = searchForMatch[1].trim();
     } else {
-      const filterMatch = g.match(/(?:search|type|fill|enter|write|set|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query|the\s+search\s+field\s+with|the\s+field\s+with|the\s+input\s+with|this\s+field\s+with|this\s+input\s+with|the\s+input\s+to|in\s+this\s+field|into\s+this\s+field|in\s+the\s+field|with))?\s+["']?([^"']+)["']?/i);
+      const filterMatch = cleanGoal.match(/(?:search|type|fill|enter|write|set|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query|the\s+search\s+field\s+with|the\s+field\s+with|the\s+input\s+with|this\s+field\s+with|this\s+input\s+with|the\s+input\s+to|in\s+this\s+field|into\s+this\s+field|in\s+the\s+field|with))?\s+["']?([^"']+)["']?/i);
       requestedValue = filterMatch ? filterMatch[1].replace(/\?+$/, "").trim() : "";
-      if (g.includes("search"))
+      if (cleanGoal.includes("search"))
         targetPhrase2 = "search";
-      else if (g.includes("filter"))
+      else if (cleanGoal.includes("filter"))
         targetPhrase2 = "filter";
+      else if (cleanGoal.includes("chat"))
+        targetPhrase2 = "chatbox";
     }
     return {
       supported: true,
@@ -14427,7 +14458,9 @@ function resolveTaskContract(goal) {
         targetPhrase: targetPhrase2,
         roleHint: "input",
         targetTokens: tokenizeSemanticText(targetPhrase2),
-        requestedValue
+        requestedValue,
+        submitAfter: hasSubmitSuffix,
+        pressEnter: hasSubmitSuffix
       }
     };
   }
@@ -14537,7 +14570,9 @@ var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "expectedPostcondition",
   "textToType",
   "selectOptionValue",
-  "scrollDirection"
+  "scrollDirection",
+  "userApproved",
+  "pressEnter"
 ]);
 var VALID_ACTION_KINDS = /* @__PURE__ */ new Set([
   "observe",
@@ -14745,6 +14780,12 @@ function validateActionProposal(proposal, validElements) {
       return { isValid: false, errorMessage: "selectOptionValue contains prohibited script patterns" };
     }
   }
+  if (proposal.userApproved !== void 0 && typeof proposal.userApproved !== "boolean") {
+    return { isValid: false, errorMessage: 'Field "userApproved" must be a boolean' };
+  }
+  if (proposal.pressEnter !== void 0 && typeof proposal.pressEnter !== "boolean") {
+    return { isValid: false, errorMessage: 'Field "pressEnter" must be a boolean' };
+  }
   if (validElements) {
     if (proposal.targetLocalId) {
       const targetElement = validElements.find((e) => e.localId === proposal.targetLocalId);
@@ -14787,6 +14828,9 @@ function classifyActionRisk(proposal, elementName) {
   const name2 = (elementName || "").toLowerCase();
   if (name2.includes("password") || name2.includes("otp") || name2.includes("captcha") || name2.includes("cvv") || name2.includes("pin") || kind === "type" && (name2.includes("payment") || name2.includes("card") || name2.includes("token") || name2.includes("secret") || name2.includes("sensitive") || name2.includes("national id") || name2.includes("aadhaar") || name2.includes("pan") || name2.includes("ssn"))) {
     return "blocked";
+  }
+  if (proposal.userApproved) {
+    return "safe";
   }
   if (kind === "request_user_confirmation" || name2.includes("submit") || name2.includes("send") || name2.includes("publish") || name2.includes("delete") || name2.includes("remove") || name2.includes("pay") || name2.includes("purchase") || name2.includes("buy") || name2.includes("authorize") || name2.includes("sign") || name2.includes("transfer") || name2.includes("confirm order")) {
     return "protected";
@@ -17605,6 +17649,62 @@ var RunCoordinator = class {
           expectedPostcondition: { kind: "visibility_changed", targetLocalId: candidate.localId, state: "hidden" }
         };
       }
+    }
+    const isExplicitTypeGoal = /^(?:(?:please|kindly)\s+)?(?:type|enter|write)\s+/i.test(trimmedGoal) || Boolean(this.currentTaskContract?.structuredIntent?.submitAfter) || this.currentTaskContract?.structuredIntent?.targetPhrase === "chatbox";
+    if (isExplicitTypeGoal && step === 1 && this.currentTaskContract?.structuredIntent?.intent === "type" && this.currentTaskContract.structuredIntent.requestedValue) {
+      const intent = this.currentTaskContract.structuredIntent;
+      const grounding = groundTargetCandidates(sanitized.elements, intent);
+      const target = grounding.bestCandidate && (grounding.status === "unambiguous_match" || grounding.bestCandidate.score >= 50) ? grounding.bestCandidate.element : sanitized.elements.find((el2) => el2.actionCapabilities.includes("type") && !el2.state.includes("disabled"));
+      if (target) {
+        return {
+          actionId: `act_local_type_${step}_${Date.now()}`,
+          kind: "type",
+          targetLocalId: target.localId,
+          textToType: intent.requestedValue,
+          confidence: 0.95,
+          risk: "safe",
+          rationale: `Locally resolved typing "${intent.requestedValue}" into "${target.sanitizedName}"`,
+          pressEnter: Boolean(intent.pressEnter)
+        };
+      }
+    }
+    if (isExplicitTypeGoal && step === 2 && this.actionHistory.length > 0 && this.actionHistory[0].kind === "type" && this.currentTaskContract?.structuredIntent?.intent === "type") {
+      const intent = this.currentTaskContract.structuredIntent;
+      if (intent.submitAfter) {
+        const sendBtn = sanitized.elements.find((e) => {
+          if (e.role !== "button" || e.state.includes("disabled")) return false;
+          const name2 = (e.sanitizedName || "").toLowerCase().trim();
+          if (name2.startsWith("sending") || name2.includes("draft") || name2.includes("accordion")) return false;
+          return /\b(?:send|submit|post)\b/i.test(name2) || name2 === "\u2191" || name2.includes("arrow");
+        });
+        if (sendBtn) {
+          return {
+            actionId: `act_local_send_${step}_${Date.now()}`,
+            kind: "click",
+            targetLocalId: sendBtn.localId,
+            confidence: 0.95,
+            risk: "safe",
+            userApproved: true,
+            rationale: `Clicking send/submit button "${sendBtn.sanitizedName}" following message entry`
+          };
+        }
+      }
+      return {
+        actionId: `act_local_finish_${step}_${Date.now()}`,
+        kind: "finish",
+        confidence: 1,
+        risk: "safe",
+        rationale: `Typed "${intent.requestedValue || ""}" into target field; directive completed`
+      };
+    }
+    if (isExplicitTypeGoal && step > 2 && this.actionHistory.length > 0 && this.currentTaskContract?.structuredIntent?.intent === "type") {
+      return {
+        actionId: `act_local_finish_${step}_${Date.now()}`,
+        kind: "finish",
+        confidence: 1,
+        risk: "safe",
+        rationale: `Directive completed`
+      };
     }
     return null;
   }

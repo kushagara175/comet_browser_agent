@@ -14,6 +14,8 @@ export interface StructuredTaskIntent {
     readonly requestedValue?: string;
     readonly requestedOption?: string;
     readonly isProtected?: boolean;
+    readonly submitAfter?: boolean;
+    readonly pressEnter?: boolean;
 }
 export interface ScoredCandidate {
     readonly element: SanitizedElement;
@@ -44,6 +46,7 @@ export declare function levenshteinDistance(a: string, b: string): number;
  * or prefix abbreviations (e.g. "pass" for "password").
  */
 export declare function isFuzzyTokenMatch(a: string, b: string): boolean;
+export declare const SEMANTIC_SYNONYMS: Record<string, string[]>;
 /**
  * Evaluates and scores an individual SanitizedElement against a StructuredTaskIntent.
  */
