@@ -8,12 +8,20 @@ import { SemanticStateVerifier } from './verifier.js';
 import { OverlayRenderer } from './overlay-renderer.js';
 import { ActionProposal } from '@privapilot/protocol';
 
+import { DomMutationTracker } from './mutation-debouncer.js';
+import { computeDomHash } from '../sanitizer/perception-cache.js';
+
 declare const chrome: any;
 
 const extractor = new ElementExtractor();
 const overlay = new OverlayRenderer();
+const mutationTracker = new DomMutationTracker();
 let currentCaptureId: string | null = null;
 let currentElementMap = new Map<string, HTMLElement>();
+
+if (typeof document !== 'undefined') {
+  mutationTracker.start();
+}
 
 // Listen for messages from background coordinator
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
@@ -32,10 +40,23 @@ export async function handleMessage(message: any): Promise<any> {
     currentCaptureId = captureId;
     currentElementMap = extracted.elementMap;
 
+    const domHash = computeDomHash(extracted.snapshot.interactiveElements);
+    const viewportHash = DomMutationTracker.computeViewportHash({
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+      scrollX: window.scrollX || 0,
+      scrollY: window.scrollY || 0,
+      devicePixelRatio: window.devicePixelRatio || 1
+    });
+
+    mutationTracker.resetMutationFlag();
+
     return {
       success: true,
       captureId,
       snapshot: extracted.snapshot,
+      domHash,
+      viewportHash,
       viewport: {
         viewportWidth: window.innerWidth,
         viewportHeight: window.innerHeight,

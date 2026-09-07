@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-02T06:51:47.385Z",
+  "timestamp": "2026-09-07T12:22:27.161Z",
   "harness": "extension-e2e",
   "measured": true,
   "metadata": {
@@ -7,7 +7,7 @@
     "environment": "win32 x64 (Node v22.19.0)",
     "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "extensionId": "khhldhlmildnjbljlbphafnflheapiec",
-    "gitSha": "22b7be8",
+    "gitSha": "71cb5f7",
     "model": {
       "name": "qwen/qwen2.5-vl-72b-instruct",
       "provider": "vlm-cloud",
@@ -15,70 +15,50 @@
     }
   },
   "goal": "Open the safe preview for the pending request",
-  "success": true,
-  "state": "complete",
-  "error": null,
+  "success": false,
+  "state": "failed-safe",
+  "error": "Action blocked by client safety policy: Fallback reasoning proposal failed validation",
   "proposal": {
-    "actionId": "act_1",
-    "kind": "finish",
-    "confidence": 0.95,
-    "risk": "safe",
-    "rationale": "The 'Open Safe Preview' button has already been clicked, and the preview drawer is open, indicating that the goal has been achieved.",
-    "expectedState": "The safe preview for the pending request is displayed."
+    "actionId": "act_error_1788783747116",
+    "kind": "blocked",
+    "confidence": 0,
+    "risk": "blocked",
+    "rationale": "Fallback reasoning proposal failed validation"
   },
   "maskCount": 5,
-  "elementsTransmitted": 10,
-  "sanitizedScreenshotBytes": 103397,
-  "telemetry": {
-    "runId": "run_1788331900761",
-    "t0_start": 1788331900761,
-    "t1_captureComplete": 1788331901901,
-    "t2_detectionComplete": 1788331901901,
-    "t3_sanitizationValidated": 1788331901979,
-    "t4_reasoningReceived": 1788331907369,
-    "t5_actionValidated": 1788331907369,
-    "t6_actionExecuted": 1788331907369,
-    "t7_stateVerified": 1788331907369,
-    "totalLatencyMs": 6608,
-    "clientLatencyMs": 1213,
-    "serverLatencyMs": 5394,
-    "stepCount": 10,
-    "stepsCompleted": 2,
-    "decisionSource": "remote",
-    "stepsDecidedLocally": 1,
-    "stepsEscalated": 1,
-    "bytesTransmittedTotal": 140444
-  },
-  "wallClockMs": 7984,
+  "elementsTransmitted": 14,
+  "sanitizedScreenshotBytes": 82754,
+  "telemetry": null,
+  "wallClockMs": 13151,
   "decisionTrail": [
     {
       "actionKind": "click",
       "bytesTransmitted": 0,
       "confidence": 0.95,
       "decisionSource": "local",
-      "id": "dec_1788331901784_oijfm",
+      "id": "dec_1788783743204_alsu9",
       "rule": "unambiguous-label-match",
-      "runId": "run_1788331901778",
+      "runId": "run_1788783743194",
       "step": 1,
       "targetLocalId": "el_6",
-      "timestamp": 1788331901784
+      "timestamp": 1788783743204
     },
     {
-      "actionKind": "finish",
-      "bytesTransmitted": 140444,
-      "confidence": 0.95,
+      "actionKind": "blocked",
+      "bytesTransmitted": 116072,
+      "confidence": 0,
       "decisionSource": "remote",
       "escalationReason": "no local rule applies with sufficient confidence",
-      "id": "dec_1788331907369_waqiw",
-      "runId": "run_1788331901977",
+      "id": "dec_1788783747119_1n5to",
+      "runId": "run_1788783746142",
       "step": 2,
-      "timestamp": 1788331907369
+      "timestamp": 1788783747119
     }
   ],
   "transmission": {
     "stepsDecidedLocally": 1,
     "stepsEscalated": 1,
-    "bytesTransmitted": 140444,
+    "bytesTransmitted": 116072,
     "zeroTransmissionStep": true
   }
 }

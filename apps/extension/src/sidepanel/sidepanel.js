@@ -164,6 +164,204 @@ export function mapVisionProviderToBadge(provider) {
   }
 }
 
+/**
+ * Draws the 30-frame latency sparkline with the 500ms ceiling line into an SVG polyline element.
+ */
+export function drawLatencySparkline(latencies, polylineElement = null) {
+  const target = polylineElement || (typeof document !== 'undefined' ? document.getElementById('sparklinePolyline') : null);
+  if (!target) return;
+  if (!latencies || latencies.length === 0) {
+    if (typeof target.setAttribute === 'function') target.setAttribute('points', '');
+    return;
+  }
+  const maxMs = 666.6; // 500ms aligns to y=10 on a 40px height canvas
+  const width = 300;
+  const bottom = 36;
+  const count = latencies.length;
+  const step = count > 1 ? width / (count - 1) : width;
+
+  const points = latencies.map((lat, idx) => {
+    const x = Math.round(idx * step);
+    const clampedLat = Math.min(maxMs, Math.max(0, lat));
+    const y = Math.round(bottom - (clampedLat / maxMs) * (bottom - 4));
+    return `${x},${y}`;
+  }).join(' ');
+
+  if (typeof target.setAttribute === 'function') {
+    target.setAttribute('points', points);
+  }
+}
+
+/**
+ * Renders causal downgrade event history into the HUD log container.
+ */
+export function renderDowngradeEvents(events, containerElement = null) {
+  const target = containerElement || (typeof document !== 'undefined' ? document.getElementById('downgradeEventFeed') : null);
+  if (!target) return;
+  if (!events || events.length === 0) {
+    target.innerHTML = '<div class="downgrade-empty-hint">Nominal: No tier downgrade events triggered.</div>';
+    return;
+  }
+  target.innerHTML = '';
+  events.slice(-6).reverse().forEach(ev => {
+    const item = typeof document !== 'undefined' && typeof document.createElement === 'function'
+      ? document.createElement('div')
+      : { className: '', innerHTML: '' };
+    item.className = 'downgrade-item';
+    const date = new Date(ev.timestamp);
+    const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
+    item.innerHTML = `
+      <span class="downgrade-time">${timeStr}</span>
+      <span class="downgrade-tier">${escapeHtml(ev.fromTier)} &rarr; ${escapeHtml(ev.toTier)}</span>
+      <span class="downgrade-reason">${escapeHtml(ev.reason)}</span>
+    `;
+    if (typeof target.appendChild === 'function') {
+      target.appendChild(item);
+    }
+  });
+}
+
+/**
+ * Renders live ResourceGovernor telemetry directly into HUD DOM elements.
+ * Verifiable in tests and runtime — no synthetic metrics or disconnected parsers.
+ */
+export function renderResourceTelemetry(resources, domRefs = {}) {
+  if (!resources) return;
+
+  const budgetTierPill = domRefs.budgetTierPill !== undefined ? domRefs.budgetTierPill : (typeof document !== 'undefined' ? document.getElementById('budgetTierPill') : null);
+  const budgetTierText = domRefs.budgetTierText !== undefined ? domRefs.budgetTierText : (typeof document !== 'undefined' ? document.getElementById('budgetTierText') : null);
+  const budgetLatencyText = domRefs.budgetLatencyText !== undefined ? domRefs.budgetLatencyText : (typeof document !== 'undefined' ? document.getElementById('budgetLatencyText') : null);
+  const budgetLatencyPill = domRefs.budgetLatencyPill !== undefined ? domRefs.budgetLatencyPill : (typeof document !== 'undefined' ? document.getElementById('budgetLatencyPill') : null);
+  const budgetMemoryText = domRefs.budgetMemoryText !== undefined ? domRefs.budgetMemoryText : (typeof document !== 'undefined' ? document.getElementById('budgetMemoryText') : null);
+  const budgetMemoryPill = domRefs.budgetMemoryPill !== undefined ? domRefs.budgetMemoryPill : (typeof document !== 'undefined' ? document.getElementById('budgetMemoryPill') : null);
+  const budgetCacheText = domRefs.budgetCacheText !== undefined ? domRefs.budgetCacheText : (typeof document !== 'undefined' ? document.getElementById('budgetCacheText') : null);
+  const meterP95Latency = domRefs.meterP95Latency !== undefined ? domRefs.meterP95Latency : (typeof document !== 'undefined' ? document.getElementById('meterP95Latency') : null);
+  const meterLatencyBar = domRefs.meterLatencyBar !== undefined ? domRefs.meterLatencyBar : (typeof document !== 'undefined' ? document.getElementById('meterLatencyBar') : null);
+  const meterResidentMemory = domRefs.meterResidentMemory !== undefined ? domRefs.meterResidentMemory : (typeof document !== 'undefined' ? document.getElementById('meterResidentMemory') : null);
+  const meterMemoryBar = domRefs.meterMemoryBar !== undefined ? domRefs.meterMemoryBar : (typeof document !== 'undefined' ? document.getElementById('meterMemoryBar') : null);
+  const meterAccountingMethod = domRefs.meterAccountingMethod !== undefined ? domRefs.meterAccountingMethod : (typeof document !== 'undefined' ? document.getElementById('meterAccountingMethod') : null);
+  const meterCacheHitRate = domRefs.meterCacheHitRate !== undefined ? domRefs.meterCacheHitRate : (typeof document !== 'undefined' ? document.getElementById('meterCacheHitRate') : null);
+  const meterCacheCounts = domRefs.meterCacheCounts !== undefined ? domRefs.meterCacheCounts : (typeof document !== 'undefined' ? document.getElementById('meterCacheCounts') : null);
+  const meterCacheBar = domRefs.meterCacheBar !== undefined ? domRefs.meterCacheBar : (typeof document !== 'undefined' ? document.getElementById('meterCacheBar') : null);
+  const meterCaptureRate = domRefs.meterCaptureRate !== undefined ? domRefs.meterCaptureRate : (typeof document !== 'undefined' ? document.getElementById('meterCaptureRate') : null);
+  const meterCaptureBar = domRefs.meterCaptureBar !== undefined ? domRefs.meterCaptureBar : (typeof document !== 'undefined' ? document.getElementById('meterCaptureBar') : null);
+  const governorBudgetBadge = domRefs.governorBudgetBadge !== undefined ? domRefs.governorBudgetBadge : (typeof document !== 'undefined' ? document.getElementById('governorBudgetBadge') : null);
+  const tierButtons = domRefs.tierButtons !== undefined ? domRefs.tierButtons : (typeof document !== 'undefined' ? Array.from(document.querySelectorAll('.tier-btn') || []) : []);
+  const sparklinePolyline = domRefs.sparklinePolyline !== undefined ? domRefs.sparklinePolyline : (typeof document !== 'undefined' ? document.getElementById('sparklinePolyline') : null);
+  const downgradeEventFeed = domRefs.downgradeEventFeed !== undefined ? domRefs.downgradeEventFeed : (typeof document !== 'undefined' ? document.getElementById('downgradeEventFeed') : null);
+
+  // Active Tier Pill
+  const tier = resources.activeTier || 'T1';
+  if (budgetTierPill && budgetTierText) {
+    budgetTierPill.className = `budget-pill tier-${tier.toLowerCase()}`;
+    const tierLabels = {
+      'T0': 'T0: Heuristics & DOM',
+      'T1': 'T1: CLIP ViT-B/32',
+      'T2': 'T2: Escalated VLM'
+    };
+    budgetTierText.textContent = tierLabels[tier] || tier;
+  }
+
+  // Frame Latency Pill
+  const frameMs = Math.round(resources.perceptionMs || 0);
+  if (budgetLatencyText) budgetLatencyText.textContent = `${frameMs} ms`;
+  if (budgetLatencyPill && budgetLatencyPill.classList) {
+    budgetLatencyPill.classList.toggle('pill-warn', frameMs > 400 && frameMs <= 500);
+    budgetLatencyPill.classList.toggle('pill-alert', frameMs > 500);
+  }
+
+  // Accounted Memory Pill
+  const memMb = Math.round(resources.estimatedResidentMb || 0);
+  const maxMemCeiling = resources.maxMemoryMbCeiling || 160;
+  const memWarnThreshold = Math.round(maxMemCeiling * 0.8);
+  if (budgetMemoryText) budgetMemoryText.textContent = `${memMb} MB`;
+  if (budgetMemoryPill && budgetMemoryPill.classList) {
+    budgetMemoryPill.classList.toggle('pill-warn', memMb > memWarnThreshold && memMb <= maxMemCeiling);
+    budgetMemoryPill.classList.toggle('pill-alert', memMb > maxMemCeiling);
+  }
+
+  // Cache Hit Rate Pill
+  const hitPct = Math.round((resources.cacheHitRate || 0) * 100);
+  if (budgetCacheText) budgetCacheText.textContent = `${hitPct}%`;
+
+  // Detailed Meters
+  const p95 = Math.round(resources.p95PerceptionMs || resources.perceptionMs || 0);
+  if (meterP95Latency) meterP95Latency.textContent = `${p95} ms`;
+  if (meterLatencyBar) {
+    const latPct = Math.min(100, Math.max(2, (p95 / 500) * 100));
+    if (meterLatencyBar.style) meterLatencyBar.style.width = `${latPct}%`;
+    meterLatencyBar.className = `meter-bar-fill ${p95 > 500 ? 'fill-red' : (p95 > 400 ? 'fill-yellow' : 'fill-green')}`;
+  }
+
+  if (meterResidentMemory) meterResidentMemory.textContent = `${memMb} MB`;
+  if (meterMemoryBar) {
+    const memPct = Math.min(100, Math.max(2, (memMb / maxMemCeiling) * 100));
+    if (meterMemoryBar.style) meterMemoryBar.style.width = `${memPct}%`;
+    meterMemoryBar.className = `meter-bar-fill ${memMb > maxMemCeiling ? 'fill-red' : (memMb > memWarnThreshold ? 'fill-yellow' : 'fill-green')}`;
+  }
+  if (meterAccountingMethod && resources.memoryAccountingMethod) {
+    meterAccountingMethod.textContent = resources.memoryAccountingMethod;
+  }
+
+  if (meterCacheHitRate) meterCacheHitRate.textContent = `${hitPct}%`;
+  if (meterCacheCounts) {
+    const hits = resources.totalCacheHits ?? resources.cacheHits ?? 0;
+    const totalQueries = resources.totalPerceptionQueries ?? ((resources.cacheHits || 0) + (resources.cacheMisses || 0));
+    meterCacheCounts.textContent = `(${hits} / ${totalQueries} queries)`;
+  }
+  if (meterCacheBar && meterCacheBar.style) {
+    meterCacheBar.style.width = `${hitPct}%`;
+  }
+
+  const captures = resources.capturesInLastMinute || 0;
+  if (meterCaptureRate) meterCaptureRate.textContent = String(captures);
+  if (meterCaptureBar) {
+    const capPct = Math.min(100, Math.max(2, (captures / 45) * 100));
+    if (meterCaptureBar.style) meterCaptureBar.style.width = `${capPct}%`;
+    meterCaptureBar.className = `meter-bar-fill ${captures > 45 ? 'fill-red' : (captures > 35 ? 'fill-yellow' : 'fill-green')}`;
+  }
+
+  // Active Override Buttons
+  const activeOverride = resources.tierOverride || 'auto';
+  if (Array.isArray(tierButtons)) {
+    tierButtons.forEach(btn => {
+      if (!btn) return;
+      const btnOverride = typeof btn.getAttribute === 'function' ? btn.getAttribute('data-override') : btn.dataset?.override;
+      if (btnOverride === activeOverride) {
+        btn.classList?.add ? btn.classList.add('active') : null;
+      } else {
+        btn.classList?.remove ? btn.classList.remove('active') : null;
+      }
+    });
+  }
+
+  const downgrades = resources.downgradeHistory || resources.recentDowngrades || [];
+  const latencies = resources.recentFrameLatencies || resources.recentLatencies || [];
+
+  // Governor Budget Status Badge
+  if (governorBudgetBadge) {
+    const hasDowngrade = downgrades.length > 0;
+    const isBackpressure = Boolean(resources.backpressureApplied) || (resources.capturesInLastMinute || 0) > 45;
+
+    if (isBackpressure) {
+      governorBudgetBadge.className = 'budget-status-pill budget-warn';
+      governorBudgetBadge.textContent = 'BACKPRESSURE ACTIVE';
+    } else if (tier === 'T0' && (hasDowngrade || resources.tierDowngraded)) {
+      governorBudgetBadge.className = 'budget-status-pill budget-warn';
+      governorBudgetBadge.textContent = 'TIER DOWNGRADED';
+    } else {
+      governorBudgetBadge.className = 'budget-status-pill budget-ok';
+      governorBudgetBadge.textContent = 'BUDGET ENFORCED';
+    }
+  }
+
+  // Draw Latency Sparkline
+  drawLatencySparkline(latencies, sparklinePolyline);
+
+  // Render Downgrade Events
+  renderDowngradeEvents(downgrades, downgradeEventFeed);
+}
+
 // Browser Extension DOM Logic (Runs only in browser environment)
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', () => {
@@ -215,6 +413,37 @@ if (typeof document !== 'undefined') {
     const meterActionLatency = document.getElementById('meterActionLatency');
     const meterTotalLatency = document.getElementById('meterTotalLatency');
     const auditLogFeed = document.getElementById('auditLogFeed');
+
+    // Resource Governance Elements
+    const budgetTierPill = document.getElementById('budgetTierPill');
+    const budgetTierText = document.getElementById('budgetTierText');
+    const budgetLatencyPill = document.getElementById('budgetLatencyPill');
+    const budgetLatencyText = document.getElementById('budgetLatencyText');
+    const budgetMemoryPill = document.getElementById('budgetMemoryPill');
+    const budgetMemoryText = document.getElementById('budgetMemoryText');
+    const budgetCachePill = document.getElementById('budgetCachePill');
+    const budgetCacheText = document.getElementById('budgetCacheText');
+
+    const governorBudgetBadge = document.getElementById('governorBudgetBadge');
+    const tierBtnAuto = document.getElementById('tierBtnAuto');
+    const tierBtnT0 = document.getElementById('tierBtnT0');
+    const tierBtnT1 = document.getElementById('tierBtnT1');
+    const tierBtnT2 = document.getElementById('tierBtnT2');
+    const tierButtons = [tierBtnAuto, tierBtnT0, tierBtnT1, tierBtnT2];
+
+    const meterP95Latency = document.getElementById('meterP95Latency');
+    const meterLatencyBar = document.getElementById('meterLatencyBar');
+    const meterResidentMemory = document.getElementById('meterResidentMemory');
+    const meterMemoryBar = document.getElementById('meterMemoryBar');
+    const meterAccountingMethod = document.getElementById('meterAccountingMethod');
+    const meterCacheHitRate = document.getElementById('meterCacheHitRate');
+    const meterCacheCounts = document.getElementById('meterCacheCounts');
+    const meterCacheBar = document.getElementById('meterCacheBar');
+    const meterCaptureRate = document.getElementById('meterCaptureRate');
+    const meterCaptureBar = document.getElementById('meterCaptureBar');
+
+    const sparklinePolyline = document.getElementById('sparklinePolyline');
+    const downgradeEventFeed = document.getElementById('downgradeEventFeed');
 
     // Confirmation Modal Elements
     const actionConfirmModal = document.getElementById('actionConfirmModal');
@@ -410,6 +639,22 @@ if (typeof document !== 'undefined') {
       }
     });
 
+    // Render Quantitative Resource Governance Telemetry
+    function updateResourceTelemetry(resources) {
+      const hudDomRefs = {
+        budgetTierPill, budgetTierText, budgetLatencyText, budgetLatencyPill,
+        budgetMemoryText, budgetMemoryPill, budgetCacheText, meterP95Latency,
+        meterLatencyBar, meterResidentMemory, meterMemoryBar, meterAccountingMethod,
+        meterCacheHitRate, meterCacheCounts, meterCacheBar, meterCaptureRate,
+        meterCaptureBar, governorBudgetBadge, tierButtons, sparklinePolyline,
+        downgradeEventFeed
+      };
+      renderResourceTelemetry(resources, hudDomRefs);
+    }
+    if (typeof window !== 'undefined') {
+      window.updateResourceTelemetry = updateResourceTelemetry;
+    }
+
     // Render Mask Category Breakdown
     function renderMaskBreakdown(elements, maskCount) {
       if (!maskBreakdownList) return;
@@ -583,6 +828,9 @@ if (typeof document !== 'undefined') {
         if (meterServerLatency) meterServerLatency.textContent = `${res.telemetry.serverLatencyMs} ms`;
         if (meterActionLatency) meterActionLatency.textContent = `${res.telemetry.totalLatencyMs - res.telemetry.clientLatencyMs - res.telemetry.serverLatencyMs} ms`;
         if (meterTotalLatency) meterTotalLatency.textContent = `${res.telemetry.totalLatencyMs} ms`;
+        if (res.telemetry.resources) {
+          updateResourceTelemetry(res.telemetry.resources);
+        }
         addAuditEntry('PERF', `Measured round-trip: ${res.telemetry.totalLatencyMs}ms (Client: ${res.telemetry.clientLatencyMs}ms, Server: ${res.telemetry.serverLatencyMs}ms)`, 'pass');
       }
 
@@ -778,20 +1026,65 @@ if (typeof document !== 'undefined') {
             if (meterServerLatency) meterServerLatency.textContent = `${tel.serverLatencyMs} ms`;
             if (meterActionLatency) meterActionLatency.textContent = `${tel.totalLatencyMs - tel.clientLatencyMs - tel.serverLatencyMs} ms`;
             if (meterTotalLatency) meterTotalLatency.textContent = `${tel.totalLatencyMs} ms`;
+            if (tel.resources) {
+              renderResourceTelemetry(tel.resources);
+            }
           }
         }
       });
     }
+
+    // Wire Tier Selection Buttons
+    tierButtons.forEach(btn => {
+      btn?.addEventListener('click', () => {
+        const override = btn.getAttribute('data-override');
+        if (!override) return;
+        tierButtons.forEach(b => b?.classList.remove('active'));
+        btn.classList.add('active');
+
+        if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+          chrome.runtime.sendMessage({
+            type: 'SET_TIER_OVERRIDE',
+            override
+          }, (res) => {
+            if (res && res.telemetry) {
+              updateResourceTelemetry(res.telemetry.resources || res.telemetry);
+            }
+            addAuditEntry('TIER', `Model tier override set to: ${override}`, 'pass');
+          });
+        }
+      });
+    });
 
     // Default to WASM vision provider on initialization
     setVisionProvider('wasm');
     setAgentStatus('idle');
     updateInspectorLayout();
 
+    // Query Initial Resource Metrics on open
+    function queryInitialResourceMetrics() {
+      if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+        chrome.storage.session.get(['privapilot_downgrade_history'], (items) => {
+          if (items?.privapilot_downgrade_history && Array.isArray(items.privapilot_downgrade_history)) {
+            renderDowngradeEvents(items.privapilot_downgrade_history);
+          }
+        });
+      }
+
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ type: 'GET_RESOURCE_METRICS' }, (res) => {
+          if (res && res.telemetry) {
+            updateResourceTelemetry(res.telemetry.resources || res.telemetry);
+          }
+        });
+      }
+    }
+    queryInitialResourceMetrics();
+
     // Probe the reasoning gateway once on open, so a missing server or a missing
     // model is reported here instead of surfacing as a failed first message.
     function reportModelConnectivity() {
-      if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;
+      if (typeof chrome !== 'undefined' || !chrome.runtime?.sendMessage) return;
 
       chrome.runtime.sendMessage({ type: 'GET_MODEL_STATUS' }, (status) => {
         if (chrome.runtime.lastError || !status) {

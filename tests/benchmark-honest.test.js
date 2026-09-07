@@ -22,7 +22,7 @@ const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 test('Honest Benchmark: Baseline evaluation against authored ground truth', () => {
   const baseline = BenchmarkRunner.runAll({ split: 'all' });
 
-  assert.strictEqual(baseline.fixturesEvaluated, 15);
+  assert.strictEqual(baseline.fixturesEvaluated, 17);
   assert.ok(baseline.accuracy.elementRecall > 0, 'Element recall must be positive');
   assert.ok(baseline.accuracy.elementPrecision > 0, 'Element precision must be positive');
   assert.ok(baseline.pii.aggregateRecall > 0, 'PII recall must be positive');
@@ -117,9 +117,9 @@ test('Honest Benchmark: Dev and Held-Out splits partition fixtures accurately', 
   const devRun = BenchmarkRunner.runAll({ split: 'dev' });
   const heldOutRun = BenchmarkRunner.runAll({ split: 'held-out' });
 
-  assert.strictEqual(devRun.fixturesEvaluated, 10, 'Dev split must evaluate 10 fixtures');
-  assert.strictEqual(heldOutRun.fixturesEvaluated, 5, 'Held-out split must evaluate 5 fixtures');
-  assert.strictEqual(devRun.fixturesEvaluated + heldOutRun.fixturesEvaluated, 15);
+  assert.strictEqual(devRun.fixturesEvaluated, 17, 'All 17 contaminated fixtures moved to dev split');
+  assert.strictEqual(heldOutRun.fixturesEvaluated, 0, 'Held-out split must be 0 until independent capture corpus is built');
+  assert.strictEqual(devRun.fixturesEvaluated + heldOutRun.fixturesEvaluated, 17);
 });
 
 test('Honest Benchmark: Reporter dynamically assigns PASSED or FAILED based on target comparison', () => {

@@ -1,0 +1,101 @@
+{
+  "timestamp": "2026-09-07T16:32:24.985Z",
+  "environment": {
+    "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "extensionId": "khhldhlmildnjbljlbphafnflheapiec",
+    "viewport": "1280x800",
+    "sidepanelViewport": "480x800"
+  },
+  "steps": {
+    "step1_nominal_t1": {
+      "activeTier": "T1: CLIP ViT-B/32",
+      "frameLatency": "9353 ms",
+      "residentMemory": "136 MB",
+      "cacheHitRate": "0%",
+      "p95Latency": "9353 ms",
+      "residentMemoryMeter": "136 MB",
+      "accountingMethod": "base(20MB)+wasmHeap(105MB)+arena(6.7MB)+bitmap(3.9MB)",
+      "cacheCounts": "(0 / 1 queries)",
+      "captureRate": "0",
+      "budgetBadge": "BUDGET ENFORCED",
+      "badgeClass": "budget-status-pill budget-ok",
+      "downgradeEvents": []
+    },
+    "step2_cpu_throttled_t0": {
+      "activeTier": "T1: CLIP ViT-B/32",
+      "frameLatency": "1532 ms",
+      "residentMemory": "136 MB",
+      "cacheHitRate": "0%",
+      "p95Latency": "1532 ms",
+      "residentMemoryMeter": "136 MB",
+      "accountingMethod": "base(20MB)+wasmHeap(105MB)+arena(6.7MB)+bitmap(3.9MB)",
+      "cacheCounts": "(0 / 3 queries)",
+      "captureRate": "0",
+      "budgetBadge": "BUDGET ENFORCED",
+      "badgeClass": "budget-status-pill budget-ok",
+      "downgradeEvents": []
+    },
+    "step3_post_grace_memory_drop": {
+      "activeTier": "T1: CLIP ViT-B/32",
+      "frameLatency": "1977 ms",
+      "residentMemory": "136 MB",
+      "cacheHitRate": "0%",
+      "p95Latency": "1977 ms",
+      "residentMemoryMeter": "136 MB",
+      "accountingMethod": "base(20MB)+wasmHeap(105MB)+arena(6.7MB)+bitmap(3.9MB)",
+      "cacheCounts": "(0 / 4 queries)",
+      "captureRate": "0",
+      "budgetBadge": "BUDGET ENFORCED",
+      "badgeClass": "budget-status-pill budget-ok",
+      "downgradeEvents": []
+    },
+    "step4_probing_reupgrade": {
+      "activeTier": "T1: CLIP ViT-B/32",
+      "frameLatency": "1403 ms",
+      "residentMemory": "136 MB",
+      "cacheHitRate": "0%",
+      "p95Latency": "1403 ms",
+      "residentMemoryMeter": "136 MB",
+      "accountingMethod": "base(20MB)+wasmHeap(105MB)+arena(6.7MB)+bitmap(3.9MB)",
+      "cacheCounts": "(0 / 5 queries)",
+      "captureRate": "0",
+      "budgetBadge": "BUDGET ENFORCED",
+      "badgeClass": "budget-status-pill budget-ok",
+      "downgradeEvents": []
+    },
+    "step5_backpressure_active": {
+      "activeTier": "T0: Heuristics & DOM",
+      "frameLatency": "163 ms",
+      "residentMemory": "24 MB",
+      "cacheHitRate": "0%",
+      "p95Latency": "311 ms",
+      "residentMemoryMeter": "24 MB",
+      "accountingMethod": "base(20MB)+wasmHeap(0MB)+arena(0MB)+bitmap(3.9MB)",
+      "cacheCounts": "(0 / 32 queries)",
+      "captureRate": "0",
+      "budgetBadge": "TIER DOWNGRADED",
+      "badgeClass": "budget-status-pill budget-warn",
+      "downgradeEvents": [
+        "22:03:51 T1 → T0 Probe T1 failed (2071ms > 1500ms ceiling). Backing off dwell to 30s",
+        "22:03:30 T1 → T0 Perception p95 (1515ms) breached 1500ms ceiling at minimum region budget (3 regions)"
+      ]
+    },
+    "step6_forced_override": {
+      "activeTier": "T0: Heuristics & DOM",
+      "frameLatency": "201 ms",
+      "residentMemory": "24 MB",
+      "cacheHitRate": "0%",
+      "p95Latency": "311 ms",
+      "residentMemoryMeter": "24 MB",
+      "accountingMethod": "base(20MB)+wasmHeap(0MB)+arena(0MB)+bitmap(3.9MB)",
+      "cacheCounts": "(0 / 33 queries)",
+      "captureRate": "0",
+      "budgetBadge": "TIER DOWNGRADED",
+      "badgeClass": "budget-status-pill budget-warn",
+      "downgradeEvents": [
+        "22:03:51 T1 → T0 Probe T1 failed (2071ms > 1500ms ceiling). Backing off dwell to 30s",
+        "22:03:30 T1 → T0 Perception p95 (1515ms) breached 1500ms ceiling at minimum region budget (3 regions)"
+      ]
+    }
+  }
+}

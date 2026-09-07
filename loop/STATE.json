@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "project": "PrivaPilot — SIH 2026 PS SIH26171 (ISRO)",
+  "iteration": 0,
+  "stall_counter": 0,
+  "status": "ready",
+  "limits": {
+    "max_iterations": 40,
+    "freeze_date": "2026-09-18",
+    "submission_deadline": "2026-09-20T23:59:00+05:30",
+    "max_revise_rounds_per_task": 2
+  },
+  "rubric_weights": {
+    "visual_context": 0.25,
+    "pii_recall_precision": 0.20,
+    "redaction_precision": 0.20,
+    "client_resources": 0.20,
+    "latency": 0.15
+  },
+  "phase_status": {
+    "R0": "done",
+    "R1": "done",
+    "R2": "done",
+    "R3": "done",
+    "R4": "done",
+    "R5": "not_started",
+    "R6": "done_with_open_tension",
+    "R7": "not_started",
+    "R8": "optional_first_to_cut",
+    "R9": "not_started",
+    "authority_note": "docs/00_PROBLEM_STATEMENT.md overrides AUDIT_LOCAL_VS_DEFERRED.md overrides docs/PHASES.md. Re-read them at step 0; this block is a hint, not the source of truth."
+  },
+  "current": null,
+  "queue": [
+    {
+      "id": "L1",
+      "priority": 1,
+      "status": "ready",
+      "owner": "agent",
+      "phase": "R6",
+      "title": "Resolve the governor latency-ceiling contradiction",
+      "detail": "Measured perception latency with the ViT active is 1782 ms p50 / 3023 ms p95 against a 500 ms p95 ceiling, so the governor demotes every page to T0 permanently. The 500 ms figure was derived from a 55 ms measurement taken while the ONNX model was silently never loading. Decide and implement one of: (a) re-derive the ceiling from an honest measurement and document the derivation, (b) move the ceiling off wall-clock perception latency onto something the tier actually controls, or (c) restructure T1 so it fits a defensible ceiling. Whichever is chosen, the reasoning goes in BENCHMARKS.md next to the number.",
+      "verification_command": "npm run benchmark:browser  (ViT active) + the governor tier-transition test",
+      "blocked_by": [],
+      "notes": "Blocks L2 — a PerceptionPolicy built on a ceiling that demotes everything is not testable."
+    },
+    {
+      "id": "L2",
+      "priority": 2,
+      "status": "ready",
+      "owner": "agent",
+      "phase": "R5",
+      "title": "Implement PerceptionPolicy fast/thorough modes",
+      "detail": "Two named policies over the existing two-tier gating (T1 always-on single crop, T2 escalation on DOM-blind surfaces). Fast optimises the 15% latency bucket; thorough optimises the 25% visual-context bucket. The policy must be a declared, testable object — not scattered conditionals — and must not introduce any page-identity-dependent branching.",
+      "verification_command": "policy unit tests + benchmark:browser under each mode, both numbers recorded",
+      "blocked_by": ["L1"],
+      "notes": ""
+    },
+    {
+      "id": "L3",
+      "priority": 3,
+      "status": "ready",
+      "owner": "agent",
+      "phase": "R7",
+      "title": "Build the held-out corpus with real photographic face fixtures",
+      "detail": "Face recall is currently 0 because the fixtures are drawn SVG faces that UltraFace cannot detect — the number is meaningless, not bad. Assemble a held-out corpus with genuine photographic faces (licence-clear), disjoint from the dev corpus, and never opened during tuning.",
+      "verification_command": "corpus build script + a run showing non-zero face detections on the new fixtures",
+      "blocked_by": [],
+      "notes": "This is the highest-value integrity item in the whole queue: it turns an unmeasured 20% rubric bucket into a measured one."
+    },
+    {
+      "id": "L4",
+      "priority": 4,
+      "status": "ready",
+      "owner": "agent",
+      "phase": "R7",
+      "title": "Report the dev↔held-out generalisation gap",
+      "detail": "Run the full pipeline against dev and held-out corpora and publish both, with the gap stated explicitly. A large gap is a finding to report honestly, not a bug to tune away — tuning against held-out results destroys the point of the split.",
+      "verification_command": "eval harness run over both corpora, side-by-side table in BENCHMARKS.md",
+      "blocked_by": ["L3"],
+      "notes": ""
+    },
+    {
+      "id": "L5",
+      "priority": 5,
+      "status": "ready",
+      "owner": "agent",
+      "phase": "R4-followup",
+      "title": "Investigate the safe-control preservation regression",
+      "detail": "Safe-control preservation went from 100% (18/18) to 90.5% (19/21) in the same run that enabled the ViT. Two controls are now being lost. Identify which two and why before any further tuning — this touches the redaction-precision bucket (20%).",
+      "verification_command": "safe-control preservation test with the two failing controls named in the output",
+      "blocked_by": [],
+      "notes": "Denominator also changed 18→21; confirm whether the regression is real or a corpus-composition artefact before reporting it either way."
+    },
+    {
+      "id": "L6",
+      "priority": 6,
+      "status": "ready",
+      "owner": "agent",
+      "phase": "R4-followup",
+      "title": "Improve proposal quality for Bucket B (canvas/img controls)",
+      "detail": "Bucket B recall is 1/3. Raising the T2 crop budget 8x changed nothing, which localises the constraint to proposal quality rather than encode budget. Work on how candidate regions are proposed on DOM-blind surfaces.",
+      "verification_command": "Bucket B recall on the ablation harness, before and after",
+      "blocked_by": [],
+      "notes": "Directly targets the 25% visual-context bucket. Deprioritise below L3/L4 if time is short — a measured 1/3 is defensible, an unmeasured face recall is not."
+    },
+    {
+      "id": "L7",
+      "priority": 7,
+      "status": "ready",
+      "owner": "agent",
+      "phase": "R9",
+      "title": "Assemble the freeze/submit checklist",
+      "detail": "Draft docs/FREEZE_CHECKLIST.md: reproducible build from a clean clone, demo script that does not depend on network, BENCHMARKS.md numbers all traceable to a command, retracted-claims register intact, no secrets in history, judge-facing README. Draft it early so gaps surface with time to fix them; tick it at the end.",
+      "verification_command": "clean-clone build + demo run from the checklist steps",
+      "blocked_by": [],
+      "notes": "Drafting is agent work. Ticking the final boxes and submitting is human work (H2)."
+    },
+    {
+      "id": "L8",
+      "priority": 9,
+      "status": "ready",
+      "owner": "agent",
+      "phase": "R8",
+      "title": "Firefox port",
+      "detail": "Explicitly the first thing to cut. Zero rubric weight.",
+      "verification_command": "extension loads and runs the T0/T1 path in Firefox",
+      "blocked_by": ["L1", "L2", "L3", "L4", "L7"],
+      "notes": "Only reachable if everything scored is done. If the loop reaches this with under three days left, mark it dropped rather than starting it."
+    },
+    {
+      "id": "H1",
+      "priority": 0,
+      "status": "blocked",
+      "owner": "human",
+      "phase": "R9",
+      "title": "Rotate the OpenRouter API key that was exposed in a chat transcript",
+      "detail": "Must be done by a human in the OpenRouter dashboard. Until it is, treat the current key as compromised.",
+      "blocked_by": [],
+      "notes": "Do not attempt. Do not write the key anywhere."
+    },
+    {
+      "id": "H2",
+      "priority": 0,
+      "status": "blocked",
+      "owner": "human",
+      "phase": "R9",
+      "title": "Push to remote and submit",
+      "detail": "Nothing has been pushed to remote. The loop commits locally only; publishing and submitting are human decisions.",
+      "blocked_by": [],
+      "notes": ""
+    }
+  ],
+  "ledger": [],
+  "human_notes": []
+}

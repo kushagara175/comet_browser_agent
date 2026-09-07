@@ -40,6 +40,7 @@ export interface DecisionAuditRecord {
     readonly escalationReason?: string;
     readonly bytesTransmitted: number;
 }
+import { ResourceTelemetry } from './resource-governance.js';
 export interface RunTelemetry {
     readonly runId: string;
     readonly t0_start: number;
@@ -61,5 +62,7 @@ export interface RunTelemetry {
     readonly stepsDecidedLocally?: number;
     readonly stepsEscalated?: number;
     readonly bytesTransmittedTotal?: number;
+    /** Enforced on-device client resource governance metrics */
+    readonly resources?: ResourceTelemetry;
 }
 //# sourceMappingURL=audit.d.ts.map

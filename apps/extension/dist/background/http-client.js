@@ -5,7 +5,7 @@
  * This client ONLY accepts `SanitizedContext`.
  * It is impossible to pass `RawCapture` to this client.
  */
-import { validateActionProposal } from '@privapilot/protocol';
+import { validateActionProposal, sanitizeContextForNetwork } from '@privapilot/protocol';
 import { assertNoCanaryLeak } from '@privapilot/test-fixtures';
 export const DEFAULT_SERVER_BASE_URL = 'http://localhost:4501';
 /**
@@ -107,16 +107,7 @@ export class ReasoningHttpClient {
      */
     async requestReasoningAction(sanitized, recentActions) {
         // 1. Prepare Closed Network Payload
-        const payload = {
-            protocolVersion: sanitized.protocolVersion,
-            runId: sanitized.runId,
-            goal: sanitized.goal,
-            screenshot: sanitized.sanitizedScreenshotDataUrl,
-            elements: sanitized.elements,
-            pageState: sanitized.pageState,
-            redactionManifest: sanitized.redactionManifest,
-            ...(recentActions && recentActions.length ? { recentActions } : {})
-        };
+        const payload = sanitizeContextForNetwork(sanitized, recentActions);
         // 2. Outgoing Canary Gate check
         assertNoCanaryLeak(payload, 'Outgoing HTTP Payload');
         // Size of what actually leaves the machine. The decision tier records 0 for a

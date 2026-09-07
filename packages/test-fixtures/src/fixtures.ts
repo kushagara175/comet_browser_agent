@@ -372,5 +372,48 @@ export const TEST_FIXTURES: Record<string, TestFixture> = {
       </body>
       </html>
     `
+  },
+
+  canvasForm: {
+    id: 'canvas-form',
+    name: 'Canvas 2D Interactive Form',
+    description: 'Interactive form controls (input box, submit button) rendered into <canvas>. Vision discovers and classifies controls; DOM sees zero elements.',
+    expectedPiiCount: 0,
+    expectedSafeActionableCount: 2,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head><title>Canvas Authentication</title></head>
+      <body>
+        <div class="canvas-wrapper">
+          <canvas id="authCanvas" width="600" height="400" data-surface-type="canvas">
+            Canvas Form
+          </canvas>
+        </div>
+      </body>
+      </html>
+    `
+  },
+
+  imageIdentifier: {
+    id: 'image-identifier',
+    name: 'Image Identifier Security Badge',
+    description: 'Security/auth badge concept icon baked into an <img>. Vision embeds the region and classifies it against concept prototypes; DOM sees only an opaque <img>.',
+    expectedPiiCount: 0,
+    expectedSafeActionableCount: 1,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head><title>Badge Verification</title></head>
+      <body>
+        <div class="badge-card">
+          <h2>Authorization Seal</h2>
+          <img id="secSeal" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><circle cx='70' cy='70' r='60' fill='%231e40af'/><text x='70' y='75' font-size='16' text-anchor='middle' fill='white'>SECURITY-BADGE</text></svg>" alt="Security Seal" width="140" height="140" data-concept-hint="auth_badge" />
+          <p>Verified Operator Clearance</p>
+        </div>
+      </body>
+      </html>
+    `
   }
 };
+

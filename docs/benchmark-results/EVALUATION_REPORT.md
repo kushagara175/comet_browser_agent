@@ -1,9 +1,9 @@
 # PrivaPilot — Benchmark Evaluation Report
 **Problem Statement:** ISRO | Software | SIH26171  
 **Product:** PrivaPilot Privacy-Preserving Browser Agent  
-**Generated:** 2026-09-02T06:17:20.658Z  
-**Split Evaluated:** all (14 Synthetic Web Scenarios)  
-**Git SHA:** `a88f13b`  
+**Generated:** 2026-09-07T11:23:28.434Z  
+**Split Evaluated:** all (17 Synthetic Web Scenarios)  
+**Git SHA:** `71cb5f7`  
 **Environment:** win32 x64 (Node v22.19.0)  
 **Browser Engine:** Google Chrome / Chromium Headless (CDP Engine)  
 **Vision/PII Provider:** UltraFace ONNX (Wasm/CPU) + Local PII Regex/Luhn Engine  
@@ -15,10 +15,10 @@
 
 | Evaluation Metric | Weight | Measured Result | Benchmark Target | Verdict |
 | :--- | :---: | :---: | :---: | :---: |
-| **Visual Context Accuracy** | **25%** | **82.1% Recall / 76.7% Precision** (Median IoU: 1) | > 95% | ❌ FAILED |
-| **PII & Sensitive Data Recall** | **20%** | **94.1% Recall (94.1% Precision, F1: 94.1%)** | > 98% Recall / > 95% Precision | ❌ FAILED |
-| **Redaction Precision** | **20%** | **94.7% Coverage (1 Under-Masks, Overhead: 0.85x)** | 100% Coverage (0 Under-Masks) | ❌ FAILED |
-| **Client Resource Utilization** | **20%** | **~41.4 MB Memory / 150% CPU** | < 350 MB / < 15% | ❌ FAILED |
+| **Visual Context Accuracy** | **25%** | **77.4% Recall / 75% Precision** (Median IoU: 1) | > 95% | ❌ FAILED |
+| **PII & Sensitive Data Recall** | **20%** | **94.4% Recall (85% Precision, F1: 89.5%)** | > 98% Recall / > 95% Precision | ❌ FAILED |
+| **Redaction Precision** | **20%** | **95% Coverage (1 Under-Masks, Overhead: 0.9x)** | 100% Coverage (0 Under-Masks) | ❌ FAILED |
+| **Client Resource Utilization** | **20%** | **~44.6 MB Memory / 0% CPU** | < 350 MB / < 15% | ✅ PASSED |
 | **End-to-End Task Latency** | **15%** | **385 ms (p50) / 385 ms (p95)** | < 1200 ms (p50) | ⚪ NOT MEASURED |
 
 ---
@@ -32,10 +32,10 @@
 | `phone` | 1 | 0 | 0 | 100% | 100% | 100% |
 | `credit_card` | 2 | 0 | 0 | 100% | 100% | 100% |
 | `cvv` | 1 | 0 | 0 | 100% | 100% | 100% |
-| `national_id` | 2 | 0 | 0 | 100% | 100% | 100% |
+| `national_id` | 2 | 1 | 0 | 100% | 66.7% | 80% |
 | `token` | 3 | 0 | 0 | 100% | 100% | 100% |
 | `face` | 0 | 0 | 0 | 100% | 100% | 100% |
-| `high_risk_surface` | 2 | 1 | 1 | 66.7% | 66.7% | 66.7% |
+| `high_risk_surface` | 3 | 2 | 1 | 75% | 60% | 66.7% |
 
 ---
 
@@ -69,4 +69,4 @@ Full breakdown of what is verified where: `docs/AUDIT_LOCAL_VS_DEFERRED.md`.
 - **Canary Leaks Detected:** `0 (PASSED)`
 - **Raw Screenshot Uploads Blocked:** `100% (ENFORCED)`
 - **Fail-Closed Uninspectable Surface Coverage:** `100% (ENFORCED)`
-- **Safe Interactive Controls Preserved:** `100% (19/19)`
+- **Safe Interactive Controls Preserved:** `86.4% (19/22)`

@@ -50,8 +50,25 @@ coordinator.setListeners({
   }
 });
 
+function isTrustedExtensionUi(sender: any): boolean {
+  const isExtensionUrl = typeof sender?.url === 'string' && (
+    sender.url.startsWith(`chrome-extension://${chrome.runtime.id}/sidepanel/`) ||
+    sender.url.startsWith(`chrome-extension://${chrome.runtime.id}/src/sidepanel/`)
+  );
+  const isNotWebTab = !sender?.tab || (
+    typeof sender.tab.url === 'string' &&
+    sender.tab.url.startsWith(`chrome-extension://${chrome.runtime.id}/`)
+  );
+  return Boolean(
+    sender &&
+    sender.id === chrome.runtime.id &&
+    isExtensionUrl &&
+    isNotWebTab
+  );
+}
+
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-  chrome.runtime.onMessage.addListener((message: any, _sender: any, sendResponse: (res: any) => void) => {
+  chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (res: any) => void) => {
     if (message.type === 'START_AGENT_RUN') {
       coordinator.startRun(message.goal || 'Safe assistance').then((result) => {
         sendResponse(result);
@@ -102,6 +119,56 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 
     if (message.type === 'GET_STATE') {
       sendResponse({ state: coordinator.getState() });
+      return true;
+    }
+
+    if (message.type === 'SET_TIER_OVERRIDE') {
+      // Security: Only trusted extension UI (side panel) can alter perception tiers.
+      // Hostile content scripts or web pages cannot blind the perception layer.
+      if (!isTrustedExtensionUi(sender)) {
+        sendResponse({
+          success: false,
+          error: 'Unauthorized: SET_TIER_OVERRIDE permitted only from trusted extension UI (sidepanel)'
+        });
+        return true;
+      }
+      coordinator.setTierOverride(message.override || 'auto');
+      const telemetry = coordinator.getGovernor().getTelemetry();
+      sendResponse({ success: true, telemetry });
+      return true;
+    }
+
+    if (message.type === 'GET_RESOURCE_METRICS') {
+      const telemetry = coordinator.getGovernor().getTelemetry();
+      sendResponse({ success: true, telemetry });
+      return true;
+    }
+
+    if (message.type === 'RUN_PERCEPTION_CYCLE') {
+      if (!isTrustedExtensionUi(sender)) {
+        sendResponse({
+          success: false,
+          error: 'Unauthorized: RUN_PERCEPTION_CYCLE permitted only from trusted extension UI (sidepanel)'
+        });
+        return true;
+      }
+
+      coordinator.runSinglePerceptionCycle(message.goal || 'Inspect page').then((res) => {
+        sendResponse(res);
+      }).catch((err) => {
+        sendResponse({ success: false, error: err?.message || 'Perception pass failed' });
+      });
+      return true;
+    }
+
+    if (message.type === 'RESET_CAPTURE_WINDOW') {
+      if (!isTrustedExtensionUi(sender)) {
+        sendResponse({ success: false, error: 'Unauthorized: RESET_CAPTURE_WINDOW permitted only from trusted extension UI' });
+        return true;
+      }
+
+      coordinator.getGovernor().resetCaptureTimestamps();
+      sendResponse({ success: true, telemetry: coordinator.getGovernor().getTelemetry() });
       return true;
     }
 

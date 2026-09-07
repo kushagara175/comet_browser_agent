@@ -46,6 +46,28 @@
         </div>
       </div>
 
+      <!-- Resource Budget & Tier Strip (Visible after every run) -->
+      <div id="resourceBudgetStrip" class="resource-budget-strip">
+        <div class="budget-pill-group">
+          <span id="budgetTierPill" class="budget-pill tier-t1" title="Current Active Perception Model Tier">
+            <span class="tier-indicator-dot"></span>
+            <span id="budgetTierText">T1: CLIP ViT</span>
+          </span>
+          <span id="budgetLatencyPill" class="budget-pill" title="Perception Frame Latency (Budget: 500ms max)">
+            <span class="pill-label">Frame:</span>
+            <strong id="budgetLatencyText">-- ms</strong>
+          </span>
+          <span id="budgetMemoryPill" class="budget-pill" title="Accounted Resident Memory (Ceiling: 160MB)">
+            <span class="pill-label">Mem:</span>
+            <strong id="budgetMemoryText">-- MB</strong>
+          </span>
+          <span id="budgetCachePill" class="budget-pill" title="Perception Cache Hit Rate">
+            <span class="pill-label">Cache:</span>
+            <strong id="budgetCacheText">0%</strong>
+          </span>
+        </div>
+      </div>
+
       <!-- Navigation Tabs -->
       <div class="hud-tabs">
         <button id="tabChatBtn" class="hud-tab-btn active">Chat</button>
@@ -193,6 +215,93 @@
             <div class="metric-row">
               <span>Total Round-Trip:</span>
               <strong id="meterTotalLatency" class="text-blue">-- ms</strong>
+            </div>
+          </div>
+
+          <!-- Resource Governance & Enforced Budget Panel -->
+          <div class="telemetry-card resource-governance-card">
+            <div class="telemetry-header">
+              <span>Client Resource Governance &amp; Enforced Budget</span>
+              <span id="governorBudgetBadge" class="budget-status-pill budget-ok">BUDGET ENFORCED</span>
+            </div>
+
+            <!-- Demo Tier Override Controls -->
+            <div class="tier-override-container">
+              <span class="override-label">Demo Tier Selection:</span>
+              <div class="tier-btn-group">
+                <button type="button" id="tierBtnAuto" class="tier-toggle-btn active" data-override="auto">Auto</button>
+                <button type="button" id="tierBtnT0" class="tier-toggle-btn" data-override="force-T0">Force T0 (DOM)</button>
+                <button type="button" id="tierBtnT1" class="tier-toggle-btn" data-override="force-T1">Force T1 (CLIP)</button>
+                <button type="button" id="tierBtnT2" class="tier-toggle-btn" data-override="force-T2">Force T2 (VLM)</button>
+              </div>
+            </div>
+
+            <!-- Quantitative Resource Meters -->
+            <div class="resource-meters-grid">
+              <div class="resource-metric-box">
+                <span class="metric-label">Perception Latency (p95)</span>
+                <div class="metric-value-row">
+                  <strong id="meterP95Latency">-- ms</strong>
+                  <span class="ceiling-label">/ 500ms limit</span>
+                </div>
+                <div class="meter-bar-track">
+                  <div id="meterLatencyBar" class="meter-bar-fill fill-green" style="width: 0%;"></div>
+                </div>
+              </div>
+
+              <div class="resource-metric-box">
+                <span class="metric-label">Accounted Resident Memory</span>
+                <div class="metric-value-row">
+                  <strong id="meterResidentMemory">-- MB</strong>
+                  <span class="ceiling-label">/ 160MB ceiling</span>
+                </div>
+                <div class="meter-bar-track">
+                  <div id="meterMemoryBar" class="meter-bar-fill fill-green" style="width: 0%;"></div>
+                </div>
+                <span id="meterAccountingMethod" class="accounting-hint">WASM heap + weights + canvas + arena</span>
+              </div>
+
+              <div class="resource-metric-box">
+                <span class="metric-label">Perception Cache Hit Rate</span>
+                <div class="metric-value-row">
+                  <strong id="meterCacheHitRate">0%</strong>
+                  <span id="meterCacheCounts" class="ceiling-label">(0 / 0 queries)</span>
+                </div>
+                <div class="meter-bar-track">
+                  <div id="meterCacheBar" class="meter-bar-fill fill-blue" style="width: 0%;"></div>
+                </div>
+              </div>
+
+              <div class="resource-metric-box">
+                <span class="metric-label">Captures in Last Minute</span>
+                <div class="metric-value-row">
+                  <strong id="meterCaptureRate">0</strong>
+                  <span class="ceiling-label">/ 45/min ceiling</span>
+                </div>
+                <div class="meter-bar-track">
+                  <div id="meterCaptureBar" class="meter-bar-fill fill-green" style="width: 0%;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Frame Time Latency Sparkline -->
+            <div class="sparkline-wrapper">
+              <div class="sparkline-header">
+                <span>Perception Latency Sparkline (Last 30 Frames)</span>
+                <span class="ceiling-legend"><span class="legend-line"></span> 500ms Ceiling</span>
+              </div>
+              <svg id="latencySparklineSvg" class="latency-sparkline-svg" viewBox="0 0 300 40" preserveAspectRatio="none">
+                <line x1="0" y1="10" x2="300" y2="10" stroke="#ef4444" stroke-dasharray="3,3" stroke-width="1"/>
+                <polyline id="sparklinePolyline" fill="none" stroke="#38bdf8" stroke-width="2" points=""/>
+              </svg>
+            </div>
+
+            <!-- Causal Downgrade Event Log -->
+            <div class="downgrade-events-wrapper">
+              <div class="downgrade-events-header">Governor Causal Downgrade Log</div>
+              <div id="downgradeEventFeed" class="downgrade-feed">
+                <div class="downgrade-empty-hint">Nominal: No tier downgrade events triggered.</div>
+              </div>
             </div>
           </div>
 

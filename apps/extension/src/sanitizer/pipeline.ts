@@ -17,7 +17,9 @@ import {
   sensitiveElementPlaceholder,
   redactionImageLabel,
   FACE_IMAGE_LABEL,
-  REDACTION_FILL_COLOR
+  REDACTION_FILL_COLOR,
+  ModelTier,
+  SceneGraph
 } from '@privapilot/protocol';
 import { sanitizeElementName } from '@privapilot/pii-rules';
 import { CoordinateTransformer } from './coordinate-transformer.js';
@@ -31,6 +33,18 @@ import { UltraFaceModelRunner, DetectedFace } from '../vision/face-model.js';
 import { VitEncoder, VIT_MODEL_FAMILY } from '../vision/vit-encoder.js';
 import { proposeRegions } from '../vision/region-proposer.js';
 import { classifyEmbedding } from '../vision/ui-classifier.js';
+import { VisionPerceptionLane } from '../vision/vision-lane.js';
+import { FusionPolicy, PerceptionMode, DomCandidateElement } from '../vision/fusion-policy.js';
+import { PerceptionCache, computeCanvasDHash } from './perception-cache.js';
+
+export interface SanitizeOptions {
+  readonly activeTier?: ModelTier;
+  readonly domHash?: string;
+  readonly viewportHash?: string;
+  readonly perceptionMode?: PerceptionMode;
+  readonly deadlineMs?: number;
+  readonly regionBudget?: number;
+}
 
 export interface LocalDomSnapshot {
   readonly domElements: ReadonlyArray<RawDomElementCapture>;
@@ -56,13 +70,36 @@ export class SanitizerPipeline {
     rawCapture: RawCapture,
     snapshot: LocalDomSnapshot,
     goal: string,
-    imageCanvas?: HTMLCanvasElement | OffscreenCanvas
+    imageCanvas?: HTMLCanvasElement | OffscreenCanvas,
+    options?: SanitizeOptions
   ): Promise<SanitizedContext> {
+    const activeTier = options?.activeTier || 'T1';
+
+    // 0a. Check sound composite perception cache: (domHash, viewportHash, 32x32 dHash)
+    let canvasDHash = '';
+    if (imageCanvas) {
+      canvasDHash = computeCanvasDHash(imageCanvas);
+    }
+    const cacheKey = (options?.domHash && options?.viewportHash && canvasDHash)
+      ? PerceptionCache.buildKey(options.domHash, options.viewportHash, canvasDHash)
+      : null;
+
+    if (cacheKey) {
+      const cached = PerceptionCache.get(cacheKey);
+      if (cached) {
+        return {
+          ...cached,
+          captureId: rawCapture.captureId,
+          timestamp: Date.now()
+        };
+      }
+    }
+
     const transformer = new CoordinateTransformer(rawCapture.metadata);
 
-    // 0. Run on-device ONNX vision model inference on screenshot canvas if available
+    // 0b. Run on-device ONNX face model inference on screenshot canvas (skipped in T0)
     let modelFaces: ReadonlyArray<DetectedFace> = [];
-    if (imageCanvas) {
+    if (activeTier !== 'T0' && imageCanvas) {
       try {
         const visionResult = await UltraFaceModelRunner.detectFaces(imageCanvas, transformer);
         modelFaces = visionResult.faces;
@@ -125,66 +162,65 @@ export class SanitizerPipeline {
       throw new Error('Sanitization Blocked: No canvas host available. Rendering must execute in an offscreen document with DOM access.');
     }
 
-    // 3. Vision Transformer pass over surfaces the DOM cannot describe.
-    //
-    // This is the problem statement's "local ViT reads the screen". On a canvas app,
-    // a cross-origin iframe or a closed shadow root there is no DOM to parse, and the
-    // surface was previously masked wholesale with the agent blind to it.
-    //
-    // It runs on the RAW canvas, on-device, before redaction - which is exactly what
-    // local vision is for. Only the resulting category labels are retained; the
-    // embeddings never leave this function and no pixels leave the machine.
-    //
-    // Deliberately scoped to DOM-blind surfaces: each region is a full ViT forward
-    // pass (~200 ms on WASM), so running it over an ordinary page would cost seconds
-    // to re-derive what the DOM already states precisely. Extending it to every page
-    // is a later phase, with a resource budget attached.
-    const visionObservations: Array<{
-      surfaceId: string; regionId: string; label: string | null;
-      bestLabel: string; margin: number; confident: boolean;
-      box: readonly [number, number, number, number];
-    }> = [];
+    // 3. Parallel Vision Lane: Runs on EVERY capture (in parallel with DOM lane)
+    // under an enforced frame deadline, producing candidate elements from pixels alone.
+    const surfaceHints = surfaceRegions.map((s) => ({
+      id: s.id,
+      type: (s.id.includes('canvas') ? 'canvas' : (s.id.includes('img') ? 'img' : 'shadow_dom')) as 'canvas' | 'img' | 'shadow_dom',
+      box: s.screenshotBox,
+      conceptHint: s.label
+    }));
+
+    let visionElements: ReadonlyArray<import('../vision/vision-lane.js').CandidateVisionElement> = [];
     let regionsProposed = 0;
     let regionsEmbedded = 0;
     let visionInferenceMs = 0;
+    let visionProviderUsed = 'none';
     let visionError: string | undefined;
 
-    if (surfaceRegions.length > 0) {
+    if (activeTier !== 'T0') {
       try {
-        for (const surface of surfaceRegions) {
-          const proposals = proposeRegions(hostCanvas, surface.screenshotBox);
-          regionsProposed += proposals.length;
-
-          for (const region of proposals) {
-            const embedding = await VitEncoder.embedRegion(hostCanvas, region);
-            regionsEmbedded++;
-            visionInferenceMs += VitEncoder.getStatus().lastInferenceMs;
-            const classification = classifyEmbedding(embedding.vector);
-            visionObservations.push({
-              surfaceId: surface.id,
-              regionId: region.id,
-              label: classification.label,
-              bestLabel: classification.bestLabel,
-              margin: classification.margin,
-              confident: classification.confident,
-              box: [region.x, region.y, region.width, region.height] as const
-            });
-          }
-        }
+        const laneResult = await VisionPerceptionLane.perceive(hostCanvas, rawCapture.metadata, {
+          deadlineMs: options?.deadlineMs ?? 800,
+          maxProposals: options?.regionBudget ?? 12,
+          surfaceHints
+        });
+        visionElements = laneResult.elements;
+        regionsProposed = laneResult.proposalsEvaluated;
+        regionsEmbedded = laneResult.elements.length;
+        visionInferenceMs = laneResult.durationMs;
+        visionProviderUsed = laneResult.providerUsed;
       } catch (err: any) {
-        // Reported, never swallowed. A silently-failing vision model is exactly how
-        // face detection ran for weeks without executing once.
         visionError = String(err?.message || err);
       }
     }
 
+    const visionObservations: Array<{
+      surfaceId: string; regionId: string; label: string | null;
+      bestLabel: string; margin: number; confident: boolean;
+      box: readonly [number, number, number, number];
+    }> = visionElements.map((el) => ({
+      surfaceId: el.surfaceType || 'viewport',
+      regionId: el.ref,
+      label: el.role,
+      bestLabel: el.role,
+      margin: el.confidence,
+      confident: el.confidence >= 0.70,
+      box: [
+        Math.round(el.bbox[0] * rawCapture.metadata.screenshotWidth),
+        Math.round(el.bbox[1] * rawCapture.metadata.screenshotHeight),
+        Math.round(el.bbox[2] * rawCapture.metadata.screenshotWidth),
+        Math.round(el.bbox[3] * rawCapture.metadata.screenshotHeight)
+      ] as const
+    }));
+
     const visionTelemetry = {
-      modelFamily: VIT_MODEL_FAMILY,
-      providerUsed: VitEncoder.getStatus().providerUsed,
+      modelFamily: activeTier === 'T0' ? 'DOM Heuristics (T0, models skipped)' : VIT_MODEL_FAMILY,
+      providerUsed: activeTier === 'T0' ? 'none' : (visionProviderUsed || VitEncoder.getStatus().providerUsed),
       regionsProposed,
       regionsEmbedded,
       totalInferenceMs: visionInferenceMs,
-      available: VitEncoder.getStatus().available,
+      available: activeTier === 'T0' ? true : VitEncoder.getStatus().available,
       ...(visionError ? { error: visionError } : {})
     };
 
@@ -204,37 +240,69 @@ export class SanitizerPipeline {
       }
     }
 
-    // 3. Scrub Interactive Elements (Map to localId, scrub names, compute coarse bounds)
-    const sanitizedElements: SanitizedElement[] = snapshot.interactiveElements.map((el) => {
-      const coarseBounds: [number, number, number, number] = [
-        Math.max(0, Math.min(1, Math.round((el.boundingBox.x / rawCapture.metadata.viewportWidth) * 100) / 100)),
-        Math.max(0, Math.min(1, Math.round((el.boundingBox.y / rawCapture.metadata.viewportHeight) * 100) / 100)),
-        Math.max(0, Math.min(1, Math.round((el.boundingBox.width / rawCapture.metadata.viewportWidth) * 100) / 100)),
-        Math.max(0, Math.min(1, Math.round((el.boundingBox.height / rawCapture.metadata.viewportHeight) * 100) / 100))
-      ];
+    // 5. Multimodal SceneGraph Fusion on Every Capture
+    const perceptionMode = options?.perceptionMode ?? 'fused';
 
+    const domCandidates: DomCandidateElement[] = snapshot.interactiveElements.map((el) => {
+      const domMatch = snapshot.domElements.find((d) => d.id === el.localId);
       const sensitiveCategory = sensitiveDomElementsMap.get(el.localId);
+      const safeName = sensitiveCategory
+        ? sensitiveElementPlaceholder(sensitiveCategory)
+        : sanitizeElementName(el.rawName);
+      return {
+        id: el.localId,
+        role: el.role,
+        name: safeName,
+        boundingBox: el.boundingBox,
+        disabled: el.state.includes('disabled'),
+        inputType: domMatch?.descriptor?.type,
+        ariaRole: domMatch?.descriptor?.ariaLabel,
+        confidence: 0.90
+      };
+    });
+
+    const sceneGraph = FusionPolicy.fuse(
+      domCandidates,
+      visionElements,
+      rawCapture.metadata,
+      { mode: perceptionMode }
+    );
+
+    const sanitizedElements: SanitizedElement[] = sceneGraph.elements.map((sgEl: any) => {
+      const sensitiveCategory = sensitiveDomElementsMap.get(sgEl.ref);
       let sanitizedName: string;
-      let actionCapabilities = [...el.actionCapabilities];
+      let actionCapabilities: import('@privapilot/protocol').ActionCapability[] = [];
+      for (const a of sgEl.affordances) {
+        if (a === 'clickable') actionCapabilities.push('click');
+        if (a === 'typable') actionCapabilities.push('type');
+        if (a === 'selectable') actionCapabilities.push('select');
+        if (a === 'scrollable') actionCapabilities.push('scroll');
+      }
+      if (actionCapabilities.length === 0) actionCapabilities.push('click');
 
       if (sensitiveCategory) {
-        // Category-safe label, from the shared scheme definition so the server's
-        // prompt can enumerate exactly the placeholders it will encounter.
         sanitizedName = sensitiveElementPlaceholder(sensitiveCategory);
-
-        // Restrict unsafe action capabilities for sensitive controls (Requirement 6)
-        // Remote server must NOT type into password, OTP, payment, token, or sensitive fields
         actionCapabilities = actionCapabilities.filter((cap) => cap !== 'type');
       } else {
-        sanitizedName = sanitizeElementName(el.rawName);
+        sanitizedName = sanitizeElementName(sgEl.labelHint || sgEl.role);
       }
 
+      let role: import('@privapilot/protocol').ElementRole = 'generic';
+      const r = sgEl.role.toLowerCase();
+      if (r === 'button') role = 'button';
+      else if (r === 'link') role = 'link';
+      else if (r === 'input' || r === 'text_input') role = 'input';
+      else if (r === 'select') role = 'select';
+      else if (r === 'textarea') role = 'textarea';
+      else if (r === 'checkbox' || r === 'checkbox_or_toggle') role = 'checkbox';
+      else if (r === 'radio') role = 'radio';
+
       return {
-        localId: el.localId,
-        role: el.role,
+        localId: sgEl.ref,
+        role,
         sanitizedName,
-        coarseBounds,
-        state: el.state,
+        coarseBounds: sgEl.bbox,
+        state: ['visible', 'enabled'],
         actionCapabilities
       };
     });
@@ -312,7 +380,7 @@ export class SanitizerPipeline {
     const digestStr = `${rawCapture.captureId}:${allRegions.length}:${sanitizedElements.length}`;
     const payloadDigestSha256 = `sha256_${Math.abs(digestStr.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0))}`;
 
-    return {
+    const sanitized: SanitizedContext = {
       _brand: 'SanitizedContext_Verified',
       protocolVersion: '1.0',
       runId: `run_${Date.now()}`,
@@ -320,6 +388,7 @@ export class SanitizerPipeline {
       goal: sanitizeElementName(goal),
       sanitizedScreenshotDataUrl: sanitizedDataUrl,
       elements: sanitizedElements,
+      sceneGraph,
       pageState: {
         title: sanitizedTitle,
         viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight]
@@ -331,5 +400,11 @@ export class SanitizerPipeline {
       payloadDigestSha256,
       timestamp: Date.now()
     };
+
+    if (cacheKey) {
+      PerceptionCache.set(cacheKey, sanitized);
+    }
+
+    return sanitized;
   }
 }

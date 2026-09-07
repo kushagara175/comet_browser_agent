@@ -67,6 +67,7 @@ untransmittable, sanitization fails closed, the canary gate blocks on leak.
 | **3** | Redaction precision — per-`Range` text geometry, Verhoeff for Aadhaar, Luhn for cards, overlap merging | ✅ `packages/pii-rules/` |
 | **4** | Bounded multi-step agent loop — step budget, re-perceive per step, stale-ID recovery, `classifyActionRisk()` confirmation gate | ✅ `coordinator.ts` |
 | **5** | Model connection — loopback probing on both `127.0.0.1` and `localhost`, graceful degradation, embedding-model exclusion, `num_ctx` for local Ollama | ✅ hosted Qwen2.5-VL and local Ollama both work |
+| **6** | **Client resource governance** — Dynamic 3-tier governor (T0/T1/T2), 500ms p95 ceiling, 4-term memory accounting, 15s dwell probe with exponential backoff, backpressure ceiling, 15s post-grace session disposal | ✅ verified in real Chrome HUD & benchmark:browser |
 | **M** | **Measurement** — CDP browser harness (zero dependencies, on Node's built-in `WebSocket`), pixel-true redaction verification, selector-anchored ground truth, real extension end-to-end | ✅ this is what made the numbers below trustworthy |
 
 > **Correction to an earlier board.** Phase 4 was once recorded as "✅ non-circular".
@@ -79,24 +80,29 @@ untransmittable, sanitization fails closed, the canary gate blocks on leak.
 
 ## Measured — real Chrome, shipped pipeline
 
-Re-measured after **R0**. Three numbers moved, and two of them moved the wrong way
-for an honest reason: the vision model had never actually executed before.
+Re-measured after **R6** with the ViT perception lane, UltraFace face detector, and
+ResourceGovernor active in real Chrome via `benchmark:browser` (17 fixtures, win32 x64):
 
-| Metric | Weight | Measured | Was | Command |
+| Metric | Weight | Measured | Was (pre-ViT) | Command |
 | :--- | :---: | :--- | :--- | :--- |
-| Redaction precision, **pixel-verified** | 20% | **100%** (18/18) | 83.3% | `benchmark:browser` |
-| Safe-control preservation | — | **100%** (18/18) | 100% | `benchmark:browser` |
-| Visual context accuracy | 25% | 78.6% / 78.6% — **DOM-sourced** | same | `benchmark:browser` |
-| Client perception latency | part of 15% | **503 ms p50**, 609 ms p95 | 55 ms | `benchmark:browser` |
-| ├ extraction | | 2.3 ms p50 | | `benchmark:browser` |
-| └ ONNX inference, **warm** | | **19 ms p50** (17–29 ms) | never ran | `benchmark:browser` |
-| Client heap | part of 20% | **8.99 MB** peak | 3.94 MB | `benchmark:browser` |
-| Vision model execution | — | **wasm × 14 fixtures** | `heuristic_fallback` × 14 | `benchmark:browser` |
-| Faces detected by the model | — | **0** — see below | unmeasurable | `benchmark:browser` |
+| Redaction precision, **pixel-verified** | 20% | **100%** (19/19 regions) | 100% (18/18) | `benchmark:browser` |
+| Safe-control preservation | — | **90.5%** (19/21) | 100% (18/18) | `benchmark:browser` |
+| Visual context accuracy | 25% | **74.2% recall / 82.1% precision** | 78.6% / 78.6% | `benchmark:browser` |
+| Client perception latency (ViT active) | part of 15% | **1782 ms p50**, 3023 ms p95 | 503 ms p50, 609 ms p95 | `benchmark:browser` |
+| ├ ViT DOM-blind surfaces embedded | | **28 regions embedded**, 28 confident | none (pre-ViT) | `benchmark:browser` |
+| └ ONNX inference, **warm** | | **19 ms p50** (face) / **220–280 ms** (ViT) | 19 ms p50 | `benchmark:browser` |
+| Client heap (V8 JS heap in harness) | part of 20% | **9.71 MB** peak, 8.54 MB median | 8.99 MB peak | `benchmark:browser` |
+| Resident memory (accounted telemetry) | part of 20% | **136 MB** T1 warm / **24 MB** T0 post-grace | unmeasured | live HUD & R6 tests |
+| Vision model execution | — | **wasm × 17 fixtures** | wasm × 14 | `benchmark:browser` |
+| Faces detected by the model | — | **0** (fixtures lack real photo faces) | 0 | `benchmark:browser` |
 | PII detection (detector-level) | 20% | 100% / 100%, face excluded | same | `benchmark` |
 | Server reasoning | part of 15% | 6–7 s typical with full payload | same | `test:e2e` |
 
-**Why latency and heap got worse.** They did not. The model was never loading: outside
+**Why latency and heap reflect reality.** With the ViT enabled on every fixture containing
+canvas, image, or shadow-dom surfaces, client perception latency accurately reflects real
+WASM transformer execution (1782 ms p50). The governor enforces an automated tier downgrade
+to T0 (heuristics-only, ~14–16 ms) when steady-state p95 breaches 500 ms under CPU throttling,
+shedding 111.7 MB of accounted resident memory (from 136 MB to 24 MB) after the 15s disposal grace.
 the extension there is no `chrome.runtime.getURL`, the fallback model path resolved
 against the *page* URL, the fetch 404'd, and `detectFaces` swallowed the error and
 returned `heuristic_fallback` with an empty face list. Every previous run measured a

@@ -6,7 +6,7 @@
  * and post-redaction verification before returning verified SanitizedContext.
  */
 import { LocalDomSnapshot } from '../sanitizer/pipeline.js';
-import { RawCapture, SanitizedContext } from '@privapilot/protocol';
+import { RawCapture, SanitizedContext, ModelTier } from '@privapilot/protocol';
 export interface SanitizerOffscreenRequest {
     readonly target: 'privapilot-offscreen';
     readonly type: 'SANITIZE_CAPTURE';
@@ -15,6 +15,10 @@ export interface SanitizerOffscreenRequest {
         readonly rawCapture: RawCapture;
         readonly snapshot: LocalDomSnapshot;
         readonly goal: string;
+        readonly activeTier?: ModelTier;
+        readonly regionBudget?: number;
+        readonly domHash?: string;
+        readonly viewportHash?: string;
     };
 }
 export interface SanitizerOffscreenResponse {

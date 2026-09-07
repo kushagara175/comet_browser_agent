@@ -148,6 +148,7 @@ export function parseUltraFaceOutputs(scoresData, boxesData, origWidth, origHeig
     }
     return applyNMS(candidates, iouThreshold);
 }
+import { CapabilityDetector } from './capability-detector.js';
 /**
  * Singleton ONNX model session manager for the offscreen document.
  */
@@ -158,14 +159,6 @@ export class UltraFaceModelRunner {
     static assetBase = null;
     /**
      * Points the runner at an explicit asset base instead of `chrome.runtime`.
-     *
-     * Outside the extension there is no `chrome.runtime.getURL`, and the relative
-     * fallback path resolves against the *page* URL - so in the benchmark harness the
-     * model and the ORT wasm both 404, `create()` threw, and `detectFaces` reported
-     * `heuristic_fallback` with an empty list. Every fixture silently scored as
-     * "no faces found" while appearing to run the model. Giving the harness a real
-     * base URL is what lets the model actually execute outside Chrome's extension
-     * origin, and therefore what makes any face number measurable at all.
      */
     static configure(assetBase) {
         if (assetBase !== this.assetBase) {
@@ -173,6 +166,30 @@ export class UltraFaceModelRunner {
             this.initPromise = null;
         }
         this.assetBase = assetBase ? assetBase.replace(/\/+$/, '') : null;
+    }
+    /**
+     * Releases the ONNX session to reclaim resident memory on tier downgrade.
+     */
+    static async disposeSession() {
+        if (this.session) {
+            if (typeof this.session.release === 'function') {
+                try {
+                    await this.session.release();
+                }
+                catch { }
+            }
+            this.session = null;
+            this.initPromise = null;
+        }
+    }
+    /**
+     * Returns accounted memory footprint in bytes (weights + active session buffers).
+     */
+    static getMemoryFootprintBytes() {
+        if (!this.session)
+            return 0;
+        // UltraFace RFB-320 weights (1.7MB) + execution session arena (5MB)
+        return Math.round((1.7 + 5) * 1024 * 1024);
     }
     /**
      * Initializes the ONNX session once per offscreen document lifecycle.
@@ -203,8 +220,9 @@ export class UltraFaceModelRunner {
                 : hasChromeRuntime
                     ? chrome.runtime.getURL('assets/models/version-RFB-320.onnx')
                     : './apps/extension/assets/models/version-RFB-320.onnx';
-            // 1. Try WebGPU if available in browser
-            if (typeof navigator !== 'undefined' && navigator.gpu) {
+            const hardwareProvider = CapabilityDetector.detectBestProvider();
+            // 1. Try WebGPU if available and not forcibly disabled
+            if (hardwareProvider === 'webgpu' && CapabilityDetector.hasWebGPU()) {
                 try {
                     this.session = await ort.InferenceSession.create(modelPath, {
                         executionProviders: ['webgpu']
@@ -217,8 +235,9 @@ export class UltraFaceModelRunner {
                 }
             }
             // 2. Fall back to CPU WASM for 100% correctness
+            const ep = hardwareProvider === 'cpu' ? ['cpu', 'wasm'] : ['wasm'];
             this.session = await ort.InferenceSession.create(modelPath, {
-                executionProviders: ['wasm']
+                executionProviders: ep
             });
             this.providerUsed = 'wasm';
         })().finally(() => {

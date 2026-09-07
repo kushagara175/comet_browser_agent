@@ -6,12 +6,16 @@
  * - Message passing (runtime.sendMessage / tabs.sendMessage)
  * - Local storage
  */
-import { RawCapture, SanitizedContext } from '@privapilot/protocol';
+import { RawCapture, SanitizedContext, ModelTier } from '@privapilot/protocol';
 import { LocalDomSnapshot } from '../sanitizer/pipeline.js';
 export interface SanitizationHostRequest {
     readonly rawCapture: RawCapture;
     readonly snapshot: LocalDomSnapshot;
     readonly goal: string;
+    readonly activeTier?: ModelTier;
+    readonly regionBudget?: number;
+    readonly domHash?: string;
+    readonly viewportHash?: string;
 }
 export interface BrowserAdapter {
     captureVisibleTab(): Promise<string>;

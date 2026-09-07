@@ -18,7 +18,7 @@
  * shipped as a small table, so nothing here needs to tokenize anything.
  */
 export declare const VIT_MODEL_FAMILY = "CLIP ViT-B/32 (vision tower, uint8)";
-export type VitProvider = 'webgpu' | 'wasm' | 'unavailable';
+export type VitProvider = 'webgpu' | 'wasm' | 'cpu' | 'unavailable';
 export interface VitEmbedding {
     /** L2-normalized embedding, so a dot product is a cosine similarity. */
     readonly vector: Float32Array;
@@ -27,19 +27,21 @@ export interface VitEmbedding {
 export interface VitStatus {
     readonly modelFamily: string;
     readonly providerUsed: VitProvider;
+    readonly modelArtifactPath?: string;
+    readonly modelByteSize?: number;
+    readonly inputTensorShape?: readonly [number, number, number, number];
     readonly loadMs: number;
     readonly lastInferenceMs: number;
     readonly inferenceCount: number;
+    readonly cropDurationsMs: ReadonlyArray<number>;
     readonly available: boolean;
     readonly lastError?: string;
 }
 /**
  * Converts a canvas region to the model's NCHW input tensor.
- *
- * Exported so the preprocessing can be tested directly: a normalization mistake here
- * produces embeddings that are confidently wrong rather than obviously broken.
+ * Works in both browser (DOM canvas letterbox) and Node.js (software pixel sampling).
  */
-export declare function preprocessRegionToNCHW(source: HTMLCanvasElement | OffscreenCanvas, region?: {
+export declare function preprocessRegionToNCHW(source: HTMLCanvasElement | OffscreenCanvas | any, region?: {
     x: number;
     y: number;
     width: number;
@@ -52,23 +54,43 @@ export declare class VitEncoder {
     private static initPromise;
     private static assetBase;
     private static provider;
+    private static modelArtifactPath;
+    private static modelByteSize;
     private static loadMs;
     private static lastInferenceMs;
     private static inferenceCount;
+    private static cropDurationsMs;
     private static lastError;
     /** Points the encoder at an HTTP asset base, for hosts without chrome.runtime. */
     static configure(assetBase: string | null): void;
     static getStatus(): VitStatus;
+    /**
+     * Releases the ONNX session to reclaim resident memory on tier downgrade.
+     */
+    static disposeSession(): Promise<void>;
+    /**
+     * Returns accounted memory footprint in bytes (weights + active session buffers).
+     */
+    static getMemoryFootprintBytes(): number;
     private static modelUrl;
     static initialize(): Promise<VitProvider>;
     /**
-     * Embeds one region of a canvas.
+     * Embeds multiple regions of a canvas in parallel using a batched forward pass [N, 3, 224, 224].
+     * Significantly reduces per-crop overhead compared to sequential single-crop inferences.
+     */
+    static embedRegions(canvas: HTMLCanvasElement | OffscreenCanvas | any, regions: Array<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    }>, maxBatch?: number): Promise<VitEmbedding[]>;
+    /**
+     * Embeds one region of a canvas using real CLIP ViT-B/32 forward pass.
      *
      * Throws rather than returning an empty result: a silently-swallowed model failure
-     * is exactly how face detection ran for weeks without ever executing. Callers
-     * decide what to do when vision is unavailable, and say so in telemetry.
+     * is exactly how face detection ran for weeks without ever executing.
      */
-    static embedRegion(canvas: HTMLCanvasElement | OffscreenCanvas, region?: {
+    static embedRegion(canvas: HTMLCanvasElement | OffscreenCanvas | any, region?: {
         x: number;
         y: number;
         width: number;

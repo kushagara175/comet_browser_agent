@@ -7,7 +7,7 @@
  * - Local storage
  */
 
-import { RawCapture, SanitizedContext } from '@privapilot/protocol';
+import { RawCapture, SanitizedContext, ModelTier } from '@privapilot/protocol';
 import { LocalDomSnapshot, SanitizerPipeline } from '../sanitizer/pipeline.js';
 
 declare const chrome: any;
@@ -16,6 +16,10 @@ export interface SanitizationHostRequest {
   readonly rawCapture: RawCapture;
   readonly snapshot: LocalDomSnapshot;
   readonly goal: string;
+  readonly activeTier?: ModelTier;
+  readonly regionBudget?: number;
+  readonly domHash?: string;
+  readonly viewportHash?: string;
 }
 
 export interface BrowserAdapter {
@@ -126,37 +130,41 @@ export class WebExtensionAdapter implements BrowserAdapter {
       return { id: 1, url: 'https://app.example.local/', title: 'Workspace' };
     }
 
+    const isWebTab = (t: any) => Boolean(t && t.id && typeof t.url === 'string' && !t.url.startsWith('chrome-extension://') && !t.url.startsWith('chrome://'));
+
     return new Promise((resolve) => {
       // 1. Try lastFocusedWindow (active web tab behind popup/sidepanel)
       api.tabs.query({ active: true, lastFocusedWindow: true }, (tabs: any[]) => {
-        if (!api.runtime.lastError && tabs && tabs.length > 0) {
-          return resolve({
-            id: tabs[0].id,
-            url: tabs[0].url || '',
-            title: tabs[0].title || ''
-          });
+        const found1 = tabs?.find(isWebTab);
+        if (!api.runtime.lastError && found1) {
+          return resolve({ id: found1.id, url: found1.url || '', title: found1.title || '' });
         }
 
         // 2. Try currentWindow
         api.tabs.query({ active: true, currentWindow: true }, (currentTabs: any[]) => {
-          if (!api.runtime.lastError && currentTabs && currentTabs.length > 0) {
-            return resolve({
-              id: currentTabs[0].id,
-              url: currentTabs[0].url || '',
-              title: currentTabs[0].title || ''
-            });
+          const found2 = currentTabs?.find(isWebTab);
+          if (!api.runtime.lastError && found2) {
+            return resolve({ id: found2.id, url: found2.url || '', title: found2.title || '' });
           }
 
-          // 3. Fallback to any active tab
+          // 3. Fallback to any active web tab
           api.tabs.query({ active: true }, (anyTabs: any[]) => {
-            if (!api.runtime.lastError && anyTabs && anyTabs.length > 0) {
-              return resolve({
-                id: anyTabs[0].id,
-                url: anyTabs[0].url || '',
-                title: anyTabs[0].title || ''
-              });
+            const found3 = anyTabs?.find(isWebTab);
+            if (!api.runtime.lastError && found3) {
+              return resolve({ id: found3.id, url: found3.url || '', title: found3.title || '' });
             }
-            resolve({ id: 0, url: '', title: '' });
+
+            // 4. Query all tabs for any open http/https tab
+            api.tabs.query({}, (allTabs: any[]) => {
+              const httpTab = allTabs?.find((t: any) => typeof t.url === 'string' && (t.url.startsWith('http://') || t.url.startsWith('https://')));
+              if (httpTab) {
+                return resolve({ id: httpTab.id, url: httpTab.url || '', title: httpTab.title || '' });
+              }
+              if (anyTabs && anyTabs.length > 0) {
+                return resolve({ id: anyTabs[0].id, url: anyTabs[0].url || '', title: anyTabs[0].title || '' });
+              }
+              resolve({ id: 0, url: '', title: '' });
+            });
           });
         });
       });
@@ -293,7 +301,14 @@ export class WebExtensionAdapter implements BrowserAdapter {
       return SanitizerPipeline.sanitize(
         request.rawCapture,
         request.snapshot,
-        request.goal
+        request.goal,
+        undefined,
+        {
+          activeTier: request.activeTier,
+          domHash: request.domHash,
+          viewportHash: request.viewportHash,
+          regionBudget: request.regionBudget
+        }
       );
     }
 

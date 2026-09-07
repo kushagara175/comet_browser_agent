@@ -10,10 +10,11 @@
   ],
   "scripts": {
     "build": "node scripts/build.js",
-    "test": "node --test tests/**/*.test.js",
+    "test": "node --test --test-concurrency=1 tests/**/*.test.js",
     "test:canary": "node scripts/test-proxy.js",
     "test:llm": "node --env-file-if-exists=.env scripts/test-local-llm.js",
     "benchmark": "node scripts/run-benchmarks.js",
+    "ablate": "node scripts/ablate.js",
     "verify:redaction": "node scripts/verify-redaction.mjs",
     "benchmark:browser": "node scripts/run-browser-benchmark.mjs",
     "compare:models": "node --env-file-if-exists=.env scripts/compare-models.mjs",

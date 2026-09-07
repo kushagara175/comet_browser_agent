@@ -1,30 +1,30 @@
 {
-  "timestamp": "2026-09-02T06:17:20.658Z",
-  "fixturesEvaluated": 14,
+  "timestamp": "2026-09-07T11:23:28.434Z",
+  "fixturesEvaluated": 17,
   "metadata": {
     "command": "D:\\SIH 2026\\SIHPROJECT1\\scripts\\run-benchmarks.js",
-    "date": "2026-09-02T06:17:20.658Z",
+    "date": "2026-09-07T11:23:28.434Z",
     "environment": "win32 x64 (Node v22.19.0)",
     "browserVersion": "Google Chrome / Chromium Headless (CDP Engine)",
     "modelProvider": "UltraFace ONNX (Wasm/CPU) + Local PII Regex/Luhn Engine",
-    "gitSha": "a88f13b",
+    "gitSha": "71cb5f7",
     "split": "all"
   },
   "accuracy": {
-    "elementRecall": 82.1,
-    "elementPrecision": 76.7,
+    "elementRecall": 77.4,
+    "elementPrecision": 75,
     "roleAccuracy": 100,
     "medianIoU": 1,
-    "truePositives": 23,
-    "falsePositives": 7,
-    "falseNegatives": 5
+    "truePositives": 24,
+    "falsePositives": 8,
+    "falseNegatives": 7
   },
   "pii": {
-    "aggregateRecall": 94.1,
-    "aggregatePrecision": 94.1,
-    "aggregateF1": 94.1,
-    "totalTruePositives": 16,
-    "totalFalsePositives": 1,
+    "aggregateRecall": 94.4,
+    "aggregatePrecision": 85,
+    "aggregateF1": 89.5,
+    "totalTruePositives": 17,
+    "totalFalsePositives": 3,
     "totalFalseNegatives": 1,
     "categoryBreakdown": {
       "password": {
@@ -75,11 +75,11 @@
       "national_id": {
         "category": "national_id",
         "truePositives": 2,
-        "falsePositives": 0,
+        "falsePositives": 1,
         "falseNegatives": 0,
         "recall": 100,
-        "precision": 100,
-        "f1Score": 100
+        "precision": 66.7,
+        "f1Score": 80
       },
       "token": {
         "category": "token",
@@ -101,25 +101,25 @@
       },
       "high_risk_surface": {
         "category": "high_risk_surface",
-        "truePositives": 2,
-        "falsePositives": 1,
+        "truePositives": 3,
+        "falsePositives": 2,
         "falseNegatives": 1,
-        "recall": 66.7,
-        "precision": 66.7,
+        "recall": 75,
+        "precision": 60,
         "f1Score": 66.7
       }
     }
   },
   "redaction": {
-    "sensitiveRegionCoverage": 94.7,
+    "sensitiveRegionCoverage": 95,
     "underMaskCount": 1,
-    "overMaskRatio": 0.85,
-    "safeElementPreservation": 100,
+    "overMaskRatio": 0.9,
+    "safeElementPreservation": 86.4,
     "safeElementsPreserved": 19,
-    "totalSafeElements": 19
+    "totalSafeElements": 22
   },
   "latency": {
-    "sampleCount": 14,
+    "sampleCount": 17,
     "p50TotalLatencyMs": 385,
     "p95TotalLatencyMs": 385,
     "p50ClientPerceptionMs": 35,
@@ -127,8 +127,8 @@
     "p50ServerReasoningMs": 350,
     "p95ServerReasoningMs": 350,
     "p50ActionExecutionMs": 0,
-    "peakMemoryMb": 41.4,
-    "cpuLoadPct": 150
+    "peakMemoryMb": 44.6,
+    "cpuLoadPct": 0
   },
   "latencyMeasured": false,
   "unmeasuredCategories": [

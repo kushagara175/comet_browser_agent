@@ -1,11 +1,16 @@
 /**
  * @privapilot/test-fixtures - Ground Truth Annotations for Benchmarking
  *
- * Authored ground truth annotations across 14 fixtures partitioned into
- * development (dev) and held-out splits.
+ * CONTAMINATION NOTICE (DEV SPLIT ONLY):
+ * All fixtures in this suite were authored in the same repository cycle as the detectors,
+ * fusion policy, and test harness. They are designated strictly as DEV fixtures for
+ * pipeline calibration and regression smoke testing. They are NOT a held-out evaluation set.
+ * An independent held-out evaluation corpus will be captured from real-world pages by
+ * evaluators without exposure to fusion-policy.ts.
  */
 import { SensitiveCategory } from '@privapilot/protocol';
 export type BenchmarkSplit = 'dev' | 'held-out';
+export type ElementVisibilityBucket = 'dom-visible' | 'dom-blind';
 export interface GroundTruthBox {
     readonly category: SensitiveCategory;
     /**
@@ -33,6 +38,7 @@ export interface GroundTruthElement {
     readonly normW?: number;
     readonly normH?: number;
     readonly isSensitive?: boolean;
+    readonly bucket?: ElementVisibilityBucket;
 }
 export interface GroundTruthAnnotation {
     readonly fixtureId: string;

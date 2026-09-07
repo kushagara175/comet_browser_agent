@@ -7,7 +7,7 @@
  */
 
 import { SanitizerPipeline, LocalDomSnapshot } from '../sanitizer/pipeline.js';
-import { RawCapture, SanitizedContext } from '@privapilot/protocol';
+import { RawCapture, SanitizedContext, ModelTier } from '@privapilot/protocol';
 
 declare const chrome: any;
 
@@ -19,6 +19,10 @@ export interface SanitizerOffscreenRequest {
     readonly rawCapture: RawCapture;
     readonly snapshot: LocalDomSnapshot;
     readonly goal: string;
+    readonly activeTier?: ModelTier;
+    readonly regionBudget?: number;
+    readonly domHash?: string;
+    readonly viewportHash?: string;
   };
 }
 
@@ -81,7 +85,13 @@ export async function handleSanitizeRequest(
       rawCapture,
       snapshot,
       goal || '',
-      canvas
+      canvas,
+      {
+        activeTier: payload.activeTier,
+        domHash: payload.domHash,
+        viewportHash: payload.viewportHash,
+        regionBudget: payload.regionBudget
+      }
     );
 
     return {

@@ -1,23 +1,23 @@
 {
-  "timestamp": "2026-09-02T07:19:41.879Z",
+  "timestamp": "2026-09-07T16:31:57.800Z",
   "harness": "browser",
   "split": "all",
-  "fixturesEvaluated": 15,
+  "fixturesEvaluated": 17,
   "metadata": {
     "command": "npm run benchmark:browser",
     "environment": "win32 x64 (Node v22.19.0)",
     "chromePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "viewport": "1280x800 @1x",
-    "gitSha": "66b41a9"
+    "gitSha": "71cb5f7"
   },
   "accuracy": {
-    "elementRecall": 78.6,
-    "elementPrecision": 78.6,
+    "elementRecall": 74.2,
+    "elementPrecision": 82.1,
     "roleAccuracy": 100,
     "medianIoU": 1,
-    "truePositives": 22,
-    "falsePositives": 6,
-    "falseNegatives": 6
+    "truePositives": 23,
+    "falsePositives": 5,
+    "falseNegatives": 8
   },
   "redaction": {
     "pixelVerified": true,
@@ -29,114 +29,126 @@
     "unassessableCount": 0,
     "unassessable": [],
     "safeElementPreservation": 100,
-    "safeElementsPreserved": 18,
-    "totalSafeElements": 18
+    "safeElementsPreserved": 19,
+    "totalSafeElements": 19
   },
   "clientLatency": {
-    "p50Ms": 593,
-    "p95Ms": 3655,
-    "samples": 15
+    "p50Ms": 1618,
+    "p95Ms": 3577,
+    "samples": 17
   },
   "resources": {
-    "peakHeapMb": 9.24,
-    "medianHeapMb": 7.15,
-    "medianTaskDurationSec": 0.665
+    "peakHeapMb": 9.54,
+    "medianHeapMb": 8.42,
+    "medianTaskDurationSec": 1.466
   },
   "vision": {
     "providers": [
       {
         "fixture": "standard-login",
         "providerUsed": "wasm",
-        "durationMs": 21,
+        "durationMs": 31,
         "faceCount": 0
       },
       {
         "fixture": "misleading-field-names",
         "providerUsed": "wasm",
-        "durationMs": 30,
+        "durationMs": 44,
         "faceCount": 0
       },
       {
         "fixture": "payment-portal",
         "providerUsed": "wasm",
-        "durationMs": 29,
+        "durationMs": 28,
         "faceCount": 0
       },
       {
         "fixture": "profile-pii",
         "providerUsed": "wasm",
-        "durationMs": 33,
+        "durationMs": 26,
         "faceCount": 0
       },
       {
         "fixture": "face-gallery",
         "providerUsed": "wasm",
-        "durationMs": 28,
+        "durationMs": 19,
         "faceCount": 0
       },
       {
         "fixture": "image-pii",
         "providerUsed": "wasm",
-        "durationMs": 33,
+        "durationMs": 21,
         "faceCount": 0
       },
       {
         "fixture": "canvas-app",
         "providerUsed": "wasm",
-        "durationMs": 27,
+        "durationMs": 51,
         "faceCount": 0
       },
       {
         "fixture": "canvas-pii",
         "providerUsed": "wasm",
-        "durationMs": 25,
+        "durationMs": 60,
         "faceCount": 0
       },
       {
         "fixture": "cross-origin-iframe",
         "providerUsed": "wasm",
-        "durationMs": 20,
+        "durationMs": 49,
         "faceCount": 0
       },
       {
         "fixture": "shadow-dom",
         "providerUsed": "wasm",
-        "durationMs": 24,
+        "durationMs": 26,
         "faceCount": 0
       },
       {
         "fixture": "controlled-react-input",
         "providerUsed": "wasm",
-        "durationMs": 21,
+        "durationMs": 33,
         "faceCount": 0
       },
       {
         "fixture": "long-scroll",
         "providerUsed": "wasm",
-        "durationMs": 18,
+        "durationMs": 28,
         "faceCount": 0
       },
       {
         "fixture": "dark-mode",
         "providerUsed": "wasm",
-        "durationMs": 23,
+        "durationMs": 30,
         "faceCount": 0
       },
       {
         "fixture": "modal-dialog",
         "providerUsed": "wasm",
-        "durationMs": 22,
+        "durationMs": 23,
         "faceCount": 0
       },
       {
         "fixture": "cookie-banner",
         "providerUsed": "wasm",
+        "durationMs": 27,
+        "faceCount": 0
+      },
+      {
+        "fixture": "canvas-form",
+        "providerUsed": "wasm",
+        "durationMs": 20,
+        "faceCount": 0
+      },
+      {
+        "fixture": "image-identifier",
+        "providerUsed": "wasm",
         "durationMs": 20,
         "faceCount": 0
       }
     ],
-    "modelExecuted": 15,
-    "fixturesProbed": 15,
+    "modelExecuted": 17,
+    "fixturesProbed": 17,
     "totalFacesDetected": 0
   },
   "vit": {
@@ -145,173 +157,195 @@
       {
         "fixture": "standard-login",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false,
-        "observations": 0,
-        "labelled": 0
+        "providerUsed": "wasm",
+        "regionsProposed": 3,
+        "regionsEmbedded": 3,
+        "totalInferenceMs": 1398,
+        "available": true,
+        "observations": 3,
+        "labelled": 3
       },
       {
         "fixture": "misleading-field-names",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false,
-        "observations": 0,
-        "labelled": 0
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 1268,
+        "available": true,
+        "observations": 1,
+        "labelled": 1
       },
       {
         "fixture": "payment-portal",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false,
-        "observations": 0,
-        "labelled": 0
+        "providerUsed": "wasm",
+        "regionsProposed": 2,
+        "regionsEmbedded": 2,
+        "totalInferenceMs": 1169,
+        "available": true,
+        "observations": 2,
+        "labelled": 2
       },
       {
         "fixture": "profile-pii",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false,
-        "observations": 0,
-        "labelled": 0
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 637,
+        "available": true,
+        "observations": 1,
+        "labelled": 1
       },
       {
         "fixture": "face-gallery",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false,
-        "observations": 0,
-        "labelled": 0
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 599,
+        "available": true,
+        "observations": 1,
+        "labelled": 1
       },
       {
         "fixture": "image-pii",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
         "providerUsed": "wasm",
-        "regionsProposed": 6,
-        "regionsEmbedded": 6,
-        "totalInferenceMs": 1645,
+        "regionsProposed": 2,
+        "regionsEmbedded": 2,
+        "totalInferenceMs": 952,
         "available": true,
-        "observations": 6,
-        "labelled": 3
+        "observations": 2,
+        "labelled": 2
       },
       {
         "fixture": "canvas-app",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
         "providerUsed": "wasm",
-        "regionsProposed": 6,
-        "regionsEmbedded": 6,
-        "totalInferenceMs": 2256,
+        "regionsProposed": 4,
+        "regionsEmbedded": 4,
+        "totalInferenceMs": 2317,
         "available": true,
-        "observations": 6,
-        "labelled": 5
+        "observations": 4,
+        "labelled": 4
       },
       {
         "fixture": "canvas-pii",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false,
-        "observations": 0,
-        "labelled": 0
+        "providerUsed": "wasm",
+        "regionsProposed": 3,
+        "regionsEmbedded": 3,
+        "totalInferenceMs": 2274,
+        "available": true,
+        "observations": 3,
+        "labelled": 3
       },
       {
         "fixture": "cross-origin-iframe",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
         "providerUsed": "wasm",
-        "regionsProposed": 6,
-        "regionsEmbedded": 6,
-        "totalInferenceMs": 1264,
+        "regionsProposed": 2,
+        "regionsEmbedded": 2,
+        "totalInferenceMs": 1697,
         "available": true,
-        "observations": 6,
-        "labelled": 6
+        "observations": 2,
+        "labelled": 2
       },
       {
         "fixture": "shadow-dom",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false,
-        "observations": 0,
-        "labelled": 0
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 676,
+        "available": true,
+        "observations": 1,
+        "labelled": 1
       },
       {
         "fixture": "controlled-react-input",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false,
-        "observations": 0,
-        "labelled": 0
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 756,
+        "available": true,
+        "observations": 1,
+        "labelled": 1
       },
       {
         "fixture": "long-scroll",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false,
-        "observations": 0,
-        "labelled": 0
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 935,
+        "available": true,
+        "observations": 1,
+        "labelled": 1
       },
       {
         "fixture": "dark-mode",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false,
-        "observations": 0,
-        "labelled": 0
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 954,
+        "available": true,
+        "observations": 1,
+        "labelled": 1
       },
       {
         "fixture": "modal-dialog",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false,
-        "observations": 0,
-        "labelled": 0
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 904,
+        "available": true,
+        "observations": 1,
+        "labelled": 1
       },
       {
         "fixture": "cookie-banner",
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false,
-        "observations": 0,
-        "labelled": 0
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 1062,
+        "available": true,
+        "observations": 1,
+        "labelled": 1
+      },
+      {
+        "fixture": "canvas-form",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "wasm",
+        "regionsProposed": 2,
+        "regionsEmbedded": 2,
+        "totalInferenceMs": 959,
+        "available": true,
+        "observations": 2,
+        "labelled": 2
+      },
+      {
+        "fixture": "image-identifier",
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 763,
+        "available": true,
+        "observations": 1,
+        "labelled": 1
       }
     ],
-    "regionsEmbedded": 18,
-    "observations": 18,
-    "labelled": 14,
-    "totalInferenceMs": 5165
+    "regionsEmbedded": 28,
+    "observations": 28,
+    "labelled": 28,
+    "totalInferenceMs": 19320
   },
   "blockedFixtures": [],
   "perFixture": [
@@ -323,11 +357,11 @@
       "blocked": false,
       "regionsAssessable": 2,
       "regionsCovered": 2,
-      "extractMs": 3.3,
-      "sanitizeMs": 605.7,
-      "clientMs": 609,
-      "heapUsedMb": 7.16,
-      "taskDurationSec": 0.702,
+      "extractMs": 5.1,
+      "sanitizeMs": 2143.8,
+      "clientMs": 2148.9,
+      "heapUsedMb": 8.4,
+      "taskDurationSec": 2.041,
       "rawScreenshotKb": 10,
       "sanitizedScreenshotKb": 30,
       "redactionVerdicts": [
@@ -374,14 +408,57 @@
           "sampledPixels": 1218
         }
       ],
-      "visionObservations": [],
+      "visionObservations": [
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_1",
+          "label": "icon",
+          "bestLabel": "icon",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            8,
+            24,
+            76,
+            24
+          ]
+        },
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_2",
+          "label": "checkbox_or_toggle",
+          "bestLabel": "checkbox_or_toggle",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            284,
+            64,
+            180,
+            24
+          ]
+        },
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_3",
+          "label": "button",
+          "bestLabel": "button",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            524,
+            64,
+            68,
+            24
+          ]
+        }
+      ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false
+        "providerUsed": "wasm",
+        "regionsProposed": 3,
+        "regionsEmbedded": 3,
+        "totalInferenceMs": 1398,
+        "available": true
       }
     },
     {
@@ -392,11 +469,11 @@
       "blocked": false,
       "regionsAssessable": 2,
       "regionsCovered": 2,
-      "extractMs": 2.5,
-      "sanitizeMs": 588.2,
-      "clientMs": 590.7,
-      "heapUsedMb": 7.03,
-      "taskDurationSec": 0.662,
+      "extractMs": 5.4,
+      "sanitizeMs": 2256.7,
+      "clientMs": 2262.1,
+      "heapUsedMb": 9.54,
+      "taskDurationSec": 1.989,
       "rawScreenshotKb": 8,
       "sanitizedScreenshotKb": 27,
       "redactionVerdicts": [
@@ -443,14 +520,29 @@
           "sampledPixels": 2940
         }
       ],
-      "visionObservations": [],
+      "visionObservations": [
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_1",
+          "label": "empty_space",
+          "bestLabel": "empty_space",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            4,
+            4,
+            508,
+            28
+          ]
+        }
+      ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 1268,
+        "available": true
       }
     },
     {
@@ -461,11 +553,11 @@
       "blocked": false,
       "regionsAssessable": 3,
       "regionsCovered": 3,
-      "extractMs": 2.7,
-      "sanitizeMs": 597.7,
-      "clientMs": 600.4,
-      "heapUsedMb": 7.04,
-      "taskDurationSec": 0.681,
+      "extractMs": 4.5,
+      "sanitizeMs": 2108.5,
+      "clientMs": 2113,
+      "heapUsedMb": 9.13,
+      "taskDurationSec": 1.957,
       "rawScreenshotKb": 10,
       "sanitizedScreenshotKb": 30,
       "redactionVerdicts": [
@@ -526,14 +618,43 @@
           "sampledPixels": 3507
         }
       ],
-      "visionObservations": [],
+      "visionObservations": [
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_1",
+          "label": "button",
+          "bestLabel": "button",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            728,
+            56,
+            172,
+            24
+          ]
+        },
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_2",
+          "label": "checkbox_or_toggle",
+          "bestLabel": "checkbox_or_toggle",
+          "margin": 0.8,
+          "confident": true,
+          "box": [
+            4,
+            56,
+            40,
+            24
+          ]
+        }
+      ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false
+        "providerUsed": "wasm",
+        "regionsProposed": 2,
+        "regionsEmbedded": 2,
+        "totalInferenceMs": 1169,
+        "available": true
       }
     },
     {
@@ -544,11 +665,11 @@
       "blocked": false,
       "regionsAssessable": 4,
       "regionsCovered": 4,
-      "extractMs": 3.1,
-      "sanitizeMs": 801.6,
-      "clientMs": 804.7,
-      "heapUsedMb": 7.15,
-      "taskDurationSec": 0.873,
+      "extractMs": 7.6,
+      "sanitizeMs": 1370.3,
+      "clientMs": 1377.9,
+      "heapUsedMb": 8.98,
+      "taskDurationSec": 1.345,
       "rawScreenshotKb": 17,
       "sanitizedScreenshotKb": 39,
       "redactionVerdicts": [
@@ -637,14 +758,29 @@
           "sampledPixels": 1680
         }
       ],
-      "visionObservations": [],
+      "visionObservations": [
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_1",
+          "label": "link_or_nav",
+          "bestLabel": "link_or_nav",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            4,
+            236,
+            220,
+            24
+          ]
+        }
+      ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 637,
+        "available": true
       }
     },
     {
@@ -655,11 +791,11 @@
       "blocked": false,
       "regionsAssessable": 2,
       "regionsCovered": 2,
-      "extractMs": 5.5,
-      "sanitizeMs": 691.4,
-      "clientMs": 696.9,
-      "heapUsedMb": 7.93,
-      "taskDurationSec": 0.782,
+      "extractMs": 2.6,
+      "sanitizeMs": 1147.2,
+      "clientMs": 1149.8,
+      "heapUsedMb": 8.42,
+      "taskDurationSec": 1.108,
       "rawScreenshotKb": 50,
       "sanitizedScreenshotKb": 26,
       "redactionVerdicts": [
@@ -706,14 +842,29 @@
           "sampledPixels": 1680
         }
       ],
-      "visionObservations": [],
+      "visionObservations": [
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_1",
+          "label": "checkbox_or_toggle",
+          "bestLabel": "checkbox_or_toggle",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            4,
+            4,
+            292,
+            112
+          ]
+        }
+      ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 599,
+        "available": true
       }
     },
     {
@@ -724,11 +875,11 @@
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 3.9,
-      "sanitizeMs": 2760.6,
-      "clientMs": 2764.5,
-      "heapUsedMb": 9.24,
-      "taskDurationSec": 2.635,
+      "extractMs": 2.4,
+      "sanitizeMs": 1498.4,
+      "clientMs": 1500.8,
+      "heapUsedMb": 6.97,
+      "taskDurationSec": 1.466,
       "rawScreenshotKb": 78,
       "sanitizedScreenshotKb": 27,
       "redactionVerdicts": [
@@ -763,96 +914,40 @@
       ],
       "visionObservations": [
         {
-          "surfaceId": "surface_image_text_img_text_1",
-          "regionId": "r1c0",
-          "label": null,
+          "surfaceId": "img",
+          "regionId": "v_el_1",
+          "label": "table_or_list",
           "bestLabel": "table_or_list",
-          "margin": 0.0029,
-          "confident": false,
-          "box": [
-            6,
-            72,
-            106,
-            66
-          ]
-        },
-        {
-          "surfaceId": "surface_image_text_img_text_1",
-          "regionId": "r1c1",
-          "label": null,
-          "bestLabel": "empty_space",
-          "margin": 0.012,
-          "confident": false,
-          "box": [
-            112,
-            72,
-            106,
-            66
-          ]
-        },
-        {
-          "surfaceId": "surface_image_text_img_text_1",
-          "regionId": "r2c0",
-          "label": "text_input",
-          "bestLabel": "text_input",
-          "margin": 0.0322,
+          "margin": 0.88,
           "confident": true,
           "box": [
             6,
-            138,
-            106,
-            66
+            6,
+            424,
+            264
           ]
         },
         {
-          "surfaceId": "surface_image_text_img_text_1",
-          "regionId": "r0c0",
-          "label": null,
-          "bestLabel": "link_or_nav",
-          "margin": 0.0041,
-          "confident": false,
-          "box": [
-            6,
-            6,
-            106,
-            66
-          ]
-        },
-        {
-          "surfaceId": "surface_image_text_img_text_1",
-          "regionId": "r0c1",
-          "label": "link_or_nav",
-          "bestLabel": "link_or_nav",
-          "margin": 0.0179,
+          "surfaceId": "standard",
+          "regionId": "v_el_2",
+          "label": "image_photo",
+          "bestLabel": "image_photo",
+          "margin": 0.7,
           "confident": true,
           "box": [
-            112,
-            6,
-            106,
-            66
-          ]
-        },
-        {
-          "surfaceId": "surface_image_text_img_text_1",
-          "regionId": "r2c1",
-          "label": "empty_space",
-          "bestLabel": "empty_space",
-          "margin": 0.0181,
-          "confident": true,
-          "box": [
-            112,
-            138,
-            106,
-            66
+            305,
+            64,
+            100,
+            124
           ]
         }
       ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
         "providerUsed": "wasm",
-        "regionsProposed": 6,
-        "regionsEmbedded": 6,
-        "totalInferenceMs": 1645,
+        "regionsProposed": 2,
+        "regionsEmbedded": 2,
+        "totalInferenceMs": 952,
         "available": true
       }
     },
@@ -864,11 +959,11 @@
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 1.4,
-      "sanitizeMs": 3653.6,
-      "clientMs": 3655,
-      "heapUsedMb": 6.64,
-      "taskDurationSec": 3.575,
+      "extractMs": 1.6,
+      "sanitizeMs": 3176.5,
+      "clientMs": 3178.1,
+      "heapUsedMb": 9.05,
+      "taskDurationSec": 3.115,
       "rawScreenshotKb": 26,
       "sanitizedScreenshotKb": 25,
       "redactionVerdicts": [
@@ -889,96 +984,68 @@
       ],
       "visionObservations": [
         {
-          "surfaceId": "surface_canvas_cvs_1",
-          "regionId": "r0c0",
-          "label": "table_or_list",
-          "bestLabel": "table_or_list",
-          "margin": 0.0254,
+          "surfaceId": "canvas",
+          "regionId": "v_el_1",
+          "label": "button",
+          "bestLabel": "button",
+          "margin": 0.88,
           "confident": true,
           "box": [
             0,
-            0,
-            226,
-            131
+            87,
+            814,
+            139
           ]
         },
         {
-          "surfaceId": "surface_canvas_cvs_1",
-          "regionId": "r0c1",
-          "label": null,
-          "bestLabel": "table_or_list",
-          "margin": 0.0055,
-          "confident": false,
-          "box": [
-            226,
-            0,
-            226,
-            131
-          ]
-        },
-        {
-          "surfaceId": "surface_canvas_cvs_1",
-          "regionId": "r1c0",
-          "label": "table_or_list",
-          "bestLabel": "table_or_list",
-          "margin": 0.0322,
+          "surfaceId": "canvas",
+          "regionId": "v_el_2",
+          "label": "button",
+          "bestLabel": "button",
+          "margin": 0.88,
           "confident": true,
           "box": [
             0,
-            131,
-            226,
-            131
-          ]
-        },
-        {
-          "surfaceId": "surface_canvas_cvs_1",
-          "regionId": "r2c0",
-          "label": "text_block",
-          "bestLabel": "text_block",
-          "margin": 0.0198,
-          "confident": true,
-          "box": [
-            0,
-            262,
-            226,
-            131
-          ]
-        },
-        {
-          "surfaceId": "surface_canvas_cvs_1",
-          "regionId": "r3c2",
-          "label": "table_or_list",
-          "bestLabel": "table_or_list",
-          "margin": 0.0169,
-          "confident": true,
-          "box": [
+            313,
             452,
-            393,
-            226,
-            131
+            122
           ]
         },
         {
-          "surfaceId": "surface_canvas_cvs_1",
-          "regionId": "r2c2",
+          "surfaceId": "standard",
+          "regionId": "v_el_3",
+          "label": "text_input",
+          "bestLabel": "text_input",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            36,
+            128,
+            308,
+            48
+          ]
+        },
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_4",
           "label": "chart_or_graph",
           "bestLabel": "chart_or_graph",
-          "margin": 0.1168,
+          "margin": 0.95,
           "confident": true,
           "box": [
-            452,
-            262,
-            226,
-            131
+            436,
+            156,
+            356,
+            228
           ]
         }
       ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
         "providerUsed": "wasm",
-        "regionsProposed": 6,
-        "regionsEmbedded": 6,
-        "totalInferenceMs": 2256,
+        "regionsProposed": 4,
+        "regionsEmbedded": 4,
+        "totalInferenceMs": 2317,
         "available": true
       }
     },
@@ -990,11 +1057,11 @@
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 2.8,
-      "sanitizeMs": 590.3,
-      "clientMs": 593.1,
-      "heapUsedMb": 6.93,
-      "taskDurationSec": 0.665,
+      "extractMs": 4.5,
+      "sanitizeMs": 3572.3,
+      "clientMs": 3576.8,
+      "heapUsedMb": 9.14,
+      "taskDurationSec": 3.278,
       "rawScreenshotKb": 6,
       "sanitizedScreenshotKb": 26,
       "redactionVerdicts": [
@@ -1027,14 +1094,57 @@
           "sampledPixels": 1995
         }
       ],
-      "visionObservations": [],
+      "visionObservations": [
+        {
+          "surfaceId": "canvas",
+          "regionId": "v_el_1",
+          "label": "input",
+          "bestLabel": "input",
+          "margin": 0.88,
+          "confident": true,
+          "box": [
+            6,
+            40,
+            364,
+            54
+          ]
+        },
+        {
+          "surfaceId": "canvas",
+          "regionId": "v_el_2",
+          "label": "button",
+          "bestLabel": "button",
+          "margin": 0.88,
+          "confident": true,
+          "box": [
+            6,
+            129,
+            202,
+            47
+          ]
+        },
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_3",
+          "label": "checkbox_or_toggle",
+          "bestLabel": "checkbox_or_toggle",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            408,
+            192,
+            100,
+            24
+          ]
+        }
+      ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false
+        "providerUsed": "wasm",
+        "regionsProposed": 3,
+        "regionsEmbedded": 3,
+        "totalInferenceMs": 2274,
+        "available": true
       }
     },
     {
@@ -1045,11 +1155,11 @@
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 2.6,
-      "sanitizeMs": 2257,
-      "clientMs": 2259.6,
-      "heapUsedMb": 6.76,
-      "taskDurationSec": 2.165,
+      "extractMs": 4.5,
+      "sanitizeMs": 2934.5,
+      "clientMs": 2939,
+      "heapUsedMb": 9.18,
+      "taskDurationSec": 2.776,
       "rawScreenshotKb": 6,
       "sanitizedScreenshotKb": 26,
       "redactionVerdicts": [
@@ -1084,96 +1194,40 @@
       ],
       "visionObservations": [
         {
-          "surfaceId": "surface_iframe_ifr_1",
-          "regionId": "r0c0",
+          "surfaceId": "shadow_dom",
+          "regionId": "v_el_1",
           "label": "empty_space",
           "bestLabel": "empty_space",
-          "margin": 0.0505,
+          "margin": 0.88,
           "confident": true,
           "box": [
             6,
             6,
-            127,
-            77
+            508,
+            308
           ]
         },
         {
-          "surfaceId": "surface_iframe_ifr_1",
-          "regionId": "r0c3",
-          "label": "empty_space",
-          "bestLabel": "empty_space",
-          "margin": 0.0536,
+          "surfaceId": "standard",
+          "regionId": "v_el_2",
+          "label": "icon",
+          "bestLabel": "icon",
+          "margin": 0.7,
           "confident": true,
           "box": [
-            387,
-            6,
-            127,
-            77
-          ]
-        },
-        {
-          "surfaceId": "surface_iframe_ifr_1",
-          "regionId": "r0c1",
-          "label": "empty_space",
-          "bestLabel": "empty_space",
-          "margin": 0.0502,
-          "confident": true,
-          "box": [
-            133,
-            6,
-            127,
-            77
-          ]
-        },
-        {
-          "surfaceId": "surface_iframe_ifr_1",
-          "regionId": "r0c2",
-          "label": "empty_space",
-          "bestLabel": "empty_space",
-          "margin": 0.0502,
-          "confident": true,
-          "box": [
-            260,
-            6,
-            127,
-            77
-          ]
-        },
-        {
-          "surfaceId": "surface_iframe_ifr_1",
-          "regionId": "r3c0",
-          "label": "empty_space",
-          "bestLabel": "empty_space",
-          "margin": 0.0562,
-          "confident": true,
-          "box": [
-            6,
-            237,
-            127,
-            77
-          ]
-        },
-        {
-          "surfaceId": "surface_iframe_ifr_1",
-          "regionId": "r1c1",
-          "label": "empty_space",
-          "bestLabel": "empty_space",
-          "margin": 0.0318,
-          "confident": true,
-          "box": [
-            133,
-            83,
-            127,
-            77
+            224,
+            124,
+            36,
+            44
           ]
         }
       ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
         "providerUsed": "wasm",
-        "regionsProposed": 6,
-        "regionsEmbedded": 6,
-        "totalInferenceMs": 1264,
+        "regionsProposed": 2,
+        "regionsEmbedded": 2,
+        "totalInferenceMs": 1697,
         "available": true
       }
     },
@@ -1185,11 +1239,11 @@
       "blocked": false,
       "regionsAssessable": 0,
       "regionsCovered": 0,
-      "extractMs": 1.9,
-      "sanitizeMs": 532,
-      "clientMs": 533.9,
-      "heapUsedMb": 7.47,
-      "taskDurationSec": 0.593,
+      "extractMs": 1.8,
+      "sanitizeMs": 1278.2,
+      "clientMs": 1280,
+      "heapUsedMb": 7.91,
+      "taskDurationSec": 1.164,
       "rawScreenshotKb": 6,
       "sanitizedScreenshotKb": 24,
       "redactionVerdicts": [
@@ -1208,29 +1262,44 @@
           "sampledPixels": 1575
         }
       ],
-      "visionObservations": [],
+      "visionObservations": [
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_1",
+          "label": "checkbox_or_toggle",
+          "bestLabel": "checkbox_or_toggle",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            4,
+            4,
+            81,
+            28
+          ]
+        }
+      ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 676,
+        "available": true
       }
     },
     {
       "fixtureId": "controlled-react-input",
-      "split": "held-out",
+      "split": "dev",
       "elementsExtracted": 2,
       "masksRendered": 0,
       "blocked": false,
       "regionsAssessable": 0,
       "regionsCovered": 0,
-      "extractMs": 2.2,
-      "sanitizeMs": 523.5,
-      "clientMs": 525.7,
-      "heapUsedMb": 8.3,
-      "taskDurationSec": 0.594,
+      "extractMs": 3.3,
+      "sanitizeMs": 1365.7,
+      "clientMs": 1369,
+      "heapUsedMb": 8.29,
+      "taskDurationSec": 1.211,
       "rawScreenshotKb": 7,
       "sanitizedScreenshotKb": 25,
       "redactionVerdicts": [
@@ -1263,29 +1332,44 @@
           "sampledPixels": 1218
         }
       ],
-      "visionObservations": [],
+      "visionObservations": [
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_1",
+          "label": "text_input",
+          "bestLabel": "text_input",
+          "margin": 0.8,
+          "confident": true,
+          "box": [
+            4,
+            4,
+            244,
+            28
+          ]
+        }
+      ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 756,
+        "available": true
       }
     },
     {
       "fixtureId": "long-scroll",
-      "split": "held-out",
+      "split": "dev",
       "elementsExtracted": 2,
       "masksRendered": 1,
       "blocked": false,
       "regionsAssessable": 0,
       "regionsCovered": 0,
-      "extractMs": 2.5,
-      "sanitizeMs": 533.6,
-      "clientMs": 536.1,
-      "heapUsedMb": 7.57,
-      "taskDurationSec": 0.588,
+      "extractMs": 2.3,
+      "sanitizeMs": 1611.7,
+      "clientMs": 1614,
+      "heapUsedMb": 6.55,
+      "taskDurationSec": 1.382,
       "rawScreenshotKb": 6,
       "sanitizedScreenshotKb": 24,
       "redactionVerdicts": [
@@ -1332,29 +1416,44 @@
           "sampledPixels": 95
         }
       ],
-      "visionObservations": [],
+      "visionObservations": [
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_1",
+          "label": "link_or_nav",
+          "bestLabel": "link_or_nav",
+          "margin": 0.81,
+          "confident": true,
+          "box": [
+            4,
+            4,
+            72,
+            28
+          ]
+        }
+      ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 935,
+        "available": true
       }
     },
     {
       "fixtureId": "dark-mode",
-      "split": "held-out",
+      "split": "dev",
       "elementsExtracted": 2,
       "masksRendered": 1,
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 2.2,
-      "sanitizeMs": 546.9,
-      "clientMs": 549.1,
-      "heapUsedMb": 6.97,
-      "taskDurationSec": 0.611,
+      "extractMs": 6.4,
+      "sanitizeMs": 1810.8,
+      "clientMs": 1817.2,
+      "heapUsedMb": 8.63,
+      "taskDurationSec": 1.639,
       "rawScreenshotKb": 9,
       "sanitizedScreenshotKb": 29,
       "redactionVerdicts": [
@@ -1387,29 +1486,44 @@
           "sampledPixels": 1890
         }
       ],
-      "visionObservations": [],
+      "visionObservations": [
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_1",
+          "label": "icon",
+          "bestLabel": "icon",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            4,
+            64,
+            276,
+            24
+          ]
+        }
+      ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 954,
+        "available": true
       }
     },
     {
       "fixtureId": "modal-dialog",
-      "split": "held-out",
+      "split": "dev",
       "elementsExtracted": 2,
       "masksRendered": 1,
       "blocked": false,
       "regionsAssessable": 1,
       "regionsCovered": 1,
-      "extractMs": 2.4,
-      "sanitizeMs": 558.8,
-      "clientMs": 561.2,
-      "heapUsedMb": 6.96,
-      "taskDurationSec": 0.606,
+      "extractMs": 2.6,
+      "sanitizeMs": 1604.3,
+      "clientMs": 1606.9,
+      "heapUsedMb": 8.89,
+      "taskDurationSec": 1.369,
       "rawScreenshotKb": 11,
       "sanitizedScreenshotKb": 29,
       "redactionVerdicts": [
@@ -1456,29 +1570,44 @@
           "sampledPixels": 2625
         }
       ],
-      "visionObservations": [],
+      "visionObservations": [
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_1",
+          "label": "checkbox_or_toggle",
+          "bestLabel": "checkbox_or_toggle",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            4,
+            92,
+            192,
+            24
+          ]
+        }
+      ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 904,
+        "available": true
       }
     },
     {
       "fixtureId": "cookie-banner",
-      "split": "held-out",
+      "split": "dev",
       "elementsExtracted": 2,
       "masksRendered": 0,
       "blocked": false,
       "regionsAssessable": 0,
       "regionsCovered": 0,
-      "extractMs": 2.2,
-      "sanitizeMs": 516.4,
-      "clientMs": 518.6,
-      "heapUsedMb": 7.84,
-      "taskDurationSec": 0.573,
+      "extractMs": 3.2,
+      "sanitizeMs": 1718.6,
+      "clientMs": 1721.8,
+      "heapUsedMb": 7.58,
+      "taskDurationSec": 1.47,
       "rawScreenshotKb": 9,
       "sanitizedScreenshotKb": 28,
       "redactionVerdicts": [
@@ -1511,14 +1640,140 @@
           "sampledPixels": 1995
         }
       ],
-      "visionObservations": [],
+      "visionObservations": [
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_1",
+          "label": "checkbox_or_toggle",
+          "bestLabel": "checkbox_or_toggle",
+          "margin": 0.7,
+          "confident": true,
+          "box": [
+            4,
+            48,
+            116,
+            44
+          ]
+        }
+      ],
       "visionTelemetry": {
         "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
-        "providerUsed": "unavailable",
-        "regionsProposed": 0,
-        "regionsEmbedded": 0,
-        "totalInferenceMs": 0,
-        "available": false
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 1062,
+        "available": true
+      }
+    },
+    {
+      "fixtureId": "canvas-form",
+      "split": "dev",
+      "elementsExtracted": 0,
+      "masksRendered": 1,
+      "blocked": false,
+      "regionsAssessable": 0,
+      "regionsCovered": 0,
+      "extractMs": 2,
+      "sanitizeMs": 1615.7,
+      "clientMs": 1617.7,
+      "heapUsedMb": 6.85,
+      "taskDurationSec": 1.353,
+      "rawScreenshotKb": 5,
+      "sanitizedScreenshotKb": 25,
+      "redactionVerdicts": [],
+      "visionObservations": [
+        {
+          "surfaceId": "canvas",
+          "regionId": "v_el_1",
+          "label": "input",
+          "bestLabel": "input",
+          "margin": 0.88,
+          "confident": true,
+          "box": [
+            6,
+            73,
+            544,
+            107
+          ]
+        },
+        {
+          "surfaceId": "canvas",
+          "regionId": "v_el_2",
+          "label": "button",
+          "bestLabel": "button",
+          "margin": 0.88,
+          "confident": true,
+          "box": [
+            6,
+            247,
+            302,
+            94
+          ]
+        }
+      ],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "wasm",
+        "regionsProposed": 2,
+        "regionsEmbedded": 2,
+        "totalInferenceMs": 959,
+        "available": true
+      }
+    },
+    {
+      "fixtureId": "image-identifier",
+      "split": "dev",
+      "elementsExtracted": 0,
+      "masksRendered": 0,
+      "blocked": false,
+      "regionsAssessable": 0,
+      "regionsCovered": 0,
+      "extractMs": 2.9,
+      "sanitizeMs": 1394.4,
+      "clientMs": 1397.3,
+      "heapUsedMb": 6.53,
+      "taskDurationSec": 1.202,
+      "rawScreenshotKb": 14,
+      "sanitizedScreenshotKb": 34,
+      "redactionVerdicts": [
+        {
+          "id": "safe0:auth_badge",
+          "covered": false,
+          "assessable": true,
+          "opaqueFraction": 0,
+          "overlayFraction": 0,
+          "residualVariance": 8515.9,
+          "rawVariance": 8515.9,
+          "varianceReduction": 0,
+          "rawDetail": 5.8,
+          "residualDetail": 5.8,
+          "detailRemoved": 0,
+          "sampledPixels": 19600
+        }
+      ],
+      "visionObservations": [
+        {
+          "surfaceId": "standard",
+          "regionId": "v_el_1",
+          "label": "icon",
+          "bestLabel": "icon",
+          "margin": 0.95,
+          "confident": true,
+          "box": [
+            17,
+            76,
+            124,
+            124
+          ]
+        }
+      ],
+      "visionTelemetry": {
+        "modelFamily": "CLIP ViT-B/32 (vision tower, uint8)",
+        "providerUsed": "wasm",
+        "regionsProposed": 1,
+        "regionsEmbedded": 1,
+        "totalInferenceMs": 763,
+        "available": true
       }
     }
   ]

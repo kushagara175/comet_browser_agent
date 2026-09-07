@@ -1,0 +1,1 @@
+{"version":3,"file":"resource-governance.js","sourceRoot":"","sources":["../src/resource-governance.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AA8BH,MAAM,CAAC,MAAM,uBAAuB,GAAyB;IAC3D,aAAa,EAAE,IAAI;IACnB,aAAa,EAAE,GAAG;IAClB,oBAAoB,EAAE,EAAE;IACxB,oBAAoB,EAAE,CAAC;IACvB,gBAAgB,EAAE,KAAK;IACvB,sBAAsB,EAAE,KAAK;IAC7B,mBAAmB,EAAE,EAAE;CACxB,CAAC"}

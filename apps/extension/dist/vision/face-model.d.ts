@@ -72,16 +72,16 @@ export declare class UltraFaceModelRunner {
     private static assetBase;
     /**
      * Points the runner at an explicit asset base instead of `chrome.runtime`.
-     *
-     * Outside the extension there is no `chrome.runtime.getURL`, and the relative
-     * fallback path resolves against the *page* URL - so in the benchmark harness the
-     * model and the ORT wasm both 404, `create()` threw, and `detectFaces` reported
-     * `heuristic_fallback` with an empty list. Every fixture silently scored as
-     * "no faces found" while appearing to run the model. Giving the harness a real
-     * base URL is what lets the model actually execute outside Chrome's extension
-     * origin, and therefore what makes any face number measurable at all.
      */
     static configure(assetBase: string | null): void;
+    /**
+     * Releases the ONNX session to reclaim resident memory on tier downgrade.
+     */
+    static disposeSession(): Promise<void>;
+    /**
+     * Returns accounted memory footprint in bytes (weights + active session buffers).
+     */
+    static getMemoryFootprintBytes(): number;
     /**
      * Initializes the ONNX session once per offscreen document lifecycle.
      */

@@ -11,10 +11,11 @@
  * 7. Semantically Verify UI Outcome
  * 8. Repeat perception cycle up to bounded step budget or until finish/failure
  */
-import { AgentState, RawCapture, SanitizedContext, ActionProposal, RunTelemetry } from '@privapilot/protocol';
+import { AgentState, RawCapture, SanitizedContext, ActionProposal, RunTelemetry, TierOverride } from '@privapilot/protocol';
 import { BrowserAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
+import { ResourceGovernor } from './resource-governor.js';
 export interface ChatOutcome {
     readonly success: boolean;
     readonly reply: string;
@@ -54,6 +55,7 @@ export declare class RunCoordinator {
     private readonly browser;
     private readonly httpClient;
     private readonly auditLogger;
+    private readonly governor;
     private readonly defaultMaxSteps;
     private readonly defaultMaxStaleRetries;
     private listeners;
@@ -78,10 +80,28 @@ export declare class RunCoordinator {
     constructor(browser?: BrowserAdapter, httpClient?: ReasoningHttpClient, auditLogger?: AuditLogger, options?: {
         defaultMaxSteps?: number;
         maxStaleRetries?: number;
+        governor?: ResourceGovernor;
     });
+    getGovernor(): ResourceGovernor;
+    setTierOverride(override: TierOverride): void;
     setListeners(listeners: CoordinatorListeners): void;
     getState(): AgentState;
     getLastResult(): CoordinatorRunResult | null;
+    /**
+     * Executes a single real perception cycle on the active tab without advancing the agent action loop.
+     * Runs the full end-to-end perception pipeline:
+     * 1. Captures active tab DOM snapshot and visual screenshot via browser adapter
+     * 2. Executes offscreen multi-layer privacy sanitizer
+     * 3. Measures actual client perception latency
+     * 4. Computes honest resident memory footprint
+     * 5. Records metrics to ResourceGovernor and broadcasts telemetry to HUD
+     */
+    runSinglePerceptionCycle(goal?: string): Promise<{
+        success: boolean;
+        telemetry: RunTelemetry;
+        perceptionMs: number;
+        error?: string;
+    }>;
     cancelRun(): void;
     private transition;
     /**

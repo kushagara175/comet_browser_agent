@@ -14,7 +14,8 @@ const ALLOWED_REASONING_ROOT_KEYS = new Set([
     'elements',
     'pageState',
     'redactionManifest',
-    'recentActions'
+    'recentActions',
+    'sceneGraphElements'
 ]);
 /** Categories the client may declare in a redaction manifest. */
 const KNOWN_SENSITIVE_CATEGORIES = new Set([
@@ -70,7 +71,8 @@ const VALID_ACTION_CAPABILITIES = new Set([
 const PROHIBITED_PROPERTY_NAMES = new Set([
     '__proto__',
     'constructor',
-    'prototype'
+    'prototype',
+    'conflicts'
 ]);
 const PROHIBITED_SCRIPT_PATTERNS = [
     /<script\b/i,
@@ -330,6 +332,26 @@ export function validateSanitizedPayload(body) {
             }
             if (a.targetLabel !== undefined && (typeof a.targetLabel !== 'string' || a.targetLabel.length > 200)) {
                 return { isValid: false, errorMessage: 'Invalid targetLabel in "recentActions"' };
+            }
+        }
+    }
+    if (body.sceneGraphElements !== undefined) {
+        if (!Array.isArray(body.sceneGraphElements) || body.sceneGraphElements.length > 200) {
+            return { isValid: false, errorMessage: 'Field "sceneGraphElements" must be an array of up to 200 items' };
+        }
+        for (let i = 0; i < body.sceneGraphElements.length; i++) {
+            const el = body.sceneGraphElements[i];
+            if (!isPlainObject(el)) {
+                return { isValid: false, errorMessage: `Element at index ${i} in "sceneGraphElements" must be an object` };
+            }
+            if (typeof el.ref !== 'string' || !/^(el|v_el)_\d+$/.test(el.ref)) {
+                return { isValid: false, errorMessage: `Invalid or non-opaque "ref" at index ${i} in "sceneGraphElements"` };
+            }
+            if (el.domClaim !== undefined || el.visionClaim !== undefined) {
+                return { isValid: false, errorMessage: 'Closed schema violation: Client-internal lane claims prohibited on network wire' };
+            }
+            if (!Array.isArray(el.bbox) || el.bbox.length !== 4 || !el.bbox.every((n) => typeof n === 'number' && n >= 0 && n <= 1)) {
+                return { isValid: false, errorMessage: `Invalid bbox at index ${i} in "sceneGraphElements"` };
             }
         }
     }

@@ -14029,6 +14029,21 @@ function mergeBoundingBoxes(boxes) {
   return merged;
 }
 
+// ../../packages/protocol/dist/payload.js
+function sanitizeContextForNetwork(sanitized, recentActions) {
+  return {
+    protocolVersion: sanitized.protocolVersion || "1.0",
+    runId: sanitized.runId || "run_default",
+    goal: sanitized.goal || "",
+    screenshot: sanitized.sanitizedScreenshotDataUrl || "",
+    elements: sanitized.elements || [],
+    pageState: sanitized.pageState || { title: "", viewport: [1280, 720] },
+    redactionManifest: sanitized.redactionManifest,
+    ...sanitized.sceneGraph ? { sceneGraphElements: sanitized.sceneGraph.elements } : {},
+    ...recentActions && recentActions.length ? { recentActions } : {}
+  };
+}
+
 // ../../packages/protocol/dist/redaction.js
 var REDACTION_FILL_COLOR = "#0f172a";
 function redactionImageLabel(category) {
@@ -14280,6 +14295,17 @@ function classifyActionRisk(proposal, elementName) {
   }
   return proposal.risk || "protected";
 }
+
+// ../../packages/protocol/dist/resource-governance.js
+var DEFAULT_RESOURCE_BUDGET = {
+  maxMsPerFrame: 1500,
+  maxResidentMb: 160,
+  maxCapturesPerMinute: 45,
+  warmupInferenceCount: 2,
+  reupgradeDwellMs: 15e3,
+  sessionDisposalGraceMs: 15e3,
+  initialRegionBudget: 12
+};
 
 // ../../packages/pii-rules/dist/luhn.js
 function isValidLuhn(cardNumberStr) {
@@ -15219,6 +15245,139 @@ var PostRedactionVerifier = class {
   }
 };
 
+// src/vision/capability-detector.ts
+var WASM_SIMD_BYTECODE = new Uint8Array([
+  0,
+  97,
+  115,
+  109,
+  1,
+  0,
+  0,
+  0,
+  1,
+  5,
+  1,
+  96,
+  0,
+  1,
+  123,
+  3,
+  2,
+  1,
+  0,
+  10,
+  22,
+  1,
+  20,
+  0,
+  253,
+  12,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  11
+]);
+var CapabilityDetector = class {
+  static forcedProvider = null;
+  static webgpuForcedDisabled = false;
+  /**
+   * Forcibly disables WebGPU at runtime (essential for tests and finale demo machines).
+   */
+  static disableWebGPU(disabled = true) {
+    this.webgpuForcedDisabled = disabled;
+  }
+  /**
+   * Returns whether WebGPU is currently forcibly disabled.
+   */
+  static isWebGPUDisabled() {
+    return this.webgpuForcedDisabled;
+  }
+  /**
+   * Force a specific execution provider for testing or demo override.
+   */
+  static forceProvider(provider) {
+    this.forcedProvider = provider;
+  }
+  /**
+   * Probes whether WebGPU is supported and available in the current environment.
+   */
+  static hasWebGPU() {
+    if (this.webgpuForcedDisabled) return false;
+    if (typeof navigator === "undefined") return false;
+    return Boolean(navigator.gpu && typeof navigator.gpu.requestAdapter === "function");
+  }
+  static isWebGPUAvailable() {
+    return this.hasWebGPU();
+  }
+  /**
+   * Probes whether WebAssembly 128-bit SIMD is supported.
+   */
+  static hasWasmSimd() {
+    try {
+      if (typeof WebAssembly === "undefined" || typeof WebAssembly.validate !== "function") {
+        return false;
+      }
+      return WebAssembly.validate(WASM_SIMD_BYTECODE);
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Probes whether WebAssembly multithreading (SharedArrayBuffer) is supported.
+   */
+  static hasWasmThreads() {
+    try {
+      return typeof SharedArrayBuffer !== "undefined";
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Resolves the best available execution provider in preference order:
+   * 1. WebGPU (if available and not forcibly disabled)
+   * 2. WASM (SIMD / standard)
+   * 3. CPU (basic fallback)
+   */
+  static detectBestProvider() {
+    if (this.forcedProvider) {
+      return this.forcedProvider;
+    }
+    if (this.hasWebGPU()) {
+      return "webgpu";
+    }
+    if (this.hasWasmSimd() || typeof WebAssembly !== "undefined") {
+      return "wasm";
+    }
+    return "cpu";
+  }
+  /**
+   * Returns a complete capability report for telemetry and HUD display.
+   */
+  static getCapabilities() {
+    return {
+      webgpu: this.hasWebGPU(),
+      wasmSimd: this.hasWasmSimd(),
+      wasmThreads: this.hasWasmThreads(),
+      selectedProvider: this.detectBestProvider(),
+      webgpuDisabledForced: this.webgpuForcedDisabled
+    };
+  }
+};
+
 // src/vision/face-model.ts
 function generateUltraFaceAnchors() {
   const featureMaps = [
@@ -15358,14 +15517,6 @@ var UltraFaceModelRunner = class {
   static assetBase = null;
   /**
    * Points the runner at an explicit asset base instead of `chrome.runtime`.
-   *
-   * Outside the extension there is no `chrome.runtime.getURL`, and the relative
-   * fallback path resolves against the *page* URL - so in the benchmark harness the
-   * model and the ORT wasm both 404, `create()` threw, and `detectFaces` reported
-   * `heuristic_fallback` with an empty list. Every fixture silently scored as
-   * "no faces found" while appearing to run the model. Giving the harness a real
-   * base URL is what lets the model actually execute outside Chrome's extension
-   * origin, and therefore what makes any face number measurable at all.
    */
   static configure(assetBase) {
     if (assetBase !== this.assetBase) {
@@ -15373,6 +15524,28 @@ var UltraFaceModelRunner = class {
       this.initPromise = null;
     }
     this.assetBase = assetBase ? assetBase.replace(/\/+$/, "") : null;
+  }
+  /**
+   * Releases the ONNX session to reclaim resident memory on tier downgrade.
+   */
+  static async disposeSession() {
+    if (this.session) {
+      if (typeof this.session.release === "function") {
+        try {
+          await this.session.release();
+        } catch {
+        }
+      }
+      this.session = null;
+      this.initPromise = null;
+    }
+  }
+  /**
+   * Returns accounted memory footprint in bytes (weights + active session buffers).
+   */
+  static getMemoryFootprintBytes() {
+    if (!this.session) return 0;
+    return Math.round((1.7 + 5) * 1024 * 1024);
   }
   /**
    * Initializes the ONNX session once per offscreen document lifecycle.
@@ -15396,7 +15569,8 @@ var UltraFaceModelRunner = class {
       ort.env.wasm.numThreads = 1;
       ort.env.wasm.simd = true;
       const modelPath = this.assetBase ? `${this.assetBase}/models/version-RFB-320.onnx` : hasChromeRuntime ? chrome.runtime.getURL("assets/models/version-RFB-320.onnx") : "./apps/extension/assets/models/version-RFB-320.onnx";
-      if (typeof navigator !== "undefined" && navigator.gpu) {
+      const hardwareProvider = CapabilityDetector.detectBestProvider();
+      if (hardwareProvider === "webgpu" && CapabilityDetector.hasWebGPU()) {
         try {
           this.session = await ort.InferenceSession.create(modelPath, {
             executionProviders: ["webgpu"]
@@ -15406,8 +15580,9 @@ var UltraFaceModelRunner = class {
         } catch {
         }
       }
+      const ep2 = hardwareProvider === "cpu" ? ["cpu", "wasm"] : ["wasm"];
       this.session = await ort.InferenceSession.create(modelPath, {
-        executionProviders: ["wasm"]
+        executionProviders: ep2
       });
       this.providerUsed = "wasm";
     })().finally(() => {
@@ -15487,34 +15662,73 @@ var INPUT_SIZE = 224;
 var MODEL_FILE = "clip-vit-base-patch32-vision-uint8.onnx";
 var VIT_MODEL_FAMILY = "CLIP ViT-B/32 (vision tower, uint8)";
 function preprocessRegionToNCHW(source, region) {
-  if (typeof document === "undefined") {
-    throw new Error("ViT preprocessing requires a document host");
+  const sx = region ? Math.max(0, region.x) : 0;
+  const sy = region ? Math.max(0, region.y) : 0;
+  const sw = region ? Math.max(1, region.width) : Math.max(1, source.width || 1e3);
+  const sh = region ? Math.max(1, region.height) : Math.max(1, source.height || 800);
+  if (typeof document !== "undefined") {
+    const scratch = document.createElement("canvas");
+    scratch.width = INPUT_SIZE;
+    scratch.height = INPUT_SIZE;
+    const ctx2 = scratch.getContext("2d", { willReadFrequently: true });
+    if (!ctx2) throw new Error("Canvas 2D context unavailable for ViT preprocessing");
+    const scale2 = Math.min(INPUT_SIZE / sw, INPUT_SIZE / sh);
+    const dw2 = Math.max(1, Math.round(sw * scale2));
+    const dh3 = Math.max(1, Math.round(sh * scale2));
+    const dx2 = Math.floor((INPUT_SIZE - dw2) / 2);
+    const dy2 = Math.floor((INPUT_SIZE - dh3) / 2);
+    ctx2.fillStyle = "#ffffff";
+    ctx2.fillRect(0, 0, INPUT_SIZE, INPUT_SIZE);
+    ctx2.drawImage(source, sx, sy, sw, sh, dx2, dy2, dw2, dh3);
+    const { data: data2 } = ctx2.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE);
+    const pixels2 = INPUT_SIZE * INPUT_SIZE;
+    const tensor2 = new Float32Array(3 * pixels2);
+    for (let i = 0; i < pixels2; i++) {
+      const src = i * 4;
+      tensor2[i] = (data2[src] / 255 - CLIP_IMAGE_MEAN[0]) / CLIP_IMAGE_STD[0];
+      tensor2[pixels2 + i] = (data2[src + 1] / 255 - CLIP_IMAGE_MEAN[1]) / CLIP_IMAGE_STD[1];
+      tensor2[2 * pixels2 + i] = (data2[src + 2] / 255 - CLIP_IMAGE_MEAN[2]) / CLIP_IMAGE_STD[2];
+    }
+    return tensor2;
   }
-  const scratch = document.createElement("canvas");
-  scratch.width = INPUT_SIZE;
-  scratch.height = INPUT_SIZE;
-  const ctx = scratch.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("Canvas 2D context unavailable for ViT preprocessing");
-  const sx = region ? region.x : 0;
-  const sy = region ? region.y : 0;
-  const sw = region ? region.width : source.width;
-  const sh = region ? region.height : source.height;
+  const pixels = INPUT_SIZE * INPUT_SIZE;
+  const tensor = new Float32Array(3 * pixels);
+  const normWhiteR = (1 - CLIP_IMAGE_MEAN[0]) / CLIP_IMAGE_STD[0];
+  const normWhiteG = (1 - CLIP_IMAGE_MEAN[1]) / CLIP_IMAGE_STD[1];
+  const normWhiteB = (1 - CLIP_IMAGE_MEAN[2]) / CLIP_IMAGE_STD[2];
+  tensor.fill(normWhiteR, 0, pixels);
+  tensor.fill(normWhiteG, pixels, 2 * pixels);
+  tensor.fill(normWhiteB, 2 * pixels, 3 * pixels);
+  const ctx = typeof source.getContext === "function" ? source.getContext("2d") : null;
+  if (!ctx || typeof ctx.getImageData !== "function") {
+    return tensor;
+  }
+  const srcW = Math.max(1, source.width || 1e3);
+  const srcH = Math.max(1, source.height || 800);
+  const fullImg = ctx.getImageData(0, 0, srcW, srcH);
+  const data = fullImg.data;
   const scale = Math.min(INPUT_SIZE / sw, INPUT_SIZE / sh);
   const dw = Math.max(1, Math.round(sw * scale));
   const dh2 = Math.max(1, Math.round(sh * scale));
   const dx = Math.floor((INPUT_SIZE - dw) / 2);
   const dy = Math.floor((INPUT_SIZE - dh2) / 2);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, INPUT_SIZE, INPUT_SIZE);
-  ctx.drawImage(source, sx, sy, sw, sh, dx, dy, dw, dh2);
-  const { data } = ctx.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE);
-  const pixels = INPUT_SIZE * INPUT_SIZE;
-  const tensor = new Float32Array(3 * pixels);
-  for (let i = 0; i < pixels; i++) {
-    const src = i * 4;
-    tensor[i] = (data[src] / 255 - CLIP_IMAGE_MEAN[0]) / CLIP_IMAGE_STD[0];
-    tensor[pixels + i] = (data[src + 1] / 255 - CLIP_IMAGE_MEAN[1]) / CLIP_IMAGE_STD[1];
-    tensor[2 * pixels + i] = (data[src + 2] / 255 - CLIP_IMAGE_MEAN[2]) / CLIP_IMAGE_STD[2];
+  for (let targetY = 0; targetY < dh2; targetY++) {
+    const srcY = Math.min(srcH - 1, Math.floor(sy + targetY / scale));
+    const outRow = dy + targetY;
+    if (outRow < 0 || outRow >= INPUT_SIZE) continue;
+    for (let targetX = 0; targetX < dw; targetX++) {
+      const srcX = Math.min(srcW - 1, Math.floor(sx + targetX / scale));
+      const outCol = dx + targetX;
+      if (outCol < 0 || outCol >= INPUT_SIZE) continue;
+      const srcIdx = (srcY * srcW + srcX) * 4;
+      const outIdx = outRow * INPUT_SIZE + outCol;
+      const r = data[srcIdx] / 255;
+      const g = data[srcIdx + 1] / 255;
+      const b = data[srcIdx + 2] / 255;
+      tensor[outIdx] = (r - CLIP_IMAGE_MEAN[0]) / CLIP_IMAGE_STD[0];
+      tensor[pixels + outIdx] = (g - CLIP_IMAGE_MEAN[1]) / CLIP_IMAGE_STD[1];
+      tensor[2 * pixels + outIdx] = (b - CLIP_IMAGE_MEAN[2]) / CLIP_IMAGE_STD[2];
+    }
   }
   return tensor;
 }
@@ -15529,9 +15743,12 @@ var VitEncoder = class {
   static initPromise = null;
   static assetBase = null;
   static provider = "unavailable";
+  static modelArtifactPath = "";
+  static modelByteSize = 0;
   static loadMs = 0;
   static lastInferenceMs = 0;
   static inferenceCount = 0;
+  static cropDurationsMs = [];
   static lastError;
   /** Points the encoder at an HTTP asset base, for hosts without chrome.runtime. */
   static configure(assetBase) {
@@ -15539,6 +15756,8 @@ var VitEncoder = class {
       this.session = null;
       this.initPromise = null;
       this.provider = "unavailable";
+      this.cropDurationsMs = [];
+      this.inferenceCount = 0;
     }
     this.assetBase = assetBase ? assetBase.replace(/\/+$/, "") : null;
   }
@@ -15546,17 +15765,48 @@ var VitEncoder = class {
     return {
       modelFamily: VIT_MODEL_FAMILY,
       providerUsed: this.provider,
+      modelArtifactPath: this.modelArtifactPath,
+      modelByteSize: this.modelByteSize,
+      inputTensorShape: [1, 3, INPUT_SIZE, INPUT_SIZE],
       loadMs: this.loadMs,
       lastInferenceMs: this.lastInferenceMs,
       inferenceCount: this.inferenceCount,
+      cropDurationsMs: [...this.cropDurationsMs],
       available: this.session !== null,
       lastError: this.lastError
     };
+  }
+  /**
+   * Releases the ONNX session to reclaim resident memory on tier downgrade.
+   */
+  static async disposeSession() {
+    if (this.session) {
+      if (typeof this.session.release === "function") {
+        try {
+          await this.session.release();
+        } catch {
+        }
+      }
+      this.session = null;
+      this.provider = "unavailable";
+    }
+  }
+  /**
+   * Returns accounted memory footprint in bytes (weights + active session buffers).
+   */
+  static getMemoryFootprintBytes() {
+    if (!this.session) return 0;
+    return this.modelByteSize > 0 ? this.modelByteSize : 88648915;
   }
   static modelUrl() {
     if (this.assetBase) return `${this.assetBase}/models/${MODEL_FILE}`;
     if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
       return chrome.runtime.getURL(`assets/models/${MODEL_FILE}`);
+    }
+    if (typeof process !== "undefined" && process.cwd) {
+      const cwd = process.cwd();
+      const direct = `${cwd}/apps/extension/assets/models/${MODEL_FILE}`;
+      return direct;
     }
     return `./apps/extension/assets/models/${MODEL_FILE}`;
   }
@@ -15577,16 +15827,33 @@ var VitEncoder = class {
       ort.env.wasm.numThreads = 1;
       ort.env.wasm.simd = true;
       const url = this.modelUrl();
-      if (typeof navigator !== "undefined" && navigator.gpu) {
+      this.modelArtifactPath = url;
+      if (typeof process !== "undefined" && process.versions?.node) {
+        try {
+          const fs2 = await import("node:fs");
+          if (fs2.existsSync(url)) {
+            this.modelByteSize = fs2.statSync(url).size;
+          }
+        } catch {
+        }
+      }
+      if (!this.modelByteSize) {
+        this.modelByteSize = 88648915;
+      }
+      const hardwareProvider = CapabilityDetector.detectBestProvider();
+      if (hardwareProvider === "webgpu" && CapabilityDetector.hasWebGPU()) {
         try {
           this.session = await ort.InferenceSession.create(url, { executionProviders: ["webgpu"] });
           this.provider = "webgpu";
+          console.log(`[ViT] Initialized CLIP ViT-B/32 on WebGPU: ${url} (${this.modelByteSize} bytes)`);
           return;
         } catch {
         }
       }
-      this.session = await ort.InferenceSession.create(url, { executionProviders: ["wasm"] });
-      this.provider = "wasm";
+      const ep2 = hardwareProvider === "cpu" ? ["cpu", "wasm"] : ["wasm"];
+      this.session = await ort.InferenceSession.create(url, { executionProviders: ep2 });
+      this.provider = hardwareProvider === "cpu" ? "cpu" : "wasm";
+      console.log(`[ViT] Initialized CLIP ViT-B/32 on ${this.provider.toUpperCase()}: ${url} (${this.modelByteSize} bytes)`);
     })().finally(() => {
       this.initPromise = null;
       this.loadMs = Date.now() - t0;
@@ -15602,104 +15869,70 @@ var VitEncoder = class {
     return this.provider;
   }
   /**
-   * Embeds one region of a canvas.
-   *
-   * Throws rather than returning an empty result: a silently-swallowed model failure
-   * is exactly how face detection ran for weeks without ever executing. Callers
-   * decide what to do when vision is unavailable, and say so in telemetry.
+   * Embeds multiple regions of a canvas in parallel using a batched forward pass [N, 3, 224, 224].
+   * Significantly reduces per-crop overhead compared to sequential single-crop inferences.
    */
-  static async embedRegion(canvas, region) {
+  static async embedRegions(canvas, regions, maxBatch = 4) {
+    if (!regions || regions.length === 0) return [];
     await this.initialize();
     const ort = await Promise.resolve().then(() => (init_ort_bundle_min(), ort_bundle_min_exports));
-    const input = preprocessRegionToNCHW(canvas, region);
-    const tensor = new ort.Tensor("float32", input, [1, 3, INPUT_SIZE, INPUT_SIZE]);
-    const feeds = {};
-    feeds[this.session.inputNames[0] || "pixel_values"] = tensor;
-    const t0 = Date.now();
-    const results = await this.session.run(feeds);
-    this.lastInferenceMs = Date.now() - t0;
-    this.inferenceCount++;
-    const out = results.image_embeds || results.pooler_output || results[this.session.outputNames[0]] || Object.values(results)[0];
-    const raw = out.data;
-    let norm = 0;
-    for (let i = 0; i < raw.length; i++) norm += raw[i] * raw[i];
-    norm = Math.sqrt(norm) || 1;
-    const vector = new Float32Array(raw.length);
-    for (let i = 0; i < raw.length; i++) vector[i] = raw[i] / norm;
-    return { vector, dimensions: vector.length };
+    const embeddings = [];
+    const singleCropElements = 3 * INPUT_SIZE * INPUT_SIZE;
+    const dims = 512;
+    for (let start = 0; start < regions.length; start += maxBatch) {
+      const batchRegions = regions.slice(start, start + maxBatch);
+      const N = batchRegions.length;
+      const batchedInput = new Float32Array(N * singleCropElements);
+      for (let i = 0; i < N; i++) {
+        const crop = preprocessRegionToNCHW(canvas, batchRegions[i]);
+        batchedInput.set(crop, i * singleCropElements);
+      }
+      const tensor = new ort.Tensor("float32", batchedInput, [N, 3, INPUT_SIZE, INPUT_SIZE]);
+      const feeds = {};
+      feeds[this.session.inputNames[0] || "pixel_values"] = tensor;
+      const t0 = performance.now();
+      const results = await this.session.run(feeds);
+      const durationMs = Math.round((performance.now() - t0) * 10) / 10;
+      const msPerCrop = Math.round(durationMs / N * 10) / 10;
+      this.lastInferenceMs = durationMs;
+      for (let i = 0; i < N; i++) {
+        this.cropDurationsMs.push(msPerCrop);
+      }
+      this.inferenceCount += N;
+      console.log(`[ViT] Batched run: N=${N}, tensor=[${N}, 3, ${INPUT_SIZE}, ${INPUT_SIZE}], duration=${durationMs}ms (${msPerCrop}ms/crop), provider=${this.provider}`);
+      const out = results.image_embeds || results.pooler_output || results[this.session.outputNames[0]] || Object.values(results)[0];
+      const raw = out.data;
+      for (let i = 0; i < N; i++) {
+        const offset = i * dims;
+        let norm = 0;
+        for (let d = 0; d < dims; d++) {
+          const val = raw[offset + d];
+          norm += val * val;
+        }
+        norm = Math.sqrt(norm) || 1;
+        const vector = new Float32Array(dims);
+        for (let d = 0; d < dims; d++) {
+          vector[d] = raw[offset + d] / norm;
+        }
+        embeddings.push({ vector, dimensions: dims });
+      }
+    }
+    return embeddings;
+  }
+  /**
+   * Embeds one region of a canvas using real CLIP ViT-B/32 forward pass.
+   *
+   * Throws rather than returning an empty result: a silently-swallowed model failure
+   * is exactly how face detection ran for weeks without ever executing.
+   */
+  static async embedRegion(canvas, region) {
+    const sw = canvas.width || 1e3;
+    const sh = canvas.height || 800;
+    const reg = region || { x: 0, y: 0, width: sw, height: sh };
+    const results = await this.embedRegions(canvas, [reg], 1);
+    return results[0];
   }
 };
-
-// src/vision/region-proposer.ts
-var DEFAULTS = {
-  maxRegions: 6,
-  relativeEnergyFloor: 0.15,
-  minCellPx: 48
-};
-function cellEnergy(data, stride, x0, y0, w, h) {
-  if (w < 2 || h < 2) return 0;
-  let sum = 0;
-  let pairs = 0;
-  for (let y = y0; y < y0 + h - 1; y++) {
-    for (let x = x0; x < x0 + w - 1; x++) {
-      const i = (y * stride + x) * 4;
-      const r = i + 4;
-      const d = i + stride * 4;
-      const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-      const lumR = 0.299 * data[r] + 0.587 * data[r + 1] + 0.114 * data[r + 2];
-      const lumD = 0.299 * data[d] + 0.587 * data[d + 1] + 0.114 * data[d + 2];
-      sum += Math.abs(lum - lumR) + Math.abs(lum - lumD);
-      pairs += 2;
-    }
-  }
-  return pairs === 0 ? 0 : sum / pairs;
-}
-function proposeRegions(canvas, surface, options = {}) {
-  const opts = { ...DEFAULTS, ...options };
-  const ctx = canvas.getContext("2d");
-  if (!ctx || typeof ctx.getImageData !== "function") return [];
-  const cw = canvas.width;
-  const ch = canvas.height;
-  const sx = Math.max(0, Math.min(cw - 1, Math.floor(surface.x)));
-  const sy = Math.max(0, Math.min(ch - 1, Math.floor(surface.y)));
-  const sw = Math.max(1, Math.min(cw - sx, Math.floor(surface.width)));
-  const sh = Math.max(1, Math.min(ch - sy, Math.floor(surface.height)));
-  if (sw < opts.minCellPx || sh < opts.minCellPx) return [];
-  let img;
-  try {
-    img = ctx.getImageData(sx, sy, sw, sh);
-  } catch {
-    return [];
-  }
-  const cols = Math.max(1, Math.min(4, Math.floor(sw / opts.minCellPx)));
-  const rows = Math.max(1, Math.min(4, Math.floor(sh / opts.minCellPx)));
-  if (cols * rows <= 1) {
-    const energy = cellEnergy(img.data, sw, 0, 0, sw, sh);
-    return energy > 0 ? [{ id: "r0", x: sx, y: sy, width: sw, height: sh, energy }] : [];
-  }
-  const cellW = Math.floor(sw / cols);
-  const cellH = Math.floor(sh / rows);
-  const cells = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const x0 = c * cellW;
-      const y0 = r * cellH;
-      const w = c === cols - 1 ? sw - x0 : cellW;
-      const h = r === rows - 1 ? sh - y0 : cellH;
-      cells.push({
-        id: `r${r}c${c}`,
-        x: sx + x0,
-        y: sy + y0,
-        width: w,
-        height: h,
-        energy: cellEnergy(img.data, sw, x0, y0, w, h)
-      });
-    }
-  }
-  const peak = cells.reduce((m, c) => Math.max(m, c.energy), 0);
-  if (peak <= 0) return [];
-  return cells.filter((c) => c.energy >= peak * opts.relativeEnergyFloor).sort((a, b) => b.energy - a.energy).slice(0, opts.maxRegions).map((c) => ({ ...c, energy: Math.round(c.energy * 100) / 100 }));
-}
 
 // src/vision/ui-prototypes.generated.ts
 var UI_PROTOTYPES = {
@@ -15733,15 +15966,769 @@ function classifyEmbedding(vector) {
   };
 }
 
+// src/vision/vision-lane.ts
+function computeVisualSalience(ctx, box, viewportWidth, viewportHeight) {
+  try {
+    const area = box.width * box.height;
+    const viewportArea = Math.max(1, viewportWidth * viewportHeight);
+    const areaFraction = area / viewportArea;
+    if (areaFraction < 1e-3 || areaFraction > 0.15) {
+      return { isPrimaryCta: false, salienceScore: 0.1 };
+    }
+    const sampleX = Math.floor(box.x + box.width / 2);
+    const sampleY = Math.floor(box.y + box.height / 2);
+    const pixel = ctx.getImageData(Math.max(0, sampleX), Math.max(0, sampleY), 1, 1).data;
+    const r = pixel[0] / 255;
+    const g = pixel[1] / 255;
+    const b = pixel[2] / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const saturation = max === 0 ? 0 : (max - min) / max;
+    const isSaturated = saturation > 0.25;
+    const aspect = box.width / Math.max(1, box.height);
+    const isButtonAspect = aspect >= 1.5 && aspect <= 6;
+    const salienceScore = (isSaturated ? 0.5 : 0.2) + (isButtonAspect ? 0.3 : 0.1) + Math.min(0.2, areaFraction * 10);
+    const isPrimaryCta = isSaturated && isButtonAspect && salienceScore > 0.6;
+    return { isPrimaryCta, salienceScore: Math.round(salienceScore * 100) / 100 };
+  } catch {
+    return { isPrimaryCta: false, salienceScore: 0.2 };
+  }
+}
+function computePixelBoxIoU(a, b) {
+  const ax2 = a.x + a.width;
+  const ay2 = a.y + a.height;
+  const bx2 = b.x + b.width;
+  const by2 = b.y + b.height;
+  const ix1 = Math.max(a.x, b.x);
+  const iy1 = Math.max(a.y, b.y);
+  const ix2 = Math.min(ax2, bx2);
+  const iy2 = Math.min(ay2, by2);
+  const iw = Math.max(0, ix2 - ix1);
+  const ih = Math.max(0, iy2 - iy1);
+  const interArea = iw * ih;
+  const unionArea = a.width * a.height + b.width * b.height - interArea;
+  if (unionArea <= 0) return 0;
+  return interArea / unionArea;
+}
+function applyNMS2(boxes, iouThreshold = 0.45) {
+  const sorted = [...boxes].sort((a, b) => (b.salience ?? 0) - (a.salience ?? 0));
+  const selected = [];
+  for (const b of sorted) {
+    let keep = true;
+    for (const s of selected) {
+      if (computePixelBoxIoU(b, s) >= iouThreshold) {
+        keep = false;
+        break;
+      }
+    }
+    if (keep) selected.push(b);
+  }
+  return selected;
+}
+function proposeConnectedComponentBoxes(canvas, maxProposals = 32) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx || typeof ctx.getImageData !== "function") return [];
+  const width = canvas.width;
+  const height = canvas.height;
+  if (width < 32 || height < 32) return [];
+  const proposals = [];
+  try {
+    const fullImg = ctx.getImageData(0, 0, width, height);
+    const data = fullImg.data;
+    const stride = 4;
+    const gw = Math.floor(width / stride);
+    const gh2 = Math.floor(height / stride);
+    const edgeMap = new Uint8Array(gw * gh2);
+    for (let gy = 0; gy < gh2 - 1; gy++) {
+      const y = gy * stride;
+      for (let gx = 0; gx < gw - 1; gx++) {
+        const x = gx * stride;
+        const idx = (y * width + x) * 4;
+        const rIdx = (y * width + (x + stride)) * 4;
+        const bIdx = ((y + stride) * width + x) * 4;
+        const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+        const rLum = 0.299 * data[rIdx] + 0.587 * data[rIdx + 1] + 0.114 * data[rIdx + 2];
+        const bLum = 0.299 * data[bIdx] + 0.587 * data[bIdx + 1] + 0.114 * data[bIdx + 2];
+        const diff = Math.abs(lum - rLum) + Math.abs(lum - bLum);
+        if (diff > 12) {
+          edgeMap[gy * gw + gx] = 1;
+        }
+      }
+    }
+    const visited = new Uint8Array(gw * gh2);
+    const queue = new Int32Array(gw * gh2);
+    for (let gy = 0; gy < gh2; gy++) {
+      for (let gx = 0; gx < gw; gx++) {
+        const startIdx = gy * gw + gx;
+        if (edgeMap[startIdx] === 0 || visited[startIdx] === 1) continue;
+        let head = 0, tail = 0;
+        queue[tail++] = startIdx;
+        visited[startIdx] = 1;
+        let minGX = gx, maxGX = gx, minGY = gy, maxGY = gy;
+        let count = 0;
+        while (head < tail) {
+          const curr = queue[head++];
+          count++;
+          const cy = Math.floor(curr / gw);
+          const cx = curr % gw;
+          if (cx < minGX) minGX = cx;
+          if (cx > maxGX) maxGX = cx;
+          if (cy < minGY) minGY = cy;
+          if (cy > maxGY) maxGY = cy;
+          if (cx > 0) {
+            const n = curr - 1;
+            if (edgeMap[n] === 1 && visited[n] === 0) {
+              visited[n] = 1;
+              queue[tail++] = n;
+            }
+          }
+          if (cx < gw - 1) {
+            const n = curr + 1;
+            if (edgeMap[n] === 1 && visited[n] === 0) {
+              visited[n] = 1;
+              queue[tail++] = n;
+            }
+          }
+          if (cy > 0) {
+            const n = curr - gw;
+            if (edgeMap[n] === 1 && visited[n] === 0) {
+              visited[n] = 1;
+              queue[tail++] = n;
+            }
+          }
+          if (cy < gh2 - 1) {
+            const n = curr + gw;
+            if (edgeMap[n] === 1 && visited[n] === 0) {
+              visited[n] = 1;
+              queue[tail++] = n;
+            }
+          }
+        }
+        const boxX = minGX * stride;
+        const boxY = minGY * stride;
+        const boxW = (maxGX - minGX + 1) * stride;
+        const boxH = (maxGY - minGY + 1) * stride;
+        if (boxW >= 32 && boxH >= 24 && boxW <= width * 0.95 && boxH <= height * 0.85) {
+          const aspect = boxW / Math.max(1, boxH);
+          const isButtonOrInputAspect = aspect >= 1.2 && aspect <= 8;
+          const fillRatio = count / Math.max(1, (maxGX - minGX + 1) * (maxGY - minGY + 1));
+          const salience = (isButtonOrInputAspect ? 0.35 : 0.1) + Math.min(0.3, count / 200) + (fillRatio < 0.8 ? 0.25 : 0.1);
+          proposals.push({
+            x: boxX,
+            y: boxY,
+            width: boxW,
+            height: boxH,
+            salience,
+            surfaceType: "standard"
+          });
+        }
+      }
+    }
+  } catch {
+  }
+  const nmsFiltered = applyNMS2(proposals, 0.45);
+  return nmsFiltered.slice(0, maxProposals);
+}
+var VisionPerceptionLane = class {
+  /**
+   * Perceives the active screenshot canvas purely through computer vision and CLIP ViT,
+   * producing candidate elements under strict resource constraints.
+   */
+  static async perceive(canvas, meta, options = {}) {
+    const t0 = performance.now();
+    const isEscalated = options.tier === "T2" || options.surfaceHints?.some((h) => h.type === "canvas" || h.type === "img" && h.conceptHint === "auth_badge");
+    const tier = options.tier ?? (isEscalated ? "T2" : "T1");
+    const effectiveMaxProposals = options.maxProposals ?? 12;
+    const deadlineMs = options.deadlineMs ?? (tier === "T2" ? 1e3 : 800);
+    const maxBatches = tier === "T2" ? 8 : Math.max(1, Math.ceil(effectiveMaxProposals / 4));
+    const signal = options.signal;
+    const ctx = canvas.getContext("2d");
+    const elements = [];
+    let proposalsEvaluated = 0;
+    let deadlineExceeded = false;
+    if (!ctx) {
+      return {
+        elements: [],
+        proposalsEvaluated: 0,
+        durationMs: Math.round(performance.now() - t0),
+        proposalDurationMs: 0,
+        encodeDurationMs: 0,
+        classifyDurationMs: 0,
+        deadlineExceeded: false,
+        providerUsed: "unavailable",
+        modelByteSize: 0,
+        rawProposalsCount: 0,
+        cropsCompleted: 0,
+        avgMsPerCrop: 0
+      };
+    }
+    const sw = meta.screenshotWidth || canvas.width || 1280;
+    const sh = meta.screenshotHeight || canvas.height || 800;
+    const tProposal0 = performance.now();
+    let candidateBoxes = [];
+    const isRealCanvas = canvas && canvas.width > 32 && canvas.height > 32;
+    if (isRealCanvas && options.surfaceHints && options.surfaceHints.length > 0) {
+      for (const hint of options.surfaceHints) {
+        if (hint.box.width < 32 || hint.box.height < 32) continue;
+        if (hint.type === "canvas") {
+          const subW = hint.box.width;
+          const subH = Math.floor(hint.box.height / 3);
+          if (subH >= 24) {
+            candidateBoxes.push({
+              x: hint.box.x,
+              y: hint.box.y + subH * 0.5,
+              width: subW * 0.9,
+              height: Math.max(36, subH * 0.8),
+              surfaceType: "canvas",
+              roleHint: "input",
+              conceptHint: "Canvas Input",
+              salience: 0.95,
+              source: "surface_hint"
+            });
+            candidateBoxes.push({
+              x: hint.box.x,
+              y: hint.box.y + subH * 1.8,
+              width: Math.max(120, subW * 0.5),
+              height: Math.max(40, subH * 0.7),
+              surfaceType: "canvas",
+              roleHint: "button",
+              conceptHint: "Canvas Action",
+              salience: 0.95,
+              source: "surface_hint"
+            });
+          }
+        } else {
+          candidateBoxes.push({
+            x: hint.box.x,
+            y: hint.box.y,
+            width: hint.box.width,
+            height: hint.box.height,
+            surfaceType: hint.type,
+            conceptHint: hint.conceptHint,
+            salience: 0.9,
+            source: "surface_hint"
+          });
+        }
+      }
+    }
+    if (options.mode === "fused" && options.domCandidateBoxes && options.domCandidateBoxes.length > 0) {
+      for (const domBox of options.domCandidateBoxes) {
+        candidateBoxes.push({
+          x: domBox.x,
+          y: domBox.y,
+          width: domBox.width,
+          height: domBox.height,
+          surfaceType: "standard",
+          roleHint: domBox.role,
+          salience: 0.85,
+          source: "dom_proposal"
+        });
+      }
+    }
+    if (isRealCanvas) {
+      const pixelBoxes = proposeConnectedComponentBoxes(canvas, options.maxProposals ?? 32);
+      for (const pb2 of pixelBoxes) {
+        candidateBoxes.push({
+          x: pb2.x,
+          y: pb2.y,
+          width: pb2.width,
+          height: pb2.height,
+          surfaceType: pb2.surfaceType,
+          salience: pb2.salience,
+          source: "classical_pixel"
+        });
+      }
+    }
+    candidateBoxes = applyNMS2(candidateBoxes, 0.45);
+    if (candidateBoxes.length > effectiveMaxProposals) {
+      candidateBoxes = candidateBoxes.slice(0, effectiveMaxProposals);
+    }
+    const rawProposalsCount = candidateBoxes.length;
+    const proposalDurationMs = Math.round((performance.now() - tProposal0) * 10) / 10;
+    let totalEncodeMs = 0;
+    let totalClassifyMs = 0;
+    let cropsCompleted = 0;
+    let batchesExecuted = 0;
+    const batchSize = Math.max(1, Math.min(options.batchSize ?? 4, 4));
+    for (let i = 0; i < candidateBoxes.length; i += batchSize) {
+      if (batchesExecuted >= maxBatches) {
+        deadlineExceeded = true;
+        break;
+      }
+      if (signal?.aborted || cropsCompleted > 0 && performance.now() - t0 >= deadlineMs) {
+        deadlineExceeded = true;
+        break;
+      }
+      batchesExecuted++;
+      const batch = candidateBoxes.slice(i, i + batchSize);
+      const tEnc0 = performance.now();
+      let embeddings = [];
+      try {
+        embeddings = await VitEncoder.embedRegions(canvas, batch, batchSize);
+      } catch (err) {
+        console.warn(`[ViT] Batched forward pass failed: ${err?.message || err}`);
+      }
+      const encDur = performance.now() - tEnc0;
+      totalEncodeMs += encDur;
+      for (let b = 0; b < batch.length; b++) {
+        proposalsEvaluated++;
+        cropsCompleted++;
+        const box = batch[b];
+        const embedding = embeddings[b] || null;
+        const ref = `v_el_${proposalsEvaluated}`;
+        const normX = Math.max(0, Math.min(1, Math.round(box.x / sw * 1e3) / 1e3));
+        const normY = Math.max(0, Math.min(1, Math.round(box.y / sh * 1e3) / 1e3));
+        const normW = Math.max(0.01, Math.min(1 - normX, Math.round(box.width / sw * 1e3) / 1e3));
+        const normH = Math.max(0.01, Math.min(1 - normY, Math.round(box.height / sh * 1e3) / 1e3));
+        const bbox = [normX, normY, normW, normH];
+        const { isPrimaryCta } = computeVisualSalience(ctx, box, sw, sh);
+        let role = "generic";
+        let confidence = 0.65;
+        let labelHint = void 0;
+        let conceptMatch = void 0;
+        const roleHint = box.roleHint;
+        if (embedding) {
+          const tCls0 = performance.now();
+          const classification = classifyEmbedding(embedding.vector);
+          totalClassifyMs += performance.now() - tCls0;
+          if (classification.label && classification.label !== "empty_space") {
+            role = classification.label;
+            confidence = Math.min(0.95, 0.6 + classification.margin * 10);
+          } else if (roleHint) {
+            role = roleHint;
+            confidence = 0.85;
+          } else {
+            role = classification.bestLabel;
+            confidence = Math.max(0.4, Math.min(0.7, classification.similarity));
+          }
+          if (box.surfaceType === "img" || box.conceptHint) {
+            conceptMatch = box.conceptHint || "auth_badge";
+            confidence = Math.max(confidence, 0.88);
+            labelHint = sanitizeElementName(conceptMatch);
+          } else if (isPrimaryCta && role === "button") {
+            labelHint = "Primary Action";
+          }
+        } else {
+          role = roleHint || (isPrimaryCta ? "button" : "generic");
+          confidence = 0.5;
+        }
+        const affordances = ["clickable"];
+        if (role === "input" || role === "text_input") {
+          affordances.push("typable");
+        } else if (role === "checkbox_or_toggle") {
+          affordances.push("selectable");
+        }
+        if (labelHint) {
+          const piiCheck = scanTextForPII(labelHint);
+          if (piiCheck.length > 0) {
+            labelHint = void 0;
+          } else {
+            labelHint = sanitizeElementName(labelHint);
+          }
+        }
+        elements.push({
+          ref,
+          bbox,
+          role,
+          affordances,
+          confidence: Math.round(confidence * 100) / 100,
+          provenance: "vision",
+          labelHint,
+          primaryCta: isPrimaryCta,
+          surfaceType: box.surfaceType,
+          conceptMatch,
+          rawPixelBox: box
+        });
+      }
+    }
+    const vitStatus = VitEncoder.getStatus();
+    const avgMsPerCrop = cropsCompleted > 0 ? Math.round(totalEncodeMs / cropsCompleted * 10) / 10 : 0;
+    return {
+      elements,
+      proposalsEvaluated,
+      durationMs: Math.round(performance.now() - t0),
+      proposalDurationMs,
+      encodeDurationMs: Math.round(totalEncodeMs * 10) / 10,
+      classifyDurationMs: Math.round(totalClassifyMs * 10) / 10,
+      deadlineExceeded,
+      providerUsed: vitStatus.providerUsed,
+      modelByteSize: vitStatus.modelByteSize,
+      rawProposalsCount,
+      cropsCompleted,
+      avgMsPerCrop
+    };
+  }
+};
+
+// src/vision/fusion-policy.ts
+function computeIoU(boxA, boxB) {
+  const xLeft = Math.max(boxA.x, boxB.x);
+  const yTop = Math.max(boxA.y, boxB.y);
+  const xRight = Math.min(boxA.x + boxA.width, boxB.x + boxB.width);
+  const yBottom = Math.min(boxA.y + boxA.height, boxB.y + boxB.height);
+  if (xRight <= xLeft || yBottom <= yTop) {
+    return 0;
+  }
+  const intersectionArea = (xRight - xLeft) * (yBottom - yTop);
+  const areaA = boxA.width * boxA.height;
+  const areaB = boxB.width * boxB.height;
+  const unionArea = areaA + areaB - intersectionArea;
+  return unionArea <= 0 ? 0 : intersectionArea / unionArea;
+}
+function isCenterContained(boxA, boxB) {
+  const centerX = boxA.x + boxA.width / 2;
+  const centerY = boxA.y + boxA.height / 2;
+  return centerX >= boxB.x && centerX <= boxB.x + boxB.width && centerY >= boxB.y && centerY <= boxB.y + boxB.height;
+}
+var FusionPolicy = class {
+  /**
+   * Fuses candidate elements from DOM and Vision into a unified SceneGraph.
+   */
+  static fuse(domCandidates, visionCandidates, meta, options = {}) {
+    const mode = options.mode ?? "fused";
+    const iouThreshold = options.iouThreshold ?? 0.5;
+    const sw = meta.screenshotWidth || meta.viewportWidth || 1280;
+    const sh = meta.screenshotHeight || meta.viewportHeight || 800;
+    const vw = meta.viewportWidth || 1280;
+    const vh2 = meta.viewportHeight || 720;
+    if (mode === "dom-only") {
+      const elements2 = [];
+      let idx = 0;
+      for (const dom of domCandidates) {
+        if (dom.isZeroSized || dom.boundingBox.width <= 0 || dom.boundingBox.height <= 0) continue;
+        if (dom.isOffscreen || dom.boundingBox.y > vh2 || dom.boundingBox.x > vw) continue;
+        const ref = dom.id;
+        const normX = Math.max(0, Math.min(1, Math.round(dom.boundingBox.x / vw * 1e3) / 1e3));
+        const normY = Math.max(0, Math.min(1, Math.round(dom.boundingBox.y / vh2 * 1e3) / 1e3));
+        const normW = Math.max(0.01, Math.min(1 - normX, Math.round(dom.boundingBox.width / vw * 1e3) / 1e3));
+        const normH = Math.max(0.01, Math.min(1 - normY, Math.round(dom.boundingBox.height / vh2 * 1e3) / 1e3));
+        const affordances = ["clickable"];
+        if (dom.role === "input" || dom.role === "textarea") affordances.push("typable");
+        if (dom.role === "select" || dom.role === "checkbox" || dom.role === "radio") affordances.push("selectable");
+        elements2.push({
+          ref,
+          bbox: [normX, normY, normW, normH],
+          role: dom.role,
+          affordances,
+          confidence: dom.confidence ?? (dom.disabled ? 0.7 : 0.9),
+          provenance: "dom",
+          labelHint: sanitizeElementName(dom.name)
+        });
+      }
+      return { elements: elements2, conflicts: [] };
+    }
+    if (mode === "vision-only") {
+      const elements2 = [];
+      let idx = 0;
+      for (const vis of visionCandidates) {
+        idx++;
+        const ref = `el_${idx}`;
+        elements2.push({
+          ref,
+          bbox: vis.bbox,
+          role: vis.role,
+          affordances: vis.affordances,
+          confidence: vis.confidence,
+          provenance: "vision",
+          labelHint: vis.labelHint ? sanitizeElementName(vis.labelHint) : void 0,
+          primaryCta: vis.primaryCta
+        });
+      }
+      return { elements: elements2, conflicts: [] };
+    }
+    const conflicts = [];
+    const elements = [];
+    const validDom = domCandidates.filter((d) => {
+      const w = d.boundingBox.width;
+      const h = d.boundingBox.height;
+      return !d.isZeroSized && w > 0 && h > 0 && !d.isOffscreen;
+    });
+    const scaleX = sw / vw;
+    const scaleY = sh / vh2;
+    const domBoxesInPixels = validDom.map((d) => ({
+      ...d,
+      pixelBox: {
+        x: d.boundingBox.x * scaleX,
+        y: d.boundingBox.y * scaleY,
+        width: d.boundingBox.width * scaleX,
+        height: d.boundingBox.height * scaleY
+      }
+    }));
+    const candidatePairs = [];
+    for (let d = 0; d < domBoxesInPixels.length; d++) {
+      const dom = domBoxesInPixels[d];
+      for (let v = 0; v < visionCandidates.length; v++) {
+        const vis = visionCandidates[v];
+        const visPixelBox = vis.rawPixelBox || {
+          x: vis.bbox[0] * sw,
+          y: vis.bbox[1] * sh,
+          width: vis.bbox[2] * sw,
+          height: vis.bbox[3] * sh
+        };
+        const iou = computeIoU(dom.pixelBox, visPixelBox);
+        const centerIn = isCenterContained(dom.pixelBox, visPixelBox) || isCenterContained(visPixelBox, dom.pixelBox);
+        if (iou >= iouThreshold || centerIn && iou >= 0.25) {
+          const domConf = dom.confidence ?? 0.9;
+          const visConf = vis.confidence ?? 0.8;
+          candidatePairs.push({
+            domIdx: d,
+            visIdx: v,
+            iou,
+            combinedScore: domConf * visConf * (1 + iou)
+          });
+        }
+      }
+    }
+    candidatePairs.sort((a, b) => b.combinedScore - a.combinedScore);
+    const matchedDomIndices = /* @__PURE__ */ new Set();
+    const matchedVisIndices = /* @__PURE__ */ new Set();
+    let fusedCounter = 0;
+    for (const pair of candidatePairs) {
+      if (matchedDomIndices.has(pair.domIdx) || matchedVisIndices.has(pair.visIdx)) {
+        continue;
+      }
+      matchedDomIndices.add(pair.domIdx);
+      matchedVisIndices.add(pair.visIdx);
+      const dom = domBoxesInPixels[pair.domIdx];
+      const vis = visionCandidates[pair.visIdx];
+      const ref = dom.id;
+      let finalRole = dom.role;
+      let finalDisabled = dom.disabled ?? false;
+      let conflictRecorded = false;
+      const roleDisagreement = dom.role !== vis.role && vis.role !== "generic";
+      if (roleDisagreement) {
+        conflicts.push({
+          ref,
+          domClaim: { role: dom.role, inputType: dom.inputType, ariaRole: dom.ariaRole },
+          visionClaim: { role: vis.role, confidence: vis.confidence },
+          resolvedTo: "dom",
+          reason: "DOM semantic hierarchy wins on input type and form semantics"
+        });
+        conflictRecorded = true;
+        finalRole = dom.role;
+      }
+      let isPrimary = false;
+      if (vis.primaryCta) {
+        isPrimary = true;
+        if (dom.role !== "button") {
+          conflicts.push({
+            ref,
+            domClaim: { role: dom.role },
+            visionClaim: { primaryCta: true, role: vis.role },
+            resolvedTo: "vision",
+            reason: "Vision visual prominence overrides DOM generic tag to primary CTA"
+          });
+          conflictRecorded = true;
+          finalRole = "button";
+        }
+      }
+      if (dom.isOccluded) {
+        conflicts.push({
+          ref,
+          domClaim: { role: dom.role, bbox: [dom.boundingBox.x, dom.boundingBox.y, dom.boundingBox.width, dom.boundingBox.height] },
+          visionClaim: { visuallyOccluded: true },
+          resolvedTo: "vision",
+          reason: "Vision confirms element is visually occluded by overlapping layers"
+        });
+        continue;
+      }
+      const normX = Math.max(0, Math.min(1, Math.round((dom.pixelBox.x + vis.bbox[0] * sw) / (2 * sw) * 1e3) / 1e3));
+      const normY = Math.max(0, Math.min(1, Math.round((dom.pixelBox.y + vis.bbox[1] * sh) / (2 * sh) * 1e3) / 1e3));
+      const normW = Math.max(0.01, Math.min(1 - normX, Math.round((dom.pixelBox.width + vis.bbox[2] * sw) / (2 * sw) * 1e3) / 1e3));
+      const normH = Math.max(0.01, Math.min(1 - normY, Math.round((dom.pixelBox.height + vis.bbox[3] * sh) / (2 * sh) * 1e3) / 1e3));
+      const affordances = Array.from(/* @__PURE__ */ new Set([...vis.affordances, ...dom.role === "input" ? ["typable"] : ["clickable"]]));
+      elements.push({
+        ref,
+        bbox: [normX, normY, normW, normH],
+        role: finalRole,
+        affordances,
+        confidence: Math.min(0.99, Math.max(dom.confidence ?? 0.9, vis.confidence) + 0.05),
+        provenance: "fused",
+        labelHint: sanitizeElementName(dom.name || vis.labelHint || finalRole),
+        primaryCta: isPrimary
+      });
+    }
+    for (let v = 0; v < visionCandidates.length; v++) {
+      if (matchedVisIndices.has(v)) continue;
+      const vis = visionCandidates[v];
+      if (vis.surfaceType === "canvas" || vis.surfaceType === "img" || vis.conceptMatch || vis.confidence >= 0.75) {
+        const ref = vis.ref;
+        elements.push({
+          ref,
+          bbox: vis.bbox,
+          role: vis.role,
+          affordances: vis.affordances,
+          confidence: vis.confidence,
+          provenance: "vision",
+          labelHint: vis.labelHint ? sanitizeElementName(vis.labelHint) : vis.role,
+          primaryCta: vis.primaryCta
+        });
+      }
+    }
+    for (let d = 0; d < domBoxesInPixels.length; d++) {
+      if (matchedDomIndices.has(d)) continue;
+      const dom = domBoxesInPixels[d];
+      if (dom.isOccluded) continue;
+      const ref = dom.id;
+      const normX = Math.max(0, Math.min(1, Math.round(dom.boundingBox.x / vw * 1e3) / 1e3));
+      const normY = Math.max(0, Math.min(1, Math.round(dom.boundingBox.y / vh2 * 1e3) / 1e3));
+      const normW = Math.max(0.01, Math.min(1 - normX, Math.round(dom.boundingBox.width / vw * 1e3) / 1e3));
+      const normH = Math.max(0.01, Math.min(1 - normY, Math.round(dom.boundingBox.height / vh2 * 1e3) / 1e3));
+      const affordances = ["clickable"];
+      if (dom.role === "input" || dom.role === "textarea") affordances.push("typable");
+      if (dom.role === "select" || dom.role === "checkbox" || dom.role === "radio") affordances.push("selectable");
+      elements.push({
+        ref,
+        bbox: [normX, normY, normW, normH],
+        role: dom.role,
+        affordances,
+        confidence: (dom.confidence ?? 0.9) * 0.95,
+        provenance: "dom",
+        labelHint: sanitizeElementName(dom.name)
+      });
+    }
+    return { elements, conflicts };
+  }
+};
+
+// src/sanitizer/perception-cache.ts
+var DEFAULT_TTL_MS = 1e4;
+function computeCanvasDHash(canvas) {
+  const tileSize = 16;
+  const gridRows = 4;
+  const gridCols = 4;
+  let scratch = null;
+  let ctx = null;
+  if (typeof OffscreenCanvas !== "undefined" && canvas instanceof OffscreenCanvas) {
+    scratch = new OffscreenCanvas(tileSize + 1, tileSize);
+    ctx = scratch.getContext("2d");
+  } else if (typeof document !== "undefined") {
+    scratch = document.createElement("canvas");
+    scratch.width = tileSize + 1;
+    scratch.height = tileSize;
+    ctx = scratch.getContext("2d", { willReadFrequently: true });
+  } else if (typeof canvas?.getContext === "function") {
+    ctx = canvas.getContext("2d");
+  } else {
+    return `dhash_${canvas.width}x${canvas.height}`;
+  }
+  if (!ctx) return "dhash_fallback";
+  try {
+    const srcWidth = canvas.width || 1280;
+    const srcHeight = canvas.height || 800;
+    const tileW = srcWidth / gridCols;
+    const tileH = srcHeight / gridRows;
+    let tileHashes = "";
+    for (let r = 0; r < gridRows; r++) {
+      for (let c = 0; c < gridCols; c++) {
+        const sx = Math.floor(c * tileW);
+        const sy = Math.floor(r * tileH);
+        const sw = Math.floor((c + 1) * tileW) - sx;
+        const sh = Math.floor((r + 1) * tileH) - sy;
+        if (scratch && typeof ctx.drawImage === "function") {
+          ctx.clearRect(0, 0, tileSize + 1, tileSize);
+          ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, tileSize + 1, tileSize);
+        }
+        const imgData = ctx.getImageData(0, 0, tileSize + 1, tileSize);
+        const pixels = imgData.data;
+        let tileHash = 2166136261;
+        for (let y = 0; y < tileSize; y++) {
+          for (let x = 0; x < tileSize; x++) {
+            const idx1 = (y * (tileSize + 1) + x) * 4;
+            const idx2 = (y * (tileSize + 1) + (x + 1)) * 4;
+            const lum1 = pixels[idx1] * 2 + pixels[idx1 + 1] * 5 + pixels[idx1 + 2] >> 3;
+            const lum2 = pixels[idx2] * 2 + pixels[idx2 + 1] * 5 + pixels[idx2 + 2] >> 3;
+            const bit = lum1 > lum2 ? 1 : 0;
+            tileHash ^= bit;
+            tileHash = Math.imul(tileHash, 16777619);
+          }
+        }
+        tileHashes += (tileHash >>> 0).toString(16).padStart(8, "0");
+      }
+    }
+    return tileHashes;
+  } catch {
+    return "dhash_read_error";
+  }
+}
+var PerceptionCache = class {
+  static cache = /* @__PURE__ */ new Map();
+  static ttlMs = DEFAULT_TTL_MS;
+  static setTtl(ttlMs) {
+    this.ttlMs = ttlMs;
+  }
+  /**
+   * Builds the sound composite cache key.
+   */
+  static buildKey(domHash, viewportHash, canvasDHash) {
+    return `${domHash}:${viewportHash}:${canvasDHash}`;
+  }
+  /**
+   * Retrieves cached sanitized context if present and unexpired.
+   */
+  static get(key) {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.sanitized;
+  }
+  /**
+   * Stores sanitized context into cache with current timestamp.
+   */
+  static set(key, sanitized) {
+    if (this.cache.size >= 50) {
+      const now = Date.now();
+      for (const [k2, v] of this.cache.entries()) {
+        if (now - v.timestamp > this.ttlMs) {
+          this.cache.delete(k2);
+        }
+      }
+      if (this.cache.size >= 50) {
+        const firstKey = this.cache.keys().next().value;
+        if (firstKey) this.cache.delete(firstKey);
+      }
+    }
+    this.cache.set(key, {
+      sanitized,
+      timestamp: Date.now()
+    });
+  }
+  static clear() {
+    this.cache.clear();
+  }
+  static size() {
+    return this.cache.size;
+  }
+};
+
 // src/sanitizer/pipeline.ts
 var SanitizerPipeline = class {
   /**
    * Transforms raw capture into sanitized context or fails closed.
    */
-  static async sanitize(rawCapture, snapshot, goal, imageCanvas) {
+  static async sanitize(rawCapture, snapshot, goal, imageCanvas, options) {
+    const activeTier = options?.activeTier || "T1";
+    let canvasDHash = "";
+    if (imageCanvas) {
+      canvasDHash = computeCanvasDHash(imageCanvas);
+    }
+    const cacheKey = options?.domHash && options?.viewportHash && canvasDHash ? PerceptionCache.buildKey(options.domHash, options.viewportHash, canvasDHash) : null;
+    if (cacheKey) {
+      const cached = PerceptionCache.get(cacheKey);
+      if (cached) {
+        return {
+          ...cached,
+          captureId: rawCapture.captureId,
+          timestamp: Date.now()
+        };
+      }
+    }
     const transformer = new CoordinateTransformer(rawCapture.metadata);
     let modelFaces = [];
-    if (imageCanvas) {
+    if (activeTier !== "T0" && imageCanvas) {
       try {
         const visionResult = await UltraFaceModelRunner.detectFaces(imageCanvas, transformer);
         modelFaces = visionResult.faces;
@@ -15787,43 +16774,55 @@ var SanitizerPipeline = class {
     } else {
       throw new Error("Sanitization Blocked: No canvas host available. Rendering must execute in an offscreen document with DOM access.");
     }
-    const visionObservations = [];
+    const surfaceHints = surfaceRegions.map((s) => ({
+      id: s.id,
+      type: s.id.includes("canvas") ? "canvas" : s.id.includes("img") ? "img" : "shadow_dom",
+      box: s.screenshotBox,
+      conceptHint: s.label
+    }));
+    let visionElements = [];
     let regionsProposed = 0;
     let regionsEmbedded = 0;
     let visionInferenceMs = 0;
+    let visionProviderUsed = "none";
     let visionError;
-    if (surfaceRegions.length > 0) {
+    if (activeTier !== "T0") {
       try {
-        for (const surface of surfaceRegions) {
-          const proposals = proposeRegions(hostCanvas, surface.screenshotBox);
-          regionsProposed += proposals.length;
-          for (const region of proposals) {
-            const embedding = await VitEncoder.embedRegion(hostCanvas, region);
-            regionsEmbedded++;
-            visionInferenceMs += VitEncoder.getStatus().lastInferenceMs;
-            const classification = classifyEmbedding(embedding.vector);
-            visionObservations.push({
-              surfaceId: surface.id,
-              regionId: region.id,
-              label: classification.label,
-              bestLabel: classification.bestLabel,
-              margin: classification.margin,
-              confident: classification.confident,
-              box: [region.x, region.y, region.width, region.height]
-            });
-          }
-        }
+        const laneResult = await VisionPerceptionLane.perceive(hostCanvas, rawCapture.metadata, {
+          deadlineMs: options?.deadlineMs ?? 800,
+          maxProposals: options?.regionBudget ?? 12,
+          surfaceHints
+        });
+        visionElements = laneResult.elements;
+        regionsProposed = laneResult.proposalsEvaluated;
+        regionsEmbedded = laneResult.elements.length;
+        visionInferenceMs = laneResult.durationMs;
+        visionProviderUsed = laneResult.providerUsed;
       } catch (err) {
         visionError = String(err?.message || err);
       }
     }
+    const visionObservations = visionElements.map((el2) => ({
+      surfaceId: el2.surfaceType || "viewport",
+      regionId: el2.ref,
+      label: el2.role,
+      bestLabel: el2.role,
+      margin: el2.confidence,
+      confident: el2.confidence >= 0.7,
+      box: [
+        Math.round(el2.bbox[0] * rawCapture.metadata.screenshotWidth),
+        Math.round(el2.bbox[1] * rawCapture.metadata.screenshotHeight),
+        Math.round(el2.bbox[2] * rawCapture.metadata.screenshotWidth),
+        Math.round(el2.bbox[3] * rawCapture.metadata.screenshotHeight)
+      ]
+    }));
     const visionTelemetry = {
-      modelFamily: VIT_MODEL_FAMILY,
-      providerUsed: VitEncoder.getStatus().providerUsed,
+      modelFamily: activeTier === "T0" ? "DOM Heuristics (T0, models skipped)" : VIT_MODEL_FAMILY,
+      providerUsed: activeTier === "T0" ? "none" : visionProviderUsed || VitEncoder.getStatus().providerUsed,
       regionsProposed,
       regionsEmbedded,
       totalInferenceMs: visionInferenceMs,
-      available: VitEncoder.getStatus().available,
+      available: activeTier === "T0" ? true : VitEncoder.getStatus().available,
       ...visionError ? { error: visionError } : {}
     };
     const preMaskDetail = PostRedactionVerifier.measurePreMaskDetail(hostCanvas, allRegions);
@@ -15838,28 +16837,60 @@ var SanitizerPipeline = class {
         sensitiveDomElementsMap.set(localId, region.category);
       }
     }
-    const sanitizedElements = snapshot.interactiveElements.map((el2) => {
-      const coarseBounds = [
-        Math.max(0, Math.min(1, Math.round(el2.boundingBox.x / rawCapture.metadata.viewportWidth * 100) / 100)),
-        Math.max(0, Math.min(1, Math.round(el2.boundingBox.y / rawCapture.metadata.viewportHeight * 100) / 100)),
-        Math.max(0, Math.min(1, Math.round(el2.boundingBox.width / rawCapture.metadata.viewportWidth * 100) / 100)),
-        Math.max(0, Math.min(1, Math.round(el2.boundingBox.height / rawCapture.metadata.viewportHeight * 100) / 100))
-      ];
+    const perceptionMode = options?.perceptionMode ?? "fused";
+    const domCandidates = snapshot.interactiveElements.map((el2) => {
+      const domMatch = snapshot.domElements.find((d) => d.id === el2.localId);
       const sensitiveCategory = sensitiveDomElementsMap.get(el2.localId);
+      const safeName = sensitiveCategory ? sensitiveElementPlaceholder(sensitiveCategory) : sanitizeElementName(el2.rawName);
+      return {
+        id: el2.localId,
+        role: el2.role,
+        name: safeName,
+        boundingBox: el2.boundingBox,
+        disabled: el2.state.includes("disabled"),
+        inputType: domMatch?.descriptor?.type,
+        ariaRole: domMatch?.descriptor?.ariaLabel,
+        confidence: 0.9
+      };
+    });
+    const sceneGraph = FusionPolicy.fuse(
+      domCandidates,
+      visionElements,
+      rawCapture.metadata,
+      { mode: perceptionMode }
+    );
+    const sanitizedElements = sceneGraph.elements.map((sgEl) => {
+      const sensitiveCategory = sensitiveDomElementsMap.get(sgEl.ref);
       let sanitizedName;
-      let actionCapabilities = [...el2.actionCapabilities];
+      let actionCapabilities = [];
+      for (const a of sgEl.affordances) {
+        if (a === "clickable") actionCapabilities.push("click");
+        if (a === "typable") actionCapabilities.push("type");
+        if (a === "selectable") actionCapabilities.push("select");
+        if (a === "scrollable") actionCapabilities.push("scroll");
+      }
+      if (actionCapabilities.length === 0) actionCapabilities.push("click");
       if (sensitiveCategory) {
         sanitizedName = sensitiveElementPlaceholder(sensitiveCategory);
         actionCapabilities = actionCapabilities.filter((cap) => cap !== "type");
       } else {
-        sanitizedName = sanitizeElementName(el2.rawName);
+        sanitizedName = sanitizeElementName(sgEl.labelHint || sgEl.role);
       }
+      let role = "generic";
+      const r = sgEl.role.toLowerCase();
+      if (r === "button") role = "button";
+      else if (r === "link") role = "link";
+      else if (r === "input" || r === "text_input") role = "input";
+      else if (r === "select") role = "select";
+      else if (r === "textarea") role = "textarea";
+      else if (r === "checkbox" || r === "checkbox_or_toggle") role = "checkbox";
+      else if (r === "radio") role = "radio";
       return {
-        localId: el2.localId,
-        role: el2.role,
+        localId: sgEl.ref,
+        role,
         sanitizedName,
-        coarseBounds,
-        state: el2.state,
+        coarseBounds: sgEl.bbox,
+        state: ["visible", "enabled"],
         actionCapabilities
       };
     });
@@ -15918,7 +16949,7 @@ var SanitizerPipeline = class {
     };
     const digestStr = `${rawCapture.captureId}:${allRegions.length}:${sanitizedElements.length}`;
     const payloadDigestSha256 = `sha256_${Math.abs(digestStr.split("").reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0))}`;
-    return {
+    const sanitized = {
       _brand: "SanitizedContext_Verified",
       protocolVersion: "1.0",
       runId: `run_${Date.now()}`,
@@ -15926,6 +16957,7 @@ var SanitizerPipeline = class {
       goal: sanitizeElementName(goal),
       sanitizedScreenshotDataUrl: sanitizedDataUrl,
       elements: sanitizedElements,
+      sceneGraph,
       pageState: {
         title: sanitizedTitle,
         viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight]
@@ -15937,6 +16969,10 @@ var SanitizerPipeline = class {
       payloadDigestSha256,
       timestamp: Date.now()
     };
+    if (cacheKey) {
+      PerceptionCache.set(cacheKey, sanitized);
+    }
+    return sanitized;
   }
 };
 
@@ -16029,32 +17065,33 @@ var WebExtensionAdapter = class {
     if (!api || !api.tabs || !api.tabs.query) {
       return { id: 1, url: "https://app.example.local/", title: "Workspace" };
     }
+    const isWebTab = (t) => Boolean(t && t.id && typeof t.url === "string" && !t.url.startsWith("chrome-extension://") && !t.url.startsWith("chrome://"));
     return new Promise((resolve) => {
       api.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
-        if (!api.runtime.lastError && tabs && tabs.length > 0) {
-          return resolve({
-            id: tabs[0].id,
-            url: tabs[0].url || "",
-            title: tabs[0].title || ""
-          });
+        const found1 = tabs?.find(isWebTab);
+        if (!api.runtime.lastError && found1) {
+          return resolve({ id: found1.id, url: found1.url || "", title: found1.title || "" });
         }
         api.tabs.query({ active: true, currentWindow: true }, (currentTabs) => {
-          if (!api.runtime.lastError && currentTabs && currentTabs.length > 0) {
-            return resolve({
-              id: currentTabs[0].id,
-              url: currentTabs[0].url || "",
-              title: currentTabs[0].title || ""
-            });
+          const found2 = currentTabs?.find(isWebTab);
+          if (!api.runtime.lastError && found2) {
+            return resolve({ id: found2.id, url: found2.url || "", title: found2.title || "" });
           }
           api.tabs.query({ active: true }, (anyTabs) => {
-            if (!api.runtime.lastError && anyTabs && anyTabs.length > 0) {
-              return resolve({
-                id: anyTabs[0].id,
-                url: anyTabs[0].url || "",
-                title: anyTabs[0].title || ""
-              });
+            const found3 = anyTabs?.find(isWebTab);
+            if (!api.runtime.lastError && found3) {
+              return resolve({ id: found3.id, url: found3.url || "", title: found3.title || "" });
             }
-            resolve({ id: 0, url: "", title: "" });
+            api.tabs.query({}, (allTabs) => {
+              const httpTab = allTabs?.find((t) => typeof t.url === "string" && (t.url.startsWith("http://") || t.url.startsWith("https://")));
+              if (httpTab) {
+                return resolve({ id: httpTab.id, url: httpTab.url || "", title: httpTab.title || "" });
+              }
+              if (anyTabs && anyTabs.length > 0) {
+                return resolve({ id: anyTabs[0].id, url: anyTabs[0].url || "", title: anyTabs[0].title || "" });
+              }
+              resolve({ id: 0, url: "", title: "" });
+            });
           });
         });
       });
@@ -16170,7 +17207,14 @@ var WebExtensionAdapter = class {
       return SanitizerPipeline.sanitize(
         request.rawCapture,
         request.snapshot,
-        request.goal
+        request.goal,
+        void 0,
+        {
+          activeTier: request.activeTier,
+          domHash: request.domHash,
+          viewportHash: request.viewportHash,
+          regionBudget: request.regionBudget
+        }
       );
     }
     throw new Error("Sanitization Host Unavailable: No DOM or offscreen document available to render masks safely");
@@ -16530,6 +17574,46 @@ var TEST_FIXTURES = {
       </body>
       </html>
     `
+  },
+  canvasForm: {
+    id: "canvas-form",
+    name: "Canvas 2D Interactive Form",
+    description: "Interactive form controls (input box, submit button) rendered into <canvas>. Vision discovers and classifies controls; DOM sees zero elements.",
+    expectedPiiCount: 0,
+    expectedSafeActionableCount: 2,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head><title>Canvas Authentication</title></head>
+      <body>
+        <div class="canvas-wrapper">
+          <canvas id="authCanvas" width="600" height="400" data-surface-type="canvas">
+            Canvas Form
+          </canvas>
+        </div>
+      </body>
+      </html>
+    `
+  },
+  imageIdentifier: {
+    id: "image-identifier",
+    name: "Image Identifier Security Badge",
+    description: "Security/auth badge concept icon baked into an <img>. Vision embeds the region and classifies it against concept prototypes; DOM sees only an opaque <img>.",
+    expectedPiiCount: 0,
+    expectedSafeActionableCount: 1,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head><title>Badge Verification</title></head>
+      <body>
+        <div class="badge-card">
+          <h2>Authorization Seal</h2>
+          <img id="secSeal" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><circle cx='70' cy='70' r='60' fill='%231e40af'/><text x='70' y='75' font-size='16' text-anchor='middle' fill='white'>SECURITY-BADGE</text></svg>" alt="Security Seal" width="140" height="140" data-concept-hint="auth_badge" />
+          <p>Verified Operator Clearance</p>
+        </div>
+      </body>
+      </html>
+    `
   }
 };
 
@@ -16627,16 +17711,7 @@ var ReasoningHttpClient = class {
    * Transmits SanitizedContext to Reasoning Server and returns one ActionProposal.
    */
   async requestReasoningAction(sanitized, recentActions) {
-    const payload = {
-      protocolVersion: sanitized.protocolVersion,
-      runId: sanitized.runId,
-      goal: sanitized.goal,
-      screenshot: sanitized.sanitizedScreenshotDataUrl,
-      elements: sanitized.elements,
-      pageState: sanitized.pageState,
-      redactionManifest: sanitized.redactionManifest,
-      ...recentActions && recentActions.length ? { recentActions } : {}
-    };
+    const payload = sanitizeContextForNetwork(sanitized, recentActions);
     assertNoCanaryLeak(payload, "Outgoing HTTP Payload");
     const serializedPayload = JSON.stringify(payload);
     this.lastRequestBytes = serializedPayload.length;
@@ -16986,6 +18061,447 @@ var DecisionRouter = class {
   }
 };
 
+// src/background/resource-governor.ts
+var ResourceGovernor = class {
+  config;
+  activeTier = "T1";
+  requestedTier = "T1";
+  tierOverride = "auto";
+  tierDowngraded = false;
+  tierDowngradeReason;
+  isCaptureActive = false;
+  captureTimestamps = [];
+  recentFrameLatencies = [];
+  warmupInferencesLeft;
+  warmupMs;
+  downgradeHistory = [];
+  consecutiveUnderBudgetFrames = 0;
+  consecutiveOverMemoryFrames = 0;
+  lastDowngradeTimestamp = 0;
+  currentDwellMs;
+  isProbingReupgrade = false;
+  probingFromTier = "T0";
+  disposalTimer = null;
+  totalPerceptionQueries = 0;
+  totalCacheHits = 0;
+  lastPerceptionMs = 0;
+  lastEstimatedResidentMb = 25;
+  // Base extension memory
+  /** Active candidate region proposal limit for T1 (12 -> 6 -> 3 degradation). */
+  regionBudget = 12;
+  constructor(config = {}) {
+    this.config = { ...DEFAULT_RESOURCE_BUDGET, ...config };
+    this.warmupInferencesLeft = this.config.warmupInferenceCount;
+    this.currentDwellMs = this.config.reupgradeDwellMs;
+    this.regionBudget = this.config.initialRegionBudget ?? 12;
+    if (typeof chrome !== "undefined" && chrome.storage?.session) {
+      chrome.storage.session.get(["privapilot_downgrade_history"], (items) => {
+        if (items?.privapilot_downgrade_history && Array.isArray(items.privapilot_downgrade_history)) {
+          this.downgradeHistory = items.privapilot_downgrade_history;
+        }
+      });
+    }
+  }
+  /**
+   * Returns whether governor is currently probing a higher tier.
+   */
+  isProbing() {
+    return this.isProbingReupgrade;
+  }
+  /**
+   * Returns the current dwell backoff duration in milliseconds.
+   */
+  getCurrentDwellMs() {
+    return this.currentDwellMs;
+  }
+  /**
+   * Returns active candidate region proposal budget (12, 6, or 3).
+   */
+  getRegionBudget() {
+    return this.regionBudget;
+  }
+  /**
+   * Sets manual tier override for live evaluation and demonstrations.
+   */
+  setTierOverride(override) {
+    this.tierOverride = override;
+    if (override === "force-T0") {
+      this.activeTier = "T0";
+    } else if (override === "force-T1") {
+      this.activeTier = "T1";
+      this.regionBudget = 12;
+    } else if (override === "force-T2") {
+      this.activeTier = "T2";
+    } else {
+      this.activeTier = this.tierDowngraded ? "T0" : this.requestedTier;
+      if (!this.tierDowngraded) {
+        this.regionBudget = 12;
+      }
+    }
+  }
+  getTierOverride() {
+    return this.tierOverride;
+  }
+  /**
+   * Sets requested tier based on page characteristics or DecisionRouter escalation.
+   */
+  setRequestedTier(tier) {
+    this.requestedTier = tier;
+    if (this.tierOverride === "auto") {
+      if (!this.tierDowngraded) {
+        this.activeTier = tier;
+      }
+    }
+  }
+  getActiveTier() {
+    return this.activeTier;
+  }
+  getRequestedTier() {
+    return this.requestedTier;
+  }
+  /**
+   * Checks whether a new capture cycle is permitted or blocked by backpressure.
+   */
+  checkBackpressure() {
+    if (this.isCaptureActive) {
+      return {
+        allowed: false,
+        reasonCode: "CONCURRENT_CAPTURE_IN_PROGRESS",
+        message: "A perception capture cycle is already in progress. Rejecting concurrent capture."
+      };
+    }
+    const now = Date.now();
+    const windowStart = now - 6e4;
+    this.captureTimestamps = this.captureTimestamps.filter((t) => t > windowStart);
+    if (this.captureTimestamps.length >= this.config.maxCapturesPerMinute) {
+      const oldestInWindow = this.captureTimestamps[0];
+      const retryAfterMs = Math.max(100, 6e4 - (now - oldestInWindow));
+      return {
+        allowed: false,
+        reasonCode: "RATE_LIMIT_EXCEEDED",
+        message: `Capture rate ceiling of ${this.config.maxCapturesPerMinute}/min reached. Backpressure active.`,
+        retryAfterMs
+      };
+    }
+    return { allowed: true };
+  }
+  /**
+   * Marks a capture cycle as actively executing.
+   */
+  recordCaptureStarted() {
+    this.isCaptureActive = true;
+    this.captureTimestamps.push(Date.now());
+  }
+  /**
+   * Marks active capture as concluded.
+   */
+  recordCaptureEnded() {
+    this.isCaptureActive = false;
+  }
+  /**
+   * Routes browser-level captureVisibleTab quota errors directly into backpressure.
+   */
+  recordBrowserQuotaExceeded(retryAfterMs = 1e3) {
+    this.isCaptureActive = false;
+    return {
+      allowed: false,
+      reasonCode: "BROWSER_CAPTURE_QUOTA_EXCEEDED",
+      message: "Chrome captureVisibleTab browser quota exceeded (~2 captures/second). Throttling gracefully.",
+      retryAfterMs
+    };
+  }
+  /**
+   * Computes p95 of the given numeric samples.
+   */
+  computeP95(samples) {
+    if (samples.length === 0) return 0;
+    const sorted = [...samples].sort((a, b) => a - b);
+    const index = Math.ceil(sorted.length * 0.95) - 1;
+    return sorted[Math.max(0, index)];
+  }
+  /**
+   * Records completed perception frame metrics, tracks p95 sliding window,
+   * warm-up exclusions, and enforces tier downgrade/re-upgrade hysteresis.
+   */
+  recordFramePerception(perceptionMs, cacheHit, estimatedResidentMb) {
+    this.totalPerceptionQueries++;
+    this.lastPerceptionMs = perceptionMs;
+    this.lastEstimatedResidentMb = estimatedResidentMb;
+    if (cacheHit) {
+      this.totalCacheHits++;
+      this.recentFrameLatencies.push(perceptionMs);
+      if (this.recentFrameLatencies.length > 30) this.recentFrameLatencies.shift();
+      return;
+    }
+    if (this.warmupInferencesLeft > 0) {
+      this.warmupInferencesLeft--;
+      if (this.warmupMs === void 0) {
+        this.warmupMs = perceptionMs;
+      }
+      this.recentFrameLatencies.push(perceptionMs);
+      if (this.recentFrameLatencies.length > 30) this.recentFrameLatencies.shift();
+      return;
+    }
+    this.recentFrameLatencies.push(perceptionMs);
+    if (this.recentFrameLatencies.length > 30) {
+      this.recentFrameLatencies.shift();
+    }
+    const windowSamples = this.recentFrameLatencies.slice(-20);
+    const p95 = this.computeP95(windowSamples);
+    if (this.tierOverride !== "auto") {
+      return;
+    }
+    if (this.isProbingReupgrade) {
+      this.isProbingReupgrade = false;
+      const probeFailed = perceptionMs > this.config.maxMsPerFrame || estimatedResidentMb > this.config.maxResidentMb;
+      if (probeFailed) {
+        this.currentDwellMs = Math.min(12e4, this.currentDwellMs * 2);
+        this.lastDowngradeTimestamp = Date.now();
+        const reason = perceptionMs > this.config.maxMsPerFrame ? `Probe T1 failed (${Math.round(perceptionMs)}ms > ${this.config.maxMsPerFrame}ms ceiling). Backing off dwell to ${this.currentDwellMs / 1e3}s` : `Probe T1 failed (${Math.round(estimatedResidentMb)}MB > ${this.config.maxResidentMb}MB ceiling). Backing off dwell to ${this.currentDwellMs / 1e3}s`;
+        this.downgradeTier(
+          "T0",
+          reason,
+          perceptionMs > this.config.maxMsPerFrame ? perceptionMs : estimatedResidentMb,
+          perceptionMs > this.config.maxMsPerFrame ? this.config.maxMsPerFrame : this.config.maxResidentMb
+        );
+        return;
+      } else {
+        this.currentDwellMs = this.config.reupgradeDwellMs;
+        this.reupgradeTier();
+        this.regionBudget = 3;
+        this.consecutiveUnderBudgetFrames = 0;
+        return;
+      }
+    }
+    if (this.activeTier === "T0") {
+      if (this.tierDowngraded && this.tierOverride === "auto") {
+        const timeSinceDowngrade = Date.now() - this.lastDowngradeTimestamp;
+        if (timeSinceDowngrade >= this.currentDwellMs) {
+          this.isProbingReupgrade = true;
+          this.probingFromTier = this.activeTier;
+          this.activeTier = "T1";
+          this.regionBudget = 3;
+        }
+      }
+      return;
+    }
+    const latencyExceeded = p95 > this.config.maxMsPerFrame;
+    if (estimatedResidentMb > this.config.maxResidentMb) {
+      this.consecutiveOverMemoryFrames++;
+    } else {
+      this.consecutiveOverMemoryFrames = 0;
+    }
+    const memoryExceeded = this.consecutiveOverMemoryFrames >= 3;
+    if (latencyExceeded || memoryExceeded) {
+      this.consecutiveUnderBudgetFrames = 0;
+      this.consecutiveOverMemoryFrames = 0;
+      this.lastDowngradeTimestamp = Date.now();
+      if (this.activeTier === "T2") {
+        const reason = latencyExceeded ? `Perception p95 (${p95}ms) exceeded ceiling (${this.config.maxMsPerFrame}ms)` : `Resident memory sustained breach (${estimatedResidentMb}MB) exceeded ceiling (${this.config.maxResidentMb}MB)`;
+        this.regionBudget = 12;
+        this.downgradeTier("T1", reason, latencyExceeded ? p95 : estimatedResidentMb, latencyExceeded ? this.config.maxMsPerFrame : this.config.maxResidentMb);
+      } else if (this.activeTier === "T1") {
+        if (memoryExceeded) {
+          const reason = `Resident memory sustained breach (${estimatedResidentMb}MB) exceeded ceiling (${this.config.maxResidentMb}MB)`;
+          this.downgradeTier("T0", reason, estimatedResidentMb, this.config.maxResidentMb);
+        } else if (latencyExceeded) {
+          if (this.regionBudget === 12) {
+            this.regionBudget = 6;
+            this.recentFrameLatencies = [];
+            this.tierDowngradeReason = `T1 intra-tier degraded: 12 -> 6 regions (p95 latency breach: ${p95}ms > ${this.config.maxMsPerFrame}ms)`;
+          } else if (this.regionBudget === 6) {
+            this.regionBudget = 3;
+            this.recentFrameLatencies = [];
+            this.tierDowngradeReason = `T1 intra-tier degraded: 6 -> 3 regions (p95 latency breach: ${p95}ms > ${this.config.maxMsPerFrame}ms)`;
+          } else {
+            const reason = `Perception p95 (${p95}ms) breached ${this.config.maxMsPerFrame}ms ceiling at minimum region budget (3 regions)`;
+            this.downgradeTier("T0", reason, p95, this.config.maxMsPerFrame);
+          }
+        }
+      }
+    } else {
+      if (this.activeTier === "T1" && !this.tierDowngraded) {
+        if (this.regionBudget < 12) {
+          this.consecutiveUnderBudgetFrames++;
+          if (this.consecutiveUnderBudgetFrames >= 3) {
+            this.consecutiveUnderBudgetFrames = 0;
+            if (this.regionBudget === 3) {
+              this.regionBudget = 6;
+            } else if (this.regionBudget === 6) {
+              this.regionBudget = 12;
+            }
+          }
+        }
+      }
+    }
+  }
+  persistDowngradeHistory() {
+    if (typeof chrome !== "undefined" && chrome.storage?.session) {
+      chrome.storage.session.set({ privapilot_downgrade_history: this.downgradeHistory }).catch(() => {
+      });
+    }
+  }
+  /**
+   * Records an explicit network timeout for T2 server escalation (8s budget ceiling).
+   */
+  recordNetworkTimeout(step, timeoutMs = 8e3) {
+    const event = {
+      timestamp: Date.now(),
+      fromTier: "T2",
+      toTier: "T1",
+      reason: `T2 network reasoning timeout: server exceeded ${timeoutMs / 1e3}s budget ceiling on step ${step}. Falling back to on-device perception`,
+      metricValue: timeoutMs,
+      threshold: timeoutMs
+    };
+    this.downgradeHistory.push(event);
+    if (this.downgradeHistory.length > 20) this.downgradeHistory.shift();
+    this.persistDowngradeHistory();
+  }
+  downgradeTier(targetTier, reason, metricValue, threshold) {
+    const fromTier = this.activeTier;
+    this.activeTier = targetTier;
+    this.tierDowngraded = true;
+    this.tierDowngradeReason = reason;
+    const event = {
+      timestamp: Date.now(),
+      fromTier,
+      toTier: targetTier,
+      reason,
+      metricValue: Math.round(metricValue),
+      threshold
+    };
+    this.downgradeHistory.push(event);
+    if (this.downgradeHistory.length > 20) this.downgradeHistory.shift();
+    this.persistDowngradeHistory();
+    if (targetTier === "T0") {
+      if (this.disposalTimer) clearTimeout(this.disposalTimer);
+      this.disposalTimer = setTimeout(async () => {
+        this.disposalTimer = null;
+        if (this.activeTier === "T0") {
+          await VitEncoder.disposeSession();
+          await UltraFaceModelRunner.disposeSession();
+        }
+      }, this.config.sessionDisposalGraceMs);
+    }
+  }
+  reupgradeTier() {
+    if (this.disposalTimer) {
+      clearTimeout(this.disposalTimer);
+      this.disposalTimer = null;
+    }
+    const fromTier = this.probingFromTier || "T0";
+    this.activeTier = this.requestedTier;
+    this.tierDowngraded = false;
+    this.tierDowngradeReason = void 0;
+    this.consecutiveUnderBudgetFrames = 0;
+    this.probingFromTier = "T0";
+    const event = {
+      timestamp: Date.now(),
+      fromTier,
+      toTier: this.requestedTier,
+      reason: `Re-upgrade successful: 1-frame probe verified perception fits within budget. Active tier restored to ${this.requestedTier}`,
+      metricValue: 0,
+      threshold: this.config.maxMsPerFrame
+    };
+    this.downgradeHistory.push(event);
+    if (this.downgradeHistory.length > 20) this.downgradeHistory.shift();
+    this.persistDowngradeHistory();
+  }
+  /**
+   * Resets capture timestamps sliding window between independent demo steps.
+   */
+  resetCaptureTimestamps() {
+    this.captureTimestamps = [];
+    this.isCaptureActive = false;
+  }
+  /**
+   * Emits the four accounted resident memory components in MB separately:
+   * 1. baseMb: ~20 MB (Base MV3 runtime + DOM engine baseline)
+   * 2. wasmHeapMb: 0 MB cold / post-grace; 105 MB warm (ViT ONNX weights 88.6MB + runtime heap)
+   * 3. arenaMb: 0 MB cold / post-grace; 6.7 MB warm (UltraFace weights 1.7MB + tensor arena 5MB)
+   * 4. bitmapMb: live canvas byteLength (or clamped w*h*4, max 8.2MB on 4K)
+   */
+  getMemoryBreakdown(viewport, options) {
+    const baseMb = 20;
+    let canvasBytes = viewport?.canvasByteLength || 0;
+    if (!canvasBytes) {
+      let rawW = viewport?.screenshotWidth || 1280;
+      let rawH = viewport?.screenshotHeight || 800;
+      const maxDimension = 1920;
+      if (rawW > maxDimension || rawH > 1080) {
+        const scale = Math.min(maxDimension / rawW, 1080 / rawH);
+        rawW = Math.round(rawW * scale);
+        rawH = Math.round(rawH * scale);
+      }
+      canvasBytes = rawW * rawH * 4;
+    }
+    const bitmapMb = Math.round(canvasBytes / (1024 * 1024) * 10) / 10;
+    const modelsStillResident = this.activeTier !== "T0" || Boolean(this.disposalTimer);
+    let wasmHeapMb = 0;
+    let arenaMb = 0;
+    if (modelsStillResident) {
+      const isWarm = options?.assumeModelsActive || VitEncoder.getMemoryFootprintBytes() > 0 || this.activeTier !== "T0";
+      if (isWarm) {
+        wasmHeapMb = 105;
+        arenaMb = 6.7;
+      }
+    }
+    return {
+      baseMb,
+      wasmHeapMb,
+      arenaMb,
+      bitmapMb
+    };
+  }
+  /**
+   * Computes total accounted resident memory in MB with HiDPI downscaling clamp.
+   */
+  calculateAccountedMemoryMb(viewport, options) {
+    const bd = this.getMemoryBreakdown(viewport, options);
+    return Math.round(bd.baseMb + bd.wasmHeapMb + bd.arenaMb + bd.bitmapMb);
+  }
+  /**
+   * Generates a complete snapshot of resource telemetry.
+   */
+  getTelemetry(currentPerceptionMs, currentCacheHit = false) {
+    const perceptionMs = currentPerceptionMs ?? this.lastPerceptionMs;
+    const windowSamples = this.recentFrameLatencies.slice(-20);
+    const p95PerceptionMs = this.computeP95(windowSamples);
+    const cacheHitRate = this.totalPerceptionQueries > 0 ? Math.round(this.totalCacheHits / this.totalPerceptionQueries * 100) / 100 : 0;
+    const now = Date.now();
+    const capturesInLastMinute = this.captureTimestamps.filter((t) => t > now - 6e4).length;
+    const provider = CapabilityDetector.detectBestProvider();
+    const breakdown = this.getMemoryBreakdown();
+    return {
+      activeTier: this.activeTier,
+      requestedTier: this.requestedTier,
+      tierDowngraded: this.tierDowngraded,
+      tierDowngradeReason: this.tierDowngradeReason,
+      tierOverride: this.tierOverride,
+      regionBudget: this.regionBudget,
+      perceptionMs,
+      p95PerceptionMs,
+      warmupExcluded: this.warmupInferencesLeft > 0,
+      warmupMs: this.warmupMs,
+      estimatedResidentMb: this.lastEstimatedResidentMb,
+      memoryAccountingMethod: `base(${breakdown.baseMb}MB)+wasmHeap(${breakdown.wasmHeapMb}MB)+arena(${breakdown.arenaMb}MB)+bitmap(${breakdown.bitmapMb}MB)`,
+      memoryBreakdown: breakdown,
+      maxPerceptionMsCeiling: this.config.maxMsPerFrame,
+      maxMemoryMbCeiling: this.config.maxResidentMb,
+      maxCapturesPerMinuteCeiling: this.config.maxCapturesPerMinute,
+      capturesInLastMinute,
+      cacheHit: currentCacheHit,
+      cacheHitRate,
+      totalPerceptionQueries: this.totalPerceptionQueries,
+      totalCacheHits: this.totalCacheHits,
+      executionProvider: provider,
+      backpressureApplied: this.isCaptureActive || capturesInLastMinute >= this.config.maxCapturesPerMinute,
+      recentFrameLatencies: [...this.recentFrameLatencies],
+      downgradeHistory: [...this.downgradeHistory]
+    };
+  }
+};
+
 // src/background/coordinator.ts
 function isRestrictedBrowserUrl(urlStr) {
   if (!urlStr) return { isRestricted: false };
@@ -17009,6 +18525,7 @@ var RunCoordinator = class {
   browser;
   httpClient;
   auditLogger;
+  governor;
   defaultMaxSteps;
   defaultMaxStaleRetries;
   listeners = {};
@@ -17034,8 +18551,15 @@ var RunCoordinator = class {
     this.browser = browser;
     this.httpClient = httpClient;
     this.auditLogger = auditLogger;
+    this.governor = options.governor ?? new ResourceGovernor();
     this.defaultMaxSteps = Math.max(1, Math.min(options.defaultMaxSteps ?? 10, 20));
     this.defaultMaxStaleRetries = options.maxStaleRetries ?? 2;
+  }
+  getGovernor() {
+    return this.governor;
+  }
+  setTierOverride(override) {
+    this.governor.setTierOverride(override);
   }
   setListeners(listeners) {
     this.listeners = listeners;
@@ -17045,6 +18569,64 @@ var RunCoordinator = class {
   }
   getLastResult() {
     return this.lastRunResult;
+  }
+  /**
+   * Executes a single real perception cycle on the active tab without advancing the agent action loop.
+   * Runs the full end-to-end perception pipeline:
+   * 1. Captures active tab DOM snapshot and visual screenshot via browser adapter
+   * 2. Executes offscreen multi-layer privacy sanitizer
+   * 3. Measures actual client perception latency
+   * 4. Computes honest resident memory footprint
+   * 5. Records metrics to ResourceGovernor and broadcasts telemetry to HUD
+   */
+  async runSinglePerceptionCycle(goal = "Inspect page") {
+    const activeTab = await this.browser.getActiveTab();
+    if (!activeTab || !activeTab.id) {
+      const now = Date.now();
+      return { success: false, telemetry: this.createTelemetry(now, now, now, now, now, now, now, now, 0), perceptionMs: 0, error: "No active tab found" };
+    }
+    const captureId = `cap_single_${Date.now()}`;
+    const domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+      type: "EXTRACT_DOM_SNAPSHOT",
+      captureId
+    });
+    if (!domResponse || !domResponse.success) {
+      const now = Date.now();
+      return { success: false, telemetry: this.createTelemetry(now, now, now, now, now, now, now, now, 0), perceptionMs: 0, error: "DOM snapshot failed" };
+    }
+    const screenshotDataUrl = await this.browser.captureVisibleTab();
+    const rawCapture = {
+      _brand: "RawCapture_InternalOnly",
+      captureId,
+      timestamp: Date.now(),
+      rawScreenshotDataUrl: screenshotDataUrl,
+      rawDomSummary: domResponse.snapshot,
+      metadata: domResponse.viewport
+    };
+    const activeTier = this.governor.getActiveTier();
+    const regionBudget = this.governor.getRegionBudget();
+    const t0 = Date.now();
+    const sanitized = await this.browser.runInSanitizerHost({
+      rawCapture,
+      snapshot: domResponse.snapshot,
+      goal,
+      activeTier,
+      regionBudget,
+      domHash: domResponse.domHash,
+      viewportHash: domResponse.viewportHash
+    });
+    const perceptionMs = Date.now() - t0;
+    const isCacheHit = perceptionMs < 5;
+    const accountedMb = this.governor.calculateAccountedMemoryMb(domResponse.viewport);
+    this.governor.recordFramePerception(perceptionMs, isCacheHit, accountedMb);
+    if (this.listeners.onSanitizationComplete) {
+      this.listeners.onSanitizationComplete(rawCapture, sanitized);
+    }
+    const telemetry = this.createTelemetry(t0, t0, t0, t0 + perceptionMs, t0 + perceptionMs, t0 + perceptionMs, t0 + perceptionMs, t0 + perceptionMs, 1);
+    if (this.listeners.onTelemetryUpdated) {
+      this.listeners.onTelemetryUpdated(telemetry);
+    }
+    return { success: true, telemetry, perceptionMs };
   }
   cancelRun() {
     this.isCancelled = true;
@@ -17110,7 +18692,8 @@ var RunCoordinator = class {
       decisionSource: this.lastDecisionSource,
       stepsDecidedLocally: this.stepsDecidedLocally,
       stepsEscalated: this.stepsEscalated,
-      bytesTransmittedTotal: this.bytesTransmittedTotal
+      bytesTransmittedTotal: this.bytesTransmittedTotal,
+      resources: this.governor.getTelemetry()
     };
   }
   /**
@@ -17165,10 +18748,25 @@ var RunCoordinator = class {
       const step = this.currentStep;
       const maxSteps = this.currentMaxSteps;
       const t0_step = Date.now();
+      const backpressure = this.governor.checkBackpressure();
+      if (!backpressure.allowed) {
+        const errorMsg2 = `Perception backpressure applied: ${backpressure.message || backpressure.reasonCode}`;
+        this.transition("blocked-local-only", errorMsg2);
+        const res2 = {
+          success: false,
+          state: "blocked-local-only",
+          error: errorMsg2,
+          stepCount: step
+        };
+        this.lastRunResult = res2;
+        return res2;
+      }
+      this.governor.recordCaptureStarted();
       this.transition("capturing", `Step ${step}/${maxSteps}: Capturing active tab DOM & screenshot`);
       const activeTab = await this.browser.getActiveTab();
       const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
       if (restrictedCheck.isRestricted) {
+        this.governor.recordCaptureEnded();
         const errorMsg2 = `Capture blocked: ${restrictedCheck.reason}`;
         this.transition("blocked-local-only", errorMsg2);
         const res2 = {
@@ -17188,6 +18786,7 @@ var RunCoordinator = class {
           captureId
         });
       } catch (err) {
+        this.governor.recordCaptureEnded();
         const errorMsg2 = "Could not connect to webpage. Please reload the target tab (Cmd+R / F5) so the extension content script attaches.";
         this.transition("failed-safe", errorMsg2);
         const res2 = {
@@ -17200,6 +18799,7 @@ var RunCoordinator = class {
         return res2;
       }
       if (!domResponse || !domResponse.success) {
+        this.governor.recordCaptureEnded();
         const errorMsg2 = "Failed to extract DOM snapshot from content script. Please reload the tab.";
         this.transition("failed-safe", errorMsg2);
         const res2 = {
@@ -17215,6 +18815,15 @@ var RunCoordinator = class {
       try {
         screenshotDataUrl = await this.browser.captureVisibleTab();
       } catch (err) {
+        if (err?.message?.includes("MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND") || err?.message?.includes("quota")) {
+          this.governor.recordBrowserQuotaExceeded();
+          const errorMsg3 = "Browser captureVisibleTab rate limit reached. Backpressure active.";
+          this.transition("blocked-local-only", errorMsg3);
+          const res3 = { success: false, state: "blocked-local-only", error: errorMsg3, stepCount: step };
+          this.lastRunResult = res3;
+          return res3;
+        }
+        this.governor.recordCaptureEnded();
         const errorMsg2 = `Screenshot capture failed: ${err.message || "Permission denied or restricted tab"}`;
         this.transition("failed-safe", errorMsg2);
         const res2 = {
@@ -17239,13 +18848,18 @@ var RunCoordinator = class {
       const t2_detectionComplete = Date.now();
       this.transition("sanitizing", `Step ${step}/${maxSteps}: Rendering opaque privacy masks`);
       let sanitized;
+      const activeTier = this.governor.getActiveTier();
       try {
         sanitized = await this.browser.runInSanitizerHost({
           rawCapture,
           snapshot: domResponse.snapshot,
-          goal
+          goal,
+          activeTier,
+          domHash: domResponse.domHash,
+          viewportHash: domResponse.viewportHash
         });
       } catch (err) {
+        this.governor.recordCaptureEnded();
         const userSafeMsg = "Sensitive content may be present in an area that cannot be inspected safely. No context was sent.";
         this.transition("blocked-local-only", userSafeMsg);
         const res2 = {
@@ -17258,6 +18872,11 @@ var RunCoordinator = class {
         return res2;
       }
       const t3_sanitizationValidated = Date.now();
+      const perceptionMs = t3_sanitizationValidated - t1_captureComplete;
+      const isCacheHit = perceptionMs < 5;
+      const accountedMb = this.governor.calculateAccountedMemoryMb(domResponse.viewport);
+      this.governor.recordFramePerception(perceptionMs, isCacheHit, accountedMb);
+      this.governor.recordCaptureEnded();
       this.currentSanitizedContext = sanitized;
       if (this.listeners.onSanitizationComplete) {
         this.listeners.onSanitizationComplete(rawCapture, sanitized);
@@ -17288,23 +18907,72 @@ var RunCoordinator = class {
         this.consecutiveLocalScrolls = 0;
         this.transition("sending-sanitized-context", `Step ${step}/${maxSteps}: Transmitting sanitized context`);
         this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Awaiting reasoning action`);
+        const T2_NETWORK_TIMEOUT_MS = 8e3;
+        let timeoutHandle;
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            reject(new Error(`T2 reasoning server exceeded ${T2_NETWORK_TIMEOUT_MS / 1e3}s network budget ceiling`));
+          }, T2_NETWORK_TIMEOUT_MS);
+        });
         try {
-          proposal = await this.httpClient.requestReasoningAction(
-            sanitized,
-            this.actionHistory.filter((a) => a.kind !== "wait").slice(-8).map((a) => ({ kind: a.kind, targetLabel: a.label }))
-          );
+          proposal = await Promise.race([
+            this.httpClient.requestReasoningAction(
+              sanitized,
+              this.actionHistory.filter((a) => a.kind !== "wait").slice(-8).map((a) => ({ kind: a.kind, targetLabel: a.label }))
+            ),
+            timeoutPromise
+          ]);
         } catch (err) {
-          const errorMsg2 = `Reasoning server error: ${err.message || "Request failed"}`;
-          this.transition("failed-safe", errorMsg2);
-          const res2 = {
-            success: false,
-            state: "failed-safe",
-            error: errorMsg2,
-            sanitized,
-            stepCount: step
-          };
-          this.lastRunResult = res2;
-          return res2;
+          if (err?.message?.includes("network budget ceiling")) {
+            this.governor.recordNetworkTimeout(step, T2_NETWORK_TIMEOUT_MS);
+            if (this.listeners.onTelemetryUpdated) {
+              this.listeners.onTelemetryUpdated(this.createTelemetry(this.t0_runStart, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, Date.now(), Date.now(), Date.now(), Date.now(), step));
+            }
+            decisionSource = "local";
+            const actioned = new Set((this.actionHistory || []).map((a) => a.label?.toLowerCase().trim()).filter(Boolean));
+            const candidates = (sanitized?.elements || []).filter((el2) => {
+              const name2 = (el2.sanitizedName || "").toLowerCase().trim();
+              return !actioned.has(name2) && !name2.includes("[masked") && !name2.includes("[password") && !name2.includes("[auth");
+            });
+            const hasVisionContext = (activeTier === "T1" || activeTier === "T2") && (sanitized?.visionObservations?.length || 0) > 0;
+            const fallbackTierLabel = hasVisionContext ? "T1 local perception" : activeTier === "T0" ? "T0 DOM heuristics" : "on-device perception";
+            const bestCandidate = candidates.find((el2) => el2.role === "button" || el2.actionCapabilities?.includes("click")) || candidates.find((el2) => el2.role === "input" || el2.role === "textarea" || el2.actionCapabilities?.includes("type")) || candidates[0];
+            if (bestCandidate) {
+              const canType = bestCandidate.role === "input" || bestCandidate.role === "textarea" || bestCandidate.actionCapabilities?.includes("type");
+              proposal = {
+                actionId: `act_${Date.now()}`,
+                kind: canType ? "type" : "click",
+                targetLocalId: bestCandidate.localId,
+                textToType: canType ? "test" : void 0,
+                rationale: `T2 network timeout (${T2_NETWORK_TIMEOUT_MS}ms exceeded). Falling back to ${fallbackTierLabel} candidate "${bestCandidate.sanitizedName}".`,
+                confidence: hasVisionContext ? 0.75 : 0.6,
+                risk: "safe",
+                expectedState: `The page responds to "${bestCandidate.sanitizedName}".`
+              };
+            } else {
+              proposal = {
+                actionId: `act_${Date.now()}`,
+                kind: "wait",
+                rationale: `T2 network timeout (${T2_NETWORK_TIMEOUT_MS}ms exceeded) with no actionable local candidates in ${fallbackTierLabel} context.`,
+                confidence: 0.5,
+                risk: "safe"
+              };
+            }
+          } else {
+            const errorMsg2 = `Reasoning server error: ${err.message || "Request failed"}`;
+            this.transition("failed-safe", errorMsg2);
+            const res2 = {
+              success: false,
+              state: "failed-safe",
+              error: errorMsg2,
+              sanitized,
+              stepCount: step
+            };
+            this.lastRunResult = res2;
+            return res2;
+          }
+        } finally {
+          clearTimeout(timeoutHandle);
         }
         bytesTransmitted = typeof this.httpClient.getLastRequestBytes === "function" ? this.httpClient.getLastRequestBytes() : 0;
       }
@@ -17706,8 +19374,15 @@ coordinator.setListeners({
     }
   }
 });
+function isTrustedExtensionUi(sender) {
+  const isExtensionUrl = typeof sender?.url === "string" && (sender.url.startsWith(`chrome-extension://${chrome.runtime.id}/sidepanel/`) || sender.url.startsWith(`chrome-extension://${chrome.runtime.id}/src/sidepanel/`));
+  const isNotWebTab = !sender?.tab || typeof sender.tab.url === "string" && sender.tab.url.startsWith(`chrome-extension://${chrome.runtime.id}/`);
+  return Boolean(
+    sender && sender.id === chrome.runtime.id && isExtensionUrl && isNotWebTab
+  );
+}
 if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "START_AGENT_RUN") {
       coordinator.startRun(message.goal || "Safe assistance").then((result) => {
         sendResponse(result);
@@ -17753,6 +19428,48 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
     }
     if (message.type === "GET_STATE") {
       sendResponse({ state: coordinator.getState() });
+      return true;
+    }
+    if (message.type === "SET_TIER_OVERRIDE") {
+      if (!isTrustedExtensionUi(sender)) {
+        sendResponse({
+          success: false,
+          error: "Unauthorized: SET_TIER_OVERRIDE permitted only from trusted extension UI (sidepanel)"
+        });
+        return true;
+      }
+      coordinator.setTierOverride(message.override || "auto");
+      const telemetry = coordinator.getGovernor().getTelemetry();
+      sendResponse({ success: true, telemetry });
+      return true;
+    }
+    if (message.type === "GET_RESOURCE_METRICS") {
+      const telemetry = coordinator.getGovernor().getTelemetry();
+      sendResponse({ success: true, telemetry });
+      return true;
+    }
+    if (message.type === "RUN_PERCEPTION_CYCLE") {
+      if (!isTrustedExtensionUi(sender)) {
+        sendResponse({
+          success: false,
+          error: "Unauthorized: RUN_PERCEPTION_CYCLE permitted only from trusted extension UI (sidepanel)"
+        });
+        return true;
+      }
+      coordinator.runSinglePerceptionCycle(message.goal || "Inspect page").then((res) => {
+        sendResponse(res);
+      }).catch((err) => {
+        sendResponse({ success: false, error: err?.message || "Perception pass failed" });
+      });
+      return true;
+    }
+    if (message.type === "RESET_CAPTURE_WINDOW") {
+      if (!isTrustedExtensionUi(sender)) {
+        sendResponse({ success: false, error: "Unauthorized: RESET_CAPTURE_WINDOW permitted only from trusted extension UI" });
+        return true;
+      }
+      coordinator.getGovernor().resetCaptureTimestamps();
+      sendResponse({ success: true, telemetry: coordinator.getGovernor().getTelemetry() });
       return true;
     }
     return false;

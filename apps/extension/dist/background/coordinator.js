@@ -16,6 +16,7 @@ import { WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
 import { DecisionRouter } from './decision-router.js';
+import { ResourceGovernor } from './resource-governor.js';
 export function isRestrictedBrowserUrl(urlStr) {
     if (!urlStr)
         return { isRestricted: false };
@@ -39,6 +40,7 @@ export class RunCoordinator {
     browser;
     httpClient;
     auditLogger;
+    governor;
     defaultMaxSteps;
     defaultMaxStaleRetries;
     listeners = {};
@@ -64,8 +66,15 @@ export class RunCoordinator {
         this.browser = browser;
         this.httpClient = httpClient;
         this.auditLogger = auditLogger;
+        this.governor = options.governor ?? new ResourceGovernor();
         this.defaultMaxSteps = Math.max(1, Math.min(options.defaultMaxSteps ?? 10, 20));
         this.defaultMaxStaleRetries = options.maxStaleRetries ?? 2;
+    }
+    getGovernor() {
+        return this.governor;
+    }
+    setTierOverride(override) {
+        this.governor.setTierOverride(override);
     }
     setListeners(listeners) {
         this.listeners = listeners;
@@ -75,6 +84,64 @@ export class RunCoordinator {
     }
     getLastResult() {
         return this.lastRunResult;
+    }
+    /**
+     * Executes a single real perception cycle on the active tab without advancing the agent action loop.
+     * Runs the full end-to-end perception pipeline:
+     * 1. Captures active tab DOM snapshot and visual screenshot via browser adapter
+     * 2. Executes offscreen multi-layer privacy sanitizer
+     * 3. Measures actual client perception latency
+     * 4. Computes honest resident memory footprint
+     * 5. Records metrics to ResourceGovernor and broadcasts telemetry to HUD
+     */
+    async runSinglePerceptionCycle(goal = 'Inspect page') {
+        const activeTab = await this.browser.getActiveTab();
+        if (!activeTab || !activeTab.id) {
+            const now = Date.now();
+            return { success: false, telemetry: this.createTelemetry(now, now, now, now, now, now, now, now, 0), perceptionMs: 0, error: 'No active tab found' };
+        }
+        const captureId = `cap_single_${Date.now()}`;
+        const domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+            type: 'EXTRACT_DOM_SNAPSHOT',
+            captureId
+        });
+        if (!domResponse || !domResponse.success) {
+            const now = Date.now();
+            return { success: false, telemetry: this.createTelemetry(now, now, now, now, now, now, now, now, 0), perceptionMs: 0, error: 'DOM snapshot failed' };
+        }
+        const screenshotDataUrl = await this.browser.captureVisibleTab();
+        const rawCapture = {
+            _brand: 'RawCapture_InternalOnly',
+            captureId,
+            timestamp: Date.now(),
+            rawScreenshotDataUrl: screenshotDataUrl,
+            rawDomSummary: domResponse.snapshot,
+            metadata: domResponse.viewport
+        };
+        const activeTier = this.governor.getActiveTier();
+        const regionBudget = this.governor.getRegionBudget();
+        const t0 = Date.now();
+        const sanitized = await this.browser.runInSanitizerHost({
+            rawCapture,
+            snapshot: domResponse.snapshot,
+            goal,
+            activeTier,
+            regionBudget,
+            domHash: domResponse.domHash,
+            viewportHash: domResponse.viewportHash
+        });
+        const perceptionMs = Date.now() - t0;
+        const isCacheHit = perceptionMs < 5;
+        const accountedMb = this.governor.calculateAccountedMemoryMb(domResponse.viewport);
+        this.governor.recordFramePerception(perceptionMs, isCacheHit, accountedMb);
+        if (this.listeners.onSanitizationComplete) {
+            this.listeners.onSanitizationComplete(rawCapture, sanitized);
+        }
+        const telemetry = this.createTelemetry(t0, t0, t0, t0 + perceptionMs, t0 + perceptionMs, t0 + perceptionMs, t0 + perceptionMs, t0 + perceptionMs, 1);
+        if (this.listeners.onTelemetryUpdated) {
+            this.listeners.onTelemetryUpdated(telemetry);
+        }
+        return { success: true, telemetry, perceptionMs };
     }
     cancelRun() {
         this.isCancelled = true;
@@ -145,7 +212,8 @@ export class RunCoordinator {
             decisionSource: this.lastDecisionSource,
             stepsDecidedLocally: this.stepsDecidedLocally,
             stepsEscalated: this.stepsEscalated,
-            bytesTransmittedTotal: this.bytesTransmittedTotal
+            bytesTransmittedTotal: this.bytesTransmittedTotal,
+            resources: this.governor.getTelemetry()
         };
     }
     /**
@@ -204,12 +272,28 @@ export class RunCoordinator {
             const step = this.currentStep;
             const maxSteps = this.currentMaxSteps;
             const t0_step = Date.now();
+            // Backpressure Check: enforce concurrency guard and capture rate ceiling
+            const backpressure = this.governor.checkBackpressure();
+            if (!backpressure.allowed) {
+                const errorMsg = `Perception backpressure applied: ${backpressure.message || backpressure.reasonCode}`;
+                this.transition('blocked-local-only', errorMsg);
+                const res = {
+                    success: false,
+                    state: 'blocked-local-only',
+                    error: errorMsg,
+                    stepCount: step
+                };
+                this.lastRunResult = res;
+                return res;
+            }
+            this.governor.recordCaptureStarted();
             // Step 1: Capture active tab DOM & screenshot (fresh captureId each cycle)
             this.transition('capturing', `Step ${step}/${maxSteps}: Capturing active tab DOM & screenshot`);
             const activeTab = await this.browser.getActiveTab();
             // Guard: Block restricted browser surfaces (chrome://, chrome-extension://, file://, devtools://)
             const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
             if (restrictedCheck.isRestricted) {
+                this.governor.recordCaptureEnded();
                 const errorMsg = `Capture blocked: ${restrictedCheck.reason}`;
                 this.transition('blocked-local-only', errorMsg);
                 const res = {
@@ -230,6 +314,7 @@ export class RunCoordinator {
                 });
             }
             catch (err) {
+                this.governor.recordCaptureEnded();
                 const errorMsg = 'Could not connect to webpage. Please reload the target tab (Cmd+R / F5) so the extension content script attaches.';
                 this.transition('failed-safe', errorMsg);
                 const res = {
@@ -242,6 +327,7 @@ export class RunCoordinator {
                 return res;
             }
             if (!domResponse || !domResponse.success) {
+                this.governor.recordCaptureEnded();
                 const errorMsg = 'Failed to extract DOM snapshot from content script. Please reload the tab.';
                 this.transition('failed-safe', errorMsg);
                 const res = {
@@ -258,6 +344,15 @@ export class RunCoordinator {
                 screenshotDataUrl = await this.browser.captureVisibleTab();
             }
             catch (err) {
+                if (err?.message?.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') || err?.message?.includes('quota')) {
+                    this.governor.recordBrowserQuotaExceeded();
+                    const errorMsg = 'Browser captureVisibleTab rate limit reached. Backpressure active.';
+                    this.transition('blocked-local-only', errorMsg);
+                    const res = { success: false, state: 'blocked-local-only', error: errorMsg, stepCount: step };
+                    this.lastRunResult = res;
+                    return res;
+                }
+                this.governor.recordCaptureEnded();
                 const errorMsg = `Screenshot capture failed: ${err.message || 'Permission denied or restricted tab'}`;
                 this.transition('failed-safe', errorMsg);
                 const res = {
@@ -284,14 +379,19 @@ export class RunCoordinator {
             const t2_detectionComplete = Date.now();
             this.transition('sanitizing', `Step ${step}/${maxSteps}: Rendering opaque privacy masks`);
             let sanitized;
+            const activeTier = this.governor.getActiveTier();
             try {
                 sanitized = await this.browser.runInSanitizerHost({
                     rawCapture,
                     snapshot: domResponse.snapshot,
-                    goal
+                    goal,
+                    activeTier,
+                    domHash: domResponse.domHash,
+                    viewportHash: domResponse.viewportHash
                 });
             }
             catch (err) {
+                this.governor.recordCaptureEnded();
                 const userSafeMsg = 'Sensitive content may be present in an area that cannot be inspected safely. No context was sent.';
                 this.transition('blocked-local-only', userSafeMsg);
                 const res = {
@@ -304,6 +404,11 @@ export class RunCoordinator {
                 return res;
             }
             const t3_sanitizationValidated = Date.now();
+            const perceptionMs = t3_sanitizationValidated - t1_captureComplete;
+            const isCacheHit = perceptionMs < 5;
+            const accountedMb = this.governor.calculateAccountedMemoryMb(domResponse.viewport);
+            this.governor.recordFramePerception(perceptionMs, isCacheHit, accountedMb);
+            this.governor.recordCaptureEnded();
             this.currentSanitizedContext = sanitized;
             if (this.listeners.onSanitizationComplete) {
                 this.listeners.onSanitizationComplete(rawCapture, sanitized);
@@ -338,24 +443,83 @@ export class RunCoordinator {
                 this.consecutiveLocalScrolls = 0;
                 this.transition('sending-sanitized-context', `Step ${step}/${maxSteps}: Transmitting sanitized context`);
                 this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Awaiting reasoning action`);
+                const T2_NETWORK_TIMEOUT_MS = 8000;
+                let timeoutHandle;
+                const timeoutPromise = new Promise((_, reject) => {
+                    timeoutHandle = setTimeout(() => {
+                        reject(new Error(`T2 reasoning server exceeded ${T2_NETWORK_TIMEOUT_MS / 1000}s network budget ceiling`));
+                    }, T2_NETWORK_TIMEOUT_MS);
+                });
                 try {
-                    proposal = await this.httpClient.requestReasoningAction(sanitized, this.actionHistory
-                        .filter((a) => a.kind !== 'wait')
-                        .slice(-8)
-                        .map((a) => ({ kind: a.kind, targetLabel: a.label })));
+                    proposal = await Promise.race([
+                        this.httpClient.requestReasoningAction(sanitized, this.actionHistory
+                            .filter((a) => a.kind !== 'wait')
+                            .slice(-8)
+                            .map((a) => ({ kind: a.kind, targetLabel: a.label }))),
+                        timeoutPromise
+                    ]);
                 }
                 catch (err) {
-                    const errorMsg = `Reasoning server error: ${err.message || 'Request failed'}`;
-                    this.transition('failed-safe', errorMsg);
-                    const res = {
-                        success: false,
-                        state: 'failed-safe',
-                        error: errorMsg,
-                        sanitized,
-                        stepCount: step
-                    };
-                    this.lastRunResult = res;
-                    return res;
+                    if (err?.message?.includes('network budget ceiling')) {
+                        // Surface in HUD and record timeout event in governor
+                        this.governor.recordNetworkTimeout(step, T2_NETWORK_TIMEOUT_MS);
+                        if (this.listeners.onTelemetryUpdated) {
+                            this.listeners.onTelemetryUpdated(this.createTelemetry(this.t0_runStart, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, Date.now(), Date.now(), Date.now(), Date.now(), step));
+                        }
+                        // Full Fallback Chain:
+                        // 1. T1 Local Perception (if activeTier is T1/T2 or vision observations exist)
+                        // 2. T0 Heuristic DOM result (if activeTier is T0 or vision unavailable)
+                        // 3. Fallback to wait if no viable candidates exist
+                        decisionSource = 'local';
+                        const actioned = new Set((this.actionHistory || []).map((a) => a.label?.toLowerCase().trim()).filter(Boolean));
+                        const candidates = (sanitized?.elements || []).filter((el) => {
+                            const name = (el.sanitizedName || '').toLowerCase().trim();
+                            return !actioned.has(name) && !name.includes('[masked') && !name.includes('[password') && !name.includes('[auth');
+                        });
+                        const hasVisionContext = (activeTier === 'T1' || activeTier === 'T2') && (sanitized?.visionObservations?.length || 0) > 0;
+                        const fallbackTierLabel = hasVisionContext ? 'T1 local perception' : (activeTier === 'T0' ? 'T0 DOM heuristics' : 'on-device perception');
+                        const bestCandidate = candidates.find((el) => el.role === 'button' || el.actionCapabilities?.includes('click'))
+                            || candidates.find((el) => el.role === 'input' || el.role === 'textarea' || el.actionCapabilities?.includes('type'))
+                            || candidates[0];
+                        if (bestCandidate) {
+                            const canType = bestCandidate.role === 'input' || bestCandidate.role === 'textarea' || bestCandidate.actionCapabilities?.includes('type');
+                            proposal = {
+                                actionId: `act_${Date.now()}`,
+                                kind: canType ? 'type' : 'click',
+                                targetLocalId: bestCandidate.localId,
+                                textToType: canType ? 'test' : undefined,
+                                rationale: `T2 network timeout (${T2_NETWORK_TIMEOUT_MS}ms exceeded). Falling back to ${fallbackTierLabel} candidate "${bestCandidate.sanitizedName}".`,
+                                confidence: hasVisionContext ? 0.75 : 0.60,
+                                risk: 'safe',
+                                expectedState: `The page responds to "${bestCandidate.sanitizedName}".`
+                            };
+                        }
+                        else {
+                            proposal = {
+                                actionId: `act_${Date.now()}`,
+                                kind: 'wait',
+                                rationale: `T2 network timeout (${T2_NETWORK_TIMEOUT_MS}ms exceeded) with no actionable local candidates in ${fallbackTierLabel} context.`,
+                                confidence: 0.5,
+                                risk: 'safe'
+                            };
+                        }
+                    }
+                    else {
+                        const errorMsg = `Reasoning server error: ${err.message || 'Request failed'}`;
+                        this.transition('failed-safe', errorMsg);
+                        const res = {
+                            success: false,
+                            state: 'failed-safe',
+                            error: errorMsg,
+                            sanitized,
+                            stepCount: step
+                        };
+                        this.lastRunResult = res;
+                        return res;
+                    }
+                }
+                finally {
+                    clearTimeout(timeoutHandle);
                 }
                 // Optional on the interface: an injected client may not do byte accounting.
                 bytesTransmitted =

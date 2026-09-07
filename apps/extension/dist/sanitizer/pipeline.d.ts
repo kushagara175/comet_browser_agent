@@ -4,11 +4,20 @@
  * Enforces the core privacy boundary:
  * RawCapture -> DetectionReport -> SanitizedContext -> NetworkPayload
  */
-import { RawCapture, SanitizedContext } from '@privapilot/protocol';
+import { RawCapture, SanitizedContext, ModelTier } from '@privapilot/protocol';
 import { RawDomElementCapture } from './dom-detector.js';
 import { RawTextNodeCapture } from './text-detector.js';
 import { RawImageElementCapture } from './face-detector.js';
 import { RawSurfaceCapture } from './surface-detector.js';
+import { PerceptionMode } from '../vision/fusion-policy.js';
+export interface SanitizeOptions {
+    readonly activeTier?: ModelTier;
+    readonly domHash?: string;
+    readonly viewportHash?: string;
+    readonly perceptionMode?: PerceptionMode;
+    readonly deadlineMs?: number;
+    readonly regionBudget?: number;
+}
 export interface LocalDomSnapshot {
     readonly domElements: ReadonlyArray<RawDomElementCapture>;
     readonly textNodes: ReadonlyArray<RawTextNodeCapture>;
@@ -33,6 +42,6 @@ export declare class SanitizerPipeline {
     /**
      * Transforms raw capture into sanitized context or fails closed.
      */
-    static sanitize(rawCapture: RawCapture, snapshot: LocalDomSnapshot, goal: string, imageCanvas?: HTMLCanvasElement | OffscreenCanvas): Promise<SanitizedContext>;
+    static sanitize(rawCapture: RawCapture, snapshot: LocalDomSnapshot, goal: string, imageCanvas?: HTMLCanvasElement | OffscreenCanvas, options?: SanitizeOptions): Promise<SanitizedContext>;
 }
 //# sourceMappingURL=pipeline.d.ts.map

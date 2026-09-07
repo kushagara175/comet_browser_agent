@@ -12,7 +12,8 @@ import {
   SanitizedChatPayload,
   GeneralChatPayload,
   ActionProposal,
-  validateActionProposal
+  validateActionProposal,
+  sanitizeContextForNetwork
 } from '@privapilot/protocol';
 import { assertNoCanaryLeak } from '@privapilot/test-fixtures';
 
@@ -165,16 +166,7 @@ export class ReasoningHttpClient {
     recentActions?: ReadonlyArray<{ kind: string; targetLabel?: string }>
   ): Promise<ActionProposal> {
     // 1. Prepare Closed Network Payload
-    const payload: SanitizedNetworkPayload = {
-      protocolVersion: sanitized.protocolVersion,
-      runId: sanitized.runId,
-      goal: sanitized.goal,
-      screenshot: sanitized.sanitizedScreenshotDataUrl,
-      elements: sanitized.elements,
-      pageState: sanitized.pageState,
-      redactionManifest: sanitized.redactionManifest,
-      ...(recentActions && recentActions.length ? { recentActions } : {})
-    };
+    const payload: SanitizedNetworkPayload = sanitizeContextForNetwork(sanitized, recentActions);
 
     // 2. Outgoing Canary Gate check
     assertNoCanaryLeak(payload, 'Outgoing HTTP Payload');
