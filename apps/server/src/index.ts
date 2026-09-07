@@ -13,6 +13,7 @@ import { validateSanitizedPayload, validateSanitizedChatPayload } from './schema
 import { VlmReasoningEngine } from './engines/vlm-engine.js';
 import { CanaryScannerProxy } from './proxy/canary-scanner.js';
 import { sanitizeHeadersForLogging } from './middleware/zero-log.js';
+import { ALLOWED_ACTION_PROPOSAL_KEYS } from '@privapilot/protocol';
 
 const PORT = parseInt(process.env.PORT || '4501', 10);
 const engine = new VlmReasoningEngine({
@@ -163,8 +164,17 @@ export function createServer(): http.Server {
           // C. Reasoning Decision
           const action = await engine.decideNextAction(validation.payload);
 
+          const safeAction: any = { ...action };
+          if (typeof safeAction === 'object' && safeAction !== null) {
+            for (const key of Object.keys(safeAction)) {
+              if (!ALLOWED_ACTION_PROPOSAL_KEYS.has(key)) {
+                delete safeAction[key];
+              }
+            }
+          }
+
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(action));
+          res.end(JSON.stringify(safeAction));
         } catch (err: any) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Reasoning service temporarily unavailable' }));

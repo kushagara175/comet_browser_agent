@@ -11,6 +11,7 @@ import http from 'node:http';
 import { validateSanitizedPayload, validateSanitizedChatPayload } from './schemas/payload-validator.js';
 import { VlmReasoningEngine } from './engines/vlm-engine.js';
 import { CanaryScannerProxy } from './proxy/canary-scanner.js';
+import { ALLOWED_ACTION_PROPOSAL_KEYS } from '@privapilot/protocol';
 const PORT = parseInt(process.env.PORT || '4501', 10);
 const engine = new VlmReasoningEngine({
     endpoint: process.env.VLM_ENDPOINT,
@@ -147,8 +148,16 @@ export function createServer() {
                     }
                     // C. Reasoning Decision
                     const action = await engine.decideNextAction(validation.payload);
+                    const safeAction = { ...action };
+                    if (typeof safeAction === 'object' && safeAction !== null) {
+                        for (const key of Object.keys(safeAction)) {
+                            if (!ALLOWED_ACTION_PROPOSAL_KEYS.has(key)) {
+                                delete safeAction[key];
+                            }
+                        }
+                    }
                     res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify(action));
+                    res.end(JSON.stringify(safeAction));
                 }
                 catch (err) {
                     res.writeHead(500, { 'Content-Type': 'application/json' });

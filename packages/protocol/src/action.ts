@@ -367,7 +367,7 @@ export interface ActionValidationResult {
   readonly errorMessage?: string;
 }
 
-const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
+export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
   'actionId',
   'kind',
   'targetLocalId',

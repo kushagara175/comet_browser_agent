@@ -277,7 +277,7 @@ export function resolveTaskContract(goal) {
         }
     };
 }
-const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
+export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
     'actionId',
     'kind',
     'targetLocalId',

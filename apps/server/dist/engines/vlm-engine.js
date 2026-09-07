@@ -16,7 +16,7 @@
  * - A negative probe is cached only briefly, so a backend started after the gateway
  *   is picked up on the next request instead of being stuck on "mock".
  */
-import { validateActionProposal } from '@privapilot/protocol';
+import { validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS } from '@privapilot/protocol';
 import { MockReasoningEngine } from './mock-engine.js';
 const DEFAULT_MODEL_NAME = 'qwen2.5-vl';
 /** A successful probe result stays valid this long. */
@@ -625,8 +625,26 @@ export class VlmReasoningEngine {
         catch {
             throw new Error('Model output could not be parsed as JSON');
         }
-        // Clean empty strings for optional fields so models returning "" do not violate the closed schema
+        // Clean empty strings and normalize common LLM variations
         if (parsed && typeof parsed === 'object') {
+            if (!parsed.rationale && (parsed.explanation || parsed.thought || parsed.reasoning || parsed.summary)) {
+                parsed.rationale = String(parsed.explanation || parsed.thought || parsed.reasoning || parsed.summary).slice(0, 500);
+            }
+            if (!parsed.targetLocalId && (parsed.target || parsed.elementId || parsed.id || parsed.targetId)) {
+                parsed.targetLocalId = String(parsed.target || parsed.elementId || parsed.id || parsed.targetId);
+            }
+            if (!parsed.textToType && (parsed.text || parsed.value || parsed.input || parsed.content)) {
+                parsed.textToType = String(parsed.text || parsed.value || parsed.input || parsed.content);
+            }
+            if (!parsed.kind && (parsed.action || parsed.actionType || parsed.type)) {
+                parsed.kind = String(parsed.action || parsed.actionType || parsed.type);
+            }
+            // Strip any extra properties not allowed by the closed schema
+            for (const k of Object.keys(parsed)) {
+                if (!ALLOWED_ACTION_PROPOSAL_KEYS.has(k)) {
+                    delete parsed[k];
+                }
+            }
             if (parsed.targetLocalId === '' || (parsed.kind === 'finish' && !parsed.targetLocalId)) {
                 delete parsed.targetLocalId;
             }

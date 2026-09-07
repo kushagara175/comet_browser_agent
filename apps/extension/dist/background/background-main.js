@@ -18347,6 +18347,9 @@ var RunCoordinator = class {
       if (proposal.kind === "wait") {
         await new Promise((r) => setTimeout(r, 600));
       }
+      if (proposal.kind === "type" && !proposal.pressEnter && this.currentTaskContract?.structuredIntent?.pressEnter) {
+        proposal = { ...proposal, pressEnter: true };
+      }
       const execResponse = await this.browser.sendMessageToTab(activeTab.id, {
         type: "EXECUTE_ACTION",
         proposal,

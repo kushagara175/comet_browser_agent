@@ -76,6 +76,7 @@ export interface ActionValidationResult {
     readonly proposal?: ActionProposal;
     readonly errorMessage?: string;
 }
+export declare const ALLOWED_ACTION_PROPOSAL_KEYS: Set<string>;
 /**
  * Validates an ActionProposal against strict closed runtime schema and optional context elements.
  */

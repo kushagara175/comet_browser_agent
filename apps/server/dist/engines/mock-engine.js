@@ -153,7 +153,6 @@ export class MockReasoningEngine {
                     confidence: 0.95,
                     risk: 'safe',
                     rationale: `Typing "${textToType}" into "${target.sanitizedName}" (${grounding.bestCandidate.rationale})`,
-                    pressEnter: Boolean(intent.pressEnter),
                     expectedState: 'Text entered into input field'
                 };
             }
@@ -168,7 +167,6 @@ export class MockReasoningEngine {
                     confidence: 0.90,
                     risk: 'safe',
                     rationale: `Typing "${textToType}" into active field "${fallbackInput.sanitizedName}"`,
-                    pressEnter: Boolean(intent.pressEnter),
                     expectedState: 'Text entered into input field'
                 };
             }
