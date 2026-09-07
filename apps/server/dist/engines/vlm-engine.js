@@ -435,7 +435,7 @@ export class VlmReasoningEngine {
             // offline reasoner; the client still risk-classifies and confirms every action.
             console.warn(`[PrivaPilot:VLM] Model reasoning failed (${err.message}). Falling back to offline reasoner.`);
             if (err.message && (err.message.includes('402') || err.message.includes('credit') || err.message.includes('tokens limit') || err.message.includes('afford'))) {
-                this.cloudExhaustedUntil = Date.now() + 300000;
+                this.cloudExhaustedUntil = Date.now() + 5000;
             }
             this.invalidateStatusCache();
             return this.mockProposal(payload, err.message);

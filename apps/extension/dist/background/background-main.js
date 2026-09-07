@@ -14067,7 +14067,7 @@ function resolveTaskContract(goal) {
       abstentionReason: "UNSUPPORTED_TASK_GOAL: Goal is outside closed supported browser task contracts; abstaining safely."
     };
   }
-  if (/^(?:observe|check|inspect|finish)\b/i.test(g)) {
+  if (/^(?:observe|check|inspect|finish|read|summarize|review|analyze|tell|what|scan|look|see)\b/i.test(g)) {
     return {
       supported: true,
       goalPattern: "observe_status",
@@ -14103,16 +14103,17 @@ function resolveTaskContract(goal) {
       expectedTargetNameSubstring: "select"
     };
   }
-  if (/scroll\s+(down|up|top|bottom)/i.test(g)) {
-    const scrollMatch = g.match(/scroll\s+(down|up|top|bottom)/i);
-    const dir = scrollMatch ? scrollMatch[1].toLowerCase() : "down";
+  if (/scroll/i.test(g) || /page\s+(?:down|up)/i.test(g)) {
+    const scrollMatch = g.match(/(?:scroll|page)\s*(down|up|top|bottom)?/i);
+    const rawDir = scrollMatch && scrollMatch[1] ? scrollMatch[1].toLowerCase() : "down";
+    const dir = rawDir === "up" || rawDir === "top" || rawDir === "bottom" ? rawDir : "down";
     return {
       supported: true,
       goalPattern: "scroll",
       expectedTerminal: { kind: "scroll_changed", direction: dir }
     };
   }
-  if (/(?:dismiss|close|accept)\s+(?:cookie|banner|notice|modal|dialog|disclosure)/i.test(g)) {
+  if (/(?:dismiss|close|accept|reject|hide)\s+(?:cookie|banner|notice|modal|dialog|disclosure|popup|overlay)/i.test(g)) {
     return {
       supported: true,
       goalPattern: "dismiss_modal",
@@ -14127,8 +14128,8 @@ function resolveTaskContract(goal) {
       expectedTargetNameSubstring: "approve"
     };
   }
-  if (/(?:click|press|button|link|item|admin|finish|sanitize|sensitive|login|navigate|navigation|go\s+to)/i.test(g)) {
-    const clickMatch = g.match(/(?:click|press|go\s+to|navigate\s+to)\s+(?:the\s+)?["']?([^"']+)["']?/i);
+  if (/(?:click|press|button|link|item|admin|finish|sanitize|sensitive|login|navigate|navigation|go\s+to|show|open|tap|expand|view|switch|toggle)/i.test(g)) {
+    const clickMatch = g.match(/(?:click|press|go\s+to|navigate\s+to|open|tap|show|expand)\s+(?:the\s+)?["']?([^"']+)["']?/i);
     const target = clickMatch ? clickMatch[1].replace(/\?+$/, "").trim() : void 0;
     return {
       supported: true,
@@ -14138,10 +14139,9 @@ function resolveTaskContract(goal) {
     };
   }
   return {
-    supported: false,
-    goalPattern: "unsupported_freeform",
-    expectedTerminal: { kind: "status_changed" },
-    abstentionReason: "UNSUPPORTED_TASK_GOAL: Goal is outside closed supported task contracts; abstaining safely."
+    supported: true,
+    goalPattern: "click_control",
+    expectedTerminal: { kind: "status_changed" }
   };
 }
 var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
@@ -17261,7 +17261,7 @@ var RunCoordinator = class {
         return { satisfied: true };
       }
       case "status_changed": {
-        const hasMutatingAction = actionHistory.some((a) => a.kind === "click" || a.kind === "type" || a.kind === "select");
+        const hasMutatingAction = actionHistory.some((a) => a.kind === "click" || a.kind === "type" || a.kind === "select" || a.kind === "scroll");
         if (!hasMutatingAction) {
           return { satisfied: false, reason: "Action history contains only wait without any preceding trigger action" };
         }

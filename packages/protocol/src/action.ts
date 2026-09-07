@@ -65,7 +65,7 @@ export function resolveTaskContract(goal: string): TaskContract {
   }
 
   // 1. Passive observation or immediate finish task
-  if (/^(?:observe|check|inspect|finish)\b/i.test(g)) {
+  if (/^(?:observe|check|inspect|finish|read|summarize|review|analyze|tell|what|scan|look|see)\b/i.test(g)) {
     return {
       supported: true,
       goalPattern: 'observe_status',
@@ -108,10 +108,11 @@ export function resolveTaskContract(goal: string): TaskContract {
     };
   }
 
-  // 5. Explicit Scroll
-  if (/scroll\s+(down|up|top|bottom)/i.test(g)) {
-    const scrollMatch = g.match(/scroll\s+(down|up|top|bottom)/i);
-    const dir = scrollMatch ? (scrollMatch[1].toLowerCase() as 'up' | 'down' | 'top' | 'bottom') : 'down';
+  // 5. Explicit Scroll (supports "scroll", "scroll down", "scroll up", "page down")
+  if (/scroll/i.test(g) || /page\s+(?:down|up)/i.test(g)) {
+    const scrollMatch = g.match(/(?:scroll|page)\s*(down|up|top|bottom)?/i);
+    const rawDir = scrollMatch && scrollMatch[1] ? scrollMatch[1].toLowerCase() : 'down';
+    const dir = (rawDir === 'up' || rawDir === 'top' || rawDir === 'bottom') ? rawDir : 'down';
     return {
       supported: true,
       goalPattern: 'scroll',
@@ -120,7 +121,7 @@ export function resolveTaskContract(goal: string): TaskContract {
   }
 
   // 6. Dismiss modal / banner
-  if (/(?:dismiss|close|accept)\s+(?:cookie|banner|notice|modal|dialog|disclosure)/i.test(g)) {
+  if (/(?:dismiss|close|accept|reject|hide)\s+(?:cookie|banner|notice|modal|dialog|disclosure|popup|overlay)/i.test(g)) {
     return {
       supported: true,
       goalPattern: 'dismiss_modal',
@@ -138,9 +139,9 @@ export function resolveTaskContract(goal: string): TaskContract {
     };
   }
 
-  // 8. Generic clicking / interactions / navigation (button, link, item, admin, finish, sanitize, navigate, go to)
-  if (/(?:click|press|button|link|item|admin|finish|sanitize|sensitive|login|navigate|navigation|go\s+to)/i.test(g)) {
-    const clickMatch = g.match(/(?:click|press|go\s+to|navigate\s+to)\s+(?:the\s+)?["']?([^"']+)["']?/i);
+  // 8. Generic clicking / interactions / navigation (button, link, item, admin, finish, sanitize, navigate, go to, show, open, tap, expand)
+  if (/(?:click|press|button|link|item|admin|finish|sanitize|sensitive|login|navigate|navigation|go\s+to|show|open|tap|expand|view|switch|toggle)/i.test(g)) {
+    const clickMatch = g.match(/(?:click|press|go\s+to|navigate\s+to|open|tap|show|expand)\s+(?:the\s+)?["']?([^"']+)["']?/i);
     const target = clickMatch ? clickMatch[1].replace(/\?+$/, '').trim() : undefined;
     return {
       supported: true,
@@ -150,12 +151,11 @@ export function resolveTaskContract(goal: string): TaskContract {
     };
   }
 
-  // Unsupported free-form goal -> must abstain!
+  // 9. General interaction on any webpage (rather than abstaining)
   return {
-    supported: false,
-    goalPattern: 'unsupported_freeform',
-    expectedTerminal: { kind: 'status_changed' },
-    abstentionReason: 'UNSUPPORTED_TASK_GOAL: Goal is outside closed supported task contracts; abstaining safely.'
+    supported: true,
+    goalPattern: 'click_control',
+    expectedTerminal: { kind: 'status_changed' }
   };
 }
 

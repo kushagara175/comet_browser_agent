@@ -484,7 +484,7 @@ export class RunCoordinator {
       }
 
       case 'status_changed': {
-        const hasMutatingAction = actionHistory.some(a => a.kind === 'click' || a.kind === 'type' || a.kind === 'select');
+        const hasMutatingAction = actionHistory.some(a => a.kind === 'click' || a.kind === 'type' || a.kind === 'select' || a.kind === 'scroll');
         if (!hasMutatingAction) {
           return { satisfied: false, reason: 'Action history contains only wait without any preceding trigger action' };
         }
