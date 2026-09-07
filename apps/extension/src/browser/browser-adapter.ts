@@ -19,10 +19,10 @@ export interface SanitizationHostRequest {
 }
 
 export interface BrowserAdapter {
-  captureVisibleTab(): Promise<string>;
+  captureVisibleTab(targetWindowId?: number | null): Promise<string>;
   sendMessageToTab<T = any>(tabId: number, message: any): Promise<T>;
   sendMessageToRuntime<T = any>(message: any): Promise<T>;
-  getActiveTab(): Promise<{ id: number; url: string; title: string }>;
+  getActiveTab(preferredTabId?: number): Promise<{ id: number; url: string; title: string; windowId?: number }>;
   getStorage<T>(key: string): Promise<T | null>;
   setStorage<T>(key: string, value: T): Promise<void>;
   runInSanitizerHost(request: SanitizationHostRequest): Promise<SanitizedContext>;
@@ -39,7 +39,7 @@ export class WebExtensionAdapter implements BrowserAdapter {
     return null;
   }
 
-  async captureVisibleTab(): Promise<string> {
+  async captureVisibleTab(targetWindowId?: number | null): Promise<string> {
     const api = this.browserAPI;
     if (!api || !api.tabs || !api.tabs.captureVisibleTab) {
       // Mock fallback for Node.js / offline tests
@@ -58,7 +58,7 @@ export class WebExtensionAdapter implements BrowserAdapter {
     const doCapture = (): Promise<string> => {
       return new Promise((resolve, reject) => {
         try {
-          api.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl: string) => {
+          api.tabs.captureVisibleTab(targetWindowId ?? null, { format: 'png' }, (dataUrl: string) => {
             if (api.runtime.lastError) {
               try {
                 api.tabs.captureVisibleTab({ format: 'png' }, (fallbackDataUrl: string) => {
@@ -169,10 +169,33 @@ export class WebExtensionAdapter implements BrowserAdapter {
     });
   }
 
-  async getActiveTab(): Promise<{ id: number; url: string; title: string }> {
+  async getActiveTab(preferredTabId?: number): Promise<{ id: number; url: string; title: string; windowId?: number }> {
     const api = this.browserAPI;
     if (!api || !api.tabs || !api.tabs.query) {
-      return { id: 1, url: 'https://app.example.local/', title: 'Workspace' };
+      return { id: 1, url: 'https://app.example.local/', title: 'Workspace', windowId: 1 };
+    }
+
+    // If caller explicitly provided a target tab ID, verify and return it directly
+    if (preferredTabId && typeof api.tabs.get === 'function') {
+      try {
+        const explicitTab = await new Promise<any>((resolve) => {
+          api.tabs.get(preferredTabId, (tab: any) => {
+            if (!api.runtime.lastError && tab && tab.id) {
+              resolve(tab);
+            } else {
+              resolve(null);
+            }
+          });
+        });
+        if (explicitTab) {
+          return {
+            id: explicitTab.id,
+            url: explicitTab.url || '',
+            title: explicitTab.title || '',
+            windowId: explicitTab.windowId
+          };
+        }
+      } catch (_) {}
     }
 
     return new Promise((resolve) => {
@@ -182,7 +205,8 @@ export class WebExtensionAdapter implements BrowserAdapter {
           return resolve({
             id: tabs[0].id,
             url: tabs[0].url || '',
-            title: tabs[0].title || ''
+            title: tabs[0].title || '',
+            windowId: tabs[0].windowId
           });
         }
 
@@ -192,7 +216,8 @@ export class WebExtensionAdapter implements BrowserAdapter {
             return resolve({
               id: currentTabs[0].id,
               url: currentTabs[0].url || '',
-              title: currentTabs[0].title || ''
+              title: currentTabs[0].title || '',
+              windowId: currentTabs[0].windowId
             });
           }
 
@@ -202,7 +227,8 @@ export class WebExtensionAdapter implements BrowserAdapter {
               return resolve({
                 id: anyTabs[0].id,
                 url: anyTabs[0].url || '',
-                title: anyTabs[0].title || ''
+                title: anyTabs[0].title || '',
+                windowId: anyTabs[0].windowId
               });
             }
             resolve({ id: 0, url: '', title: '' });

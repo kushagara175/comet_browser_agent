@@ -14052,6 +14052,41 @@ function tokenizeSemanticText(text) {
     return [];
   return normalized.split(/\s+/).filter((t) => t.length > 0);
 }
+function levenshteinDistance(a, b) {
+  if (a === b)
+    return 0;
+  if (!a.length)
+    return b.length;
+  if (!b.length)
+    return a.length;
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = i;
+    for (let j2 = 1; j2 <= b.length; j2++) {
+      const val = a[i - 1] === b[j2 - 1] ? row[j2 - 1] : Math.min(row[j2 - 1], row[j2], prev) + 1;
+      row[j2 - 1] = prev;
+      prev = val;
+    }
+    row[b.length] = prev;
+  }
+  return row[b.length];
+}
+function isFuzzyTokenMatch(a, b) {
+  if (a === b)
+    return true;
+  const lenA = a.length;
+  const lenB = b.length;
+  if (Math.abs(lenA - lenB) > 3)
+    return false;
+  if (lenA < 3 || lenB < 3)
+    return false;
+  if (lenA >= 4 && b.startsWith(a))
+    return true;
+  if (lenB >= 4 && a.startsWith(b))
+    return true;
+  const dist = levenshteinDistance(a, b);
+  return dist <= (Math.max(lenA, lenB) >= 6 ? 2 : 1);
+}
 var GENERIC_CONTROL_NAMES = /* @__PURE__ */ new Set([
   "button",
   "link",
@@ -14112,21 +14147,41 @@ function scoreCandidate(element, intent, activeDialogVisible = false) {
   } else if (targetPhraseNorm && elNameNorm.includes(targetPhraseNorm)) {
     score += 50;
     rationaleParts.push(`Substring containment ("${element.sanitizedName}")`);
+  } else if (elNameNorm && targetPhraseNorm && isFuzzyTokenMatch(elNameNorm.replace(/\s+/g, ""), targetPhraseNorm.replace(/\s+/g, ""))) {
+    score += 80;
+    rationaleParts.push(`Fuzzy full-name match ("${targetPhraseNorm}" \u2248 "${element.sanitizedName}")`);
   }
   if (targetTokens.length > 0 && elTokens.length > 0) {
-    const matchedTokens = targetTokens.filter((t) => elTokens.includes(t));
-    const tokenRatio = matchedTokens.length / targetTokens.length;
-    if (tokenRatio === 1) {
+    const matchedTokens = [];
+    const fuzzyMatchedTokens = [];
+    for (const t of targetTokens) {
+      if (elTokens.includes(t)) {
+        matchedTokens.push(t);
+      } else {
+        const fuzzy = elTokens.find((elT) => isFuzzyTokenMatch(t, elT));
+        if (fuzzy) {
+          fuzzyMatchedTokens.push({ target: t, matched: fuzzy });
+        }
+      }
+    }
+    const totalMatches = matchedTokens.length + fuzzyMatchedTokens.length;
+    const tokenRatio = totalMatches / targetTokens.length;
+    if (matchedTokens.length === targetTokens.length) {
       score += 40;
       rationaleParts.push(`All target tokens present [${matchedTokens.join(", ")}]`);
+    } else if (totalMatches === targetTokens.length) {
+      score += 35;
+      const fzDesc = fuzzyMatchedTokens.map((f) => `"${f.target}" \u2248 "${f.matched}"`).join(", ");
+      rationaleParts.push(`Target tokens matched with typo tolerance (${fzDesc})`);
     } else if (tokenRatio >= 0.5) {
       score += Math.round(tokenRatio * 30);
-      rationaleParts.push(`Partial token overlap (${matchedTokens.length}/${targetTokens.length})`);
+      rationaleParts.push(`Partial token overlap (${totalMatches}/${targetTokens.length})`);
     }
-    if (matchedTokens.length > 1) {
+    const combinedTokens = [...matchedTokens, ...fuzzyMatchedTokens.map((f) => f.matched)];
+    if (combinedTokens.length > 1) {
       let isOrdered = true;
       let lastIndex = -1;
-      for (const t of matchedTokens) {
+      for (const t of combinedTokens) {
         const idx = elTokens.indexOf(t);
         if (idx <= lastIndex) {
           isOrdered = false;
@@ -14329,7 +14384,25 @@ function resolveTaskContract(goal) {
       }
     };
   }
-  if (/(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry)/i.test(g)) {
+  if (/(?:fill|type|enter|log\s*in\s+with)\s+(?:.*?\s+)?(?:login|credentials|email\s+(?:nad|and)\s+pass(?:word)?|user(?:name)?\s+(?:nad|and)\s+pass(?:word)?)/i.test(g) || /^(?:fill\s+)?(?:sih\s+)?login(?:\s+for\s+me)?$/i.test(g) || /^(?:type|enter|fill)\s+(?:my\s+)?(?:email\s+(?:nad|and)\s+pass(?:word)?|credentials)$/i.test(g)) {
+    return {
+      supported: true,
+      goalPattern: "form_fill_credentials",
+      expectedTerminal: { kind: "value_present" },
+      expectedTargetNameSubstring: "email",
+      requiresUserInput: true,
+      userInputKind: "credentials",
+      userInputPrompt: "Please provide your credentials below so PrivaPilot can securely fill the login fields locally.",
+      structuredIntent: {
+        intent: "type",
+        targetPhrase: "email",
+        roleHint: "input",
+        targetTokens: ["email", "username", "login"]
+      }
+    };
+  }
+  const isExplicitClickVerb = /^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+/i.test(g) && !/(?:type|fill|enter|write)\s+/i.test(g);
+  if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry)/i.test(g)) {
     let targetPhrase2 = "search";
     let requestedValue = "";
     const intoMatch = g.match(/(?:type|fill|enter|write|set)\s+["']?([^"']+)["']?\s+(?:into|in)\s+(?:the\s+)?["']?([^"']+)["']?/i);
@@ -14421,6 +14494,7 @@ function resolveTaskContract(goal) {
   const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|delete|remove)\s+(?:on\s+)?(?:the\s+)?/i);
   const hasInteractionVerb = Boolean(verbMatch);
   let cleanStr = hasInteractionVerb ? g.replace(verbMatch[0], "").trim() : g;
+  cleanStr = cleanStr.replace(/\s+(?:repeatedly|again|multiple\s+times|continuously|twice|until\s+done)\b/i, "").trim();
   let roleHint;
   if (/\b(?:link)\b/i.test(cleanStr))
     roleHint = "link";
@@ -16407,7 +16481,7 @@ var WebExtensionAdapter = class {
     if (typeof globalThis.browser !== "undefined") return globalThis.browser;
     return null;
   }
-  async captureVisibleTab() {
+  async captureVisibleTab(targetWindowId) {
     const api = this.browserAPI;
     if (!api || !api.tabs || !api.tabs.captureVisibleTab) {
       return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
@@ -16421,7 +16495,7 @@ var WebExtensionAdapter = class {
     const doCapture = () => {
       return new Promise((resolve, reject) => {
         try {
-          api.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {
+          api.tabs.captureVisibleTab(targetWindowId ?? null, { format: "png" }, (dataUrl) => {
             if (api.runtime.lastError) {
               try {
                 api.tabs.captureVisibleTab({ format: "png" }, (fallbackDataUrl) => {
@@ -16523,10 +16597,32 @@ var WebExtensionAdapter = class {
       });
     });
   }
-  async getActiveTab() {
+  async getActiveTab(preferredTabId) {
     const api = this.browserAPI;
     if (!api || !api.tabs || !api.tabs.query) {
-      return { id: 1, url: "https://app.example.local/", title: "Workspace" };
+      return { id: 1, url: "https://app.example.local/", title: "Workspace", windowId: 1 };
+    }
+    if (preferredTabId && typeof api.tabs.get === "function") {
+      try {
+        const explicitTab = await new Promise((resolve) => {
+          api.tabs.get(preferredTabId, (tab) => {
+            if (!api.runtime.lastError && tab && tab.id) {
+              resolve(tab);
+            } else {
+              resolve(null);
+            }
+          });
+        });
+        if (explicitTab) {
+          return {
+            id: explicitTab.id,
+            url: explicitTab.url || "",
+            title: explicitTab.title || "",
+            windowId: explicitTab.windowId
+          };
+        }
+      } catch (_) {
+      }
     }
     return new Promise((resolve) => {
       api.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
@@ -16534,7 +16630,8 @@ var WebExtensionAdapter = class {
           return resolve({
             id: tabs[0].id,
             url: tabs[0].url || "",
-            title: tabs[0].title || ""
+            title: tabs[0].title || "",
+            windowId: tabs[0].windowId
           });
         }
         api.tabs.query({ active: true, currentWindow: true }, (currentTabs) => {
@@ -16542,7 +16639,8 @@ var WebExtensionAdapter = class {
             return resolve({
               id: currentTabs[0].id,
               url: currentTabs[0].url || "",
-              title: currentTabs[0].title || ""
+              title: currentTabs[0].title || "",
+              windowId: currentTabs[0].windowId
             });
           }
           api.tabs.query({ active: true }, (anyTabs) => {
@@ -16550,7 +16648,8 @@ var WebExtensionAdapter = class {
               return resolve({
                 id: anyTabs[0].id,
                 url: anyTabs[0].url || "",
-                title: anyTabs[0].title || ""
+                title: anyTabs[0].title || "",
+                windowId: anyTabs[0].windowId
               });
             }
             resolve({ id: 0, url: "", title: "" });
@@ -17350,6 +17449,7 @@ var RunCoordinator = class {
   stepsTrace = [];
   currentTaskContract = null;
   currentRunId = "";
+  currentTabId;
   constructor(browser = new WebExtensionAdapter(), httpClient = new ReasoningHttpClient(), auditLogger = new AuditLogger(), options = {}) {
     this.browser = browser;
     this.httpClient = httpClient;
@@ -17636,11 +17736,12 @@ var RunCoordinator = class {
   async startRun(goal, options) {
     const requestedRunId = options?.runId || "run_" + Date.now() + "_" + Math.random().toString(36).slice(2, 9);
     if (this.state !== "idle" && this.state !== "complete" && this.state !== "failed-safe" && this.state !== "blocked-local-only" && this.state !== "awaiting-user-confirmation") {
-      const errorMsg = "Cannot start new run: an agent run is already in progress";
-      const res = { runId: requestedRunId, success: false, state: this.state, error: errorMsg };
-      return this.completeWithResult(res);
+      this.isCancelled = true;
+      this.transition("idle", "Previous run preempted by new user request");
+      await new Promise((r) => setTimeout(r, 40));
     }
     this.currentRunId = requestedRunId;
+    this.currentTabId = options?.tabId;
     this.currentGoal = goal;
     this.currentTaskContract = resolveTaskContract(goal);
     if (!this.currentTaskContract.supported) {
@@ -17651,6 +17752,30 @@ var RunCoordinator = class {
         success: false,
         state: "failed-safe",
         error: errorMsg,
+        stepCount: 0,
+        steps: []
+      };
+      return this.completeWithResult(res);
+    }
+    if (this.currentTaskContract.requiresUserInput) {
+      const inputPrompt = this.currentTaskContract.userInputPrompt || "User input required to proceed.";
+      this.transition("awaiting-user-confirmation", inputPrompt);
+      if (this.listeners.onUserInputRequired) {
+        this.listeners.onUserInputRequired({
+          kind: this.currentTaskContract.userInputKind || "credentials",
+          prompt: inputPrompt,
+          runId: this.currentRunId
+        });
+      }
+      const res = {
+        runId: this.currentRunId,
+        success: true,
+        state: "awaiting-user-confirmation",
+        message: inputPrompt,
+        inputRequest: {
+          kind: this.currentTaskContract.userInputKind || "credentials",
+          prompt: inputPrompt
+        },
         stepCount: 0,
         steps: []
       };
@@ -17692,7 +17817,7 @@ var RunCoordinator = class {
       const maxSteps = this.currentMaxSteps;
       const t0_step = Date.now();
       this.transition("capturing", `Step ${step}/${maxSteps}: Capturing active tab DOM & screenshot`);
-      const activeTab = await this.browser.getActiveTab();
+      const activeTab = await this.browser.getActiveTab(this.currentTabId);
       const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
       if (restrictedCheck.isRestricted) {
         const errorMsg2 = `Capture blocked: ${restrictedCheck.reason}`;
@@ -18240,6 +18365,29 @@ var RunCoordinator = class {
         };
         return this.completeWithResult(res2);
       }
+      if (this.currentTaskContract?.goalPattern === "click_control" && proposal.kind === "click" && this.currentTaskContract?.structuredIntent?.targetPhrase && !/\b(repeatedly|again|multiple|times|until|loop)\b/i.test(this.currentGoal || "")) {
+        const matchesTarget = targetElement && scoreCandidate(targetElement, this.currentTaskContract.structuredIntent, false).score >= 50;
+        if (matchesTarget) {
+          const tFin = Date.now();
+          const telemetry2 = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
+          if (this.listeners.onTelemetryUpdated) {
+            this.listeners.onTelemetryUpdated(telemetry2, this.currentRunId);
+          }
+          const targetName = targetElement?.sanitizedName || proposal.targetLocalId || "control";
+          this.transition("complete", `Clicked "${targetName}" successfully: directive complete`);
+          const res2 = {
+            success: true,
+            state: "complete",
+            message: `Clicked "${targetName}" successfully`,
+            sanitized,
+            proposal,
+            telemetry: telemetry2,
+            stepCount: step,
+            steps: this.stepsTrace
+          };
+          return this.completeWithResult(res2);
+        }
+      }
       this.currentStaleRetries = 0;
       if (this.listeners.onStepProgress) {
         this.listeners.onStepProgress(step, maxSteps, proposal.rationale, this.currentRunId);
@@ -18271,7 +18419,7 @@ var RunCoordinator = class {
       if (!PAGE_CONTEXT_PATTERN.test(userMessage.trim())) {
         return this.generalChat(userMessage);
       }
-      const activeTab = await this.browser.getActiveTab();
+      const activeTab = await this.browser.getActiveTab(this.currentTabId);
       if (!activeTab || !activeTab.id) {
         return this.generalChat(userMessage);
       }
@@ -18390,12 +18538,12 @@ ${detail}`,
       };
       return this.completeWithResult(res2);
     }
-    const activeTab = await this.browser.getActiveTab();
+    const activeTab = await this.browser.getActiveTab(this.currentTabId);
     const t0 = Date.now();
     this.transition("executing", `Executing approved action '${action.kind}' on ${action.targetLocalId || "page"}`);
     const execResponse = await this.browser.sendMessageToTab(activeTab.id, {
       type: "EXECUTE_ACTION",
-      proposal: action,
+      proposal: { ...action, userApproved: true },
       captureId: sanitized.captureId
     });
     if (execResponse && execResponse.staleTarget) {
@@ -18484,6 +18632,113 @@ ${detail}`,
     };
     return this.completeWithResult(res);
   }
+  /**
+   * Safely fills user-provided credentials or text into the active tab's form inputs locally
+   * without transmitting raw credentials across the network.
+   */
+  async submitUserInput(inputs) {
+    const activeTab = await this.browser.getActiveTab(this.currentTabId);
+    this.transition("executing", "Safely filling form fields locally with provided input");
+    const captureId = `cap_input_${Date.now()}`;
+    let domResponse;
+    try {
+      domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+        type: "EXTRACT_DOM_SNAPSHOT",
+        captureId
+      });
+    } catch (err) {
+      const errorMsg = "Could not communicate with tab to fill form inputs";
+      this.transition("failed-safe", errorMsg);
+      return this.completeWithResult({ success: false, state: "failed-safe", error: errorMsg });
+    }
+    if (!domResponse || !domResponse.snapshot || !domResponse.snapshot.elements) {
+      const errorMsg = "Could not locate form fields on page";
+      this.transition("failed-safe", errorMsg);
+      return this.completeWithResult({ success: false, state: "failed-safe", error: errorMsg });
+    }
+    const elements = domResponse.snapshot.elements;
+    let filledCount = 0;
+    if (inputs.username) {
+      const userEl = elements.find((e) => {
+        const name2 = (e.sanitizedName || "").toLowerCase();
+        const role = e.role;
+        return (role === "input" || role === "textbox") && (name2.includes("user") || name2.includes("email") || name2.includes("login") || name2.includes("account") || name2.includes("id") || name2.includes("phone"));
+      }) || elements.find((e) => e.role === "input" || e.role === "textbox");
+      if (userEl) {
+        await this.browser.sendMessageToTab(activeTab.id, {
+          type: "EXECUTE_ACTION",
+          proposal: {
+            actionId: `act_input_user_${Date.now()}`,
+            kind: "type",
+            targetLocalId: userEl.localId,
+            textToType: inputs.username,
+            confidence: 1,
+            risk: "safe",
+            rationale: "Fill user credentials locally",
+            userApproved: true
+          },
+          captureId
+        });
+        filledCount++;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+    if (inputs.password) {
+      const passEl = elements.find((e) => {
+        const name2 = (e.sanitizedName || "").toLowerCase();
+        return (e.role === "input" || e.role === "textbox") && (name2.includes("password") || name2.includes("pass") || name2.includes("pwd"));
+      });
+      if (passEl) {
+        await this.browser.sendMessageToTab(activeTab.id, {
+          type: "EXECUTE_ACTION",
+          proposal: {
+            actionId: `act_input_pass_${Date.now()}`,
+            kind: "type",
+            targetLocalId: passEl.localId,
+            textToType: inputs.password,
+            confidence: 1,
+            risk: "safe",
+            rationale: "Fill user password locally",
+            userApproved: true
+          },
+          captureId
+        });
+        filledCount++;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+    if (inputs.customText && !inputs.username && !inputs.password) {
+      const targetInput = elements.find((e) => e.role === "input" || e.role === "textbox");
+      if (targetInput) {
+        await this.browser.sendMessageToTab(activeTab.id, {
+          type: "EXECUTE_ACTION",
+          proposal: {
+            actionId: `act_input_custom_${Date.now()}`,
+            kind: "type",
+            targetLocalId: targetInput.localId,
+            textToType: inputs.customText,
+            confidence: 1,
+            risk: "safe",
+            rationale: "Fill user text locally",
+            userApproved: true
+          },
+          captureId
+        });
+        filledCount++;
+      }
+    }
+    if (filledCount === 0) {
+      const errorMsg = "No matching input fields found on the page to fill";
+      this.transition("failed-safe", errorMsg);
+      return this.completeWithResult({ success: false, state: "failed-safe", error: errorMsg });
+    }
+    this.transition("complete", `Successfully filled ${filledCount} field(s) locally`);
+    return this.completeWithResult({
+      success: true,
+      state: "complete",
+      message: `Form fields filled securely (${filledCount} fields)`
+    });
+  }
   setServerUrl(url) {
     this.httpClient.setServerBaseUrl(url);
   }
@@ -18531,6 +18786,12 @@ coordinator.setListeners({
       });
     }
   },
+  onUserInputRequired: (request) => {
+    if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ type: "COORDINATOR_USER_INPUT_REQUIRED", request }).catch(() => {
+      });
+    }
+  },
   onTelemetryUpdated: (telemetry, runId) => {
     if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
       chrome.runtime.sendMessage({ type: "COORDINATOR_TELEMETRY_UPDATED", telemetry, runId }).catch(() => {
@@ -18548,7 +18809,8 @@ async function handleSidepanelRequest(message) {
   if (message.type === "START_AGENT_RUN") {
     return coordinator.startRun(message.goal || "Safe assistance", {
       runId: message.runId,
-      maxSteps: message.maxSteps
+      maxSteps: message.maxSteps,
+      tabId: message.tabId
     });
   }
   if (message.type === "GENERAL_CHAT") {
@@ -18592,7 +18854,8 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
     if (message.type === "START_AGENT_RUN") {
       coordinator.startRun(message.goal || "Safe assistance", {
         runId: message.runId,
-        maxSteps: message.maxSteps
+        maxSteps: message.maxSteps,
+        tabId: message.tabId
       }).then((result) => {
         sendResponse(result);
       }).catch((err) => {
@@ -18652,6 +18915,14 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
     if (message.type === "DENY_ACTION") {
       const result = coordinator.denyPendingAction();
       sendResponse(result);
+      return true;
+    }
+    if (message.type === "SUBMIT_USER_INPUT") {
+      coordinator.submitUserInput(message.inputs || {}).then((result) => {
+        sendResponse(result);
+      }).catch((err) => {
+        sendResponse({ success: false, state: "failed-safe", error: err.message });
+      });
       return true;
     }
     if (message.type === "GET_STATE") {

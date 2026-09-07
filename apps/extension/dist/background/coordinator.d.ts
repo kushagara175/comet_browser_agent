@@ -27,12 +27,18 @@ export interface CoordinatorRunOptions {
     readonly maxSteps?: number;
     readonly maxStaleRetries?: number;
     readonly runId?: string;
+    readonly tabId?: number;
 }
 export interface CoordinatorListeners {
     onStateChange?(state: AgentState, message?: string, runId?: string): void;
     onSanitizationComplete?(raw: RawCapture, sanitized: SanitizedContext, runId?: string): void;
     onActionProposed?(action: ActionProposal, runId?: string): void;
     onActionConfirmedRequired?(action: ActionProposal, runId?: string): void;
+    onUserInputRequired?(request: {
+        kind: 'credentials' | 'text_input';
+        prompt: string;
+        runId?: string;
+    }): void;
     onTelemetryUpdated?(telemetry: RunTelemetry, runId?: string): void;
     onStepProgress?(step: number, maxSteps: number, message: string, runId?: string): void;
 }
@@ -73,6 +79,10 @@ export interface CoordinatorRunResult {
     readonly stepCount?: number;
     readonly diagnostic?: SanitizerDiagnostic;
     readonly steps?: ReadonlyArray<E2EStepTrace>;
+    readonly inputRequest?: {
+        kind: 'credentials' | 'text_input';
+        prompt: string;
+    };
 }
 export type SanitizerFailureClass = 'OFFSCREEN_UNAVAILABLE' | 'SCREENSHOT_DECODE_FAILED' | 'CANVAS_UNAVAILABLE' | 'MASK_RENDER_FAILED' | 'MASK_VERIFICATION_FAILED' | 'DIGEST_FAILED' | 'SANITIZER_TIMEOUT' | 'UNKNOWN_SANITIZER_FAILURE';
 export interface SanitizerDiagnostic {
@@ -109,6 +119,7 @@ export declare class RunCoordinator {
     private stepsTrace;
     private currentTaskContract;
     private currentRunId;
+    private currentTabId?;
     constructor(browser?: BrowserAdapter, httpClient?: ReasoningHttpClient, auditLogger?: AuditLogger, options?: {
         defaultMaxSteps?: number;
         maxStaleRetries?: number;
@@ -163,6 +174,15 @@ export declare class RunCoordinator {
      * Called when the user clicks 'Deny' on a protected action card.
      */
     denyPendingAction(): CoordinatorRunResult;
+    /**
+     * Safely fills user-provided credentials or text into the active tab's form inputs locally
+     * without transmitting raw credentials across the network.
+     */
+    submitUserInput(inputs: {
+        username?: string;
+        password?: string;
+        customText?: string;
+    }): Promise<CoordinatorRunResult>;
     setServerUrl(url: string): void;
 }
 //# sourceMappingURL=coordinator.d.ts.map

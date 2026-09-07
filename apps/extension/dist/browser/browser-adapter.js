@@ -19,7 +19,7 @@ export class WebExtensionAdapter {
             return globalThis.browser;
         return null;
     }
-    async captureVisibleTab() {
+    async captureVisibleTab(targetWindowId) {
         const api = this.browserAPI;
         if (!api || !api.tabs || !api.tabs.captureVisibleTab) {
             // Mock fallback for Node.js / offline tests
@@ -36,7 +36,7 @@ export class WebExtensionAdapter {
         const doCapture = () => {
             return new Promise((resolve, reject) => {
                 try {
-                    api.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+                    api.tabs.captureVisibleTab(targetWindowId ?? null, { format: 'png' }, (dataUrl) => {
                         if (api.runtime.lastError) {
                             try {
                                 api.tabs.captureVisibleTab({ format: 'png' }, (fallbackDataUrl) => {
@@ -153,10 +153,34 @@ export class WebExtensionAdapter {
             });
         });
     }
-    async getActiveTab() {
+    async getActiveTab(preferredTabId) {
         const api = this.browserAPI;
         if (!api || !api.tabs || !api.tabs.query) {
-            return { id: 1, url: 'https://app.example.local/', title: 'Workspace' };
+            return { id: 1, url: 'https://app.example.local/', title: 'Workspace', windowId: 1 };
+        }
+        // If caller explicitly provided a target tab ID, verify and return it directly
+        if (preferredTabId && typeof api.tabs.get === 'function') {
+            try {
+                const explicitTab = await new Promise((resolve) => {
+                    api.tabs.get(preferredTabId, (tab) => {
+                        if (!api.runtime.lastError && tab && tab.id) {
+                            resolve(tab);
+                        }
+                        else {
+                            resolve(null);
+                        }
+                    });
+                });
+                if (explicitTab) {
+                    return {
+                        id: explicitTab.id,
+                        url: explicitTab.url || '',
+                        title: explicitTab.title || '',
+                        windowId: explicitTab.windowId
+                    };
+                }
+            }
+            catch (_) { }
         }
         return new Promise((resolve) => {
             // 1. Try lastFocusedWindow (active web tab behind popup/sidepanel)
@@ -165,7 +189,8 @@ export class WebExtensionAdapter {
                     return resolve({
                         id: tabs[0].id,
                         url: tabs[0].url || '',
-                        title: tabs[0].title || ''
+                        title: tabs[0].title || '',
+                        windowId: tabs[0].windowId
                     });
                 }
                 // 2. Try currentWindow
@@ -174,7 +199,8 @@ export class WebExtensionAdapter {
                         return resolve({
                             id: currentTabs[0].id,
                             url: currentTabs[0].url || '',
-                            title: currentTabs[0].title || ''
+                            title: currentTabs[0].title || '',
+                            windowId: currentTabs[0].windowId
                         });
                     }
                     // 3. Fallback to any active tab
@@ -183,7 +209,8 @@ export class WebExtensionAdapter {
                             return resolve({
                                 id: anyTabs[0].id,
                                 url: anyTabs[0].url || '',
-                                title: anyTabs[0].title || ''
+                                title: anyTabs[0].title || '',
+                                windowId: anyTabs[0].windowId
                             });
                         }
                         resolve({ id: 0, url: '', title: '' });

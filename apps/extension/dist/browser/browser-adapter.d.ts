@@ -14,13 +14,14 @@ export interface SanitizationHostRequest {
     readonly goal: string;
 }
 export interface BrowserAdapter {
-    captureVisibleTab(): Promise<string>;
+    captureVisibleTab(targetWindowId?: number | null): Promise<string>;
     sendMessageToTab<T = any>(tabId: number, message: any): Promise<T>;
     sendMessageToRuntime<T = any>(message: any): Promise<T>;
-    getActiveTab(): Promise<{
+    getActiveTab(preferredTabId?: number): Promise<{
         id: number;
         url: string;
         title: string;
+        windowId?: number;
     }>;
     getStorage<T>(key: string): Promise<T | null>;
     setStorage<T>(key: string, value: T): Promise<void>;
@@ -31,13 +32,14 @@ export declare class WebExtensionAdapter implements BrowserAdapter {
     private offscreenCloseTimer;
     private lastCaptureTime;
     private get browserAPI();
-    captureVisibleTab(): Promise<string>;
+    captureVisibleTab(targetWindowId?: number | null): Promise<string>;
     sendMessageToTab<T = any>(tabId: number, message: any): Promise<T>;
     sendMessageToRuntime<T = any>(message: any): Promise<T>;
-    getActiveTab(): Promise<{
+    getActiveTab(preferredTabId?: number): Promise<{
         id: number;
         url: string;
         title: string;
+        windowId?: number;
     }>;
     getStorage<T>(key: string): Promise<T | null>;
     setStorage<T>(key: string, value: T): Promise<void>;

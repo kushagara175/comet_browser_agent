@@ -262,13 +262,13 @@ export class ActionExecutor {
                     associatedLabelText: getAssociatedLabelText(targetEl) || undefined
                 };
                 const sensitivity = analyzeDomElementSensitivity(descriptor);
-                if (sensitivity.isSensitive) {
+                if (sensitivity.isSensitive && !proposal.userApproved) {
                     return {
                         actionId: proposal.actionId,
                         success: false,
                         timestamp,
                         semanticOutcomeVerified: false,
-                        message: `Action blocked: Typing into sensitive field '${proposal.targetLocalId}' (${sensitivity.reason || sensitivity.category || 'sensitive'}) is prohibited by safety policy`
+                        message: `Action blocked: Typing into sensitive field '${proposal.targetLocalId}' (${sensitivity.reason || sensitivity.category || 'sensitive'}) is prohibited without explicit user approval`
                     };
                 }
                 // Preserve focus behavior: focus the element before typing

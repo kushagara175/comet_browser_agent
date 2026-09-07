@@ -47,6 +47,11 @@ coordinator.setListeners({
       chrome.runtime.sendMessage({ type: 'COORDINATOR_CONFIRMATION_REQUIRED', action, runId }).catch(() => {});
     }
   },
+  onUserInputRequired: (request) => {
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ type: 'COORDINATOR_USER_INPUT_REQUIRED', request }).catch(() => {});
+    }
+  },
   onTelemetryUpdated: (telemetry, runId) => {
     if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
       chrome.runtime.sendMessage({ type: 'COORDINATOR_TELEMETRY_UPDATED', telemetry, runId }).catch(() => {});
@@ -63,7 +68,8 @@ async function handleSidepanelRequest(message: any): Promise<any> {
   if (message.type === 'START_AGENT_RUN') {
     return coordinator.startRun(message.goal || 'Safe assistance', {
       runId: message.runId,
-      maxSteps: message.maxSteps
+      maxSteps: message.maxSteps,
+      tabId: message.tabId
     });
   }
 
@@ -117,7 +123,8 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     if (message.type === 'START_AGENT_RUN') {
       coordinator.startRun(message.goal || 'Safe assistance', {
         runId: message.runId,
-        maxSteps: message.maxSteps
+        maxSteps: message.maxSteps,
+        tabId: message.tabId
       }).then((result) => {
         sendResponse(result);
       }).catch((err) => {
@@ -183,6 +190,15 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     if (message.type === 'DENY_ACTION') {
       const result = coordinator.denyPendingAction();
       sendResponse(result);
+      return true;
+    }
+
+    if (message.type === 'SUBMIT_USER_INPUT') {
+      coordinator.submitUserInput(message.inputs || {}).then((result) => {
+        sendResponse(result);
+      }).catch((err) => {
+        sendResponse({ success: false, state: 'failed-safe', error: err.message });
+      });
       return true;
     }
 

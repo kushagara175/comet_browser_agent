@@ -44,6 +44,7 @@ export interface CoordinatorRunOptions {
   readonly maxSteps?: number;
   readonly maxStaleRetries?: number;
   readonly runId?: string;
+  readonly tabId?: number;
 }
 
 export interface CoordinatorListeners {
@@ -51,6 +52,7 @@ export interface CoordinatorListeners {
   onSanitizationComplete?(raw: RawCapture, sanitized: SanitizedContext, runId?: string): void;
   onActionProposed?(action: ActionProposal, runId?: string): void;
   onActionConfirmedRequired?(action: ActionProposal, runId?: string): void;
+  onUserInputRequired?(request: { kind: 'credentials' | 'text_input'; prompt: string; runId?: string }): void;
   onTelemetryUpdated?(telemetry: RunTelemetry, runId?: string): void;
   onStepProgress?(step: number, maxSteps: number, message: string, runId?: string): void;
 }
@@ -93,6 +95,7 @@ export interface CoordinatorRunResult {
   readonly stepCount?: number;
   readonly diagnostic?: SanitizerDiagnostic;
   readonly steps?: ReadonlyArray<E2EStepTrace>;
+  readonly inputRequest?: { kind: 'credentials' | 'text_input'; prompt: string };
 }
 
 export type SanitizerFailureClass =
@@ -196,6 +199,7 @@ export class RunCoordinator {
   private stepsTrace: E2EStepTrace[] = [];
   private currentTaskContract: TaskContract | null = null;
   private currentRunId: string = '';
+  private currentTabId?: number;
 
   constructor(
     browser: BrowserAdapter = new WebExtensionAdapter(),
@@ -577,12 +581,14 @@ export class RunCoordinator {
       this.state !== 'blocked-local-only' &&
       this.state !== 'awaiting-user-confirmation'
     ) {
-      const errorMsg = 'Cannot start new run: an agent run is already in progress';
-      const res: CoordinatorRunResult = { runId: requestedRunId, success: false, state: this.state, error: errorMsg };
-      return this.completeWithResult(res);
+      // Auto-preempt previous run cleanly so the user's new instruction can start immediately
+      this.isCancelled = true;
+      this.transition('idle', 'Previous run preempted by new user request');
+      await new Promise((r) => setTimeout(r, 40));
     }
 
     this.currentRunId = requestedRunId;
+    this.currentTabId = options?.tabId;
     this.currentGoal = goal;
     this.currentTaskContract = resolveTaskContract(goal);
     if (!this.currentTaskContract.supported) {
@@ -593,6 +599,32 @@ export class RunCoordinator {
         success: false,
         state: 'failed-safe',
         error: errorMsg,
+        stepCount: 0,
+        steps: []
+      };
+      return this.completeWithResult(res);
+    }
+
+    // Interactive user input prompt: If goal requires credentials or user input that was not supplied
+    if (this.currentTaskContract.requiresUserInput) {
+      const inputPrompt = this.currentTaskContract.userInputPrompt || 'User input required to proceed.';
+      this.transition('awaiting-user-confirmation', inputPrompt);
+      if (this.listeners.onUserInputRequired) {
+        this.listeners.onUserInputRequired({
+          kind: this.currentTaskContract.userInputKind || 'credentials',
+          prompt: inputPrompt,
+          runId: this.currentRunId
+        });
+      }
+      const res: CoordinatorRunResult = {
+        runId: this.currentRunId,
+        success: true,
+        state: 'awaiting-user-confirmation',
+        message: inputPrompt,
+        inputRequest: {
+          kind: this.currentTaskContract.userInputKind || 'credentials',
+          prompt: inputPrompt
+        },
         stepCount: 0,
         steps: []
       };
@@ -642,7 +674,7 @@ export class RunCoordinator {
 
       // Step 1: Capture active tab DOM & screenshot (fresh captureId each cycle)
       this.transition('capturing', `Step ${step}/${maxSteps}: Capturing active tab DOM & screenshot`);
-      const activeTab = await this.browser.getActiveTab();
+      const activeTab = await this.browser.getActiveTab(this.currentTabId);
 
       // Guard: Block restricted browser surfaces (chrome://, chrome-extension://, file://, devtools://)
       const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
@@ -1265,6 +1297,38 @@ export class RunCoordinator {
         return this.completeWithResult(res);
       }
 
+      // Single-action direct click completion ("terminal if done")
+      if (
+        this.currentTaskContract?.goalPattern === 'click_control' &&
+        proposal.kind === 'click' &&
+        this.currentTaskContract?.structuredIntent?.targetPhrase &&
+        !/\b(repeatedly|again|multiple|times|until|loop)\b/i.test(this.currentGoal || '')
+      ) {
+        const matchesTarget = targetElement && (
+          scoreCandidate(targetElement, this.currentTaskContract.structuredIntent, false).score >= 50
+        );
+        if (matchesTarget) {
+          const tFin = Date.now();
+          const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
+          if (this.listeners.onTelemetryUpdated) {
+            this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
+          }
+          const targetName = targetElement?.sanitizedName || proposal.targetLocalId || 'control';
+          this.transition('complete', `Clicked "${targetName}" successfully: directive complete`);
+          const res: CoordinatorRunResult = {
+            success: true,
+            state: 'complete',
+            message: `Clicked "${targetName}" successfully`,
+            sanitized,
+            proposal,
+            telemetry,
+            stepCount: step,
+            steps: this.stepsTrace
+          };
+          return this.completeWithResult(res);
+        }
+      }
+
       this.currentStaleRetries = 0;
 
       if (this.listeners.onStepProgress) {
@@ -1306,7 +1370,7 @@ export class RunCoordinator {
         return this.generalChat(userMessage);
       }
 
-      const activeTab = await this.browser.getActiveTab();
+      const activeTab = await this.browser.getActiveTab(this.currentTabId);
       if (!activeTab || !activeTab.id) {
         return this.generalChat(userMessage);
       }
@@ -1441,14 +1505,14 @@ export class RunCoordinator {
       return this.completeWithResult(res);
     }
 
-    const activeTab = await this.browser.getActiveTab();
+    const activeTab = await this.browser.getActiveTab(this.currentTabId);
     const t0 = Date.now();
 
     this.transition('executing', `Executing approved action '${action.kind}' on ${action.targetLocalId || 'page'}`);
 
     const execResponse = await this.browser.sendMessageToTab(activeTab.id, {
       type: 'EXECUTE_ACTION',
-      proposal: action,
+      proposal: { ...action, userApproved: true },
       captureId: sanitized.captureId
     });
 
@@ -1543,6 +1607,129 @@ export class RunCoordinator {
       stepCount: this.currentStep
     };
     return this.completeWithResult(res);
+  }
+
+  /**
+   * Safely fills user-provided credentials or text into the active tab's form inputs locally
+   * without transmitting raw credentials across the network.
+   */
+  async submitUserInput(inputs: { username?: string; password?: string; customText?: string }): Promise<CoordinatorRunResult> {
+    const activeTab = await this.browser.getActiveTab(this.currentTabId);
+    this.transition('executing', 'Safely filling form fields locally with provided input');
+
+    const captureId = `cap_input_${Date.now()}`;
+    let domResponse: any;
+    try {
+      domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+        type: 'EXTRACT_DOM_SNAPSHOT',
+        captureId
+      });
+    } catch (err: any) {
+      const errorMsg = 'Could not communicate with tab to fill form inputs';
+      this.transition('failed-safe', errorMsg);
+      return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg });
+    }
+
+    if (!domResponse || !domResponse.snapshot || !domResponse.snapshot.elements) {
+      const errorMsg = 'Could not locate form fields on page';
+      this.transition('failed-safe', errorMsg);
+      return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg });
+    }
+
+    const elements: any[] = domResponse.snapshot.elements;
+    let filledCount = 0;
+
+    // A. Fill username/email if provided
+    if (inputs.username) {
+      const userEl = elements.find((e) => {
+        const name = (e.sanitizedName || '').toLowerCase();
+        const role = e.role;
+        return (role === 'input' || role === 'textbox') &&
+          (name.includes('user') || name.includes('email') || name.includes('login') || name.includes('account') || name.includes('id') || name.includes('phone'));
+      }) || elements.find((e) => e.role === 'input' || e.role === 'textbox');
+
+      if (userEl) {
+        await this.browser.sendMessageToTab(activeTab.id, {
+          type: 'EXECUTE_ACTION',
+          proposal: {
+            actionId: `act_input_user_${Date.now()}`,
+            kind: 'type',
+            targetLocalId: userEl.localId,
+            textToType: inputs.username,
+            confidence: 1.0,
+            risk: 'safe',
+            rationale: 'Fill user credentials locally',
+            userApproved: true
+          },
+          captureId
+        });
+        filledCount++;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+
+    // B. Fill password if provided
+    if (inputs.password) {
+      const passEl = elements.find((e) => {
+        const name = (e.sanitizedName || '').toLowerCase();
+        return (e.role === 'input' || e.role === 'textbox') &&
+          (name.includes('password') || name.includes('pass') || name.includes('pwd'));
+      });
+
+      if (passEl) {
+        await this.browser.sendMessageToTab(activeTab.id, {
+          type: 'EXECUTE_ACTION',
+          proposal: {
+            actionId: `act_input_pass_${Date.now()}`,
+            kind: 'type',
+            targetLocalId: passEl.localId,
+            textToType: inputs.password,
+            confidence: 1.0,
+            risk: 'safe',
+            rationale: 'Fill user password locally',
+            userApproved: true
+          },
+          captureId
+        });
+        filledCount++;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+
+    // C. Fill custom text if provided
+    if (inputs.customText && !inputs.username && !inputs.password) {
+      const targetInput = elements.find((e) => e.role === 'input' || e.role === 'textbox');
+      if (targetInput) {
+        await this.browser.sendMessageToTab(activeTab.id, {
+          type: 'EXECUTE_ACTION',
+          proposal: {
+            actionId: `act_input_custom_${Date.now()}`,
+            kind: 'type',
+            targetLocalId: targetInput.localId,
+            textToType: inputs.customText,
+            confidence: 1.0,
+            risk: 'safe',
+            rationale: 'Fill user text locally',
+            userApproved: true
+          },
+          captureId
+        });
+        filledCount++;
+      }
+    }
+
+    if (filledCount === 0) {
+      const errorMsg = 'No matching input fields found on the page to fill';
+      this.transition('failed-safe', errorMsg);
+      return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg });
+    }
+
+    this.transition('complete', `Successfully filled ${filledCount} field(s) locally`);
+    return this.completeWithResult({
+      success: true,
+      state: 'complete',
+      message: `Form fields filled securely (${filledCount} fields)`
+    });
   }
 
   setServerUrl(url: string): void {

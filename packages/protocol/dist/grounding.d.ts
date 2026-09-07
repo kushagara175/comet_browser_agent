@@ -36,6 +36,15 @@ export declare function normalizeSemanticText(text: string): string;
  */
 export declare function tokenizeSemanticText(text: string): string[];
 /**
+ * Computes Levenshtein edit distance between two strings.
+ */
+export declare function levenshteinDistance(a: string, b: string): number;
+/**
+ * Checks whether two semantic tokens match, accommodating minor typos (e.g. "knwo" vs "know")
+ * or prefix abbreviations (e.g. "pass" for "password").
+ */
+export declare function isFuzzyTokenMatch(a: string, b: string): boolean;
+/**
  * Evaluates and scores an individual SanitizedElement against a StructuredTaskIntent.
  */
 export declare function scoreCandidate(element: SanitizedElement, intent: StructuredTaskIntent, activeDialogVisible?: boolean): {

@@ -1065,13 +1065,13 @@
             associatedLabelText: getAssociatedLabelText(targetEl) || void 0
           };
           const sensitivity = analyzeDomElementSensitivity(descriptor);
-          if (sensitivity.isSensitive) {
+          if (sensitivity.isSensitive && !proposal.userApproved) {
             return {
               actionId: proposal.actionId,
               success: false,
               timestamp,
               semanticOutcomeVerified: false,
-              message: `Action blocked: Typing into sensitive field '${proposal.targetLocalId}' (${sensitivity.reason || sensitivity.category || "sensitive"}) is prohibited by safety policy`
+              message: `Action blocked: Typing into sensitive field '${proposal.targetLocalId}' (${sensitivity.reason || sensitivity.category || "sensitive"}) is prohibited without explicit user approval`
             };
           }
           if (typeof targetEl.focus === "function") {
@@ -1816,8 +1816,10 @@
   // src/content/overlay-renderer.ts
   var OverlayRenderer = class {
     overlayContainer = null;
+    currentBox = null;
+    clearTimer = null;
     ensureContainer() {
-      if (!this.overlayContainer) {
+      if (!this.overlayContainer || !document.body.contains(this.overlayContainer)) {
         this.overlayContainer = document.createElement("div");
         this.overlayContainer.id = "privapilot-hud-overlay-root";
         this.overlayContainer.className = "privapilot-overlay privapilot-hud";
@@ -1833,51 +1835,98 @@
       }
       return this.overlayContainer;
     }
-    highlightTargetElement(el, label = "TARGET") {
+    highlightTargetElement(el, label = "TARGET", durationMs = 1200) {
       const root = this.ensureContainer();
-      root.innerHTML = "";
+      this.clear();
       const rect = el.getBoundingClientRect();
       const box = document.createElement("div");
-      box.className = "privapilot-overlay";
+      box.className = "privapilot-overlay privapilot-target-box";
       box.setAttribute("data-privapilot-ignore", "true");
       box.style.position = "absolute";
-      box.style.left = `${rect.left}px`;
-      box.style.top = `${rect.top}px`;
-      box.style.width = `${rect.width}px`;
-      box.style.height = `${rect.height}px`;
-      box.style.border = "2px solid #10b981";
-      box.style.backgroundColor = "rgba(16, 185, 129, 0.15)";
-      box.style.borderRadius = "4px";
-      box.style.boxShadow = "0 0 10px rgba(16, 185, 129, 0.4)";
+      box.style.left = `${Math.max(0, rect.left - 2)}px`;
+      box.style.top = `${Math.max(0, rect.top - 2)}px`;
+      box.style.width = `${Math.max(12, rect.width + 4)}px`;
+      box.style.height = `${Math.max(12, rect.height + 4)}px`;
+      box.style.border = "2.5px solid #2563eb";
+      box.style.backgroundColor = "rgba(37, 99, 235, 0.14)";
+      box.style.borderRadius = "6px";
+      box.style.boxShadow = "0 0 0 3px rgba(37, 99, 235, 0.35), 0 0 20px rgba(37, 99, 235, 0.55)";
       box.style.pointerEvents = "none";
-      box.style.transition = "all 0.2s ease-in-out";
+      box.style.transition = "all 0.18s cubic-bezier(0.16, 1, 0.3, 1)";
+      box.style.opacity = "1";
       const pill = document.createElement("span");
-      pill.className = "privapilot-overlay";
+      pill.className = "privapilot-overlay privapilot-action-pill";
       pill.setAttribute("data-privapilot-ignore", "true");
-      pill.innerText = `PrivaPilot: ${label}`;
+      const icon = label.toUpperCase().includes("TYPE") ? "\u270D\uFE0F" : label.toUpperCase().includes("CLICK") ? "\u26A1" : "\u{1F50D}";
+      pill.innerText = `${icon} PrivaPilot: ${label}`;
       pill.style.position = "absolute";
-      pill.style.top = "-20px";
+      pill.style.top = rect.top > 28 ? "-24px" : "4px";
       pill.style.left = "0";
-      pill.style.background = "#10b981";
+      pill.style.background = "#2563eb";
       pill.style.color = "#ffffff";
-      pill.style.fontSize = "10px";
-      pill.style.fontWeight = "bold";
-      pill.style.padding = "2px 6px";
-      pill.style.borderRadius = "3px";
-      pill.style.fontFamily = "monospace";
+      pill.style.fontSize = "10.5px";
+      pill.style.fontWeight = "700";
+      pill.style.padding = "2px 8px";
+      pill.style.borderRadius = "4px";
+      pill.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.25)";
+      pill.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       pill.style.pointerEvents = "none";
+      pill.style.whiteSpace = "nowrap";
       box.appendChild(pill);
       root.appendChild(box);
-      setTimeout(() => {
-        if (root.contains(box)) {
-          root.removeChild(box);
+      this.currentBox = box;
+      if (durationMs > 0) {
+        this.clearTimer = setTimeout(() => {
+          this.dismissBox(box);
+        }, durationMs);
+      }
+    }
+    /**
+     * Briefly flashes the target box green when the click/action is dispatched,
+     * then smoothly fades out and dismisses ("so after click it goes").
+     */
+    flashActionDispatched() {
+      if (this.clearTimer) {
+        clearTimeout(this.clearTimer);
+        this.clearTimer = null;
+      }
+      if (this.currentBox && this.overlayContainer?.contains(this.currentBox)) {
+        const box = this.currentBox;
+        box.style.border = "2.5px solid #10b981";
+        box.style.backgroundColor = "rgba(16, 185, 129, 0.2)";
+        box.style.boxShadow = "0 0 0 4px rgba(16, 185, 129, 0.4), 0 0 25px rgba(16, 185, 129, 0.65)";
+        const pill = box.querySelector(".privapilot-action-pill");
+        if (pill) {
+          pill.style.background = "#10b981";
+          pill.innerText = "\u2713 PrivaPilot: DISPATCHED";
         }
-      }, 2500);
+        setTimeout(() => {
+          this.dismissBox(box);
+        }, 160);
+      }
+    }
+    dismissBox(box) {
+      box.style.transition = "opacity 0.22s ease-out, transform 0.22s ease-out";
+      box.style.opacity = "0";
+      box.style.transform = "scale(0.97)";
+      setTimeout(() => {
+        if (this.overlayContainer?.contains(box)) {
+          this.overlayContainer.removeChild(box);
+        }
+        if (this.currentBox === box) {
+          this.currentBox = null;
+        }
+      }, 240);
     }
     clear() {
+      if (this.clearTimer) {
+        clearTimeout(this.clearTimer);
+        this.clearTimer = null;
+      }
       if (this.overlayContainer) {
         this.overlayContainer.innerHTML = "";
       }
+      this.currentBox = null;
     }
   };
 
@@ -1932,10 +1981,22 @@
       }
       const targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;
       if (targetEl) {
-        overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase());
+        if (typeof targetEl.scrollIntoView === "function") {
+          try {
+            targetEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          } catch (_) {
+          }
+        }
+        overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase(), 1200);
+        await new Promise((r) => setTimeout(r, 120));
       }
       const preSnapshot = SemanticStateVerifier.captureSnapshot(targetEl, document);
       const execResult = ActionExecutor.execute(proposal, currentElementMap);
+      if (targetEl && execResult.success) {
+        overlay.flashActionDispatched();
+      } else {
+        overlay.clear();
+      }
       if (!execResult.success) {
         return {
           success: false,

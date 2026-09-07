@@ -23,6 +23,50 @@ export function tokenizeSemanticText(text) {
         return [];
     return normalized.split(/\s+/).filter((t) => t.length > 0);
 }
+/**
+ * Computes Levenshtein edit distance between two strings.
+ */
+export function levenshteinDistance(a, b) {
+    if (a === b)
+        return 0;
+    if (!a.length)
+        return b.length;
+    if (!b.length)
+        return a.length;
+    const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+        let prev = i;
+        for (let j = 1; j <= b.length; j++) {
+            const val = a[i - 1] === b[j - 1] ? row[j - 1] : Math.min(row[j - 1], row[j], prev) + 1;
+            row[j - 1] = prev;
+            prev = val;
+        }
+        row[b.length] = prev;
+    }
+    return row[b.length];
+}
+/**
+ * Checks whether two semantic tokens match, accommodating minor typos (e.g. "knwo" vs "know")
+ * or prefix abbreviations (e.g. "pass" for "password").
+ */
+export function isFuzzyTokenMatch(a, b) {
+    if (a === b)
+        return true;
+    const lenA = a.length;
+    const lenB = b.length;
+    if (Math.abs(lenA - lenB) > 3)
+        return false;
+    if (lenA < 3 || lenB < 3)
+        return false;
+    // Prefix matching for abbreviations (e.g. "pass" -> "password")
+    if (lenA >= 4 && b.startsWith(a))
+        return true;
+    if (lenB >= 4 && a.startsWith(b))
+        return true;
+    // Levenshtein edit distance check
+    const dist = levenshteinDistance(a, b);
+    return dist <= (Math.max(lenA, lenB) >= 6 ? 2 : 1);
+}
 const GENERIC_CONTROL_NAMES = new Set([
     'button',
     'link',
@@ -80,7 +124,7 @@ export function scoreCandidate(element, intent, activeDialogVisible = false) {
     }
     let score = 0;
     const rationaleParts = [];
-    // 3. Exact Normalized Name Match (+100)
+    // 3. Exact Normalized Name Match (+100), Strong Prefix (+65), Substring (+50), or Strong Fuzzy Name Match (+80)
     if (elNameNorm && targetPhraseNorm && elNameNorm === targetPhraseNorm) {
         score += 100;
         rationaleParts.push(`Exact name match ("${element.sanitizedName}")`);
@@ -93,23 +137,48 @@ export function scoreCandidate(element, intent, activeDialogVisible = false) {
         score += 50;
         rationaleParts.push(`Substring containment ("${element.sanitizedName}")`);
     }
-    // 4. Token Overlap & Word Boundaries
+    else if (elNameNorm &&
+        targetPhraseNorm &&
+        isFuzzyTokenMatch(elNameNorm.replace(/\s+/g, ''), targetPhraseNorm.replace(/\s+/g, ''))) {
+        score += 80;
+        rationaleParts.push(`Fuzzy full-name match ("${targetPhraseNorm}" ≈ "${element.sanitizedName}")`);
+    }
+    // 4. Token Overlap & Word Boundaries (Exact + Fuzzy Typo Matching)
     if (targetTokens.length > 0 && elTokens.length > 0) {
-        const matchedTokens = targetTokens.filter((t) => elTokens.includes(t));
-        const tokenRatio = matchedTokens.length / targetTokens.length;
-        if (tokenRatio === 1.0) {
+        const matchedTokens = [];
+        const fuzzyMatchedTokens = [];
+        for (const t of targetTokens) {
+            if (elTokens.includes(t)) {
+                matchedTokens.push(t);
+            }
+            else {
+                const fuzzy = elTokens.find((elT) => isFuzzyTokenMatch(t, elT));
+                if (fuzzy) {
+                    fuzzyMatchedTokens.push({ target: t, matched: fuzzy });
+                }
+            }
+        }
+        const totalMatches = matchedTokens.length + fuzzyMatchedTokens.length;
+        const tokenRatio = totalMatches / targetTokens.length;
+        if (matchedTokens.length === targetTokens.length) {
             score += 40;
             rationaleParts.push(`All target tokens present [${matchedTokens.join(', ')}]`);
         }
+        else if (totalMatches === targetTokens.length) {
+            score += 35;
+            const fzDesc = fuzzyMatchedTokens.map((f) => `"${f.target}" ≈ "${f.matched}"`).join(', ');
+            rationaleParts.push(`Target tokens matched with typo tolerance (${fzDesc})`);
+        }
         else if (tokenRatio >= 0.5) {
             score += Math.round(tokenRatio * 30);
-            rationaleParts.push(`Partial token overlap (${matchedTokens.length}/${targetTokens.length})`);
+            rationaleParts.push(`Partial token overlap (${totalMatches}/${targetTokens.length})`);
         }
         // Token order match
-        if (matchedTokens.length > 1) {
+        const combinedTokens = [...matchedTokens, ...fuzzyMatchedTokens.map((f) => f.matched)];
+        if (combinedTokens.length > 1) {
             let isOrdered = true;
             let lastIndex = -1;
-            for (const t of matchedTokens) {
+            for (const t of combinedTokens) {
                 const idx = elTokens.indexOf(t);
                 if (idx <= lastIndex) {
                     isOrdered = false;

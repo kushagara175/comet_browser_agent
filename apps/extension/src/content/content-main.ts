@@ -74,7 +74,14 @@ export async function handleMessage(message: any): Promise<any> {
 
     // 2. Highlight target if present
     if (targetEl) {
-      overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase());
+      if (typeof targetEl.scrollIntoView === 'function') {
+        try {
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } catch (_) {}
+      }
+      overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase(), 1200);
+      // Brief visual dwell so user sees targeted element highlighted before dispatch
+      await new Promise((r) => setTimeout(r, 120));
     }
 
     // Capture safe pre-action semantic snapshot BEFORE execution
@@ -82,6 +89,14 @@ export async function handleMessage(message: any): Promise<any> {
 
     // 3. Dispatch synthetic DOM action
     const execResult = ActionExecutor.execute(proposal, currentElementMap);
+
+    // Visual feedback: Flash green dispatched ring on target and cleanly dismiss ("so after click it goes")
+    if (targetEl && execResult.success) {
+      overlay.flashActionDispatched();
+    } else {
+      overlay.clear();
+    }
+
     if (!execResult.success) {
       return {
         success: false,

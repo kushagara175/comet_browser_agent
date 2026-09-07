@@ -36,6 +36,9 @@ export interface TaskContract {
   readonly structuredIntent?: StructuredTaskIntent;
   readonly isPassive?: boolean;
   readonly abstentionReason?: string;
+  readonly requiresUserInput?: boolean;
+  readonly userInputKind?: 'credentials' | 'text_input';
+  readonly userInputPrompt?: string;
 }
 
 const GENERIC_CONTEXT_WORDS = new Set([
@@ -141,8 +144,32 @@ export function resolveTaskContract(goal: string): TaskContract {
     };
   }
 
+  // 2b. Form fill with credentials / user input requested (e.g. "type email nad pass", "fill sih login for me")
+  if (
+    /(?:fill|type|enter|log\s*in\s+with)\s+(?:.*?\s+)?(?:login|credentials|email\s+(?:nad|and)\s+pass(?:word)?|user(?:name)?\s+(?:nad|and)\s+pass(?:word)?)/i.test(g) ||
+    /^(?:fill\s+)?(?:sih\s+)?login(?:\s+for\s+me)?$/i.test(g) ||
+    /^(?:type|enter|fill)\s+(?:my\s+)?(?:email\s+(?:nad|and)\s+pass(?:word)?|credentials)$/i.test(g)
+  ) {
+    return {
+      supported: true,
+      goalPattern: 'form_fill_credentials',
+      expectedTerminal: { kind: 'value_present' },
+      expectedTargetNameSubstring: 'email',
+      requiresUserInput: true,
+      userInputKind: 'credentials',
+      userInputPrompt: 'Please provide your credentials below so PrivaPilot can securely fill the login fields locally.',
+      structuredIntent: {
+        intent: 'type',
+        targetPhrase: 'email',
+        roleHint: 'input',
+        targetTokens: ['email', 'username', 'login']
+      }
+    };
+  }
+
   // 3. Search / Find / Locate / Type / Fill / Enter / Set / Write / Filter
-  if (/(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry)/i.test(g)) {
+  const isExplicitClickVerb = /^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+/i.test(g) && !/(?:type|fill|enter|write)\s+/i.test(g);
+  if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry)/i.test(g)) {
     let targetPhrase = 'search';
     let requestedValue = '';
 
@@ -248,6 +275,8 @@ export function resolveTaskContract(goal: string): TaskContract {
   const hasInteractionVerb = Boolean(verbMatch);
   let cleanStr = hasInteractionVerb ? g.replace(verbMatch![0], '').trim() : g;
 
+  cleanStr = cleanStr.replace(/\s+(?:repeatedly|again|multiple\s+times|continuously|twice|until\s+done)\b/i, '').trim();
+
   let roleHint: ElementRole | undefined;
   if (/\b(?:link)\b/i.test(cleanStr)) roleHint = 'link';
   else if (/\b(?:button)\b/i.test(cleanStr)) roleHint = 'button';
@@ -293,6 +322,7 @@ export interface ActionProposal {
   readonly textToType?: string;
   readonly selectOptionValue?: string;
   readonly scrollDirection?: 'up' | 'down' | 'top' | 'bottom';
+  readonly userApproved?: boolean;
 }
 
 export interface ActionExecutionResult {

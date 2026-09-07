@@ -37,6 +37,9 @@ export interface TaskContract {
     readonly structuredIntent?: StructuredTaskIntent;
     readonly isPassive?: boolean;
     readonly abstentionReason?: string;
+    readonly requiresUserInput?: boolean;
+    readonly userInputKind?: 'credentials' | 'text_input';
+    readonly userInputPrompt?: string;
 }
 export declare function cleanContextPhrase(phrase: string | undefined): string | undefined;
 /**
@@ -56,6 +59,7 @@ export interface ActionProposal {
     readonly textToType?: string;
     readonly selectOptionValue?: string;
     readonly scrollDirection?: 'up' | 'down' | 'top' | 'bottom';
+    readonly userApproved?: boolean;
 }
 export interface ActionExecutionResult {
     readonly actionId: string;

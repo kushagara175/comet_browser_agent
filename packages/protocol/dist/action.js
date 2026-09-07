@@ -98,8 +98,29 @@ export function resolveTaskContract(goal) {
             }
         };
     }
+    // 2b. Form fill with credentials / user input requested (e.g. "type email nad pass", "fill sih login for me")
+    if (/(?:fill|type|enter|log\s*in\s+with)\s+(?:.*?\s+)?(?:login|credentials|email\s+(?:nad|and)\s+pass(?:word)?|user(?:name)?\s+(?:nad|and)\s+pass(?:word)?)/i.test(g) ||
+        /^(?:fill\s+)?(?:sih\s+)?login(?:\s+for\s+me)?$/i.test(g) ||
+        /^(?:type|enter|fill)\s+(?:my\s+)?(?:email\s+(?:nad|and)\s+pass(?:word)?|credentials)$/i.test(g)) {
+        return {
+            supported: true,
+            goalPattern: 'form_fill_credentials',
+            expectedTerminal: { kind: 'value_present' },
+            expectedTargetNameSubstring: 'email',
+            requiresUserInput: true,
+            userInputKind: 'credentials',
+            userInputPrompt: 'Please provide your credentials below so PrivaPilot can securely fill the login fields locally.',
+            structuredIntent: {
+                intent: 'type',
+                targetPhrase: 'email',
+                roleHint: 'input',
+                targetTokens: ['email', 'username', 'login']
+            }
+        };
+    }
     // 3. Search / Find / Locate / Type / Fill / Enter / Set / Write / Filter
-    if (/(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry)/i.test(g)) {
+    const isExplicitClickVerb = /^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+/i.test(g) && !/(?:type|fill|enter|write)\s+/i.test(g);
+    if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry)/i.test(g)) {
         let targetPhrase = 'search';
         let requestedValue = '';
         // E.g. "type admin@example.com into email"
@@ -200,6 +221,7 @@ export function resolveTaskContract(goal) {
     const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|delete|remove)\s+(?:on\s+)?(?:the\s+)?/i);
     const hasInteractionVerb = Boolean(verbMatch);
     let cleanStr = hasInteractionVerb ? g.replace(verbMatch[0], '').trim() : g;
+    cleanStr = cleanStr.replace(/\s+(?:repeatedly|again|multiple\s+times|continuously|twice|until\s+done)\b/i, '').trim();
     let roleHint;
     if (/\b(?:link)\b/i.test(cleanStr))
         roleHint = 'link';

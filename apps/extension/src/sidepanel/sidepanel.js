@@ -308,24 +308,42 @@ if (typeof document !== 'undefined') {
       }, 800);
     });
 
-    // Fetch Active Tab URL
+    let currentActiveTabId = null;
+
+    // Fetch and Track Active Tab URL and Tab ID
     function updateActiveTabUrl() {
       if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query) {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          if (tabs && tabs[0]?.url) {
-            try {
-              const urlObj = new URL(tabs[0].url);
-              if (activeTabUrl) {
+        chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+          const tab = (tabs && tabs[0]) || null;
+          if (tab) {
+            currentActiveTabId = tab.id;
+            if (tab.url && activeTabUrl) {
+              try {
+                const urlObj = new URL(tab.url);
                 activeTabUrl.textContent = urlObj.hostname + (urlObj.port ? `:${urlObj.port}` : '') + urlObj.pathname;
+                activeTabUrl.title = tab.url;
+              } catch {
+                activeTabUrl.textContent = tab.url;
               }
-            } catch {
-              if (activeTabUrl) activeTabUrl.textContent = tabs[0].url;
             }
           }
         });
       }
     }
     updateActiveTabUrl();
+
+    // Listen to tab switch & navigation events to keep side panel in sync dynamically
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      chrome.tabs.onActivated?.addListener((activeInfo) => {
+        currentActiveTabId = activeInfo.tabId;
+        updateActiveTabUrl();
+      });
+      chrome.tabs.onUpdated?.addListener((tabId, changeInfo, tab) => {
+        if (tab?.active) {
+          updateActiveTabUrl();
+        }
+      });
+    }
 
     // Extension In-Panel Reload
     const reloadExtensionBtn = document.getElementById('reloadExtensionBtn');
@@ -513,6 +531,78 @@ if (typeof document !== 'undefined') {
         appRoot.setAttribute('data-last-result-state', res.state || '');
       }
       if (!agentBubble) return;
+
+      // 1a. Interactive User Input Required (Form / Credentials)
+      if (res && res.inputRequest) {
+        const req = res.inputRequest;
+        agentBubble.innerHTML = '';
+
+        const card = document.createElement('div');
+        card.className = 'thought-card';
+        card.style.borderLeft = '3px solid #2563eb';
+        card.style.background = '#f8fafc';
+
+        const header = document.createElement('div');
+        header.className = 'thought-header';
+        header.innerHTML = `<span>🔐 Input Required for Secure Fill</span><span class="risk-pill risk-safe" style="background:#dbeafe; color:#1e40af;">INPUT REQUIRED</span>`;
+
+        const desc = document.createElement('div');
+        desc.style.fontSize = '11px';
+        desc.style.color = '#334155';
+        desc.style.marginTop = '6px';
+        desc.style.lineHeight = '1.4';
+        desc.textContent = req.prompt || 'PrivaPilot will safely type your values into the page locally.';
+
+        const form = document.createElement('div');
+        form.style.marginTop = '8px';
+        form.style.display = 'flex';
+        form.style.flexDirection = 'column';
+        form.style.gap = '6px';
+
+        if (req.kind === 'credentials') {
+          form.innerHTML = `
+            <input type="text" id="userInputUsername" placeholder="Email or Username" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 11px; background:#ffffff; color:#0f172a;" />
+            <input type="password" id="userInputPassword" placeholder="Password" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 11px; background:#ffffff; color:#0f172a;" />
+            <button id="btnSubmitInputForm" style="margin-top: 4px; padding: 7px 12px; background: #2563eb; color: #ffffff; border: none; border-radius: 5px; font-weight: 600; font-size: 11px; cursor: pointer;">Fill Form &amp; Continue</button>
+          `;
+        } else {
+          form.innerHTML = `
+            <input type="text" id="userInputText" placeholder="Enter value..." style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 11px; background:#ffffff; color:#0f172a;" />
+            <button id="btnSubmitInputForm" style="margin-top: 4px; padding: 7px 12px; background: #2563eb; color: #ffffff; border: none; border-radius: 5px; font-weight: 600; font-size: 11px; cursor: pointer;">Fill &amp; Continue</button>
+          `;
+        }
+
+        card.appendChild(header);
+        card.appendChild(desc);
+        card.appendChild(form);
+        agentBubble.appendChild(card);
+
+        const submitBtn = form.querySelector('#btnSubmitInputForm');
+        submitBtn?.addEventListener('click', (e) => {
+          e.preventDefault();
+          const userVal = (form.querySelector('#userInputUsername'))?.value || '';
+          const passVal = (form.querySelector('#userInputPassword'))?.value || '';
+          const customVal = (form.querySelector('#userInputText'))?.value || '';
+
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Filling form locally...';
+          setAgentStatus('executing');
+
+          if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+            chrome.runtime.sendMessage({
+              type: 'SUBMIT_USER_INPUT',
+              inputs: { username: userVal, password: passVal, customText: customVal },
+              runId: currentRunId
+            }, (submitRes) => {
+              renderActionResult(agentBubble, submitRes);
+            });
+          }
+        });
+
+        setAgentStatus('awaiting-user-confirmation');
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        return;
+      }
 
       // 1. Awaiting User Confirmation (Pending Protected Action)
       if (res && res.state === 'awaiting-user-confirmation') {
@@ -751,7 +841,8 @@ if (typeof document !== 'undefined') {
         chrome.runtime.sendMessage({
           type: messageType,
           [payloadKey]: goalText,
-          runId: currentRunId
+          runId: currentRunId,
+          tabId: currentActiveTabId
         }, (res) => {
           if (settled) return;
           settled = true;
@@ -905,6 +996,16 @@ if (typeof document !== 'undefined') {
             actionConfirmModal?.classList.remove('hidden');
             setAgentStatus('awaiting-user-confirmation');
             addAuditEntry('AUTH', `Confirmation requested for ${action.kind}`, 'warn');
+          }
+
+          if (message.type === 'COORDINATOR_USER_INPUT_REQUIRED') {
+            const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
+            if (lastAgentBubble) {
+              renderActionResult(lastAgentBubble, {
+                state: 'awaiting-user-confirmation',
+                inputRequest: message.request
+              });
+            }
           }
 
           if (message.type === 'COORDINATOR_TELEMETRY_UPDATED') {

@@ -537,3 +537,242 @@ test('Grounding 12: Server Schema Validator accepts containerContext and rejects
   const resPolluted = validateSanitizedPayload(pollutedPayload);
   assert.equal(resPolluted.isValid, false);
 });
+
+// ----------------------------------------------------------------------------
+// Test 13: Typo-Tolerant Candidate Grounding ("knwo your spoc" -> "Know Your SPOC")
+// ----------------------------------------------------------------------------
+test('Grounding 13: Typo tolerance grounds "knwo your spoc" to "Know Your SPOC" with high confidence', () => {
+  const elements = [
+    {
+      localId: 'el_spoc',
+      role: 'link',
+      sanitizedName: 'Know Your SPOC',
+      coarseBounds: [0.1, 0.1, 0.15, 0.04],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    },
+    {
+      localId: 'el_guidelines',
+      role: 'link',
+      sanitizedName: 'Guidelines',
+      coarseBounds: [0.3, 0.1, 0.1, 0.04],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    }
+  ];
+
+  const contract = resolveTaskContract('click on knwo your spoc');
+  assert.equal(contract.supported, true);
+  assert.equal(contract.structuredIntent?.intent, 'click');
+
+  const result = groundTargetCandidates(elements, contract.structuredIntent);
+  assert.equal(result.status, 'unambiguous_match');
+  assert.ok(result.bestCandidate);
+  assert.equal(result.bestCandidate.element.localId, 'el_spoc');
+  assert.ok(result.bestCandidate.confidence >= 0.75, `Expected high confidence >= 0.75, got ${result.bestCandidate.confidence}`);
+  assert.ok(result.bestCandidate.rationale.includes('typo tolerance') || result.bestCandidate.rationale.includes('Fuzzy'));
+});
+
+// ----------------------------------------------------------------------------
+// Test 14: Interactive Credential Input Request Detection
+// ----------------------------------------------------------------------------
+test('Grounding 14: Intent parser detects credential/login requests without explicit values and prompts for user input', () => {
+  const c1 = resolveTaskContract('type email nad pass');
+  assert.equal(c1.supported, true);
+  assert.equal(c1.requiresUserInput, true);
+  assert.equal(c1.userInputKind, 'credentials');
+
+  const c2 = resolveTaskContract('fill sih login for me');
+  assert.equal(c2.supported, true);
+  assert.equal(c2.requiresUserInput, true);
+  assert.equal(c2.userInputKind, 'credentials');
+
+  const c3 = resolveTaskContract('fill my credentials');
+  assert.equal(c3.supported, true);
+  assert.equal(c3.requiresUserInput, true);
+  assert.equal(c3.userInputKind, 'credentials');
+});
+
+// ----------------------------------------------------------------------------
+// Test 15: Run Preemption (Eliminating "Cannot start new run" block)
+// ----------------------------------------------------------------------------
+test('Grounding 15: Coordinator auto-preempts in-progress state when user submits new command', async () => {
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 1, url: 'http://localhost:4500', title: 'Portal' };
+    },
+    async sendMessageToTab(tabId, message) {
+      if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
+        return {
+          success: true,
+          captureId: message.captureId || 'cap_1',
+          snapshot: {
+            elements: [
+              {
+                localId: 'el_1',
+                role: 'button',
+                sanitizedName: 'Search Button',
+                coarseBounds: [0.1, 0.1, 0.1, 0.05],
+                state: ['visible', 'enabled'],
+                actionCapabilities: ['click']
+              }
+            ]
+          }
+        };
+      }
+      if (message.type === 'EXECUTE_ACTION') {
+        return {
+          success: true,
+          actionId: message.proposal.actionId,
+          semanticOutcomeVerified: true,
+          message: 'Clicked search button'
+        };
+      }
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_preempt',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements: [
+          {
+            localId: 'el_1',
+            role: 'button',
+            sanitizedName: 'Search Button',
+            coarseBounds: [0.1, 0.1, 0.1, 0.05],
+            state: ['visible', 'enabled'],
+            actionCapabilities: ['click']
+          }
+        ],
+        pageState: { title: 'Portal', viewport: [1280, 720] },
+        maskCount: 0,
+        payloadDigestSha256: 'sha256_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  const httpClient = {
+    async requestReasoningAction() {
+      return {
+        actionId: 'act_1',
+        kind: 'click',
+        targetLocalId: 'el_1',
+        confidence: 0.95,
+        risk: 'safe',
+        rationale: 'Click search button'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, httpClient);
+
+  // Simulate an agent in non-idle state (e.g. paused / in progress)
+  coordinator.state = 'reasoning';
+
+  // Starting a new run should NOT fail with "already in progress"
+  const result = await coordinator.startRun('Click Search Button');
+  console.log('TEST 15 RESULT:', result);
+  assert.notEqual(result.error, 'Cannot start new run: an agent run is already in progress');
+  assert.equal(result.success, true);
+  assert.equal(result.state, 'complete');
+});
+
+// ----------------------------------------------------------------------------
+// Test 16: Single-Click Directive Clean Completion ("Terminal if Done")
+// ----------------------------------------------------------------------------
+test('Grounding 16: Single-click directive completes after 1 step without entering duplicate action loop', async () => {
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 1, url: 'http://localhost:4500', title: 'Portal' };
+    },
+    async sendMessageToTab(tabId, message) {
+      if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
+        return {
+          success: true,
+          captureId: message.captureId || 'cap_spoc',
+          snapshot: {
+            elements: [
+              {
+                localId: 'el_spoc',
+                role: 'link',
+                sanitizedName: 'Know Your SPOC',
+                coarseBounds: [0.1, 0.1, 0.15, 0.04],
+                state: ['visible', 'enabled'],
+                actionCapabilities: ['click']
+              }
+            ]
+          }
+        };
+      }
+      if (message.type === 'EXECUTE_ACTION') {
+        return {
+          success: true,
+          actionId: message.proposal.actionId,
+          semanticOutcomeVerified: true,
+          message: 'Clicked element el_spoc'
+        };
+      }
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_spoc',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements: [
+          {
+            localId: 'el_spoc',
+            role: 'link',
+            sanitizedName: 'Know Your SPOC',
+            coarseBounds: [0.1, 0.1, 0.15, 0.04],
+            state: ['visible', 'enabled'],
+            actionCapabilities: ['click']
+          }
+        ],
+        pageState: { title: 'Portal', viewport: [1280, 720] },
+        maskCount: 0,
+        payloadDigestSha256: 'sha256_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  let stepsExecuted = 0;
+  const httpClient = {
+    async requestReasoningAction() {
+      stepsExecuted++;
+      return {
+        actionId: `act_${stepsExecuted}`,
+        kind: 'click',
+        targetLocalId: 'el_spoc',
+        confidence: 0.95,
+        risk: 'safe',
+        rationale: 'Click Know Your SPOC link'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, httpClient, undefined, { defaultMaxSteps: 5 });
+
+  const result = await coordinator.startRun('click on knwo your spoc');
+  console.log('TEST 16 RESULT:', result);
+  assert.equal(result.success, true);
+  assert.equal(result.state, 'complete');
+  assert.equal(result.stepCount, 1);
+  assert.equal(stepsExecuted, 1, 'Direct single click must finish in 1 step without redundant Step 2 perception cycles');
+});
+
