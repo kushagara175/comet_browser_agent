@@ -14,7 +14,7 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=nodedotjs&logoColor=white)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
-[Problem Statement](docs/00_PROBLEM_STATEMENT.md) · [Execution Plan](docs/EXECUTION_PLAN.md) · [Agent Rules](docs/AGENT_RULES.md) · [Full Docs](docs/INDEX.md)
+[Problem Statement](docs/00_PROBLEM_STATEMENT.md) · [Architecture & PPT Diagrams](DIAGRAMS.md) · [Execution Plan](docs/EXECUTION_PLAN.md) · [Agent Rules](docs/AGENT_RULES.md) · [Full Docs](docs/INDEX.md)
 
 </div>
 

@@ -24,6 +24,7 @@ disagree, the one higher in this list wins.
 
 | Document | What it covers |
 | :--- | :--- |
+| **[DIAGRAMS.md](../DIAGRAMS.md)** | **Architecture Diagrams & Algorithmic DAGs for SIH PPT Slides (4-Zone Pipeline, Decision Gates, Redaction Deep Dive, ISRO Metrics).** |
 | **[SIH26171_WINNING_EXECUTION_PLAYBOOK.md](SIH26171_WINNING_EXECUTION_PLAYBOOK.md)** | The full design spec and source of truth for architectural decisions — privacy contract, detection and redaction design, reasoning and execution rules, benchmark strategy, adversarial cases, jury answers. |
 | [01_PROBLEM_ANALYSIS.md](01_PROBLEM_ANALYSIS.md) | Problem and domain context; the privacy paradox in web agents; why the finale use cases being unknown shapes the design. |
 | [02_SYSTEM_ARCHITECTURE.md](02_SYSTEM_ARCHITECTURE.md) | Client–server split and core module responsibilities. |
