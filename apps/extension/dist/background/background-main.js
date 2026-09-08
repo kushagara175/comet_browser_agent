@@ -14209,6 +14209,19 @@ function scoreCandidate(element, intent, activeDialogVisible = false) {
       }
     }
   }
+  if (targetPhraseNorm || targetTokens.length > 0) {
+    const headingNorm = normalizeSemanticText(element.nearestHeading || "");
+    const containerNorm = normalizeSemanticText(element.containerContext || "");
+    const matchesHeading = targetPhraseNorm && headingNorm.includes(targetPhraseNorm) || targetTokens.some((t) => headingNorm.includes(t));
+    const matchesContainer = targetPhraseNorm && containerNorm.includes(targetPhraseNorm) || targetTokens.some((t) => containerNorm.includes(t));
+    if (matchesHeading) {
+      score += 70;
+      rationaleParts.push(`Nearest heading matches target ("${element.nearestHeading}")`);
+    } else if (matchesContainer) {
+      score += 55;
+      rationaleParts.push(`Container context matches target ("${element.containerContext}")`);
+    }
+  }
   if (intent.roleHint) {
     if (element.role === intent.roleHint) {
       score += 20;
@@ -14336,6 +14349,48 @@ function cleanContextPhrase(phrase) {
     return void 0;
   return trimmed;
 }
+function parseFormFieldAssignments(text) {
+  let norm = text.replace(/([a-zA-Z0-9_-]+)\.\s+/g, "$1 ").replace(/\s+\.\s+/g, " ").replace(/\s+/g, " ").trim();
+  norm = norm.replace(/\btyoe\b/gi, "type");
+  const fields = [];
+  const segments = norm.split(/\s+(?:and|then|also)\s+|;/i);
+  if (segments.length < 2 && !/^(?:in\s+(?:the\s+)?(?:place\s+of|field\s+of)|for\s+[a-z0-9_-]+\s+(?:type|enter))/i.test(norm)) {
+    return [];
+  }
+  for (const seg of segments) {
+    const s = seg.trim();
+    const mA = s.match(/^(?:(?:in|for|at|into)\s+(?:the\s+)?(?:place\s+of\s+|field\s+of\s+|box\s+of\s+)?)?([a-zA-Z0-9_-]+)\s+(?:type|enter|fill|put|write|as|is|=)\s+["']?([a-zA-Z0-9_@.+-]+)["']?$/i);
+    const mB = s.match(/^(?:type|enter|fill|put|write)\s+["']?([a-zA-Z0-9_@.+-]+)["']?\s+(?:in|into|for|to|as)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)$/i);
+    const mC = s.match(/^["']?([a-zA-Z0-9_@.+-]+)["']?\s+(?:in|into|for|as)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)$/i);
+    const mD = s.match(/^(?:type|enter|fill)\s+(?:in|into)\s+(?:the\s+)?([a-zA-Z0-9_-]+)\s+["']?([a-zA-Z0-9_@.+-]+)["']?$/i);
+    if (mA) {
+      let target = mA[1].trim();
+      const value = mA[2].trim();
+      if (target && value && !["type", "enter", "fill", "write"].includes(target.toLowerCase())) {
+        fields.push({ target, value });
+      }
+    } else if (mB) {
+      const value = mB[1].trim();
+      let target = mB[2].replace(/^(?:the|field\s+of)\s+/i, "").trim();
+      if (target && value) {
+        fields.push({ target, value });
+      }
+    } else if (mC) {
+      const value = mC[1].trim();
+      let target = mC[2].replace(/^(?:the|field\s+of)\s+/i, "").trim();
+      if (target && value) {
+        fields.push({ target, value });
+      }
+    } else if (mD) {
+      const target = mD[1].trim();
+      const value = mD[2].trim();
+      if (target && value) {
+        fields.push({ target, value });
+      }
+    }
+  }
+  return fields;
+}
 function resolveTaskContract(goal) {
   let g = (goal || "").trim().toLowerCase().replace(/[?!.]+$/, "").trim();
   let prev = "";
@@ -14426,7 +14481,11 @@ function resolveTaskContract(goal) {
     const fillWithMatch = cleanGoal.match(/^(?:fill|type|enter|write|set)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+with\s+["']?([^"']+)["']?$/i);
     const valInTargetMatch = cleanGoal.match(/^(?:type|fill|enter|write|set)\s+["']?([^"']+)["']?\s+(?:into|in)\s+(?:the\s+)?["']?([^"']+)["']?$/i);
     const searchForMatch = cleanGoal.match(/^(?:search|filter|find|locate)(?:\s+(?:requests\s+for|for|query|text))?\s+["']?([^"']+)["']?$/i);
-    if (inTargetMatch) {
+    const formAssignments = parseFormFieldAssignments(cleanGoal);
+    if (formAssignments.length > 0) {
+      targetPhrase2 = formAssignments[0].target;
+      requestedValue = formAssignments[0].value;
+    } else if (inTargetMatch) {
       targetPhrase2 = inTargetMatch[1].trim();
       requestedValue = (inTargetMatch[2] || inTargetMatch[3]).trim();
     } else if (fillWithMatch) {
@@ -14460,7 +14519,8 @@ function resolveTaskContract(goal) {
         targetTokens: tokenizeSemanticText(targetPhrase2),
         requestedValue,
         submitAfter: hasSubmitSuffix,
-        pressEnter: hasSubmitSuffix
+        pressEnter: hasSubmitSuffix,
+        formAssignments: formAssignments.length > 0 ? formAssignments : void 0
       }
     };
   }
@@ -17650,7 +17710,41 @@ var RunCoordinator = class {
         };
       }
     }
-    const isExplicitTypeGoal = /^(?:(?:please|kindly)\s+)?(?:type|enter|write)\s+/i.test(trimmedGoal) || Boolean(this.currentTaskContract?.structuredIntent?.submitAfter) || this.currentTaskContract?.structuredIntent?.targetPhrase === "chatbox";
+    const isExplicitTypeGoal = /^(?:(?:please|kindly)\s+)?(?:type|enter|write|fill)\s+/i.test(trimmedGoal) || Boolean(this.currentTaskContract?.structuredIntent?.submitAfter) || Boolean(this.currentTaskContract?.structuredIntent?.formAssignments) || this.currentTaskContract?.structuredIntent?.targetPhrase === "chatbox";
+    const formAssignments = this.currentTaskContract?.structuredIntent?.formAssignments;
+    if (isExplicitTypeGoal && formAssignments && formAssignments.length > 0) {
+      const assignmentIdx = step - 1;
+      if (assignmentIdx < formAssignments.length) {
+        const assignment = formAssignments[assignmentIdx];
+        const subIntent = {
+          intent: "type",
+          targetPhrase: assignment.target,
+          targetTokens: tokenizeSemanticText(assignment.target),
+          requestedValue: assignment.value
+        };
+        const grounding = groundTargetCandidates(sanitized.elements, subIntent);
+        const target = grounding.bestCandidate && (grounding.status === "unambiguous_match" || grounding.bestCandidate.score >= 40) ? grounding.bestCandidate.element : sanitized.elements.filter((el2) => el2.actionCapabilities.includes("type") && !el2.state.includes("disabled"))[assignmentIdx];
+        if (target) {
+          return {
+            actionId: `act_local_form_${step}_${Date.now()}`,
+            kind: "type",
+            targetLocalId: target.localId,
+            textToType: assignment.value,
+            confidence: 0.95,
+            risk: "safe",
+            rationale: `Form filling: entered "${assignment.value}" into "${target.sanitizedName || assignment.target}"`
+          };
+        }
+      } else {
+        return {
+          actionId: `act_local_finish_${step}_${Date.now()}`,
+          kind: "finish",
+          confidence: 1,
+          risk: "safe",
+          rationale: "All requested form fields filled successfully"
+        };
+      }
+    }
     if (isExplicitTypeGoal && step === 1 && this.currentTaskContract?.structuredIntent?.intent === "type" && this.currentTaskContract.structuredIntent.requestedValue) {
       const intent = this.currentTaskContract.structuredIntent;
       const grounding = groundTargetCandidates(sanitized.elements, intent);
@@ -18146,7 +18240,7 @@ var RunCoordinator = class {
         return this.completeWithResult(res2);
       }
       const structuredIntent = this.currentTaskContract?.structuredIntent;
-      if (structuredIntent && structuredIntent.targetPhrase && structuredIntent.intent === proposal.kind && targetElement) {
+      if (decisionOrigin !== "local" && structuredIntent && structuredIntent.targetPhrase && structuredIntent.intent === proposal.kind && targetElement) {
         const grounding = groundTargetCandidates(
           sanitized.elements,
           structuredIntent,

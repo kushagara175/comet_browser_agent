@@ -11,7 +11,7 @@
  * 7. Semantically Verify UI Outcome
  * 8. Repeat perception cycle up to bounded step budget or until finish/failure
  */
-import { classifyActionRisk, validateActionProposal, resolveTaskContract, groundTargetCandidates, scoreCandidate } from '@privapilot/protocol';
+import { classifyActionRisk, validateActionProposal, resolveTaskContract, groundTargetCandidates, scoreCandidate, tokenizeSemanticText } from '@privapilot/protocol';
 import { WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
@@ -276,10 +276,48 @@ export class RunCoordinator {
                 };
             }
         }
-        // 4. Local resolution for direct typing/chatbox directives (e.g. "type in the chatbox hi and sent")
-        const isExplicitTypeGoal = /^(?:(?:please|kindly)\s+)?(?:type|enter|write)\s+/i.test(trimmedGoal) ||
+        // 4. Local resolution for direct typing/chatbox/form directives (e.g. "type in the chatbox hi and sent", form filling)
+        const isExplicitTypeGoal = /^(?:(?:please|kindly)\s+)?(?:type|enter|write|fill)\s+/i.test(trimmedGoal) ||
             Boolean(this.currentTaskContract?.structuredIntent?.submitAfter) ||
+            Boolean(this.currentTaskContract?.structuredIntent?.formAssignments) ||
             this.currentTaskContract?.structuredIntent?.targetPhrase === 'chatbox';
+        const formAssignments = this.currentTaskContract?.structuredIntent?.formAssignments;
+        if (isExplicitTypeGoal && formAssignments && formAssignments.length > 0) {
+            const assignmentIdx = step - 1;
+            if (assignmentIdx < formAssignments.length) {
+                const assignment = formAssignments[assignmentIdx];
+                const subIntent = {
+                    intent: 'type',
+                    targetPhrase: assignment.target,
+                    targetTokens: tokenizeSemanticText(assignment.target),
+                    requestedValue: assignment.value
+                };
+                const grounding = groundTargetCandidates(sanitized.elements, subIntent);
+                const target = (grounding.bestCandidate && (grounding.status === 'unambiguous_match' || grounding.bestCandidate.score >= 40))
+                    ? grounding.bestCandidate.element
+                    : sanitized.elements.filter(el => el.actionCapabilities.includes('type') && !el.state.includes('disabled'))[assignmentIdx];
+                if (target) {
+                    return {
+                        actionId: `act_local_form_${step}_${Date.now()}`,
+                        kind: 'type',
+                        targetLocalId: target.localId,
+                        textToType: assignment.value,
+                        confidence: 0.95,
+                        risk: 'safe',
+                        rationale: `Form filling: entered "${assignment.value}" into "${target.sanitizedName || assignment.target}"`
+                    };
+                }
+            }
+            else {
+                return {
+                    actionId: `act_local_finish_${step}_${Date.now()}`,
+                    kind: 'finish',
+                    confidence: 1.0,
+                    risk: 'safe',
+                    rationale: 'All requested form fields filled successfully'
+                };
+            }
+        }
         if (isExplicitTypeGoal &&
             step === 1 &&
             this.currentTaskContract?.structuredIntent?.intent === 'type' &&
@@ -821,7 +859,8 @@ export class RunCoordinator {
             }
             // Step 4e: Semantic Target Grounding, Disambiguation, and Candidate Ranking
             const structuredIntent = this.currentTaskContract?.structuredIntent;
-            if (structuredIntent &&
+            if (decisionOrigin !== 'local' &&
+                structuredIntent &&
                 structuredIntent.targetPhrase &&
                 structuredIntent.intent === proposal.kind &&
                 targetElement) {

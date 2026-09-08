@@ -5,6 +5,10 @@
  * to ensure that browser actions are bound to the exact intended DOM elements.
  */
 import { SanitizedElement, ElementRole } from './payload.js';
+export interface FormFieldAssignment {
+    readonly target: string;
+    readonly value: string;
+}
 export interface StructuredTaskIntent {
     readonly intent: 'click' | 'type' | 'select' | 'scroll' | 'observe' | 'dismiss';
     readonly targetPhrase?: string;
@@ -16,6 +20,7 @@ export interface StructuredTaskIntent {
     readonly isProtected?: boolean;
     readonly submitAfter?: boolean;
     readonly pressEnter?: boolean;
+    readonly formAssignments?: ReadonlyArray<FormFieldAssignment>;
 }
 export interface ScoredCandidate {
     readonly element: SanitizedElement;

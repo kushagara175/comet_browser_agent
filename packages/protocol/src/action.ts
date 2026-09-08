@@ -1,6 +1,7 @@
 import { SanitizedElement, ElementRole } from './payload.js';
 import {
   StructuredTaskIntent,
+  FormFieldAssignment,
   tokenizeSemanticText,
   normalizeSemanticText
 } from './grounding.js';
@@ -68,6 +69,57 @@ export function cleanContextPhrase(phrase: string | undefined): string | undefin
   const trimmed = phrase.trim();
   if (GENERIC_CONTEXT_WORDS.has(trimmed.toLowerCase())) return undefined;
   return trimmed;
+}
+
+/**
+ * Extracts multiple form field and value assignments from natural language instructions.
+ * E.g. "in the place of name type kushagra and email tyoe kushagarasingh175@gmail.com"
+ */
+export function parseFormFieldAssignments(text: string): FormFieldAssignment[] {
+  let norm = text.replace(/([a-zA-Z0-9_-]+)\.\s+/g, '$1 ').replace(/\s+\.\s+/g, ' ').replace(/\s+/g, ' ').trim();
+  norm = norm.replace(/\btyoe\b/gi, 'type');
+
+  const fields: FormFieldAssignment[] = [];
+  const segments = norm.split(/\s+(?:and|then|also)\s+|;/i);
+  if (segments.length < 2 && !/^(?:in\s+(?:the\s+)?(?:place\s+of|field\s+of)|for\s+[a-z0-9_-]+\s+(?:type|enter))/i.test(norm)) {
+    return [];
+  }
+
+  for (const seg of segments) {
+    const s = seg.trim();
+    const mA = s.match(/^(?:(?:in|for|at|into)\s+(?:the\s+)?(?:place\s+of\s+|field\s+of\s+|box\s+of\s+)?)?([a-zA-Z0-9_-]+)\s+(?:type|enter|fill|put|write|as|is|=)\s+["']?([a-zA-Z0-9_@.+-]+)["']?$/i);
+    const mB = s.match(/^(?:type|enter|fill|put|write)\s+["']?([a-zA-Z0-9_@.+-]+)["']?\s+(?:in|into|for|to|as)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)$/i);
+    const mC = s.match(/^["']?([a-zA-Z0-9_@.+-]+)["']?\s+(?:in|into|for|as)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)$/i);
+    const mD = s.match(/^(?:type|enter|fill)\s+(?:in|into)\s+(?:the\s+)?([a-zA-Z0-9_-]+)\s+["']?([a-zA-Z0-9_@.+-]+)["']?$/i);
+
+    if (mA) {
+      let target = mA[1].trim();
+      const value = mA[2].trim();
+      if (target && value && !['type', 'enter', 'fill', 'write'].includes(target.toLowerCase())) {
+        fields.push({ target, value });
+      }
+    } else if (mB) {
+      const value = mB[1].trim();
+      let target = mB[2].replace(/^(?:the|field\s+of)\s+/i, '').trim();
+      if (target && value) {
+        fields.push({ target, value });
+      }
+    } else if (mC) {
+      const value = mC[1].trim();
+      let target = mC[2].replace(/^(?:the|field\s+of)\s+/i, '').trim();
+      if (target && value) {
+        fields.push({ target, value });
+      }
+    } else if (mD) {
+      const target = mD[1].trim();
+      const value = mD[2].trim();
+      if (target && value) {
+        fields.push({ target, value });
+      }
+    }
+  }
+
+  return fields;
 }
 
 /**
@@ -189,7 +241,12 @@ export function resolveTaskContract(goal: string): TaskContract {
     // Pattern 4: search for <value> (e.g. "search for test")
     const searchForMatch = cleanGoal.match(/^(?:search|filter|find|locate)(?:\s+(?:requests\s+for|for|query|text))?\s+["']?([^"']+)["']?$/i);
 
-    if (inTargetMatch) {
+    const formAssignments = parseFormFieldAssignments(cleanGoal);
+
+    if (formAssignments.length > 0) {
+      targetPhrase = formAssignments[0].target;
+      requestedValue = formAssignments[0].value;
+    } else if (inTargetMatch) {
       targetPhrase = inTargetMatch[1].trim();
       requestedValue = (inTargetMatch[2] || inTargetMatch[3]).trim();
     } else if (fillWithMatch) {
@@ -221,7 +278,8 @@ export function resolveTaskContract(goal: string): TaskContract {
         targetTokens: tokenizeSemanticText(targetPhrase),
         requestedValue,
         submitAfter: hasSubmitSuffix,
-        pressEnter: hasSubmitSuffix
+        pressEnter: hasSubmitSuffix,
+        formAssignments: formAssignments.length > 0 ? formAssignments : undefined
       }
     };
   }

@@ -139,6 +139,31 @@ export class MockReasoningEngine {
         }
         // Structured typing grounding if intent is type
         if (intent && intent.intent === 'type') {
+            if (intent.formAssignments && intent.formAssignments.length > 0) {
+                const assignment = intent.formAssignments[0];
+                const subIntent = {
+                    intent: 'type',
+                    targetPhrase: assignment.target,
+                    targetTokens: [assignment.target],
+                    requestedValue: assignment.value
+                };
+                const subGrounding = groundTargetCandidates(elements, subIntent);
+                const subTarget = (subGrounding.bestCandidate && (subGrounding.status === 'unambiguous_match' || subGrounding.bestCandidate.score >= 40))
+                    ? subGrounding.bestCandidate.element
+                    : elements.find((el) => el.actionCapabilities.includes('type') && !el.state.includes('disabled'));
+                if (subTarget) {
+                    return {
+                        actionId: `act_${Date.now()}`,
+                        kind: 'type',
+                        targetLocalId: subTarget.localId,
+                        textToType: assignment.value,
+                        confidence: 0.95,
+                        risk: 'safe',
+                        rationale: `Form filling: entering "${assignment.value}" into "${subTarget.sanitizedName || assignment.target}"`,
+                        expectedState: 'Text entered into input field'
+                    };
+                }
+            }
             const grounding = groundTargetCandidates(elements, intent);
             const textToType = goal.includes('clearance')
                 ? 'Security Clearance'

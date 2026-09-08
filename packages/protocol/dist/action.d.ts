@@ -1,5 +1,5 @@
 import { SanitizedElement } from './payload.js';
-import { StructuredTaskIntent } from './grounding.js';
+import { StructuredTaskIntent, FormFieldAssignment } from './grounding.js';
 export type ActionKind = 'observe' | 'click' | 'type' | 'select' | 'scroll' | 'wait' | 'request_user_confirmation' | 'finish' | 'blocked';
 export type RiskLevel = 'safe' | 'protected' | 'blocked';
 export type ExpectedPostcondition = {
@@ -42,6 +42,11 @@ export interface TaskContract {
     readonly userInputPrompt?: string;
 }
 export declare function cleanContextPhrase(phrase: string | undefined): string | undefined;
+/**
+ * Extracts multiple form field and value assignments from natural language instructions.
+ * E.g. "in the place of name type kushagra and email tyoe kushagarasingh175@gmail.com"
+ */
+export declare function parseFormFieldAssignments(text: string): FormFieldAssignment[];
 /**
  * Resolves a natural-language goal into a closed, structured task contract
  * binding expected semantic terminal postconditions to the run.

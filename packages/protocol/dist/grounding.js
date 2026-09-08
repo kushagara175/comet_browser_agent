@@ -207,6 +207,23 @@ export function scoreCandidate(element, intent, activeDialogVisible = false) {
             }
         }
     }
+    // 4b. Match target phrase / tokens against nearest heading or container context (e.g. form field labels "Name*", "Email*")
+    if (targetPhraseNorm || targetTokens.length > 0) {
+        const headingNorm = normalizeSemanticText(element.nearestHeading || '');
+        const containerNorm = normalizeSemanticText(element.containerContext || '');
+        const matchesHeading = (targetPhraseNorm && headingNorm.includes(targetPhraseNorm)) ||
+            targetTokens.some(t => headingNorm.includes(t));
+        const matchesContainer = (targetPhraseNorm && containerNorm.includes(targetPhraseNorm)) ||
+            targetTokens.some(t => containerNorm.includes(t));
+        if (matchesHeading) {
+            score += 70;
+            rationaleParts.push(`Nearest heading matches target ("${element.nearestHeading}")`);
+        }
+        else if (matchesContainer) {
+            score += 55;
+            rationaleParts.push(`Container context matches target ("${element.containerContext}")`);
+        }
+    }
     // 5. Role Agreement (+20 / -25)
     if (intent.roleHint) {
         if (element.role === intent.roleHint) {

@@ -33,7 +33,25 @@ export function isBrowserActionRequest(message) {
     previous = normalized;
     normalized = normalized.replace(ACTION_REQUEST_PREFIX, '').trim();
   }
-  return ACTION_VERB.test(normalized);
+  // Questions or advisory queries should stay chat
+  if (/^(?:tell\s+me\s+how|how\s+(?:do|can|to)|what\s+(?:would|is|are)|why\s+|explain\b)/i.test(normalized)) {
+    return false;
+  }
+  if (ACTION_VERB.test(normalized)) return true;
+
+  // Prepositional phrases: "in the place of name type ...", "in name put ...", "for email enter ..."
+  const strippedPunct = normalized.replace(/([a-zA-Z0-9_-]+)\.\s+/g, '$1 ').replace(/\s+\.\s+/g, ' ').replace(/\s+/g, ' ');
+  if (/^(?:in|for|at|on|into|to)\s+(?:the\s+)?(?:place\s+of\s+|field\s+of\s+|box\s+of\s+|input\s+of\s+)?[a-z0-9_\s-]+\s+(?:type|fill|enter|write|put|set|tyoe)\b/i.test(strippedPunct)) {
+    return true;
+  }
+
+  // Compound form input: "name type kushagra and email type ..."
+  if (/\b(?:type|fill|enter|write|put|tyoe)\b/i.test(strippedPunct) &&
+      /\b(?:name|email|password|phone|address|message|chatbox|field|input)\b/i.test(strippedPunct)) {
+    return true;
+  }
+
+  return false;
 }
 
 export function calculateBase64ByteLength(dataUrlOrBase64) {

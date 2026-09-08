@@ -990,4 +990,108 @@ test('Grounding 19: Coordinator resolves and executes "type in the chatbox hi an
   assert.equal(executedActions[1].targetLocalId, 'el_send');
 });
 
+test('Grounding 20: Multi-field form filling ("in the place of name type kushagra and email type...") fills both fields locally', async () => {
+  const contract = resolveTaskContract('in the. place. of name type kushagra and email tyoe kushagarasingh175@gmail.com');
+  assert.equal(contract.supported, true);
+  assert.ok(contract.structuredIntent?.formAssignments);
+  assert.equal(contract.structuredIntent.formAssignments.length, 2);
+  assert.equal(contract.structuredIntent.formAssignments[0].target, 'name');
+  assert.equal(contract.structuredIntent.formAssignments[0].value, 'kushagra');
+  assert.equal(contract.structuredIntent.formAssignments[1].target, 'email');
+  assert.equal(contract.structuredIntent.formAssignments[1].value, 'kushagarasingh175@gmail.com');
+
+  const formElements = [
+    {
+      localId: 'el_name',
+      role: 'input',
+      sanitizedName: 'Type here...',
+      nearestHeading: 'Name*',
+      actionCapabilities: ['type'],
+      coarseBounds: [0.1, 0.2, 0.4, 0.05],
+      state: ['enabled', 'visible']
+    },
+    {
+      localId: 'el_email',
+      role: 'input',
+      sanitizedName: 'hello@example.com...',
+      nearestHeading: 'Email*',
+      actionCapabilities: ['type'],
+      coarseBounds: [0.1, 0.3, 0.4, 0.05],
+      state: ['enabled', 'visible']
+    }
+  ];
+
+  const executedActions = [];
+  const browser = {
+    async captureVisibleTab() {
+      return {
+        _brand: 'RawCapture_InternalOnly',
+        captureId: 'cap_form',
+        timestamp: Date.now(),
+        rawScreenshotDataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        rawDomSummary: {},
+        metadata: { devicePixelRatio: 1, viewportWidth: 1280, viewportHeight: 800 }
+      };
+    },
+    async getActiveTab() {
+      return { id: 101, url: 'https://jobs.ashbyhq.com/tavus/application' };
+    },
+    async sendMessageToTab(tabId, message) {
+      if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
+        return {
+          success: true,
+          domSummary: {
+            elements: formElements
+          }
+        };
+      }
+      if (message.type === 'EXECUTE_ACTION') {
+        executedActions.push(message.proposal);
+        return {
+          success: true,
+          actionId: message.proposal.actionId,
+          semanticOutcomeVerified: true,
+          message: `Executed ${message.proposal.kind}`
+        };
+      }
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_form',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements: formElements,
+        pageState: { title: 'Application Form', viewport: [1280, 800] },
+        maskCount: 0,
+        payloadDigestSha256: 'sha256_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  const httpClient = {
+    async requestReasoningAction() {
+      throw new Error('Should resolve locally without network requirement');
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, httpClient, undefined, { defaultMaxSteps: 5 });
+  const result = await coordinator.startRun('in the. place. of name type kushagra and email tyoe kushagarasingh175@gmail.com');
+
+  assert.equal(result.success, true);
+  assert.equal(result.state, 'complete');
+  assert.equal(executedActions.length, 2, 'Should execute typing into name then email');
+  assert.equal(executedActions[0].kind, 'type');
+  assert.equal(executedActions[0].targetLocalId, 'el_name');
+  assert.equal(executedActions[0].textToType, 'kushagra');
+  assert.equal(executedActions[1].kind, 'type');
+  assert.equal(executedActions[1].targetLocalId, 'el_email');
+  assert.equal(executedActions[1].textToType, 'kushagarasingh175@gmail.com');
+});
+
+
 
