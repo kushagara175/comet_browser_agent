@@ -1093,5 +1093,232 @@ test('Grounding 20: Multi-field form filling ("in the place of name type kushagr
   assert.equal(executedActions[1].textToType, 'kushagarasingh175@gmail.com');
 });
 
+// ----------------------------------------------------------------------------
+// Test 21: SIH Login Click Navigation & Destination Verification
+// ----------------------------------------------------------------------------
+test('Grounding 21: Single-action click on SIH login verifies cleanly and completes', async () => {
+  const elements = [
+    {
+      localId: 'el_header_login',
+      role: 'button',
+      sanitizedName: 'SIH Login',
+      coarseBounds: [0.8, 0.05, 0.1, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    }
+  ];
+
+  let clickExecuted = false;
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 101, url: 'https://sih.gov.in/signin', title: 'SIH Sign In' };
+    },
+    async sendMessageToTab(tabId, message) {
+      if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
+        return {
+          success: true,
+          captureId: message.captureId || 'cap_login',
+          snapshot: {
+            elements,
+            pageTitle: 'SIH Sign In',
+            routeFingerprint: '/signin',
+            visibleDialogCount: 0
+          },
+          viewport: { viewportWidth: 1280, viewportHeight: 800 }
+        };
+      }
+      if (message.type === 'EXECUTE_ACTION') {
+        clickExecuted = true;
+        return {
+          success: true,
+          actionId: message.proposal.actionId,
+          semanticOutcomeVerified: true,
+          message: 'Semantic state verified: DOM mutation observed after click action'
+        };
+      }
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_login_click',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements,
+        pageState: { title: 'SIH Sign In', viewport: [1280, 800], routeFingerprint: '/signin' },
+        maskCount: 0,
+        payloadDigestSha256: 'sha256_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  const httpClient = {
+    async requestReasoningAction(payload) {
+      return {
+        actionId: 'act_click_sih_login',
+        kind: 'click',
+        targetLocalId: 'el_header_login',
+        confidence: 0.95,
+        risk: 'safe',
+        rationale: 'Click SIH Login button on page'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, httpClient, undefined, { defaultMaxSteps: 5 });
+  const result = await coordinator.startRun('click on sih login', { tabId: 101 });
+
+  assert.equal(result.success, true);
+  assert.equal(result.state, 'complete');
+  assert.equal(clickExecuted, true);
+  assert.ok(result.message?.includes('Clicked') || result.message?.includes('SIH Login'));
+});
+
+// ----------------------------------------------------------------------------
+// Test 22: Credential Prompt & submitUserInput Form Filling with Tab Binding
+// ----------------------------------------------------------------------------
+test('Grounding 22: Credential flow preserves tab ID and safely fills username & password inputs', async () => {
+  const formElements = [
+    {
+      localId: 'el_email',
+      role: 'input',
+      sanitizedName: 'Username / Email Address',
+      coarseBounds: [0.3, 0.3, 0.4, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['type']
+    },
+    {
+      localId: 'el_pass',
+      role: 'input',
+      sanitizedName: 'Password',
+      coarseBounds: [0.3, 0.4, 0.4, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['type']
+    }
+  ];
+
+  const typed = [];
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab(preferredTabId) {
+      assert.equal(preferredTabId, 42, 'Must query preferred tab ID 42');
+      return { id: 42, url: 'https://sih.gov.in/signin', title: 'Sign In' };
+    },
+    async sendMessageToTab(tabId, message) {
+      assert.equal(tabId, 42, 'Messages must route to tab 42');
+      if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
+        return {
+          success: true,
+          snapshot: { elements: formElements }
+        };
+      }
+      if (message.type === 'EXECUTE_ACTION') {
+        typed.push({ target: message.proposal.targetLocalId, text: message.proposal.textToType });
+        return { success: true, semanticOutcomeVerified: true };
+      }
+      return { success: true };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, {}, undefined, { defaultMaxSteps: 5 });
+  // Start run for "fill email and pass" -> should prompt for credentials
+  const initialRes = await coordinator.startRun('fill email and pass', { tabId: 42 });
+  assert.equal(initialRes.state, 'awaiting-user-confirmation');
+  assert.equal(initialRes.inputRequest?.kind, 'credentials');
+
+  // Submit credentials locally with tabId
+  const submitRes = await coordinator.submitUserInput(
+    { username: 'student@example.edu.in', password: 'SecretPassword123' },
+    42
+  );
+  assert.equal(submitRes.success, true);
+  assert.equal(submitRes.state, 'complete');
+  assert.equal(typed.length, 2);
+  assert.equal(typed[0].target, 'el_email');
+  assert.equal(typed[0].text, 'student@example.edu.in');
+  assert.equal(typed[1].target, 'el_pass');
+  assert.equal(typed[1].text, 'SecretPassword123');
+});
+
+// ----------------------------------------------------------------------------
+// Test 23: Autonomous Information Retrieval (Question Answering per cababling.md)
+// ----------------------------------------------------------------------------
+test('Grounding 23: Autonomous information retrieval extracts submission count from page without network reliance', async () => {
+  const elements = [
+    {
+      localId: 'el_metric',
+      role: 'generic',
+      sanitizedName: '1,420 Completed Submissions',
+      coarseBounds: [0.2, 0.2, 0.3, 0.1],
+      state: ['visible', 'enabled'],
+      actionCapabilities: []
+    }
+  ];
+
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 1, url: 'https://sih.gov.in/submissions', title: 'Idea Submissions' };
+    },
+    async sendMessageToTab(tabId, message) {
+      return {
+        success: true,
+        captureId: 'cap_metric',
+        snapshot: {
+          elements,
+          pageTitle: 'Idea Submissions',
+          counters: [{ label: 'Submissions Completed', value: '1,420' }],
+          contentSummaries: ['Heading: Smart India Hackathon Submissions']
+        },
+        viewport: { viewportWidth: 1280, viewportHeight: 800 }
+      };
+    },
+    async runInSanitizerHost(req) {
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_answer',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements,
+        pageState: {
+          title: 'Idea Submissions',
+          viewport: [1280, 800],
+          counters: [{ label: 'Submissions Completed', value: '1,420' }],
+          contentSummaries: ['Heading: Smart India Hackathon Submissions']
+        },
+        maskCount: 0,
+        payloadDigestSha256: 'sha256_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  const httpClient = {
+    async requestReasoningAction() {
+      throw new Error('Should resolve locally without network requirement');
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, httpClient, undefined, { defaultMaxSteps: 5 });
+  const result = await coordinator.startRun('see for ex in this ops how many submison dare doen');
+
+  assert.equal(result.success, true);
+  assert.equal(result.state, 'complete');
+  assert.ok(result.message?.includes('1,420'));
+  assert.ok(result.message?.includes('Submissions'));
+});
+
 
 

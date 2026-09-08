@@ -598,9 +598,23 @@ if (typeof document !== 'undefined') {
         const submitBtn = form.querySelector('#btnSubmitInputForm');
         submitBtn?.addEventListener('click', (e) => {
           e.preventDefault();
-          const userVal = (form.querySelector('#userInputUsername'))?.value || '';
-          const passVal = (form.querySelector('#userInputPassword'))?.value || '';
-          const customVal = (form.querySelector('#userInputText'))?.value || '';
+          const userVal = (form.querySelector('#userInputUsername'))?.value?.trim() || '';
+          const passVal = (form.querySelector('#userInputPassword'))?.value?.trim() || '';
+          const customVal = (form.querySelector('#userInputText'))?.value?.trim() || '';
+
+          if (!userVal && !passVal && !customVal) {
+            let warn = form.querySelector('.input-validation-warn');
+            if (!warn) {
+              warn = document.createElement('div');
+              warn.className = 'input-validation-warn';
+              warn.style.color = '#dc2626';
+              warn.style.fontSize = '10px';
+              warn.style.marginTop = '2px';
+              form.insertBefore(warn, submitBtn);
+            }
+            warn.textContent = 'Please enter username/email or password to fill.';
+            return;
+          }
 
           submitBtn.disabled = true;
           submitBtn.textContent = 'Filling form locally...';
@@ -610,7 +624,8 @@ if (typeof document !== 'undefined') {
             chrome.runtime.sendMessage({
               type: 'SUBMIT_USER_INPUT',
               inputs: { username: userVal, password: passVal, customText: customVal },
-              runId: currentRunId
+              runId: currentRunId,
+              tabId: currentActiveTabId
             }, (submitRes) => {
               renderActionResult(agentBubble, submitRes);
             });

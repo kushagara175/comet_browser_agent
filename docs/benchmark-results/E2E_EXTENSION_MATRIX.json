@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-09-07T10:50:26.649Z",
-  "gitSha": "7a3c749",
+  "timestamp": "2026-09-08T09:59:39.348Z",
+  "gitSha": "b6db51d",
   "environment": "darwin arm64 (Node v22.22.0)",
   "chromePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "extensionId": "knnfeljhnohhfjiecikkaeibfecekiem",
@@ -16,32 +16,32 @@
     "runs": [
       {
         "run": 1,
-        "runId": "run_1788778210566_rgw4jq9",
-        "durationMs": 772,
+        "runId": "run_1788861561608_poszj9b",
+        "durationMs": 771,
         "passed": true
       },
       {
         "run": 2,
-        "runId": "run_1788778211860_df9gtqb",
-        "durationMs": 769,
+        "runId": "run_1788861562894_p3hfjs2",
+        "durationMs": 766,
         "passed": true
       },
       {
         "run": 3,
-        "runId": "run_1788778213146_bqp19by",
-        "durationMs": 771,
+        "runId": "run_1788861564192_0pd514b",
+        "durationMs": 779,
         "passed": true
       },
       {
         "run": 4,
-        "runId": "run_1788778214437_kit98jl",
-        "durationMs": 770,
+        "runId": "run_1788861565486_tq620nf",
+        "durationMs": 769,
         "passed": true
       },
       {
         "run": 5,
-        "runId": "run_1788778215727_75hulp1",
-        "durationMs": 771,
+        "runId": "run_1788861566784_2i4n329",
+        "durationMs": 1284,
         "passed": true
       }
     ],
@@ -52,32 +52,32 @@
     "runs": [
       {
         "run": 1,
-        "runId": "run_1788778217020_3hdwug9",
-        "durationMs": 517,
+        "runId": "run_1788861568581_sa0mac0",
+        "durationMs": 522,
         "passed": true
       },
       {
         "run": 2,
-        "runId": "run_1788778218068_t5gk7gp",
-        "durationMs": 519,
+        "runId": "run_1788861569643_x66ryiz",
+        "durationMs": 521,
         "passed": true
       },
       {
         "run": 3,
-        "runId": "run_1788778219120_i756bk5",
-        "durationMs": 525,
+        "runId": "run_1788861570692_zpub8et",
+        "durationMs": 516,
         "passed": true
       },
       {
         "run": 4,
-        "runId": "run_1788778220170_q9l6xc0",
-        "durationMs": 517,
+        "runId": "run_1788861571731_3a9kbzn",
+        "durationMs": 524,
         "passed": true
       },
       {
         "run": 5,
-        "runId": "run_1788778221215_sk0cc9b",
-        "durationMs": 521,
+        "runId": "run_1788861572818_dtkdbq9",
+        "durationMs": 1027,
         "passed": true
       }
     ],
@@ -87,20 +87,20 @@
   "repetitions": [
     {
       "repetition": 1,
-      "runId": "run_1788778222258_rq791lx",
-      "durationMs": 772,
+      "runId": "run_1788861574372_31wshuu",
+      "durationMs": 765,
       "passed": true
     },
     {
       "repetition": 2,
-      "runId": "run_1788778224071_klmlf6t",
-      "durationMs": 770,
+      "runId": "run_1788861576184_ahzjsss",
+      "durationMs": 765,
       "passed": true
     },
     {
       "repetition": 3,
-      "runId": "run_1788778225883_2pyjov4",
-      "durationMs": 772,
+      "runId": "run_1788861577996_df27ytj",
+      "durationMs": 1356,
       "passed": true
     }
   ],
@@ -110,11 +110,11 @@
       "name": "Click and verify safe preview dialog/drawer",
       "classification": "expected autonomous success",
       "goal": "Open the safe preview for the pending request",
-      "runId": "run_1788778179678_mmvzerr",
+      "runId": "run_1788861535275_es3rjjj",
       "expectedTerminalState": "complete",
       "actualTerminalState": "complete",
       "passed": true,
-      "durationMs": 953,
+      "durationMs": 2706,
       "uiInteractionsPerformed": [
         "fill_task_input",
         "click_send_btn"
@@ -136,7 +136,7 @@
             "kind": "click",
             "targetLocalId": "el_7",
             "risk": "safe",
-            "confidence": 0.95
+            "confidence": 0.96
           },
           "executed": true,
           "staleTarget": false,
@@ -168,11 +168,11 @@
       "name": "Type non-sensitive search query and verify table filtering",
       "classification": "expected autonomous success",
       "goal": "Search requests for Security Clearance",
-      "runId": "run_1788778181212_bys0uoj",
+      "runId": "run_1788861538589_gkayoqe",
       "expectedTerminalState": "complete",
       "actualTerminalState": "complete",
       "passed": true,
-      "durationMs": 765,
+      "durationMs": 773,
       "uiInteractionsPerformed": [
         "fill_task_input",
         "click_send_btn"
@@ -194,7 +194,7 @@
             "kind": "type",
             "targetLocalId": "el_2",
             "risk": "safe",
-            "confidence": 0.94
+            "confidence": 0.95
           },
           "executed": true,
           "staleTarget": false,
@@ -226,11 +226,11 @@
       "name": "Select non-sensitive option from dropdown and verify selected state",
       "classification": "expected autonomous success",
       "goal": "Select status option pending",
-      "runId": "run_1788778183402_3srphek",
+      "runId": "run_1788861540766_au9jajn",
       "expectedTerminalState": "complete",
       "actualTerminalState": "complete",
       "passed": true,
-      "durationMs": 776,
+      "durationMs": 768,
       "uiInteractionsPerformed": [
         "fill_task_input",
         "click_send_btn"
@@ -284,11 +284,11 @@
       "name": "Scroll viewport and verify changed scroll position",
       "classification": "expected autonomous success",
       "goal": "Scroll down",
-      "runId": "run_1788778185585_nqj5ob5",
+      "runId": "run_1788861542944_2yb6d9x",
       "expectedTerminalState": "complete",
       "actualTerminalState": "complete",
       "passed": true,
-      "durationMs": 257,
+      "durationMs": 265,
       "uiInteractionsPerformed": [
         "fill_task_input",
         "click_send_btn"
@@ -329,11 +329,11 @@
       "name": "Delayed status mutation with bounded verification",
       "classification": "expected autonomous success",
       "goal": "Click Refresh Sync",
-      "runId": "run_1788778187539_8t1nm5l",
+      "runId": "run_1788861544923_voyz213",
       "expectedTerminalState": "complete",
       "actualTerminalState": "complete",
       "passed": true,
-      "durationMs": 1523,
+      "durationMs": 773,
       "uiInteractionsPerformed": [
         "fill_task_input",
         "click_send_btn"
@@ -347,7 +347,7 @@
         "detail": "N/A"
       },
       "decisionOrigin": "server",
-      "networkRequestCount": 3,
+      "networkRequestCount": 1,
       "steps": [
         {
           "step": 1,
@@ -355,36 +355,12 @@
             "kind": "click",
             "targetLocalId": "el_6",
             "risk": "safe",
-            "confidence": 0.95
+            "confidence": 0.96
           },
           "executed": true,
           "staleTarget": false,
           "verified": true,
           "reasonCode": "STATUS_REGION_MUTATION_VERIFIED"
-        },
-        {
-          "step": 2,
-          "proposal": {
-            "kind": "wait",
-            "risk": "safe",
-            "confidence": 0.98
-          },
-          "executed": true,
-          "staleTarget": false,
-          "verified": true,
-          "reasonCode": "PASSIVE_ACTION_VERIFIED"
-        },
-        {
-          "step": 3,
-          "proposal": {
-            "kind": "finish",
-            "risk": "safe",
-            "confidence": 1
-          },
-          "executed": false,
-          "staleTarget": false,
-          "verified": true,
-          "reasonCode": "GOAL_POSTCONDITION_VERIFIED"
         }
       ],
       "privacyMetadata": {
@@ -399,11 +375,11 @@
       "name": "Target mutated after perception; stale target detected and safely re-grounded",
       "classification": "expected autonomous success",
       "goal": "Open the safe preview for the pending request",
-      "runId": "run_1788778190229_6gk3ank",
+      "runId": "run_1788861546969_osjg5bf",
       "expectedTerminalState": "complete",
       "actualTerminalState": "complete",
       "passed": true,
-      "durationMs": 8040,
+      "durationMs": 1326,
       "uiInteractionsPerformed": [
         "fill_task_input",
         "click_send_btn"
@@ -420,12 +396,12 @@
       "networkRequestCount": 1,
       "steps": [
         {
-          "step": 1,
+          "step": 2,
           "proposal": {
             "kind": "click",
             "targetLocalId": "el_7",
             "risk": "safe",
-            "confidence": 0.95
+            "confidence": 0.96
           },
           "executed": true,
           "staleTarget": false,
@@ -433,7 +409,7 @@
           "reasonCode": "MODAL_DRAWER_VISIBILITY_VERIFIED"
         },
         {
-          "step": 2,
+          "step": 3,
           "proposal": {
             "kind": "finish",
             "risk": "safe",
@@ -457,11 +433,11 @@
       "name": "Repeated ambiguous labels cause abstention / confirmation prompt without click",
       "classification": "expected safe abstention",
       "goal": "Click Inspect",
-      "runId": "run_1788778199446_n5nqw7b",
+      "runId": "run_1788861548934_q84zgqx",
       "expectedTerminalState": "awaiting-user-confirmation",
       "actualTerminalState": "awaiting-user-confirmation",
       "passed": true,
-      "durationMs": 266,
+      "durationMs": 259,
       "uiInteractionsPerformed": [
         "fill_task_input",
         "click_send_btn"
@@ -503,11 +479,11 @@
       "name": "Protected state-altering action opens confirmation UI; user approves and executes",
       "classification": "expected user-assisted success",
       "goal": "Submit final clearance approval",
-      "runId": "run_1788778201136_3n42lxl",
+      "runId": "run_1788861550617_jefc928",
       "expectedTerminalState": "complete",
       "actualTerminalState": "complete",
       "passed": true,
-      "durationMs": 779,
+      "durationMs": 2292,
       "uiInteractionsPerformed": [
         "fill_task_input",
         "click_send_btn",
@@ -562,11 +538,11 @@
       "name": "Protected state-altering action denied in UI; stops safely with no protected execution",
       "classification": "expected protected denial",
       "goal": "Submit final clearance approval",
-      "runId": "run_1788778203340_xphnqyk",
+      "runId": "run_1788861554321_x089qsd",
       "expectedTerminalState": "idle",
       "actualTerminalState": "idle",
       "passed": true,
-      "durationMs": 525,
+      "durationMs": 529,
       "uiInteractionsPerformed": [
         "fill_task_input",
         "click_send_btn",
@@ -595,11 +571,11 @@
       "name": "Low confidence action proposal (< 0.25) safely rejected with zero execution",
       "classification": "expected verification failure",
       "goal": "Click low confidence candidate button",
-      "runId": "run_1788778205038_65cds7e",
+      "runId": "run_1788861556019_qkt2wz6",
       "expectedTerminalState": "failed-safe",
       "actualTerminalState": "failed-safe",
       "passed": true,
-      "durationMs": 272,
+      "durationMs": 269,
       "uiInteractionsPerformed": [
         "fill_task_input",
         "click_send_btn"
@@ -641,11 +617,11 @@
       "name": "Restricted browser surface triggers local fail-closed block with zero HTTP transmission",
       "classification": "expected safe abstention",
       "goal": "Inspect internal browser settings",
-      "runId": "run_1788778206353_e7rn19d",
+      "runId": "run_1788861557632_72ue8yq",
       "expectedTerminalState": "blocked-local-only",
       "actualTerminalState": "blocked-local-only",
       "passed": true,
-      "durationMs": 10,
+      "durationMs": 335,
       "uiInteractionsPerformed": [
         "fill_task_input",
         "click_send_btn"
@@ -673,11 +649,11 @@
       "name": "Reasoning gateway unreachable surfaces actionable UI error without false success",
       "classification": "expected safe abstention",
       "goal": "Click Refresh Sync",
-      "runId": "run_1788778207954_avylyhm",
+      "runId": "run_1788861559535_394vet7",
       "expectedTerminalState": "failed-safe",
       "actualTerminalState": "failed-safe",
       "passed": true,
-      "durationMs": 267,
+      "durationMs": 565,
       "uiInteractionsPerformed": [
         "fill_task_input",
         "click_send_btn"

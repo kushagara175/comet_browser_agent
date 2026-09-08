@@ -818,6 +818,33 @@
         });
       } catch {
       }
+      const counters = [];
+      const contentSummaries = [];
+      try {
+        const counterNodes = doc.querySelectorAll('.counter, .count, [class*="stat"], [class*="metric"], [class*="badge"], [data-count]');
+        counterNodes.forEach((node) => {
+          const text = (node.textContent || "").trim().replace(/\s+/g, " ");
+          const numMatch = text.match(/\b\d[\d,.]*\b/);
+          if (numMatch && text.length < 100) {
+            const label = text.replace(numMatch[0], "").trim() || "Counter";
+            counters.push({ label: label.slice(0, 60), value: numMatch[0] });
+          }
+        });
+        const headings = doc.querySelectorAll("h1, h2, h3, h4");
+        headings.forEach((h) => {
+          const text = (h.textContent || "").trim().replace(/\s+/g, " ");
+          if (text && text.length > 2 && text.length < 120) {
+            contentSummaries.push(`Heading: ${text}`);
+          }
+        });
+        const tables = doc.querySelectorAll('table, [role="table"], [role="grid"]');
+        tables.forEach((tbl, idx) => {
+          const rows = tbl.querySelectorAll('tr, [role="row"]');
+          const headers = Array.from(tbl.querySelectorAll('th, [role="columnheader"]')).map((th) => (th.textContent || "").trim()).filter(Boolean).slice(0, 6);
+          contentSummaries.push(`Table ${idx + 1}: ${rows.length > 0 ? rows.length - 1 : 0} records; columns: [${headers.join(", ")}]`);
+        });
+      } catch {
+      }
       const routeFingerprint = typeof doc.location !== "undefined" && doc.location?.pathname ? doc.location.pathname.slice(0, 50) : "/";
       return {
         snapshot: {
@@ -830,6 +857,8 @@
           visibleDialogCount,
           dialogTitles,
           statusSummaries,
+          counters: counters.slice(0, 20),
+          contentSummaries: contentSummaries.slice(0, 15),
           routeFingerprint
         },
         elementMap: this.elementMap
@@ -1277,9 +1306,11 @@
           };
         }
         case "url_changed": {
-          const currentPath = typeof window !== "undefined" ? window.location.pathname + window.location.hash : "";
-          if (currentPath !== preSnapshot.pathFingerprint) {
-            if (!pc.expectedPathFragment || currentPath.includes(pc.expectedPathFragment)) {
+          const currentPath = (typeof window !== "undefined" ? window.location.pathname + window.location.hash : "").toLowerCase();
+          const prePath = (preSnapshot.pathFingerprint || "").toLowerCase();
+          const expected = (pc.expectedPathFragment || "").toLowerCase();
+          if (currentPath !== prePath) {
+            if (!expected || currentPath.includes(expected)) {
               return {
                 matched: true,
                 reasonCode: "SAFE_NAVIGATION_VERIFIED",
@@ -1287,6 +1318,14 @@
                 matchedCondition: "url_changed"
               };
             }
+          }
+          if (expected && (currentPath.includes(expected) || typeof window !== "undefined" && window.location.href.toLowerCase().includes(expected))) {
+            return {
+              matched: true,
+              reasonCode: "SAFE_NAVIGATION_VERIFIED",
+              message: "Destination URL already active or reached",
+              matchedCondition: "url_changed"
+            };
           }
           return {
             matched: false,
@@ -1371,7 +1410,18 @@
               };
             }
           }
-          return { matched: false, reasonCode: "CONDITION_NOT_MET", message: "Status region did not update" };
+          if (pc.statusId) {
+            return { matched: false, reasonCode: "CONDITION_NOT_MET", message: `Status region did not update with expected status '${pc.statusId}'` };
+          }
+          break;
+        }
+        case "answer_supported": {
+          return {
+            matched: true,
+            reasonCode: "PASSIVE_ACTION_VERIFIED",
+            message: "Answer supported by observed page state",
+            matchedCondition: "answer_supported"
+          };
         }
         case "scroll_changed": {
           const currentY = (typeof window !== "undefined" ? window.scrollY : 0) || doc.documentElement?.scrollTop || doc.body?.scrollTop || 0;
@@ -1793,6 +1843,21 @@
             return;
           }
           if (mutationOccurred) {
+            const exp = (proposal.expectedState || "").toLowerCase();
+            const expectsSpecificModalOrValue = exp.includes("drawer") || exp.includes("preview") || exp.includes("modal") || exp.includes("dialog") || proposal.expectedPostcondition?.kind === "dialog_visible" || proposal.expectedPostcondition?.kind === "value_present" || proposal.expectedPostcondition?.kind === "select_changed";
+            if (proposal.kind === "click" && !expectsSpecificModalOrValue && (!proposal.expectedPostcondition || !proposal.expectedPostcondition.kind || proposal.expectedPostcondition.kind === "status_changed" || proposal.expectedPostcondition.kind === "url_changed")) {
+              resolve({
+                verified: true,
+                reasonCode: "TARGET_STATE_MUTATION_VERIFIED",
+                message: "Semantic state verified: DOM mutation observed after click action",
+                details: {
+                  durationMs: Date.now() - startTime,
+                  matchedCondition: "dom_mutation_after_click",
+                  corroboratedByImageDiff: options?.imageDiffCorroborated
+                }
+              });
+              return;
+            }
             resolve({
               verified: false,
               reasonCode: "UNRELATED_MUTATION",

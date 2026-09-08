@@ -194,7 +194,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (message.type === 'SUBMIT_USER_INPUT') {
-      coordinator.submitUserInput(message.inputs || {}).then((result) => {
+      coordinator.submitUserInput(message.inputs || {}, message.tabId).then((result) => {
         sendResponse(result);
       }).catch((err) => {
         sendResponse({ success: false, state: 'failed-safe', error: err.message });

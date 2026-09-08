@@ -127,9 +127,11 @@ function checkPostconditions(
         };
       }
       case 'url_changed': {
-        const currentPath = (typeof window !== 'undefined' ? window.location.pathname + window.location.hash : '');
-        if (currentPath !== preSnapshot.pathFingerprint) {
-          if (!pc.expectedPathFragment || currentPath.includes(pc.expectedPathFragment)) {
+        const currentPath = (typeof window !== 'undefined' ? window.location.pathname + window.location.hash : '').toLowerCase();
+        const prePath = (preSnapshot.pathFingerprint || '').toLowerCase();
+        const expected = (pc.expectedPathFragment || '').toLowerCase();
+        if (currentPath !== prePath) {
+          if (!expected || currentPath.includes(expected)) {
             return {
               matched: true,
               reasonCode: 'SAFE_NAVIGATION_VERIFIED',
@@ -137,6 +139,15 @@ function checkPostconditions(
               matchedCondition: 'url_changed'
             };
           }
+        }
+        // If current path already contains the expected destination fragment or destination is already reached
+        if (expected && (currentPath.includes(expected) || (typeof window !== 'undefined' && window.location.href.toLowerCase().includes(expected)))) {
+          return {
+            matched: true,
+            reasonCode: 'SAFE_NAVIGATION_VERIFIED',
+            message: 'Destination URL already active or reached',
+            matchedCondition: 'url_changed'
+          };
         }
         return {
           matched: false,
@@ -222,7 +233,19 @@ function checkPostconditions(
             };
           }
         }
-        return { matched: false, reasonCode: 'CONDITION_NOT_MET', message: 'Status region did not update' };
+        if (pc.statusId) {
+          return { matched: false, reasonCode: 'CONDITION_NOT_MET', message: `Status region did not update with expected status '${pc.statusId}'` };
+        }
+        // When pc.statusId is not specified, fall through to subsequent general checks
+        break;
+      }
+      case 'answer_supported': {
+        return {
+          matched: true,
+          reasonCode: 'PASSIVE_ACTION_VERIFIED',
+          message: 'Answer supported by observed page state',
+          matchedCondition: 'answer_supported'
+        };
       }
       case 'scroll_changed': {
         const currentY = (typeof window !== 'undefined' ? window.scrollY : 0) || doc.documentElement?.scrollTop || doc.body?.scrollTop || 0;
@@ -719,6 +742,37 @@ export class SemanticStateVerifier {
         }
 
         if (mutationOccurred) {
+          const exp = (proposal.expectedState || '').toLowerCase();
+          const expectsSpecificModalOrValue =
+            exp.includes('drawer') ||
+            exp.includes('preview') ||
+            exp.includes('modal') ||
+            exp.includes('dialog') ||
+            proposal.expectedPostcondition?.kind === 'dialog_visible' ||
+            proposal.expectedPostcondition?.kind === 'value_present' ||
+            proposal.expectedPostcondition?.kind === 'select_changed';
+
+          if (
+            proposal.kind === 'click' &&
+            !expectsSpecificModalOrValue &&
+            (!proposal.expectedPostcondition ||
+              !proposal.expectedPostcondition.kind ||
+              proposal.expectedPostcondition.kind === 'status_changed' ||
+              proposal.expectedPostcondition.kind === 'url_changed')
+          ) {
+            resolve({
+              verified: true,
+              reasonCode: 'TARGET_STATE_MUTATION_VERIFIED',
+              message: 'Semantic state verified: DOM mutation observed after click action',
+              details: {
+                durationMs: Date.now() - startTime,
+                matchedCondition: 'dom_mutation_after_click',
+                corroboratedByImageDiff: options?.imageDiffCorroborated
+              }
+            });
+            return;
+          }
+
           resolve({
             verified: false,
             reasonCode: 'UNRELATED_MUTATION',

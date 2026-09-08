@@ -13,6 +13,8 @@ export type ActionKind =
   | 'select'
   | 'scroll'
   | 'wait'
+  | 'extract'
+  | 'answer'
   | 'request_user_confirmation'
   | 'finish'
   | 'blocked';
@@ -27,7 +29,8 @@ export type ExpectedPostcondition =
   | { readonly kind: 'select_changed'; readonly expectedOptionValue?: string }
   | { readonly kind: 'status_changed'; readonly statusId?: string }
   | { readonly kind: 'scroll_changed'; readonly direction: 'up' | 'down' | 'top' | 'bottom' }
-  | { readonly kind: 'visibility_changed'; readonly targetLocalId?: string; readonly state: 'visible' | 'hidden' };
+  | { readonly kind: 'visibility_changed'; readonly targetLocalId?: string; readonly state: 'visible' | 'hidden' }
+  | { readonly kind: 'answer_supported'; readonly queryTopic?: string };
 
 export interface TaskContract {
   readonly supported: boolean;
@@ -36,6 +39,9 @@ export interface TaskContract {
   readonly expectedTargetNameSubstring?: string;
   readonly structuredIntent?: StructuredTaskIntent;
   readonly isPassive?: boolean;
+  readonly isAnswerGoal?: boolean;
+  readonly mode?: 'act' | 'answer' | 'extract';
+  readonly queryTopic?: string;
   readonly abstentionReason?: string;
   readonly requiresUserInput?: boolean;
   readonly userInputKind?: 'credentials' | 'text_input';
@@ -154,7 +160,33 @@ export function resolveTaskContract(goal: string): TaskContract {
     };
   }
 
-  // 1. Passive observation or immediate finish task
+  // 1a. Information retrieval & question-answering goals (e.g. "how many submissions are done", "tell me how many submissions are completed", "see for ex how many submissions...")
+  const isQuestionOrRetrieval =
+    /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:about|how|what|the)|find\s+.*?\s+and\s+tell)/i.test(g);
+
+  if (isQuestionOrRetrieval) {
+    let queryTopic = 'submissions';
+    if (/submi/i.test(g)) queryTopic = 'submissions';
+    else if (/problem|ps\b/i.test(g)) queryTopic = 'problem statements';
+    else if (g.includes('count') || g.includes('how many')) queryTopic = 'count';
+
+    return {
+      supported: true,
+      goalPattern: 'answer_question',
+      mode: 'answer',
+      isAnswerGoal: true,
+      isPassive: false, // NOT passive - allows active tab switching, navigation, and extraction
+      queryTopic,
+      expectedTerminal: { kind: 'answer_supported', queryTopic },
+      structuredIntent: {
+        intent: 'observe',
+        targetPhrase: queryTopic,
+        targetTokens: tokenizeSemanticText(queryTopic)
+      }
+    };
+  }
+
+  // 1b. Passive observation or immediate finish task
   if (/^(?:observe|check|inspect|finish|read|summarize|review|analyze|tell|what|scan|look|see)\b/i.test(g)) {
     return {
       supported: true,
@@ -378,10 +410,15 @@ export function resolveTaskContract(goal: string): TaskContract {
     contextPhrase = cleanContextPhrase(contextMatch[2].trim());
   }
 
+  const isNavOrLink = roleHint === 'link' || roleHint === 'tab' || /navigate|go\s+to|login|signin|statement|submission/i.test(g);
+  const pathFragment = (targetPhrase || cleanStr || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+
   return {
     supported: true,
     goalPattern: 'click_control',
-    expectedTerminal: { kind: 'status_changed' },
+    expectedTerminal: isNavOrLink && pathFragment
+      ? { kind: 'url_changed', expectedPathFragment: pathFragment }
+      : { kind: 'status_changed' },
     expectedTargetNameSubstring: targetPhrase,
     structuredIntent: {
       intent: 'click',
@@ -407,6 +444,8 @@ export interface ActionProposal {
   readonly scrollDirection?: 'up' | 'down' | 'top' | 'bottom';
   readonly userApproved?: boolean;
   readonly pressEnter?: boolean;
+  readonly extractedData?: string;
+  readonly answerText?: string;
 }
 
 export interface ActionExecutionResult {
@@ -438,7 +477,9 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
   'selectOptionValue',
   'scrollDirection',
   'userApproved',
-  'pressEnter'
+  'pressEnter',
+  'extractedData',
+  'answerText'
 ]);
 
 const VALID_ACTION_KINDS = new Set([
@@ -448,6 +489,8 @@ const VALID_ACTION_KINDS = new Set([
   'select',
   'scroll',
   'wait',
+  'extract',
+  'answer',
   'request_user_confirmation',
   'finish',
   'blocked'

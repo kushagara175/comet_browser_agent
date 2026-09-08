@@ -190,7 +190,9 @@ export class SanitizerPipeline {
             ...(snapshot.dialogTitles && snapshot.dialogTitles.length > 0 ? { dialogTitles: snapshot.dialogTitles.map(t => sanitizeElementName(t)) } : {}),
             ...(snapshot.statusSummaries && snapshot.statusSummaries.length > 0 ? { statusSummaries: snapshot.statusSummaries.map(s => sanitizeElementName(s)) } : {}),
             ...(snapshot.routeFingerprint ? { routeFingerprint: snapshot.routeFingerprint } : {}),
-            ...(snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {})
+            ...(snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {}),
+            ...(snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map(c => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {}),
+            ...(snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map(s => sanitizeElementName(s)) } : {})
         };
         const safeCanonicalData = {
             captureId: rawCapture.captureId,

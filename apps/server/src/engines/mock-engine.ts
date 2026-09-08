@@ -104,6 +104,52 @@ export class MockReasoningEngine {
     const contract = resolveTaskContract(payload.goal || '');
     const intent = contract.structuredIntent;
 
+    // Information retrieval & question-answering
+    if (contract.isAnswerGoal) {
+      const topic = (contract.queryTopic || 'submission').toLowerCase();
+      const pageCounters = (payload.pageState as any)?.counters || [];
+      const counter = pageCounters.find((c: any) =>
+        c.label.toLowerCase().includes(topic) ||
+        topic.split(/\s+/).some((t: string) => c.label.toLowerCase().includes(t))
+      );
+      if (counter) {
+        return {
+          actionId: `act_${Date.now()}`,
+          kind: 'finish',
+          confidence: 0.98,
+          risk: 'safe',
+          rationale: `Answer verified: ${counter.value} ${counter.label} reported on page.`,
+          expectedState: 'Answer verified'
+        };
+      }
+
+      const navTarget = elements.find(el => {
+        const name = el.sanitizedName.toLowerCase();
+        return (el.role === 'tab' || el.role === 'link' || el.role === 'button') &&
+          (name.includes('submission') || name.includes('problem') || name.includes('statement'));
+      });
+      if (navTarget) {
+        return {
+          actionId: `act_${Date.now()}`,
+          kind: 'click',
+          targetLocalId: navTarget.localId,
+          confidence: 0.95,
+          risk: 'safe',
+          rationale: `Navigating to section "${navTarget.sanitizedName}" to find ${topic} metrics.`,
+          expectedState: 'Navigation to target section'
+        };
+      }
+
+      return {
+        actionId: `act_${Date.now()}`,
+        kind: 'finish',
+        confidence: 0.90,
+        risk: 'safe',
+        rationale: `Observed page context for "${topic}".`,
+        expectedState: 'Information query answered'
+      };
+    }
+
     // Structured target grounding if intent is present
     if (intent && intent.intent === 'click') {
       const grounding = groundTargetCandidates(elements, intent);

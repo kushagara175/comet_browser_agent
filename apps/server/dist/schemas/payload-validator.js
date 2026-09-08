@@ -40,7 +40,9 @@ const ALLOWED_PAGE_STATE_KEYS = new Set([
     'dialogTitles',
     'statusSummaries',
     'routeFingerprint',
-    'postconditionSummary'
+    'postconditionSummary',
+    'counters',
+    'contentSummaries'
 ]);
 const ALLOWED_MANIFEST_KEYS = new Set([
     'manifestVersion',
@@ -374,6 +376,29 @@ export function validateSanitizedPayload(body) {
     if (body.pageState.postconditionSummary !== undefined) {
         if (typeof body.pageState.postconditionSummary !== 'string' || body.pageState.postconditionSummary.length > 500 || hasProhibitedScriptPattern(body.pageState.postconditionSummary)) {
             return { isValid: false, errorMessage: 'pageState.postconditionSummary must be a safe string up to 500 characters' };
+        }
+    }
+    if (body.pageState.counters !== undefined) {
+        if (!Array.isArray(body.pageState.counters) || body.pageState.counters.length > 50) {
+            return { isValid: false, errorMessage: 'pageState.counters must be an array up to 50 items' };
+        }
+        for (const c of body.pageState.counters) {
+            if (!isPlainObject(c) || typeof c.label !== 'string' || typeof c.value !== 'string' || c.label.length > 200 || c.value.length > 200) {
+                return { isValid: false, errorMessage: 'pageState.counters items must have label and value strings up to 200 characters' };
+            }
+            if (hasProhibitedScriptPattern(c.label) || hasProhibitedScriptPattern(c.value)) {
+                return { isValid: false, errorMessage: 'pageState.counters contains invalid or unsafe string' };
+            }
+        }
+    }
+    if (body.pageState.contentSummaries !== undefined) {
+        if (!Array.isArray(body.pageState.contentSummaries) || body.pageState.contentSummaries.length > 50) {
+            return { isValid: false, errorMessage: 'pageState.contentSummaries must be an array up to 50 items' };
+        }
+        for (const s of body.pageState.contentSummaries) {
+            if (typeof s !== 'string' || s.length > 500 || hasProhibitedScriptPattern(s)) {
+                return { isValid: false, errorMessage: 'pageState.contentSummaries contains invalid or unsafe string' };
+            }
         }
     }
     // 6b. Validate redactionManifest if present

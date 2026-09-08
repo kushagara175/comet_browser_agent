@@ -691,11 +691,14 @@ Strict Rules:
    - If the goal was to submit clearance approval and the status already says "Approved": return kind: "finish".
    - If the goal was to filter for a query and the search box already has the query text and table is filtered: return kind: "finish".
    You MUST return kind: "finish" with risk: "safe", confidence: 1.0, and a rationale explaining that the goal has been satisfied. Never re-trigger, repeat, or double-click an action that has already succeeded.
+9. INFORMATION RETRIEVAL / QUESTION ANSWERING: When the user asks for information (e.g. "how many submissions are done", "tell me how many...", "find problem statement..."):
+   - If the current page displays the answer in counters, text, or summaries: return kind: "finish" with a concise rationale stating the answer and evidence.
+   - If the target section/tab (e.g. "Submissions", "Problem Statements") must be opened: return kind: "click" on that tab or link's local ID.
 
 JSON Schema:
 {
   "actionId": "act_1",
-  "kind": "click" | "type" | "select" | "scroll" | "wait" | "finish",
+  "kind": "click" | "type" | "select" | "scroll" | "wait" | "finish" | "extract" | "answer",
   "targetLocalId": "el_1",
   "confidence": 0.95,
   "risk": "safe" | "protected",
@@ -727,6 +730,12 @@ JSON Schema:
         }
         if (pageState.postconditionSummary) {
             landmarks.push(`Verified Postcondition History: ${pageState.postconditionSummary}`);
+        }
+        if (pageState.counters && pageState.counters.length > 0) {
+            landmarks.push(`Counters & Metrics: ${pageState.counters.map((c) => `${c.label}: ${c.value}`).join(', ')}`);
+        }
+        if (pageState.contentSummaries && pageState.contentSummaries.length > 0) {
+            landmarks.push(`Content Summaries: ${pageState.contentSummaries.join('; ')}`);
         }
         const landmarksBlock = landmarks.length > 0
             ? `\nPage State Landmarks:\n${landmarks.map(l => `- ${l}`).join('\n')}\n`

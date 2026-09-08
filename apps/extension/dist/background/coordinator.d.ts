@@ -182,7 +182,7 @@ export declare class RunCoordinator {
         username?: string;
         password?: string;
         customText?: string;
-    }): Promise<CoordinatorRunResult>;
+    }, targetTabId?: number): Promise<CoordinatorRunResult>;
     setServerUrl(url: string): void;
 }
 //# sourceMappingURL=coordinator.d.ts.map

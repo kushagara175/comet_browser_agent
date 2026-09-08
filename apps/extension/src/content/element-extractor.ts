@@ -566,6 +566,43 @@ export class ElementExtractor {
       // Bounded fallback
     }
 
+    const counters: Array<{ label: string; value: string }> = [];
+    const contentSummaries: string[] = [];
+    try {
+      // Extract statistics cards, counters, and metrics
+      const counterNodes = doc.querySelectorAll('.counter, .count, [class*="stat"], [class*="metric"], [class*="badge"], [data-count]');
+      counterNodes.forEach((node) => {
+        const text = (node.textContent || '').trim().replace(/\s+/g, ' ');
+        const numMatch = text.match(/\b\d[\d,.]*\b/);
+        if (numMatch && text.length < 100) {
+          const label = text.replace(numMatch[0], '').trim() || 'Counter';
+          counters.push({ label: label.slice(0, 60), value: numMatch[0] });
+        }
+      });
+
+      // Extract visible headings
+      const headings = doc.querySelectorAll('h1, h2, h3, h4');
+      headings.forEach((h) => {
+        const text = (h.textContent || '').trim().replace(/\s+/g, ' ');
+        if (text && text.length > 2 && text.length < 120) {
+          contentSummaries.push(`Heading: ${text}`);
+        }
+      });
+
+      // Extract table row counts
+      const tables = doc.querySelectorAll('table, [role="table"], [role="grid"]');
+      tables.forEach((tbl, idx) => {
+        const rows = tbl.querySelectorAll('tr, [role="row"]');
+        const headers = Array.from(tbl.querySelectorAll('th, [role="columnheader"]'))
+          .map(th => (th.textContent || '').trim())
+          .filter(Boolean)
+          .slice(0, 6);
+        contentSummaries.push(`Table ${idx + 1}: ${rows.length > 0 ? rows.length - 1 : 0} records; columns: [${headers.join(', ')}]`);
+      });
+    } catch {
+      // Bounded fallback
+    }
+
     const routeFingerprint = typeof doc.location !== 'undefined' && doc.location?.pathname
       ? doc.location.pathname.slice(0, 50)
       : '/';
@@ -581,6 +618,8 @@ export class ElementExtractor {
         visibleDialogCount,
         dialogTitles,
         statusSummaries,
+        counters: counters.slice(0, 20),
+        contentSummaries: contentSummaries.slice(0, 15),
         routeFingerprint
       },
       elementMap: this.elementMap

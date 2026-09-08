@@ -1,6 +1,6 @@
 import { SanitizedElement } from './payload.js';
 import { StructuredTaskIntent, FormFieldAssignment } from './grounding.js';
-export type ActionKind = 'observe' | 'click' | 'type' | 'select' | 'scroll' | 'wait' | 'request_user_confirmation' | 'finish' | 'blocked';
+export type ActionKind = 'observe' | 'click' | 'type' | 'select' | 'scroll' | 'wait' | 'extract' | 'answer' | 'request_user_confirmation' | 'finish' | 'blocked';
 export type RiskLevel = 'safe' | 'protected' | 'blocked';
 export type ExpectedPostcondition = {
     readonly kind: 'dialog_visible';
@@ -28,6 +28,9 @@ export type ExpectedPostcondition = {
     readonly kind: 'visibility_changed';
     readonly targetLocalId?: string;
     readonly state: 'visible' | 'hidden';
+} | {
+    readonly kind: 'answer_supported';
+    readonly queryTopic?: string;
 };
 export interface TaskContract {
     readonly supported: boolean;
@@ -36,6 +39,9 @@ export interface TaskContract {
     readonly expectedTargetNameSubstring?: string;
     readonly structuredIntent?: StructuredTaskIntent;
     readonly isPassive?: boolean;
+    readonly isAnswerGoal?: boolean;
+    readonly mode?: 'act' | 'answer' | 'extract';
+    readonly queryTopic?: string;
     readonly abstentionReason?: string;
     readonly requiresUserInput?: boolean;
     readonly userInputKind?: 'credentials' | 'text_input';
@@ -66,6 +72,8 @@ export interface ActionProposal {
     readonly scrollDirection?: 'up' | 'down' | 'top' | 'bottom';
     readonly userApproved?: boolean;
     readonly pressEnter?: boolean;
+    readonly extractedData?: string;
+    readonly answerText?: string;
 }
 export interface ActionExecutionResult {
     readonly actionId: string;

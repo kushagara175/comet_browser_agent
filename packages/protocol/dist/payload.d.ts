@@ -64,6 +64,11 @@ export interface SanitizedPageState {
     readonly statusSummaries?: ReadonlyArray<string>;
     readonly routeFingerprint?: string;
     readonly postconditionSummary?: string;
+    readonly counters?: ReadonlyArray<{
+        readonly label: string;
+        readonly value: string;
+    }>;
+    readonly contentSummaries?: ReadonlyArray<string>;
 }
 export interface RedactionManifest {
     readonly manifestVersion: '1.0';

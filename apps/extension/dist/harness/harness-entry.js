@@ -14838,6 +14838,33 @@ as ORT format: ${n}`);
         });
       } catch {
       }
+      const counters = [];
+      const contentSummaries = [];
+      try {
+        const counterNodes = doc.querySelectorAll('.counter, .count, [class*="stat"], [class*="metric"], [class*="badge"], [data-count]');
+        counterNodes.forEach((node) => {
+          const text = (node.textContent || "").trim().replace(/\s+/g, " ");
+          const numMatch = text.match(/\b\d[\d,.]*\b/);
+          if (numMatch && text.length < 100) {
+            const label = text.replace(numMatch[0], "").trim() || "Counter";
+            counters.push({ label: label.slice(0, 60), value: numMatch[0] });
+          }
+        });
+        const headings = doc.querySelectorAll("h1, h2, h3, h4");
+        headings.forEach((h) => {
+          const text = (h.textContent || "").trim().replace(/\s+/g, " ");
+          if (text && text.length > 2 && text.length < 120) {
+            contentSummaries.push(`Heading: ${text}`);
+          }
+        });
+        const tables = doc.querySelectorAll('table, [role="table"], [role="grid"]');
+        tables.forEach((tbl, idx) => {
+          const rows = tbl.querySelectorAll('tr, [role="row"]');
+          const headers = Array.from(tbl.querySelectorAll('th, [role="columnheader"]')).map((th2) => (th2.textContent || "").trim()).filter(Boolean).slice(0, 6);
+          contentSummaries.push(`Table ${idx + 1}: ${rows.length > 0 ? rows.length - 1 : 0} records; columns: [${headers.join(", ")}]`);
+        });
+      } catch {
+      }
       const routeFingerprint = typeof doc.location !== "undefined" && doc.location?.pathname ? doc.location.pathname.slice(0, 50) : "/";
       return {
         snapshot: {
@@ -14850,6 +14877,8 @@ as ORT format: ${n}`);
           visibleDialogCount,
           dialogTitles,
           statusSummaries,
+          counters: counters.slice(0, 20),
+          contentSummaries: contentSummaries.slice(0, 15),
           routeFingerprint
         },
         elementMap: this.elementMap
@@ -15970,7 +15999,9 @@ as ORT format: ${n}`);
         ...Array.isArray(payload.pageState?.dialogTitles) ? { dialogTitles: payload.pageState.dialogTitles.map(String) } : {},
         ...Array.isArray(payload.pageState?.statusSummaries) ? { statusSummaries: payload.pageState.statusSummaries.map(String) } : {},
         ...payload.pageState?.routeFingerprint ? { routeFingerprint: String(payload.pageState.routeFingerprint) } : {},
-        ...payload.pageState?.postconditionSummary ? { postconditionSummary: String(payload.pageState.postconditionSummary) } : {}
+        ...payload.pageState?.postconditionSummary ? { postconditionSummary: String(payload.pageState.postconditionSummary) } : {},
+        ...Array.isArray(payload.pageState?.counters) ? { counters: payload.pageState.counters.map((c) => ({ label: String(c.label || ""), value: String(c.value || "") })) } : {},
+        ...Array.isArray(payload.pageState?.contentSummaries) ? { contentSummaries: payload.pageState.contentSummaries.map(String) } : {}
       },
       elements: Array.isArray(payload.elements) ? payload.elements.map((el2) => ({
         localId: String(el2.localId || ""),
@@ -16160,7 +16191,9 @@ as ORT format: ${n}`);
         ...snapshot.dialogTitles && snapshot.dialogTitles.length > 0 ? { dialogTitles: snapshot.dialogTitles.map((t) => sanitizeElementName(t)) } : {},
         ...snapshot.statusSummaries && snapshot.statusSummaries.length > 0 ? { statusSummaries: snapshot.statusSummaries.map((s) => sanitizeElementName(s)) } : {},
         ...snapshot.routeFingerprint ? { routeFingerprint: snapshot.routeFingerprint } : {},
-        ...snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {}
+        ...snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {},
+        ...snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map((c) => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {},
+        ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {}
       };
       const safeCanonicalData = {
         captureId: rawCapture.captureId,
