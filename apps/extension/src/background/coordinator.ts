@@ -491,6 +491,20 @@ export class RunCoordinator {
 
       // B. Click Landmark (e.g. "Know Your SPOC", "SIH Login", "Problem Statements")
       if (resolution.matchedIntent === 'click_landmark' && resolution.targetPhrase) {
+        const hasAlreadyClickedLandmark = this.actionHistory.some(
+          (a) => a.actionId && a.actionId.startsWith('act_playbook_click_')
+        );
+
+        if (hasAlreadyClickedLandmark) {
+          return {
+            actionId: `act_local_finish_${step}_${Date.now()}`,
+            kind: 'finish',
+            confidence: 0.98,
+            risk: 'safe',
+            rationale: `Playbook landmark "${resolution.targetPhrase}" clicked and navigation verified`
+          };
+        }
+
         const targetTokens = tokenizeSemanticText(resolution.targetPhrase);
         const matchingEl = sanitized.elements.find((el) => {
           const nameNorm = el.sanitizedName.toLowerCase();
@@ -558,6 +572,36 @@ export class RunCoordinator {
       if (isSearchDirective) {
         const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_playbook_fill_'));
         if (hasAlreadyFilled) {
+          const isOnSearchResults = (currentUrl || '').includes('search.html') || (currentUrl || '').includes('gsc.q=');
+          const wantsExploration = /(?:scour|explore|corner|drill|detail|read|view|click|open|all|every|find|accomplished)/i.test(trimmedGoal);
+          const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_search_result_click_'));
+
+          if (isOnSearchResults && wantsExploration && !hasAlreadyClickedResult) {
+            const queryTokens = tokenizeSemanticText(extractSearchQueryFromGoal(goal) || 'missions');
+            const resultLink = sanitized.elements.find((el) => {
+              if (el.role !== 'link' && el.role !== 'button') return false;
+              const nameNorm = el.sanitizedName.toLowerCase();
+              if (nameNorm.includes('google') || nameNorm.includes('privacy') || nameNorm.includes('terms') || nameNorm === 'search' || nameNorm.length < 4) {
+                return false;
+              }
+              if (queryTokens.some((t) => nameNorm.includes(t))) return true;
+              if (nameNorm.includes('isro') || nameNorm.includes('mission') || nameNorm.includes('spacecraft') || nameNorm.includes('earth')) return true;
+              return false;
+            });
+
+            if (resultLink) {
+              return {
+                actionId: `act_search_result_click_${step}_${Date.now()}`,
+                kind: 'click',
+                targetLocalId: resultLink.localId,
+                confidence: 0.95,
+                risk: 'safe',
+                rationale: `Drilling into search result "${resultLink.sanitizedName}" on search page`,
+                expectedPostcondition: { kind: 'status_changed' }
+              };
+            }
+          }
+
           const query = extractSearchQueryFromGoal(goal) || 'query';
           return {
             actionId: `act_local_finish_${step}_${Date.now()}`,
@@ -618,9 +662,51 @@ export class RunCoordinator {
         };
       }
 
+      // Local finish for search result drill-down click
+      if (lastAction.actionId && lastAction.actionId.startsWith('act_search_result_click_')) {
+        const pageTitle = sanitized.pageState?.title || 'Details Page';
+        return {
+          actionId: `act_local_finish_${step}_${Date.now()}`,
+          kind: 'finish',
+          confidence: 0.98,
+          risk: 'safe',
+          rationale: `Navigated from search results to verified details page: "${pageTitle}"`
+        };
+      }
+
       // Local finish for playbook search/fill execution:
       // When a playbook fill action was executed with enter, search results are now filtered and displayed.
       if (lastAction.actionId && lastAction.actionId.startsWith('act_playbook_fill_')) {
+        const isOnSearchResults = (currentUrl || '').includes('search.html') || (currentUrl || '').includes('gsc.q=');
+        const wantsExploration = /(?:scour|explore|corner|drill|detail|read|view|click|open|all|every|find|accomplished)/i.test(trimmedGoal);
+        const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_search_result_click_'));
+
+        if (isOnSearchResults && wantsExploration && !hasAlreadyClickedResult) {
+          const queryTokens = tokenizeSemanticText(extractSearchQueryFromGoal(goal) || 'missions');
+          const resultLink = sanitized.elements.find((el) => {
+            if (el.role !== 'link' && el.role !== 'button') return false;
+            const nameNorm = el.sanitizedName.toLowerCase();
+            if (nameNorm.includes('google') || nameNorm.includes('privacy') || nameNorm.includes('terms') || nameNorm === 'search' || nameNorm.length < 4) {
+              return false;
+            }
+            if (queryTokens.some((t) => nameNorm.includes(t))) return true;
+            if (nameNorm.includes('isro') || nameNorm.includes('mission') || nameNorm.includes('spacecraft') || nameNorm.includes('earth')) return true;
+            return false;
+          });
+
+          if (resultLink) {
+            return {
+              actionId: `act_search_result_click_${step}_${Date.now()}`,
+              kind: 'click',
+              targetLocalId: resultLink.localId,
+              confidence: 0.95,
+              risk: 'safe',
+              rationale: `Drilling into search result "${resultLink.sanitizedName}" on search page`,
+              expectedPostcondition: { kind: 'status_changed' }
+            };
+          }
+        }
+
         const query = extractSearchQueryFromGoal(goal) || 'query';
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,

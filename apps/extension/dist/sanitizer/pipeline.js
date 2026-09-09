@@ -43,11 +43,24 @@ export class SanitizerPipeline {
             ...faceRegions,
             ...surfaceRegions
         ];
+        // Identify regions that actually intersect the visible canvas viewport.
+        // Off-screen elements (below fold, scrolled out of view, or outside canvas) have zero pixels in the screenshot
+        const canvasW = imageCanvas?.width || rawCapture.metadata.screenshotWidth || 1280;
+        const canvasH = imageCanvas?.height || rawCapture.metadata.screenshotHeight || 720;
+        const visibleRegions = allRegions.filter((r) => {
+            const b = r.screenshotBox;
+            return (b.width > 1 &&
+                b.height > 1 &&
+                b.x + b.width > 0 &&
+                b.y + b.height > 0 &&
+                b.x < canvasW &&
+                b.y < canvasH);
+        });
         const detectionReport = {
             captureId: rawCapture.captureId,
             timestamp: Date.now(),
-            regions: allRegions,
-            uninspectableSurfacesFound: surfaceRegions.length > 0,
+            regions: visibleRegions,
+            uninspectableSurfacesFound: surfaceRegions.some((r) => visibleRegions.includes(r)),
             requiresFailClosedBlock: false
         };
         // 2. Render Redaction Masks onto Canvas (Strictly Fail-Closed: Zero 1x1 or permissive fallbacks)
@@ -57,7 +70,7 @@ export class SanitizerPipeline {
         let workingCanvas = null;
         if (imageCanvas) {
             workingCanvas = imageCanvas;
-            const renderResult = MaskRenderer.renderMasks(imageCanvas, allRegions);
+            const renderResult = MaskRenderer.renderMasks(imageCanvas, visibleRegions);
             sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
             renderedCount = renderResult.renderedMaskCount;
             regionRecords = renderResult.regionRecords;
@@ -78,7 +91,7 @@ export class SanitizerPipeline {
             });
             ctx.drawImage(img, 0, 0);
             workingCanvas = canvas;
-            const renderResult = MaskRenderer.renderMasks(canvas, allRegions);
+            const renderResult = MaskRenderer.renderMasks(canvas, visibleRegions);
             sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
             renderedCount = renderResult.renderedMaskCount;
             regionRecords = renderResult.regionRecords;
@@ -156,31 +169,31 @@ export class SanitizerPipeline {
         });
         const sanitizedTitle = sanitizeElementName(snapshot.pageTitle);
         // 4. Post-Redaction Fail-Closed Verification
-        const verification = PostRedactionVerifier.verify(allRegions, renderedCount, sanitizedElements, sanitizedTitle, regionRecords, workingCanvas ? { sanitizedCanvas: workingCanvas } : undefined);
+        const verification = PostRedactionVerifier.verify(visibleRegions, renderedCount, sanitizedElements, sanitizedTitle, regionRecords, workingCanvas ? { sanitizedCanvas: workingCanvas } : undefined);
         if (!verification.isValid) {
             throw new Error(`Sanitization Blocked: ${verification.reason}`);
         }
         const redactionManifest = {
             manifestVersion: '1.0',
-            totalRegions: allRegions.length,
+            totalRegions: visibleRegions.length,
             categoryCounts: {
-                piiText: textRegions.length,
-                domInput: domRegions.length,
-                face: faceRegions.length,
-                surface: surfaceRegions.length
+                piiText: visibleRegions.filter((r) => r.detectorSource === 'text_pii_regex').length,
+                domInput: visibleRegions.filter((r) => r.detectorSource === 'dom_semantic').length,
+                face: visibleRegions.filter((r) => r.category === 'face').length,
+                surface: visibleRegions.filter((r) => r.detectorSource === 'surface_detector').length
             },
             methodCounts: {
-                opaqueBox: allRegions.filter((r) => r.method === 'opaque_mask').length,
-                spatialBlur: allRegions.filter((r) => r.method === 'gaussian_blur').length
+                opaqueBox: visibleRegions.filter((r) => r.method === 'opaque_mask').length,
+                spatialBlur: visibleRegions.filter((r) => r.method === 'gaussian_blur').length
             },
             placeholderConvention: '[REDACTED]',
             geometrySemantics: 'clamped_css_pixels',
             pixelVerificationPerformed: true,
             pixelVerificationPassed: verification.isValid,
             uninspectableSurfacePolicy: 'fail_closed',
-            visionAttempted: faceRegions.length > 0,
-            visionSucceeded: faceRegions.length > 0,
-            visionProvider: faceRegions.length > 0 ? 'ModelRunner' : 'None',
+            visionAttempted: visibleRegions.some((r) => r.category === 'face'),
+            visionSucceeded: visibleRegions.some((r) => r.category === 'face'),
+            visionProvider: visibleRegions.some((r) => r.category === 'face') ? 'ModelRunner' : 'None',
             durationMs: Date.now() - (rawCapture.timestamp || Date.now())
         };
         const pageStateObj = {
@@ -197,7 +210,7 @@ export class SanitizerPipeline {
         const safeCanonicalData = {
             captureId: rawCapture.captureId,
             goal: sanitizeElementName(goal),
-            maskCount: allRegions.length,
+            maskCount: visibleRegions.length,
             pageState: pageStateObj,
             elements: sanitizedElements
         };
@@ -211,7 +224,7 @@ export class SanitizerPipeline {
             sanitizedScreenshotDataUrl: sanitizedDataUrl,
             elements: sanitizedElements,
             pageState: pageStateObj,
-            maskCount: allRegions.length,
+            maskCount: visibleRegions.length,
             payloadDigestSha256,
             timestamp: Date.now(),
             redactionManifest

@@ -48,11 +48,16 @@ export function viewportToScreenshotBox(
   const rawW = box.width * scaleX + paddingPx * 2;
   const rawH = box.height * scaleY + paddingPx * 2;
 
-  // Clamp within screenshot dimensions
-  const clampedX = Math.max(0, Math.min(rawX, meta.screenshotWidth));
-  const clampedY = Math.max(0, Math.min(rawY, meta.screenshotHeight));
-  const clampedW = Math.max(0, Math.min(rawW, meta.screenshotWidth - clampedX));
-  const clampedH = Math.max(0, Math.min(rawH, meta.screenshotHeight - clampedY));
+  // Real geometric intersection with screenshot rectangle [0, 0, screenshotWidth, screenshotHeight]
+  const startX = Math.max(0, rawX);
+  const startY = Math.max(0, rawY);
+  const endX = Math.min(meta.screenshotWidth, rawX + rawW);
+  const endY = Math.min(meta.screenshotHeight, rawY + rawH);
+
+  const clampedW = Math.max(0, endX - startX);
+  const clampedH = Math.max(0, endY - startY);
+  const clampedX = clampedW > 0 ? startX : 0;
+  const clampedY = clampedH > 0 ? startY : 0;
 
   return {
     space: 'screenshotPixel',

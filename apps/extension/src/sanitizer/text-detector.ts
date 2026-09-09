@@ -76,7 +76,7 @@ export function detectTextSensitiveRegions(
 
             // Small documented safety padding: 2px CSS padding for font ascenders/descenders/anti-aliasing
             const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
-            if (screenshotBox.width <= 0 || screenshotBox.height <= 0) continue;
+            if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
 
             unmergedRegions.push({
               id: `text_pii_${node.id}_${i}_${rIdx}`,
@@ -100,7 +100,7 @@ export function detectTextSensitiveRegions(
           };
 
           const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
-          if (screenshotBox.width > 0 && screenshotBox.height > 0) {
+          if (screenshotBox.width > 1 && screenshotBox.height > 1) {
             unmergedRegions.push({
               id: `text_pii_${node.id}_${i}_fallback`,
               category: rangeMatch.category,
@@ -128,7 +128,7 @@ export function detectTextSensitiveRegions(
           };
 
           const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
-          if (screenshotBox.width > 0 && screenshotBox.height > 0) {
+          if (screenshotBox.width > 1 && screenshotBox.height > 1) {
             unmergedRegions.push({
               id: `text_pii_${node.id}_${i}`,
               category: match.category,

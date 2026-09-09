@@ -14787,9 +14787,12 @@ as ORT format: ${n}`);
         const iframes = currentDoc.querySelectorAll("iframe");
         iframes.forEach((f) => {
           const rect = f.getBoundingClientRect();
+          const iframeOffset = { x: rect.x + offset.x, y: rect.y + offset.y };
+          if (rect.width <= 2 || rect.height <= 2 || iframeOffset.x + rect.width <= 0 || iframeOffset.y + rect.height <= 0) {
+            return;
+          }
           if (rect.width > 0 && rect.height > 0) {
             surfaceCounter++;
-            const iframeOffset = { x: rect.x + offset.x, y: rect.y + offset.y };
             let isSameOrigin = false;
             let innerDoc = null;
             try {
@@ -14921,10 +14924,14 @@ as ORT format: ${n}`);
     const rawY = box.y * scaleY - paddingPx;
     const rawW = box.width * scaleX + paddingPx * 2;
     const rawH = box.height * scaleY + paddingPx * 2;
-    const clampedX = Math.max(0, Math.min(rawX, meta.screenshotWidth));
-    const clampedY = Math.max(0, Math.min(rawY, meta.screenshotHeight));
-    const clampedW = Math.max(0, Math.min(rawW, meta.screenshotWidth - clampedX));
-    const clampedH = Math.max(0, Math.min(rawH, meta.screenshotHeight - clampedY));
+    const startX = Math.max(0, rawX);
+    const startY = Math.max(0, rawY);
+    const endX = Math.min(meta.screenshotWidth, rawX + rawW);
+    const endY = Math.min(meta.screenshotHeight, rawY + rawH);
+    const clampedW = Math.max(0, endX - startX);
+    const clampedH = Math.max(0, endY - startY);
+    const clampedX = clampedW > 0 ? startX : 0;
+    const clampedY = clampedH > 0 ? startY : 0;
     return {
       space: "screenshotPixel",
       x: Math.round(clampedX),
@@ -15007,7 +15014,7 @@ as ORT format: ${n}`);
           height: el2.boundingClientRect.height
         };
         const screenshotBox = transformer.toScreenshotBox(viewportBox, 6);
-        if (screenshotBox.width <= 0 || screenshotBox.height <= 0) continue;
+        if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
         regions.push({
           id: `dom_sens_${el2.id}`,
           category: decision.category,
@@ -15040,7 +15047,7 @@ as ORT format: ${n}`);
                 height: rect.height
               };
               const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
-              if (screenshotBox.width <= 0 || screenshotBox.height <= 0) continue;
+              if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
               unmergedRegions.push({
                 id: `text_pii_${node.id}_${i}_${rIdx}`,
                 category: rangeMatch.category,
@@ -15061,7 +15068,7 @@ as ORT format: ${n}`);
               height: fallbackRect.height
             };
             const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
-            if (screenshotBox.width > 0 && screenshotBox.height > 0) {
+            if (screenshotBox.width > 1 && screenshotBox.height > 1) {
               unmergedRegions.push({
                 id: `text_pii_${node.id}_${i}_fallback`,
                 category: rangeMatch.category,
@@ -15087,7 +15094,7 @@ as ORT format: ${n}`);
               height: node.boundingClientRect.height
             };
             const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
-            if (screenshotBox.width > 0 && screenshotBox.height > 0) {
+            if (screenshotBox.width > 1 && screenshotBox.height > 1) {
               unmergedRegions.push({
                 id: `text_pii_${node.id}_${i}`,
                 category: match.category,
@@ -15160,6 +15167,7 @@ as ORT format: ${n}`);
         height: h
       };
       const screenshotBox = transformer.toScreenshotBox(viewportBox, 12);
+      if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
       let alreadyCovered = false;
       for (const modelFace of modelFaces) {
         const mb2 = modelFace.screenshotBox;
@@ -15204,7 +15212,7 @@ as ORT format: ${n}`);
         height: surface.boundingClientRect.height
       };
       const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
-      if (screenshotBox.width <= 0 || screenshotBox.height <= 0) continue;
+      if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
       const surfaceLabel = surface.surfaceType ? surface.surfaceType.toUpperCase() : "UNKNOWN_SURFACE";
       regions.push({
         id: `surface_${surface.surfaceType || "unknown"}_${surface.id}`,
@@ -16074,11 +16082,17 @@ as ORT format: ${n}`);
         ...faceRegions,
         ...surfaceRegions
       ];
+      const canvasW = imageCanvas?.width || rawCapture.metadata.screenshotWidth || 1280;
+      const canvasH = imageCanvas?.height || rawCapture.metadata.screenshotHeight || 720;
+      const visibleRegions = allRegions.filter((r) => {
+        const b = r.screenshotBox;
+        return b.width > 1 && b.height > 1 && b.x + b.width > 0 && b.y + b.height > 0 && b.x < canvasW && b.y < canvasH;
+      });
       const detectionReport = {
         captureId: rawCapture.captureId,
         timestamp: Date.now(),
-        regions: allRegions,
-        uninspectableSurfacesFound: surfaceRegions.length > 0,
+        regions: visibleRegions,
+        uninspectableSurfacesFound: surfaceRegions.some((r) => visibleRegions.includes(r)),
         requiresFailClosedBlock: false
       };
       let sanitizedDataUrl;
@@ -16087,7 +16101,7 @@ as ORT format: ${n}`);
       let workingCanvas = null;
       if (imageCanvas) {
         workingCanvas = imageCanvas;
-        const renderResult = MaskRenderer.renderMasks(imageCanvas, allRegions);
+        const renderResult = MaskRenderer.renderMasks(imageCanvas, visibleRegions);
         sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
         renderedCount = renderResult.renderedMaskCount;
         regionRecords = renderResult.regionRecords;
@@ -16107,7 +16121,7 @@ as ORT format: ${n}`);
         });
         ctx.drawImage(img, 0, 0);
         workingCanvas = canvas;
-        const renderResult = MaskRenderer.renderMasks(canvas, allRegions);
+        const renderResult = MaskRenderer.renderMasks(canvas, visibleRegions);
         sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
         renderedCount = renderResult.renderedMaskCount;
         regionRecords = renderResult.regionRecords;
@@ -16178,7 +16192,7 @@ as ORT format: ${n}`);
       });
       const sanitizedTitle = sanitizeElementName(snapshot.pageTitle);
       const verification = PostRedactionVerifier.verify(
-        allRegions,
+        visibleRegions,
         renderedCount,
         sanitizedElements,
         sanitizedTitle,
@@ -16190,25 +16204,25 @@ as ORT format: ${n}`);
       }
       const redactionManifest = {
         manifestVersion: "1.0",
-        totalRegions: allRegions.length,
+        totalRegions: visibleRegions.length,
         categoryCounts: {
-          piiText: textRegions.length,
-          domInput: domRegions.length,
-          face: faceRegions.length,
-          surface: surfaceRegions.length
+          piiText: visibleRegions.filter((r) => r.detectorSource === "text_pii_regex").length,
+          domInput: visibleRegions.filter((r) => r.detectorSource === "dom_semantic").length,
+          face: visibleRegions.filter((r) => r.category === "face").length,
+          surface: visibleRegions.filter((r) => r.detectorSource === "surface_detector").length
         },
         methodCounts: {
-          opaqueBox: allRegions.filter((r) => r.method === "opaque_mask").length,
-          spatialBlur: allRegions.filter((r) => r.method === "gaussian_blur").length
+          opaqueBox: visibleRegions.filter((r) => r.method === "opaque_mask").length,
+          spatialBlur: visibleRegions.filter((r) => r.method === "gaussian_blur").length
         },
         placeholderConvention: "[REDACTED]",
         geometrySemantics: "clamped_css_pixels",
         pixelVerificationPerformed: true,
         pixelVerificationPassed: verification.isValid,
         uninspectableSurfacePolicy: "fail_closed",
-        visionAttempted: faceRegions.length > 0,
-        visionSucceeded: faceRegions.length > 0,
-        visionProvider: faceRegions.length > 0 ? "ModelRunner" : "None",
+        visionAttempted: visibleRegions.some((r) => r.category === "face"),
+        visionSucceeded: visibleRegions.some((r) => r.category === "face"),
+        visionProvider: visibleRegions.some((r) => r.category === "face") ? "ModelRunner" : "None",
         durationMs: Date.now() - (rawCapture.timestamp || Date.now())
       };
       const pageStateObj = {
@@ -16225,7 +16239,7 @@ as ORT format: ${n}`);
       const safeCanonicalData = {
         captureId: rawCapture.captureId,
         goal: sanitizeElementName(goal),
-        maskCount: allRegions.length,
+        maskCount: visibleRegions.length,
         pageState: pageStateObj,
         elements: sanitizedElements
       };
@@ -16239,7 +16253,7 @@ as ORT format: ${n}`);
         sanitizedScreenshotDataUrl: sanitizedDataUrl,
         elements: sanitizedElements,
         pageState: pageStateObj,
-        maskCount: allRegions.length,
+        maskCount: visibleRegions.length,
         payloadDigestSha256,
         timestamp: Date.now(),
         redactionManifest

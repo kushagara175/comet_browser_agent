@@ -24,7 +24,7 @@ export function detectHighRiskSurfaces(surfaces, transformer) {
         };
         // Add 2px safety padding to cover borders / anti-aliasing around frame boundaries
         const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
-        if (screenshotBox.width <= 0 || screenshotBox.height <= 0)
+        if (screenshotBox.width <= 1 || screenshotBox.height <= 1)
             continue;
         const surfaceLabel = surface.surfaceType ? surface.surfaceType.toUpperCase() : 'UNKNOWN_SURFACE';
         regions.push({

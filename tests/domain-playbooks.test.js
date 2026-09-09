@@ -495,6 +495,145 @@ test('Domain Playbooks: RunCoordinator auto-navigates from scratch on blank/rest
   assert.equal(searchAction.textToType, 'missions');
 });
 
+test('Domain Playbooks: Earth Observation playbooks (Bhuvan, MOSDAC, VEDAS, Bhoonidhi) resolve correctly', async () => {
+  const {
+    lookupDomainPlaybook,
+    resolvePlaybookIntent,
+    extractTargetUrlFromGoal,
+    BHUVAN_PLAYBOOK,
+    MOSDAC_PLAYBOOK,
+    VEDAS_PLAYBOOK,
+    BHOONIDHI_PLAYBOOK
+  } = await import('../packages/protocol/dist/index.js');
+
+  // 1. Lookup
+  assert.equal(lookupDomainPlaybook('https://bhuvan.nrsc.gov.in')?.domain, 'bhuvan.nrsc.gov.in');
+  assert.equal(lookupDomainPlaybook('https://mosdac.gov.in/live')?.domain, 'mosdac.gov.in');
+  assert.equal(lookupDomainPlaybook('https://vedas.sac.gov.in/solar')?.domain, 'vedas.sac.gov.in');
+  assert.equal(lookupDomainPlaybook('https://bhoonidhi.nrsc.gov.in')?.domain, 'bhoonidhi.nrsc.gov.in');
+
+  // 2. Goal extraction
+  assert.equal(extractTargetUrlFromGoal('open bhuvan and explore earth observation'), 'https://bhuvan.nrsc.gov.in');
+  assert.equal(extractTargetUrlFromGoal('go to mosdac to check cyclone weather'), 'https://mosdac.gov.in');
+  assert.equal(extractTargetUrlFromGoal('visit vedas for solar rooftop potential'), 'https://vedas.sac.gov.in');
+  assert.equal(extractTargetUrlFromGoal('in the bhoonidhi portal search satellite data'), 'https://bhoonidhi.nrsc.gov.in');
+
+  // 3. Bhuvan resolution (route navigation & landmark click)
+  const bhuvanNavRes = resolvePlaybookIntent(BHUVAN_PLAYBOOK, 'open 2d 3d map viewer', 'https://bhuvan.nrsc.gov.in');
+  assert.equal(bhuvanNavRes.matchedIntent, 'navigate');
+  assert.equal(bhuvanNavRes.targetUrl, 'https://bhuvan.nrsc.gov.in/bhuvan_geoportal.php');
+
+  const bhuvanLandmarkRes = resolvePlaybookIntent(BHUVAN_PLAYBOOK, 'explore 2d 3d map', 'https://bhuvan.nrsc.gov.in/bhuvan_geoportal.php');
+  assert.equal(bhuvanLandmarkRes.matchedIntent, 'click_landmark');
+  assert.equal(bhuvanLandmarkRes.targetPhrase, '2D / 3D Map');
+
+  // 4. MOSDAC resolution
+  const mosdacRes = resolvePlaybookIntent(MOSDAC_PLAYBOOK, 'view live satellite weather imagery', 'https://mosdac.gov.in');
+  assert.equal(mosdacRes.matchedIntent, 'click_landmark');
+  assert.equal(mosdacRes.targetPhrase, 'Weather Imagery');
+
+  // 5. VEDAS resolution
+  const vedasRes = resolvePlaybookIntent(VEDAS_PLAYBOOK, 'calculate solar rooftop potential', 'https://vedas.sac.gov.in');
+  assert.equal(vedasRes.matchedIntent, 'click_landmark');
+  assert.equal(vedasRes.targetPhrase, 'Solar Potential');
+
+  // 6. Bhoonidhi resolution
+  const bhoonidhiRes = resolvePlaybookIntent(BHOONIDHI_PLAYBOOK, 'search satellite data products', 'https://bhoonidhi.nrsc.gov.in');
+  assert.equal(bhoonidhiRes.matchedIntent, 'fill_field');
+  assert.equal(bhoonidhiRes.targetPhrase, 'Search Products');
+});
+
+test('Domain Playbooks: Coordinator drills into search results when exploring ISRO missions', async () => {
+  const { RunCoordinator } = await import('../apps/extension/dist/background/coordinator.js');
+
+  let currentUrl = 'https://www.isro.gov.in/search.html#gsc.q=missions.';
+  const executedProposals = [];
+
+  const searchResultsElements = [
+    {
+      localId: 'el_search_input',
+      role: 'input',
+      sanitizedName: 'Search ISRO',
+      coarseBounds: [0.1, 0.1, 0.4, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['type']
+    },
+    {
+      localId: 'el_result_1',
+      role: 'link',
+      sanitizedName: 'Missions accomplished - ISRO',
+      coarseBounds: [0.1, 0.25, 0.6, 0.06],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    }
+  ];
+
+  const browser = {
+    activeTabId: 1,
+    async getActiveTab() {
+      return { id: 1, url: currentUrl, title: 'ISRO Search' };
+    },
+    async navigateTab(tabId, url) {
+      currentUrl = url;
+      return { id: tabId, url, title: 'ISRO Search' };
+    },
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async sendMessageToTab(tabId, msg) {
+      if (msg.type === 'EXTRACT_DOM_SNAPSHOT') {
+        return {
+          success: true,
+          captureId: msg.captureId || 'cap_1',
+          snapshot: { elements: searchResultsElements }
+        };
+      }
+      if (msg.type === 'EXECUTE_ACTION') {
+        executedProposals.push(msg.proposal);
+        return {
+          success: true,
+          actionId: msg.proposal.actionId,
+          semanticOutcomeVerified: true
+        };
+      }
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_scratch_isro_drill',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements: searchResultsElements,
+        pageState: { title: 'ISRO Search', url: currentUrl, viewport: [1280, 720] },
+        redactionManifest: { totalRedactions: 0, categoriesRedacted: [] },
+        payloadDigestSha256: 'digest_mock'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser);
+  // Simulate previous fill action in history
+  coordinator['actionHistory'].push({
+    actionId: 'act_playbook_fill_1_123',
+    kind: 'type',
+    targetLocalId: 'el_search_input',
+    textToType: 'missions',
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Search query typed'
+  });
+
+  const result = await coordinator.startRun('scour every single corner and explore isro missions', { maxSteps: 3 });
+  assert.ok(result.success, `Run should succeed: ${result.error || result.message}`);
+  const clickAction = executedProposals.find(p => p.kind === 'click');
+  assert.ok(clickAction, 'Should click on top search result');
+  assert.equal(clickAction.targetLocalId, 'el_result_1');
+});
+
+
 
 
 

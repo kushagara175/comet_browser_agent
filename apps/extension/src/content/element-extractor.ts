@@ -500,9 +500,15 @@ export class ElementExtractor {
       const iframes = currentDoc.querySelectorAll('iframe');
       iframes.forEach((f) => {
         const rect = f.getBoundingClientRect();
+        const iframeOffset = { x: rect.x + offset.x, y: rect.y + offset.y };
+
+        // Ignore invisible tracking pixels, zero/sub-pixel size, or completely offscreen helper frames (e.g. Google CSE, beacons)
+        if (rect.width <= 2 || rect.height <= 2 || iframeOffset.x + rect.width <= 0 || iframeOffset.y + rect.height <= 0) {
+          return;
+        }
+
         if (rect.width > 0 && rect.height > 0) {
           surfaceCounter++;
-          const iframeOffset = { x: rect.x + offset.x, y: rect.y + offset.y };
 
           let isSameOrigin = false;
           let innerDoc: Document | null = null;

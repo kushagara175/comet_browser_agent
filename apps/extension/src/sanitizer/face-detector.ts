@@ -65,6 +65,7 @@ export function detectFaceRegions(
 
     // Conservative 12px padding for avatar regions
     const screenshotBox = transformer.toScreenshotBox(viewportBox, 12);
+    if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
 
     // Deduplicate if already covered by an ONNX model box
     let alreadyCovered = false;

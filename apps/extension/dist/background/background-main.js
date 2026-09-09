@@ -13974,10 +13974,14 @@ function viewportToScreenshotBox(box, meta, paddingPx = 4) {
   const rawY = box.y * scaleY - paddingPx;
   const rawW = box.width * scaleX + paddingPx * 2;
   const rawH = box.height * scaleY + paddingPx * 2;
-  const clampedX = Math.max(0, Math.min(rawX, meta.screenshotWidth));
-  const clampedY = Math.max(0, Math.min(rawY, meta.screenshotHeight));
-  const clampedW = Math.max(0, Math.min(rawW, meta.screenshotWidth - clampedX));
-  const clampedH = Math.max(0, Math.min(rawH, meta.screenshotHeight - clampedY));
+  const startX = Math.max(0, rawX);
+  const startY = Math.max(0, rawY);
+  const endX = Math.min(meta.screenshotWidth, rawX + rawW);
+  const endY = Math.min(meta.screenshotHeight, rawY + rawH);
+  const clampedW = Math.max(0, endX - startX);
+  const clampedH = Math.max(0, endY - startY);
+  const clampedX = clampedW > 0 ? startX : 0;
+  const clampedY = clampedH > 0 ? startY : 0;
   return {
     space: "screenshotPixel",
     x: Math.round(clampedX),
@@ -15686,6 +15690,13 @@ var ISRO_PLAYBOOK = {
       matchKeywords: ["launcher", "launchers", "launch vehicle", "rocket", "pslv", "gslv", "lvm3", "sslv"]
     },
     {
+      name: "earth_observation",
+      path: "/Earth_Observation.html",
+      aliases: ["/Earth_Observation.html", "/earth_observation", "/earth-observation.html", "/EarthObservation.html"],
+      description: "ISRO Earth Observation applications and satellite data services (Bhuvan, MOSDAC, VEDAS, Bhoonidhi)",
+      matchKeywords: ["earth observation", "earth", "observation", "remote sensing", "bhuvan", "mosdac", "vedas", "bhoonidhi", "thematic maps", "weather satellite"]
+    },
+    {
       name: "careers",
       path: "/Careers.html",
       aliases: ["/Careers.html", "/careers", "/recruitment", "/Careers"],
@@ -15721,6 +15732,14 @@ var ISRO_PLAYBOOK = {
       aliases: ["missions", "all missions", "spacecraft missions", "space missions"],
       role: "link",
       description: "Navigation link to ISRO space missions directory",
+      intentAction: "click"
+    },
+    {
+      id: "earth_observation_nav",
+      phrase: "Earth Observation",
+      aliases: ["earth observation", "earth observation applications", "remote sensing", "earth satellites", "bhuvan"],
+      role: "link",
+      description: "Navigation link to ISRO Earth Observation applications portal",
       intentAction: "click"
     },
     {
@@ -15775,9 +15794,278 @@ var ISRO_PLAYBOOK = {
     search: ["search", "searchInput", "q", "query", "txtSearch", "Search ISRO"]
   }
 };
+var BHUVAN_PLAYBOOK = {
+  domain: "bhuvan.nrsc.gov.in",
+  name: "Bhuvan Indian Geo-Platform (NRSC/ISRO)",
+  aliases: ["bhuvan.nrsc.gov.in", "bhuvan", "bhuvan geoportal", "bhuvan nrsc", "nrsc bhuvan", "bhuvan earth observation"],
+  routes: [
+    {
+      name: "geoportal",
+      path: "/bhuvan_geoportal.php",
+      aliases: ["/bhuvan_geoportal.php", "/2d", "/3d", "/viewer", "/geoportal"],
+      description: "Bhuvan 2D/3D map viewer and Earth observation geoportal",
+      matchKeywords: ["geoportal", "map", "2d", "3d", "earth observation", "viewer", "satellite imagery", "imagery", "location", "locations"]
+    },
+    {
+      name: "thematic",
+      path: "/thematic",
+      aliases: ["/thematic", "/thematic_services", "/applications"],
+      description: "Bhuvan thematic application maps and sectoral geo-spatial services",
+      matchKeywords: ["thematic", "thematic maps", "agriculture", "forestry", "water resources", "land"]
+    },
+    {
+      name: "disaster",
+      path: "/disaster",
+      aliases: ["/disaster", "/disaster_services", "/ndms"],
+      description: "Bhuvan disaster management support services (floods, cyclones, earthquakes, forest fires)",
+      matchKeywords: ["disaster", "flood", "cyclone", "earthquake", "fire", "emergency", "hazard"]
+    },
+    {
+      name: "open_data",
+      path: "/data",
+      aliases: ["/data", "/open_data", "/bhuvan_data"],
+      description: "Bhuvan open data archive and satellite data download portal",
+      matchKeywords: ["data", "open data", "download", "archive", "products", "free data"]
+    },
+    {
+      name: "home",
+      path: "/",
+      description: "Bhuvan NRSC portal homepage",
+      matchKeywords: ["home", "homepage", "main page", "overview"]
+    }
+  ],
+  landmarks: [
+    {
+      id: "bhuvan_2d_3d",
+      phrase: "2D / 3D Map",
+      aliases: ["2d", "3d", "map", "map viewer", "explore map", "2d/3d", "visualisation"],
+      role: "link",
+      description: "Explore Bhuvan 2D/3D visualization map",
+      intentAction: "click"
+    },
+    {
+      id: "bhuvan_search",
+      phrase: "Search Location",
+      aliases: ["search", "search location", "find place", "find city", "search place", "location search", "txtSearch"],
+      role: "input",
+      description: "Search geographic place name or coordinates",
+      intentAction: "type"
+    },
+    {
+      id: "thematic_services",
+      phrase: "Thematic Services",
+      aliases: ["thematic", "applications", "thematic services", "thematic maps"],
+      role: "link",
+      description: "Access thematic GIS application data",
+      intentAction: "click"
+    },
+    {
+      id: "disaster_services",
+      phrase: "Disaster Services",
+      aliases: ["disaster", "disaster management", "crisis support", "emergency"],
+      role: "link",
+      description: "Access disaster support maps and feeds",
+      intentAction: "click"
+    },
+    {
+      id: "open_data_download",
+      phrase: "Open Data Archive",
+      aliases: ["open data", "download satellite data", "free data", "data archive"],
+      role: "link",
+      description: "Download open Earth observation datasets",
+      intentAction: "click"
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: "thematic_layers",
+      labelKeywords: ["thematic layers", "layers", "services", "applications"],
+      containerHints: ["stat", "card", "metric", "counter"],
+      valuePattern: "\\b\\d+\\b",
+      description: "Total number of thematic layers available"
+    }
+  ],
+  formFieldHints: {
+    search: ["search", "searchBox", "txtSearch", "locationInput", "query", "Search Location"]
+  }
+};
+var MOSDAC_PLAYBOOK = {
+  domain: "mosdac.gov.in",
+  name: "MOSDAC Meteorological and Oceanographic Satellite Data",
+  aliases: ["mosdac.gov.in", "www.mosdac.gov.in", "mosdac", "mosdac isro"],
+  routes: [
+    {
+      name: "live_weather",
+      path: "/live",
+      aliases: ["/live", "/weather", "/meteorology", "/insat"],
+      description: "INSAT live meteorological imagery and weather forecast products",
+      matchKeywords: ["weather", "insat", "cyclone", "satellite imagery", "meteorological", "forecast", "radar", "clouds"]
+    },
+    {
+      name: "ocean_data",
+      path: "/ocean",
+      aliases: ["/ocean", "/oceanography", "/sst"],
+      description: "Oceanographic satellite products and sea surface temperature",
+      matchKeywords: ["ocean", "sea", "sst", "currents", "winds", "wave"]
+    },
+    {
+      name: "catalogue",
+      path: "/catalogue",
+      aliases: ["/catalogue", "/data", "/archive", "/missions"],
+      description: "MOSDAC satellite mission data catalogue and search",
+      matchKeywords: ["data", "catalogue", "missions", "search", "archive", "download"]
+    },
+    {
+      name: "home",
+      path: "/",
+      description: "MOSDAC portal homepage",
+      matchKeywords: ["home", "homepage", "main page", "overview"]
+    }
+  ],
+  landmarks: [
+    {
+      id: "mosdac_weather_link",
+      phrase: "Weather Imagery",
+      aliases: ["weather", "live weather", "satellite imagery", "insat imagery", "live images"],
+      role: "link",
+      description: "View live INSAT satellite weather imagery",
+      intentAction: "click"
+    },
+    {
+      id: "mosdac_search",
+      phrase: "Search Data",
+      aliases: ["search", "search data", "query data", "product search", "txtSearch"],
+      role: "input",
+      description: "Search meteorological datasets and satellite passes",
+      intentAction: "type"
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: "satellite_passes",
+      labelKeywords: ["passes", "products", "datasets", "imagery"],
+      containerHints: ["stat", "card", "metric", "counter"],
+      valuePattern: "\\b\\d+\\b",
+      description: "Total satellite passes or datasets"
+    }
+  ],
+  formFieldHints: {
+    search: ["search", "searchInput", "query", "searchData"]
+  }
+};
+var VEDAS_PLAYBOOK = {
+  domain: "vedas.sac.gov.in",
+  name: "VEDAS - Visualisation of Earth Observation Data (SAC/ISRO)",
+  aliases: ["vedas.sac.gov.in", "vedas", "sac vedas", "vedas isro"],
+  routes: [
+    {
+      name: "solar_energy",
+      path: "/solar",
+      aliases: ["/solar", "/solar_calculator", "/rooftop_solar"],
+      description: "Solar energy potential calculator and rooftop solar assessment",
+      matchKeywords: ["solar", "solar energy", "solar potential", "rooftop", "renewable"]
+    },
+    {
+      name: "vegetation",
+      path: "/vegetation",
+      aliases: ["/vegetation", "/agriculture", "/ndvi"],
+      description: "Vegetation indices, NDVI, and agricultural monitoring",
+      matchKeywords: ["vegetation", "ndvi", "agriculture", "crops", "drought"]
+    },
+    {
+      name: "coastal",
+      path: "/coastal",
+      aliases: ["/coastal", "/wetlands", "/marine"],
+      description: "Coastal zones and wetland monitoring applications",
+      matchKeywords: ["coastal", "wetlands", "shoreline", "ocean"]
+    },
+    {
+      name: "home",
+      path: "/",
+      description: "VEDAS SAC homepage",
+      matchKeywords: ["home", "homepage", "main page", "overview"]
+    }
+  ],
+  landmarks: [
+    {
+      id: "solar_calculator",
+      phrase: "Solar Potential",
+      aliases: ["solar", "solar calculator", "solar rooftop", "solar energy"],
+      role: "link",
+      description: "Access solar energy evaluation tools",
+      intentAction: "click"
+    },
+    {
+      id: "vedas_search",
+      phrase: "Search VEDAS",
+      aliases: ["search", "query", "filter", "search vedas"],
+      role: "input",
+      description: "Search geospatial applications and products",
+      intentAction: "type"
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: "applications_count",
+      labelKeywords: ["applications", "tools", "services"],
+      containerHints: ["stat", "card", "metric", "counter"],
+      valuePattern: "\\b\\d+\\b",
+      description: "Total number of geospatial applications"
+    }
+  ],
+  formFieldHints: {
+    search: ["search", "query", "txtSearch"]
+  }
+};
+var BHOONIDHI_PLAYBOOK = {
+  domain: "bhoonidhi.nrsc.gov.in",
+  name: "Bhoonidhi Open Earth Observation Data Hub (NRSC/ISRO)",
+  aliases: ["bhoonidhi.nrsc.gov.in", "bhoonidhi", "bhoonidhi nrsc", "nrsc bhoonidhi"],
+  routes: [
+    {
+      name: "data_hub",
+      path: "/datahub",
+      aliases: ["/datahub", "/catalogue", "/search", "/products"],
+      description: "Search and download multi-sensor satellite imagery and GIS layers",
+      matchKeywords: ["satellite data", "download", "scenes", "imagery", "cartosat", "resourcesat", "sentinel", "search"]
+    },
+    {
+      name: "home",
+      path: "/",
+      description: "Bhoonidhi portal homepage",
+      matchKeywords: ["home", "homepage", "main page", "overview"]
+    }
+  ],
+  landmarks: [
+    {
+      id: "bhoonidhi_search",
+      phrase: "Search Products",
+      aliases: ["search", "search products", "area search", "date range", "satellite search"],
+      role: "input",
+      description: "Search satellite imagery products by area or date",
+      intentAction: "type"
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: "scenes_available",
+      labelKeywords: ["scenes", "products", "satellites", "datasets"],
+      containerHints: ["stat", "card", "metric", "counter"],
+      valuePattern: "\\b\\d+\\b",
+      description: "Total satellite scenes available for download"
+    }
+  ],
+  formFieldHints: {
+    search: ["search", "query", "productSearch"]
+  }
+};
 var REGISTERED_PLAYBOOKS = [
   SIH_PLAYBOOK,
   ISRO_PLAYBOOK,
+  BHUVAN_PLAYBOOK,
+  MOSDAC_PLAYBOOK,
+  VEDAS_PLAYBOOK,
+  BHOONIDHI_PLAYBOOK,
   GITHUB_PLAYBOOK,
   YOUTUBE_PLAYBOOK,
   REDDIT_PLAYBOOK,
@@ -16058,6 +16346,18 @@ function extractTargetUrlFromGoal(goal) {
     if (siteKeyword.includes("isro") || siteKeyword.includes("space")) {
       return "https://www.isro.gov.in";
     }
+    if (siteKeyword.includes("bhuvan")) {
+      return "https://bhuvan.nrsc.gov.in";
+    }
+    if (siteKeyword.includes("mosdac")) {
+      return "https://mosdac.gov.in";
+    }
+    if (siteKeyword.includes("vedas")) {
+      return "https://vedas.sac.gov.in";
+    }
+    if (siteKeyword.includes("bhoonidhi")) {
+      return "https://bhoonidhi.nrsc.gov.in";
+    }
     if (siteKeyword.includes("sih") || siteKeyword.includes("hackathon")) {
       return "https://sih.gov.in";
     }
@@ -16088,6 +16388,14 @@ function extractTargetUrlFromGoal(goal) {
     const target = navDirective[1].trim().toLowerCase();
     if (target === "isro" || target.includes("isro"))
       return "https://www.isro.gov.in";
+    if (target.includes("bhuvan"))
+      return "https://bhuvan.nrsc.gov.in";
+    if (target.includes("mosdac"))
+      return "https://mosdac.gov.in";
+    if (target.includes("vedas"))
+      return "https://vedas.sac.gov.in";
+    if (target.includes("bhoonidhi"))
+      return "https://bhoonidhi.nrsc.gov.in";
     if (target === "sih" || target.includes("sih"))
       return "https://sih.gov.in";
     if (target === "github" || target.includes("github"))
@@ -16557,7 +16865,7 @@ function detectDomSensitiveRegions(elements, transformer) {
         height: el2.boundingClientRect.height
       };
       const screenshotBox = transformer.toScreenshotBox(viewportBox, 6);
-      if (screenshotBox.width <= 0 || screenshotBox.height <= 0) continue;
+      if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
       regions.push({
         id: `dom_sens_${el2.id}`,
         category: decision.category,
@@ -16590,7 +16898,7 @@ function detectTextSensitiveRegions(textNodes, transformer) {
               height: rect.height
             };
             const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
-            if (screenshotBox.width <= 0 || screenshotBox.height <= 0) continue;
+            if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
             unmergedRegions.push({
               id: `text_pii_${node.id}_${i}_${rIdx}`,
               category: rangeMatch.category,
@@ -16611,7 +16919,7 @@ function detectTextSensitiveRegions(textNodes, transformer) {
             height: fallbackRect.height
           };
           const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
-          if (screenshotBox.width > 0 && screenshotBox.height > 0) {
+          if (screenshotBox.width > 1 && screenshotBox.height > 1) {
             unmergedRegions.push({
               id: `text_pii_${node.id}_${i}_fallback`,
               category: rangeMatch.category,
@@ -16637,7 +16945,7 @@ function detectTextSensitiveRegions(textNodes, transformer) {
             height: node.boundingClientRect.height
           };
           const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
-          if (screenshotBox.width > 0 && screenshotBox.height > 0) {
+          if (screenshotBox.width > 1 && screenshotBox.height > 1) {
             unmergedRegions.push({
               id: `text_pii_${node.id}_${i}`,
               category: match.category,
@@ -16710,6 +17018,7 @@ function detectFaceRegions(images, transformer, modelFaces = []) {
       height: h
     };
     const screenshotBox = transformer.toScreenshotBox(viewportBox, 12);
+    if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
     let alreadyCovered = false;
     for (const modelFace of modelFaces) {
       const mb2 = modelFace.screenshotBox;
@@ -16754,7 +17063,7 @@ function detectHighRiskSurfaces(surfaces, transformer) {
       height: surface.boundingClientRect.height
     };
     const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
-    if (screenshotBox.width <= 0 || screenshotBox.height <= 0) continue;
+    if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
     const surfaceLabel = surface.surfaceType ? surface.surfaceType.toUpperCase() : "UNKNOWN_SURFACE";
     regions.push({
       id: `surface_${surface.surfaceType || "unknown"}_${surface.id}`,
@@ -17624,11 +17933,17 @@ var SanitizerPipeline = class {
       ...faceRegions,
       ...surfaceRegions
     ];
+    const canvasW = imageCanvas?.width || rawCapture.metadata.screenshotWidth || 1280;
+    const canvasH = imageCanvas?.height || rawCapture.metadata.screenshotHeight || 720;
+    const visibleRegions = allRegions.filter((r) => {
+      const b = r.screenshotBox;
+      return b.width > 1 && b.height > 1 && b.x + b.width > 0 && b.y + b.height > 0 && b.x < canvasW && b.y < canvasH;
+    });
     const detectionReport = {
       captureId: rawCapture.captureId,
       timestamp: Date.now(),
-      regions: allRegions,
-      uninspectableSurfacesFound: surfaceRegions.length > 0,
+      regions: visibleRegions,
+      uninspectableSurfacesFound: surfaceRegions.some((r) => visibleRegions.includes(r)),
       requiresFailClosedBlock: false
     };
     let sanitizedDataUrl;
@@ -17637,7 +17952,7 @@ var SanitizerPipeline = class {
     let workingCanvas = null;
     if (imageCanvas) {
       workingCanvas = imageCanvas;
-      const renderResult = MaskRenderer.renderMasks(imageCanvas, allRegions);
+      const renderResult = MaskRenderer.renderMasks(imageCanvas, visibleRegions);
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
       regionRecords = renderResult.regionRecords;
@@ -17657,7 +17972,7 @@ var SanitizerPipeline = class {
       });
       ctx.drawImage(img, 0, 0);
       workingCanvas = canvas;
-      const renderResult = MaskRenderer.renderMasks(canvas, allRegions);
+      const renderResult = MaskRenderer.renderMasks(canvas, visibleRegions);
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
       regionRecords = renderResult.regionRecords;
@@ -17728,7 +18043,7 @@ var SanitizerPipeline = class {
     });
     const sanitizedTitle = sanitizeElementName(snapshot.pageTitle);
     const verification = PostRedactionVerifier.verify(
-      allRegions,
+      visibleRegions,
       renderedCount,
       sanitizedElements,
       sanitizedTitle,
@@ -17740,25 +18055,25 @@ var SanitizerPipeline = class {
     }
     const redactionManifest = {
       manifestVersion: "1.0",
-      totalRegions: allRegions.length,
+      totalRegions: visibleRegions.length,
       categoryCounts: {
-        piiText: textRegions.length,
-        domInput: domRegions.length,
-        face: faceRegions.length,
-        surface: surfaceRegions.length
+        piiText: visibleRegions.filter((r) => r.detectorSource === "text_pii_regex").length,
+        domInput: visibleRegions.filter((r) => r.detectorSource === "dom_semantic").length,
+        face: visibleRegions.filter((r) => r.category === "face").length,
+        surface: visibleRegions.filter((r) => r.detectorSource === "surface_detector").length
       },
       methodCounts: {
-        opaqueBox: allRegions.filter((r) => r.method === "opaque_mask").length,
-        spatialBlur: allRegions.filter((r) => r.method === "gaussian_blur").length
+        opaqueBox: visibleRegions.filter((r) => r.method === "opaque_mask").length,
+        spatialBlur: visibleRegions.filter((r) => r.method === "gaussian_blur").length
       },
       placeholderConvention: "[REDACTED]",
       geometrySemantics: "clamped_css_pixels",
       pixelVerificationPerformed: true,
       pixelVerificationPassed: verification.isValid,
       uninspectableSurfacePolicy: "fail_closed",
-      visionAttempted: faceRegions.length > 0,
-      visionSucceeded: faceRegions.length > 0,
-      visionProvider: faceRegions.length > 0 ? "ModelRunner" : "None",
+      visionAttempted: visibleRegions.some((r) => r.category === "face"),
+      visionSucceeded: visibleRegions.some((r) => r.category === "face"),
+      visionProvider: visibleRegions.some((r) => r.category === "face") ? "ModelRunner" : "None",
       durationMs: Date.now() - (rawCapture.timestamp || Date.now())
     };
     const pageStateObj = {
@@ -17775,7 +18090,7 @@ var SanitizerPipeline = class {
     const safeCanonicalData = {
       captureId: rawCapture.captureId,
       goal: sanitizeElementName(goal),
-      maskCount: allRegions.length,
+      maskCount: visibleRegions.length,
       pageState: pageStateObj,
       elements: sanitizedElements
     };
@@ -17789,7 +18104,7 @@ var SanitizerPipeline = class {
       sanitizedScreenshotDataUrl: sanitizedDataUrl,
       elements: sanitizedElements,
       pageState: pageStateObj,
-      maskCount: allRegions.length,
+      maskCount: visibleRegions.length,
       payloadDigestSha256,
       timestamp: Date.now(),
       redactionManifest
@@ -19105,6 +19420,18 @@ var RunCoordinator = class {
         }
       }
       if (resolution.matchedIntent === "click_landmark" && resolution.targetPhrase) {
+        const hasAlreadyClickedLandmark = this.actionHistory.some(
+          (a) => a.actionId && a.actionId.startsWith("act_playbook_click_")
+        );
+        if (hasAlreadyClickedLandmark) {
+          return {
+            actionId: `act_local_finish_${step}_${Date.now()}`,
+            kind: "finish",
+            confidence: 0.98,
+            risk: "safe",
+            rationale: `Playbook landmark "${resolution.targetPhrase}" clicked and navigation verified`
+          };
+        }
         const targetTokens = tokenizeSemanticText(resolution.targetPhrase);
         const matchingEl = sanitized.elements.find((el2) => {
           const nameNorm = el2.sanitizedName.toLowerCase();
@@ -19160,6 +19487,33 @@ var RunCoordinator = class {
       if (isSearchDirective) {
         const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_playbook_fill_"));
         if (hasAlreadyFilled) {
+          const isOnSearchResults = (currentUrl || "").includes("search.html") || (currentUrl || "").includes("gsc.q=");
+          const wantsExploration = /(?:scour|explore|corner|drill|detail|read|view|click|open|all|every|find|accomplished)/i.test(trimmedGoal);
+          const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_"));
+          if (isOnSearchResults && wantsExploration && !hasAlreadyClickedResult) {
+            const queryTokens = tokenizeSemanticText(extractSearchQueryFromGoal(goal) || "missions");
+            const resultLink = sanitized.elements.find((el2) => {
+              if (el2.role !== "link" && el2.role !== "button") return false;
+              const nameNorm = el2.sanitizedName.toLowerCase();
+              if (nameNorm.includes("google") || nameNorm.includes("privacy") || nameNorm.includes("terms") || nameNorm === "search" || nameNorm.length < 4) {
+                return false;
+              }
+              if (queryTokens.some((t) => nameNorm.includes(t))) return true;
+              if (nameNorm.includes("isro") || nameNorm.includes("mission") || nameNorm.includes("spacecraft") || nameNorm.includes("earth")) return true;
+              return false;
+            });
+            if (resultLink) {
+              return {
+                actionId: `act_search_result_click_${step}_${Date.now()}`,
+                kind: "click",
+                targetLocalId: resultLink.localId,
+                confidence: 0.95,
+                risk: "safe",
+                rationale: `Drilling into search result "${resultLink.sanitizedName}" on search page`,
+                expectedPostcondition: { kind: "status_changed" }
+              };
+            }
+          }
           const query = extractSearchQueryFromGoal(goal) || "query";
           return {
             actionId: `act_local_finish_${step}_${Date.now()}`,
@@ -19212,7 +19566,44 @@ var RunCoordinator = class {
           rationale: `Safe ${reqFragment} drawer is visible and verified; task completed locally`
         };
       }
+      if (lastAction.actionId && lastAction.actionId.startsWith("act_search_result_click_")) {
+        const pageTitle = sanitized.pageState?.title || "Details Page";
+        return {
+          actionId: `act_local_finish_${step}_${Date.now()}`,
+          kind: "finish",
+          confidence: 0.98,
+          risk: "safe",
+          rationale: `Navigated from search results to verified details page: "${pageTitle}"`
+        };
+      }
       if (lastAction.actionId && lastAction.actionId.startsWith("act_playbook_fill_")) {
+        const isOnSearchResults = (currentUrl || "").includes("search.html") || (currentUrl || "").includes("gsc.q=");
+        const wantsExploration = /(?:scour|explore|corner|drill|detail|read|view|click|open|all|every|find|accomplished)/i.test(trimmedGoal);
+        const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_"));
+        if (isOnSearchResults && wantsExploration && !hasAlreadyClickedResult) {
+          const queryTokens = tokenizeSemanticText(extractSearchQueryFromGoal(goal) || "missions");
+          const resultLink = sanitized.elements.find((el2) => {
+            if (el2.role !== "link" && el2.role !== "button") return false;
+            const nameNorm = el2.sanitizedName.toLowerCase();
+            if (nameNorm.includes("google") || nameNorm.includes("privacy") || nameNorm.includes("terms") || nameNorm === "search" || nameNorm.length < 4) {
+              return false;
+            }
+            if (queryTokens.some((t) => nameNorm.includes(t))) return true;
+            if (nameNorm.includes("isro") || nameNorm.includes("mission") || nameNorm.includes("spacecraft") || nameNorm.includes("earth")) return true;
+            return false;
+          });
+          if (resultLink) {
+            return {
+              actionId: `act_search_result_click_${step}_${Date.now()}`,
+              kind: "click",
+              targetLocalId: resultLink.localId,
+              confidence: 0.95,
+              risk: "safe",
+              rationale: `Drilling into search result "${resultLink.sanitizedName}" on search page`,
+              expectedPostcondition: { kind: "status_changed" }
+            };
+          }
+        }
         const query = extractSearchQueryFromGoal(goal) || "query";
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,

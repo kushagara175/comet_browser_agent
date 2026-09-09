@@ -81,6 +81,23 @@ export declare const WIKIPEDIA_PLAYBOOK: DomainPlaybook;
  */
 export declare const ISRO_PLAYBOOK: DomainPlaybook;
 /**
+ * Built-in playbook for Bhuvan Indian Geo-Platform of NRSC/ISRO (bhuvan.nrsc.gov.in).
+ * Core Earth Observation & geo-spatial mapping portal for SIH problem statement.
+ */
+export declare const BHUVAN_PLAYBOOK: DomainPlaybook;
+/**
+ * Built-in playbook for Meteorological & Oceanographic Satellite Data Archival Centre (mosdac.gov.in).
+ */
+export declare const MOSDAC_PLAYBOOK: DomainPlaybook;
+/**
+ * Built-in playbook for VEDAS - Visualisation of Earth Observation Data and Archival System (vedas.sac.gov.in).
+ */
+export declare const VEDAS_PLAYBOOK: DomainPlaybook;
+/**
+ * Built-in playbook for Bhoonidhi Open Earth Observation Data Hub (bhoonidhi.nrsc.gov.in).
+ */
+export declare const BHOONIDHI_PLAYBOOK: DomainPlaybook;
+/**
  * Registry of known domain playbooks.
  */
 export declare const REGISTERED_PLAYBOOKS: ReadonlyArray<DomainPlaybook>;

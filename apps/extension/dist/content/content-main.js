@@ -767,9 +767,12 @@
         const iframes = currentDoc.querySelectorAll("iframe");
         iframes.forEach((f) => {
           const rect = f.getBoundingClientRect();
+          const iframeOffset = { x: rect.x + offset.x, y: rect.y + offset.y };
+          if (rect.width <= 2 || rect.height <= 2 || iframeOffset.x + rect.width <= 0 || iframeOffset.y + rect.height <= 0) {
+            return;
+          }
           if (rect.width > 0 && rect.height > 0) {
             surfaceCounter++;
-            const iframeOffset = { x: rect.x + offset.x, y: rect.y + offset.y };
             let isSameOrigin = false;
             let innerDoc = null;
             try {

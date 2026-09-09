@@ -685,6 +685,13 @@ export const ISRO_PLAYBOOK: DomainPlaybook = {
       matchKeywords: ['launcher', 'launchers', 'launch vehicle', 'rocket', 'pslv', 'gslv', 'lvm3', 'sslv']
     },
     {
+      name: 'earth_observation',
+      path: '/Earth_Observation.html',
+      aliases: ['/Earth_Observation.html', '/earth_observation', '/earth-observation.html', '/EarthObservation.html'],
+      description: 'ISRO Earth Observation applications and satellite data services (Bhuvan, MOSDAC, VEDAS, Bhoonidhi)',
+      matchKeywords: ['earth observation', 'earth', 'observation', 'remote sensing', 'bhuvan', 'mosdac', 'vedas', 'bhoonidhi', 'thematic maps', 'weather satellite']
+    },
+    {
       name: 'careers',
       path: '/Careers.html',
       aliases: ['/Careers.html', '/careers', '/recruitment', '/Careers'],
@@ -720,6 +727,14 @@ export const ISRO_PLAYBOOK: DomainPlaybook = {
       aliases: ['missions', 'all missions', 'spacecraft missions', 'space missions'],
       role: 'link',
       description: 'Navigation link to ISRO space missions directory',
+      intentAction: 'click'
+    },
+    {
+      id: 'earth_observation_nav',
+      phrase: 'Earth Observation',
+      aliases: ['earth observation', 'earth observation applications', 'remote sensing', 'earth satellites', 'bhuvan'],
+      role: 'link',
+      description: 'Navigation link to ISRO Earth Observation applications portal',
       intentAction: 'click'
     },
     {
@@ -776,11 +791,297 @@ export const ISRO_PLAYBOOK: DomainPlaybook = {
 };
 
 /**
+ * Built-in playbook for Bhuvan Indian Geo-Platform of NRSC/ISRO (bhuvan.nrsc.gov.in).
+ * Core Earth Observation & geo-spatial mapping portal for SIH problem statement.
+ */
+export const BHUVAN_PLAYBOOK: DomainPlaybook = {
+  domain: 'bhuvan.nrsc.gov.in',
+  name: 'Bhuvan Indian Geo-Platform (NRSC/ISRO)',
+  aliases: ['bhuvan.nrsc.gov.in', 'bhuvan', 'bhuvan geoportal', 'bhuvan nrsc', 'nrsc bhuvan', 'bhuvan earth observation'],
+  routes: [
+    {
+      name: 'geoportal',
+      path: '/bhuvan_geoportal.php',
+      aliases: ['/bhuvan_geoportal.php', '/2d', '/3d', '/viewer', '/geoportal'],
+      description: 'Bhuvan 2D/3D map viewer and Earth observation geoportal',
+      matchKeywords: ['geoportal', 'map', '2d', '3d', 'earth observation', 'viewer', 'satellite imagery', 'imagery', 'location', 'locations']
+    },
+    {
+      name: 'thematic',
+      path: '/thematic',
+      aliases: ['/thematic', '/thematic_services', '/applications'],
+      description: 'Bhuvan thematic application maps and sectoral geo-spatial services',
+      matchKeywords: ['thematic', 'thematic maps', 'agriculture', 'forestry', 'water resources', 'land']
+    },
+    {
+      name: 'disaster',
+      path: '/disaster',
+      aliases: ['/disaster', '/disaster_services', '/ndms'],
+      description: 'Bhuvan disaster management support services (floods, cyclones, earthquakes, forest fires)',
+      matchKeywords: ['disaster', 'flood', 'cyclone', 'earthquake', 'fire', 'emergency', 'hazard']
+    },
+    {
+      name: 'open_data',
+      path: '/data',
+      aliases: ['/data', '/open_data', '/bhuvan_data'],
+      description: 'Bhuvan open data archive and satellite data download portal',
+      matchKeywords: ['data', 'open data', 'download', 'archive', 'products', 'free data']
+    },
+    {
+      name: 'home',
+      path: '/',
+      description: 'Bhuvan NRSC portal homepage',
+      matchKeywords: ['home', 'homepage', 'main page', 'overview']
+    }
+  ],
+  landmarks: [
+    {
+      id: 'bhuvan_2d_3d',
+      phrase: '2D / 3D Map',
+      aliases: ['2d', '3d', 'map', 'map viewer', 'explore map', '2d/3d', 'visualisation'],
+      role: 'link',
+      description: 'Explore Bhuvan 2D/3D visualization map',
+      intentAction: 'click'
+    },
+    {
+      id: 'bhuvan_search',
+      phrase: 'Search Location',
+      aliases: ['search', 'search location', 'find place', 'find city', 'search place', 'location search', 'txtSearch'],
+      role: 'input',
+      description: 'Search geographic place name or coordinates',
+      intentAction: 'type'
+    },
+    {
+      id: 'thematic_services',
+      phrase: 'Thematic Services',
+      aliases: ['thematic', 'applications', 'thematic services', 'thematic maps'],
+      role: 'link',
+      description: 'Access thematic GIS application data',
+      intentAction: 'click'
+    },
+    {
+      id: 'disaster_services',
+      phrase: 'Disaster Services',
+      aliases: ['disaster', 'disaster management', 'crisis support', 'emergency'],
+      role: 'link',
+      description: 'Access disaster support maps and feeds',
+      intentAction: 'click'
+    },
+    {
+      id: 'open_data_download',
+      phrase: 'Open Data Archive',
+      aliases: ['open data', 'download satellite data', 'free data', 'data archive'],
+      role: 'link',
+      description: 'Download open Earth observation datasets',
+      intentAction: 'click'
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: 'thematic_layers',
+      labelKeywords: ['thematic layers', 'layers', 'services', 'applications'],
+      containerHints: ['stat', 'card', 'metric', 'counter'],
+      valuePattern: '\\b\\d+\\b',
+      description: 'Total number of thematic layers available'
+    }
+  ],
+  formFieldHints: {
+    search: ['search', 'searchBox', 'txtSearch', 'locationInput', 'query', 'Search Location']
+  }
+};
+
+/**
+ * Built-in playbook for Meteorological & Oceanographic Satellite Data Archival Centre (mosdac.gov.in).
+ */
+export const MOSDAC_PLAYBOOK: DomainPlaybook = {
+  domain: 'mosdac.gov.in',
+  name: 'MOSDAC Meteorological and Oceanographic Satellite Data',
+  aliases: ['mosdac.gov.in', 'www.mosdac.gov.in', 'mosdac', 'mosdac isro'],
+  routes: [
+    {
+      name: 'live_weather',
+      path: '/live',
+      aliases: ['/live', '/weather', '/meteorology', '/insat'],
+      description: 'INSAT live meteorological imagery and weather forecast products',
+      matchKeywords: ['weather', 'insat', 'cyclone', 'satellite imagery', 'meteorological', 'forecast', 'radar', 'clouds']
+    },
+    {
+      name: 'ocean_data',
+      path: '/ocean',
+      aliases: ['/ocean', '/oceanography', '/sst'],
+      description: 'Oceanographic satellite products and sea surface temperature',
+      matchKeywords: ['ocean', 'sea', 'sst', 'currents', 'winds', 'wave']
+    },
+    {
+      name: 'catalogue',
+      path: '/catalogue',
+      aliases: ['/catalogue', '/data', '/archive', '/missions'],
+      description: 'MOSDAC satellite mission data catalogue and search',
+      matchKeywords: ['data', 'catalogue', 'missions', 'search', 'archive', 'download']
+    },
+    {
+      name: 'home',
+      path: '/',
+      description: 'MOSDAC portal homepage',
+      matchKeywords: ['home', 'homepage', 'main page', 'overview']
+    }
+  ],
+  landmarks: [
+    {
+      id: 'mosdac_weather_link',
+      phrase: 'Weather Imagery',
+      aliases: ['weather', 'live weather', 'satellite imagery', 'insat imagery', 'live images'],
+      role: 'link',
+      description: 'View live INSAT satellite weather imagery',
+      intentAction: 'click'
+    },
+    {
+      id: 'mosdac_search',
+      phrase: 'Search Data',
+      aliases: ['search', 'search data', 'query data', 'product search', 'txtSearch'],
+      role: 'input',
+      description: 'Search meteorological datasets and satellite passes',
+      intentAction: 'type'
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: 'satellite_passes',
+      labelKeywords: ['passes', 'products', 'datasets', 'imagery'],
+      containerHints: ['stat', 'card', 'metric', 'counter'],
+      valuePattern: '\\b\\d+\\b',
+      description: 'Total satellite passes or datasets'
+    }
+  ],
+  formFieldHints: {
+    search: ['search', 'searchInput', 'query', 'searchData']
+  }
+};
+
+/**
+ * Built-in playbook for VEDAS - Visualisation of Earth Observation Data and Archival System (vedas.sac.gov.in).
+ */
+export const VEDAS_PLAYBOOK: DomainPlaybook = {
+  domain: 'vedas.sac.gov.in',
+  name: 'VEDAS - Visualisation of Earth Observation Data (SAC/ISRO)',
+  aliases: ['vedas.sac.gov.in', 'vedas', 'sac vedas', 'vedas isro'],
+  routes: [
+    {
+      name: 'solar_energy',
+      path: '/solar',
+      aliases: ['/solar', '/solar_calculator', '/rooftop_solar'],
+      description: 'Solar energy potential calculator and rooftop solar assessment',
+      matchKeywords: ['solar', 'solar energy', 'solar potential', 'rooftop', 'renewable']
+    },
+    {
+      name: 'vegetation',
+      path: '/vegetation',
+      aliases: ['/vegetation', '/agriculture', '/ndvi'],
+      description: 'Vegetation indices, NDVI, and agricultural monitoring',
+      matchKeywords: ['vegetation', 'ndvi', 'agriculture', 'crops', 'drought']
+    },
+    {
+      name: 'coastal',
+      path: '/coastal',
+      aliases: ['/coastal', '/wetlands', '/marine'],
+      description: 'Coastal zones and wetland monitoring applications',
+      matchKeywords: ['coastal', 'wetlands', 'shoreline', 'ocean']
+    },
+    {
+      name: 'home',
+      path: '/',
+      description: 'VEDAS SAC homepage',
+      matchKeywords: ['home', 'homepage', 'main page', 'overview']
+    }
+  ],
+  landmarks: [
+    {
+      id: 'solar_calculator',
+      phrase: 'Solar Potential',
+      aliases: ['solar', 'solar calculator', 'solar rooftop', 'solar energy'],
+      role: 'link',
+      description: 'Access solar energy evaluation tools',
+      intentAction: 'click'
+    },
+    {
+      id: 'vedas_search',
+      phrase: 'Search VEDAS',
+      aliases: ['search', 'query', 'filter', 'search vedas'],
+      role: 'input',
+      description: 'Search geospatial applications and products',
+      intentAction: 'type'
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: 'applications_count',
+      labelKeywords: ['applications', 'tools', 'services'],
+      containerHints: ['stat', 'card', 'metric', 'counter'],
+      valuePattern: '\\b\\d+\\b',
+      description: 'Total number of geospatial applications'
+    }
+  ],
+  formFieldHints: {
+    search: ['search', 'query', 'txtSearch']
+  }
+};
+
+/**
+ * Built-in playbook for Bhoonidhi Open Earth Observation Data Hub (bhoonidhi.nrsc.gov.in).
+ */
+export const BHOONIDHI_PLAYBOOK: DomainPlaybook = {
+  domain: 'bhoonidhi.nrsc.gov.in',
+  name: 'Bhoonidhi Open Earth Observation Data Hub (NRSC/ISRO)',
+  aliases: ['bhoonidhi.nrsc.gov.in', 'bhoonidhi', 'bhoonidhi nrsc', 'nrsc bhoonidhi'],
+  routes: [
+    {
+      name: 'data_hub',
+      path: '/datahub',
+      aliases: ['/datahub', '/catalogue', '/search', '/products'],
+      description: 'Search and download multi-sensor satellite imagery and GIS layers',
+      matchKeywords: ['satellite data', 'download', 'scenes', 'imagery', 'cartosat', 'resourcesat', 'sentinel', 'search']
+    },
+    {
+      name: 'home',
+      path: '/',
+      description: 'Bhoonidhi portal homepage',
+      matchKeywords: ['home', 'homepage', 'main page', 'overview']
+    }
+  ],
+  landmarks: [
+    {
+      id: 'bhoonidhi_search',
+      phrase: 'Search Products',
+      aliases: ['search', 'search products', 'area search', 'date range', 'satellite search'],
+      role: 'input',
+      description: 'Search satellite imagery products by area or date',
+      intentAction: 'type'
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: 'scenes_available',
+      labelKeywords: ['scenes', 'products', 'satellites', 'datasets'],
+      containerHints: ['stat', 'card', 'metric', 'counter'],
+      valuePattern: '\\b\\d+\\b',
+      description: 'Total satellite scenes available for download'
+    }
+  ],
+  formFieldHints: {
+    search: ['search', 'query', 'productSearch']
+  }
+};
+
+/**
  * Registry of known domain playbooks.
  */
 export const REGISTERED_PLAYBOOKS: ReadonlyArray<DomainPlaybook> = [
   SIH_PLAYBOOK,
   ISRO_PLAYBOOK,
+  BHUVAN_PLAYBOOK,
+  MOSDAC_PLAYBOOK,
+  VEDAS_PLAYBOOK,
+  BHOONIDHI_PLAYBOOK,
   GITHUB_PLAYBOOK,
   YOUTUBE_PLAYBOOK,
   REDDIT_PLAYBOOK,
@@ -1160,6 +1461,18 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
     if (siteKeyword.includes('isro') || siteKeyword.includes('space')) {
       return 'https://www.isro.gov.in';
     }
+    if (siteKeyword.includes('bhuvan')) {
+      return 'https://bhuvan.nrsc.gov.in';
+    }
+    if (siteKeyword.includes('mosdac')) {
+      return 'https://mosdac.gov.in';
+    }
+    if (siteKeyword.includes('vedas')) {
+      return 'https://vedas.sac.gov.in';
+    }
+    if (siteKeyword.includes('bhoonidhi')) {
+      return 'https://bhoonidhi.nrsc.gov.in';
+    }
     if (siteKeyword.includes('sih') || siteKeyword.includes('hackathon')) {
       return 'https://sih.gov.in';
     }
@@ -1191,6 +1504,10 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
   if (navDirective) {
     const target = navDirective[1].trim().toLowerCase();
     if (target === 'isro' || target.includes('isro')) return 'https://www.isro.gov.in';
+    if (target.includes('bhuvan')) return 'https://bhuvan.nrsc.gov.in';
+    if (target.includes('mosdac')) return 'https://mosdac.gov.in';
+    if (target.includes('vedas')) return 'https://vedas.sac.gov.in';
+    if (target.includes('bhoonidhi')) return 'https://bhoonidhi.nrsc.gov.in';
     if (target === 'sih' || target.includes('sih')) return 'https://sih.gov.in';
     if (target === 'github' || target.includes('github')) return 'https://github.com';
     if (target === 'wikipedia' || target.includes('wikipedia')) return 'https://www.wikipedia.org';
