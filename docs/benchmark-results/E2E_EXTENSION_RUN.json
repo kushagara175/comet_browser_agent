@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-06T21:09:15.977Z",
+  "timestamp": "2026-09-09T19:47:48.996Z",
   "harness": "extension-e2e",
   "measured": true,
   "metadata": {
@@ -7,9 +7,9 @@
     "environment": "darwin arm64 (Node v22.22.0)",
     "chromePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "extensionId": "knnfeljhnohhfjiecikkaeibfecekiem",
-    "gitSha": "bd2de10",
+    "gitSha": "6731736",
     "model": {
-      "name": "qwen/qwen2.5-vl-72b-instruct",
+      "name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
       "provider": "vlm-cloud",
       "connected": true
     }
@@ -20,47 +20,47 @@
   "error": null,
   "diagnostic": null,
   "proposal": {
-    "actionId": "act_local_finish_2_1788728955954",
+    "actionId": "act_local_finish_2_1788983268965",
     "kind": "finish",
     "confidence": 1,
     "risk": "safe",
-    "rationale": "Safe preview drawer is visible and inspected; task completed locally"
+    "rationale": "Safe preview drawer is visible and verified; task completed locally"
   },
   "maskCount": 5,
-  "elementsTransmitted": 10,
-  "sanitizedScreenshotBytes": 246650,
+  "elementsTransmitted": 12,
+  "sanitizedScreenshotBytes": 284489,
   "telemetry": {
-    "runId": "run_1788728951172",
-    "t0_start": 1788728951172,
-    "t1_captureComplete": 1788728955923,
-    "t2_detectionComplete": 1788728955923,
-    "t3_sanitizationValidated": 1788728955952,
-    "t4_reasoningReceived": 1788728955954,
-    "t5_actionValidated": 1788728955954,
-    "t6_actionExecuted": 1788728955954,
-    "t7_stateVerified": 1788728955954,
-    "totalLatencyMs": 4782,
-    "clientLatencyMs": 364,
-    "serverLatencyMs": 4417,
+    "runId": "run_1788983260895_6rqrz39",
+    "t0_start": 1788983260900,
+    "t1_captureComplete": 1788983268927,
+    "t2_detectionComplete": 1788983268927,
+    "t3_sanitizationValidated": 1788983268961,
+    "t4_reasoningReceived": 1788983268965,
+    "t5_actionValidated": 1788983268965,
+    "t6_actionExecuted": 1788983268965,
+    "t7_stateVerified": 1788983268965,
+    "totalLatencyMs": 8065,
+    "clientLatencyMs": 1090,
+    "serverLatencyMs": 6974,
     "stepCount": 10,
     "stepsCompleted": 2
   },
   "steps": [
     {
       "step": 1,
-      "captureId": "cap_1788728951173_1",
-      "pageGeneration": "cap_1788728951173_1",
+      "captureId": "cap_1788983260903_1",
+      "pageGeneration": "cap_1788983260903_1",
       "maskCount": 5,
-      "sanitizedScreenshotBytes": 328034,
+      "sanitizedScreenshotBytes": 356722,
       "decisionOrigin": "server",
       "proposal": {
         "actionId": "act_1",
         "kind": "click",
-        "targetLocalId": "el_6",
-        "confidence": 0.95,
+        "targetLocalId": "el_7",
+        "confidence": 0.96,
         "risk": "safe",
-        "rationale": "Clicking 'Open Safe Preview' aligns with the goal to view the pending request safely.",
-        "expectedState": "Safe preview for the pending request should open."
+        "rationale": "Click the 'Open Safe Preview' button to view the safe preview of the pending request #REQ-1044",
+        "expectedState": "Safe preview modal or panel appears showing details of request #REQ-1044"
       },
       "riskDecision": "safe",
       "confidenceDecision": "accepted",
@@ -78,28 +78,28 @@
       },
       "networkRequestMade": true,
       "timings": {
-        "tCapture": 16,
+        "tCapture": 35,
         "tDetection": 0,
-        "tSanitization": 277,
-        "tReasoning": 4415,
-        "tExecution": 7,
+        "tSanitization": 869,
+        "tReasoning": 6970,
+        "tExecution": 127,
         "tVerification": 0,
-        "total": 4715
+        "total": 8001
       }
     },
     {
       "step": 2,
-      "captureId": "cap_1788728955889_2",
-      "pageGeneration": "cap_1788728955889_2",
+      "captureId": "cap_1788983268903_2",
+      "pageGeneration": "cap_1788983268903_2",
       "maskCount": 5,
-      "sanitizedScreenshotBytes": 328866,
+      "sanitizedScreenshotBytes": 379318,
       "decisionOrigin": "local",
       "proposal": {
-        "actionId": "act_local_finish_2_1788728955954",
+        "actionId": "act_local_finish_2_1788983268965",
         "kind": "finish",
         "confidence": 1,
         "risk": "safe",
-        "rationale": "Safe preview drawer is visible and inspected; task completed locally"
+        "rationale": "Safe preview drawer is visible and verified; task completed locally"
       },
       "riskDecision": "safe",
       "confidenceDecision": "accepted",
@@ -111,9 +111,9 @@
       },
       "networkRequestMade": false,
       "timings": {
-        "total": 66
+        "total": 63
       }
     }
   ],
-  "wallClockMs": 5010
+  "wallClockMs": 8104
 }

@@ -607,10 +607,124 @@ export const WIKIPEDIA_PLAYBOOK = {
     }
 };
 /**
+ * Built-in playbook for Indian Space Research Organisation (isro.gov.in) portal.
+ * Core domain for SIH problem statement SIH26171 / SIH26209.
+ */
+export const ISRO_PLAYBOOK = {
+    domain: 'isro.gov.in',
+    name: 'Indian Space Research Organisation',
+    aliases: ['isro.gov.in', 'www.isro.gov.in', 'isro', 'indian space research organisation', 'isro portal'],
+    routes: [
+        {
+            name: 'missions',
+            path: '/Missions.html',
+            aliases: ['/Missions.html', '/missions', '/spacecraft.html', '/launchers.html', '/Missions'],
+            description: 'ISRO space missions and satellite timeline directory',
+            matchKeywords: ['mission', 'missions', 'space missions', 'chandrayaan', 'gaganyaan', 'aditya', 'mangalyaan', 'satellites']
+        },
+        {
+            name: 'launchers',
+            path: '/Launchers.html',
+            aliases: ['/Launchers.html', '/launchers', '/Launchers', '/pslv.html', '/gslv.html'],
+            description: 'ISRO launch vehicle family (PSLV, GSLV, LVM3, SSLV)',
+            matchKeywords: ['launcher', 'launchers', 'launch vehicle', 'rocket', 'pslv', 'gslv', 'lvm3', 'sslv']
+        },
+        {
+            name: 'careers',
+            path: '/Careers.html',
+            aliases: ['/Careers.html', '/careers', '/recruitment', '/Careers'],
+            description: 'ISRO recruitment notices, vacancies, and ICRB jobs',
+            matchKeywords: ['career', 'careers', 'job', 'jobs', 'recruitment', 'vacancy', 'vacancies', 'icrb']
+        },
+        {
+            name: 'centres',
+            path: '/Centres.html',
+            aliases: ['/Centres.html', '/centres', '/Centres'],
+            description: 'ISRO research centres and facilities (VSSC, URSC, SDSC SHAR, SAC, NRSC)',
+            matchKeywords: ['centres', 'centers', 'facilities', 'vssc', 'ursc', 'sdsc', 'sac', 'nrsc']
+        },
+        {
+            name: 'home',
+            path: '/',
+            description: 'ISRO official portal homepage',
+            matchKeywords: ['home', 'homepage', 'main page', 'overview']
+        }
+    ],
+    landmarks: [
+        {
+            id: 'isro_search',
+            phrase: 'Search ISRO',
+            aliases: ['search isro', 'search', 'search bar', 'search box', 'query', 'filter', 'txtSearch'],
+            role: 'input',
+            description: 'Search box to query ISRO missions, publications, and updates',
+            intentAction: 'type'
+        },
+        {
+            id: 'missions_nav',
+            phrase: 'Missions',
+            aliases: ['missions', 'all missions', 'spacecraft missions', 'space missions'],
+            role: 'link',
+            description: 'Navigation link to ISRO space missions directory',
+            intentAction: 'click'
+        },
+        {
+            id: 'launchers_nav',
+            phrase: 'Launchers',
+            aliases: ['launchers', 'launch vehicles', 'rockets'],
+            role: 'link',
+            description: 'Navigation link to ISRO launch vehicles',
+            intentAction: 'click'
+        },
+        {
+            id: 'careers_nav',
+            phrase: 'Careers',
+            aliases: ['careers', 'recruitment', 'jobs'],
+            role: 'link',
+            description: 'Navigation link to ISRO careers and recruitment notices',
+            intentAction: 'click'
+        },
+        {
+            id: 'centres_nav',
+            phrase: 'Centres',
+            aliases: ['centres', 'centers', 'isro centres'],
+            role: 'link',
+            description: 'Navigation link to ISRO research centres',
+            intentAction: 'click'
+        }
+    ],
+    metricsRules: [
+        {
+            metricId: 'spacecraft_missions',
+            labelKeywords: ['spacecraft missions', 'spacecraft', 'satellites'],
+            containerHints: ['stat', 'card', 'metric', 'counter', 'hero'],
+            valuePattern: '\\b\\d+\\b',
+            description: 'Total number of spacecraft missions conducted'
+        },
+        {
+            metricId: 'launch_missions',
+            labelKeywords: ['launch missions', 'launches', 'launch vehicle missions'],
+            containerHints: ['stat', 'card', 'metric', 'counter', 'hero'],
+            valuePattern: '\\b\\d+\\b',
+            description: 'Total launch vehicle missions conducted'
+        },
+        {
+            metricId: 'customer_satellites',
+            labelKeywords: ['foreign satellites', 'customer satellites', 'commercial satellites'],
+            containerHints: ['stat', 'card', 'metric', 'counter', 'hero'],
+            valuePattern: '\\b\\d+\\b',
+            description: 'Total foreign / customer satellites launched'
+        }
+    ],
+    formFieldHints: {
+        search: ['search', 'searchInput', 'q', 'query', 'txtSearch', 'Search ISRO']
+    }
+};
+/**
  * Registry of known domain playbooks.
  */
 export const REGISTERED_PLAYBOOKS = [
     SIH_PLAYBOOK,
+    ISRO_PLAYBOOK,
     GITHUB_PLAYBOOK,
     YOUTUBE_PLAYBOOK,
     REDDIT_PLAYBOOK,
@@ -899,5 +1013,105 @@ export function extractSearchQueryFromGoal(goal) {
     }
     q = q.replace(/\s+(?:in|into|on)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page)$/i, '');
     return q.trim();
+}
+/**
+ * Extracts a target navigation URL from a natural language goal when starting from scratch
+ * or when the user explicitly directs navigation to a website.
+ * E.g. "open sih.gov.in and search isro" -> "https://sih.gov.in"
+ *      "go to isro.gov.in and search missions" -> "https://isro.gov.in"
+ *      "in the isro website find launches" -> "https://www.isro.gov.in"
+ *      "http://localhost:4500" -> "http://localhost:4500"
+ */
+export function extractTargetUrlFromGoal(goal) {
+    if (!goal || typeof goal !== 'string')
+        return undefined;
+    const g = goal.trim();
+    // 1. Explicit http/https URL in goal
+    const urlMatch = g.match(/https?:\/\/[^\s"'<>]+/i);
+    if (urlMatch) {
+        let u = urlMatch[0];
+        u = u.replace(/[.,;!?)]+$/, '');
+        return u;
+    }
+    // 2. Direct localhost with port
+    const localhostMatch = g.match(/\b(localhost:\d+(?:\/[^\s"'<>]*)?)\b/i);
+    if (localhostMatch) {
+        return `http://${localhostMatch[1]}`;
+    }
+    // 3. Direct domain pattern (e.g. sih.gov.in, isro.gov.in, github.com)
+    const domainMatch = g.match(/\b((?:[a-zA-Z0-9-]+\.)+(?:gov\.in|nic\.in|ac\.in|org\.in|co\.in|com|org|net|io|in|edu|gov|dev|app|ai|me))(?:\/([^\s"'<>]*))?\b/i);
+    if (domainMatch) {
+        const domain = domainMatch[1];
+        const path = domainMatch[2] ? `/${domainMatch[2]}` : '';
+        return `https://${domain}${path}`;
+    }
+    // 4. Contextual target phrasing: "in/on/open/visit/go to [the] <name> (website|portal|site|page|org)"
+    const contextMatch = g.match(/\b(?:in|on|at|open|load|visit|go\s+to|navigate\s+to)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+(?:website|portal|site|page|org|organisation)\b/i);
+    if (contextMatch) {
+        const siteKeyword = contextMatch[1].trim().toLowerCase();
+        if (siteKeyword.includes('isro') || siteKeyword.includes('space')) {
+            return 'https://www.isro.gov.in';
+        }
+        if (siteKeyword.includes('sih') || siteKeyword.includes('hackathon')) {
+            return 'https://sih.gov.in';
+        }
+        if (siteKeyword.includes('github')) {
+            return 'https://github.com';
+        }
+        if (siteKeyword.includes('wikipedia') || siteKeyword.includes('wiki')) {
+            return 'https://www.wikipedia.org';
+        }
+        if (siteKeyword.includes('youtube')) {
+            return 'https://www.youtube.com';
+        }
+        if (siteKeyword.includes('reddit')) {
+            return 'https://www.reddit.com';
+        }
+        if (siteKeyword.includes('duckduckgo')) {
+            return 'https://duckduckgo.com';
+        }
+        if (siteKeyword.includes('google')) {
+            return 'https://www.google.com';
+        }
+        if (siteKeyword.includes('demo') || siteKeyword.includes('mock') || siteKeyword.includes('test')) {
+            return 'http://localhost:4500';
+        }
+    }
+    // 5. Explicit navigation verb at start of goal: "open/go to/visit <target>"
+    const navDirective = g.match(/^(?:please\s+|kindly\s+)?(?:open|go\s+to|visit|launch|load)\s+([a-zA-Z0-9_\s.-]+?)(?:\s+(?:and|then|,)|$)/i);
+    if (navDirective) {
+        const target = navDirective[1].trim().toLowerCase();
+        if (target === 'isro' || target.includes('isro'))
+            return 'https://www.isro.gov.in';
+        if (target === 'sih' || target.includes('sih'))
+            return 'https://sih.gov.in';
+        if (target === 'github' || target.includes('github'))
+            return 'https://github.com';
+        if (target === 'wikipedia' || target.includes('wikipedia'))
+            return 'https://www.wikipedia.org';
+        if (target === 'youtube' || target.includes('youtube'))
+            return 'https://www.youtube.com';
+        if (target === 'reddit' || target.includes('reddit'))
+            return 'https://www.reddit.com';
+        if (target === 'duckduckgo' || target.includes('duckduckgo'))
+            return 'https://duckduckgo.com';
+        if (target === 'google' || target.includes('google'))
+            return 'https://www.google.com';
+        if (target.includes('demo') || target.includes('portal'))
+            return 'http://localhost:4500';
+    }
+    // 6. Registered Playbook matches against registered domains and distinct aliases
+    const lower = g.toLowerCase();
+    for (const playbook of REGISTERED_PLAYBOOKS) {
+        for (const alias of playbook.aliases) {
+            if (alias.length >= 4) {
+                const regex = new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                if (regex.test(lower)) {
+                    return `https://${playbook.domain}`;
+                }
+            }
+        }
+    }
+    return undefined;
 }
 //# sourceMappingURL=domain-playbooks.js.map

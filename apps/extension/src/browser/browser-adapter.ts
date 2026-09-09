@@ -23,6 +23,7 @@ export interface BrowserAdapter {
   sendMessageToTab<T = any>(tabId: number, message: any): Promise<T>;
   sendMessageToRuntime<T = any>(message: any): Promise<T>;
   getActiveTab(preferredTabId?: number): Promise<{ id: number; url: string; title: string; windowId?: number }>;
+  navigateTab?(tabId: number, url: string): Promise<void>;
   getStorage<T>(key: string): Promise<T | null>;
   setStorage<T>(key: string, value: T): Promise<void>;
   runInSanitizerHost(request: SanitizationHostRequest): Promise<SanitizedContext>;
@@ -236,6 +237,36 @@ export class WebExtensionAdapter implements BrowserAdapter {
         });
       });
     });
+  }
+
+  async navigateTab(tabId: number, url: string): Promise<void> {
+    const api = this.browserAPI;
+    if (api && api.tabs && api.tabs.update) {
+      await new Promise<void>((resolve) => {
+        let finished = false;
+        const done = () => {
+          if (!finished) {
+            finished = true;
+            if (api.tabs.onUpdated && api.tabs.onUpdated.removeListener) {
+              try { api.tabs.onUpdated.removeListener(listener); } catch {}
+            }
+            resolve();
+          }
+        };
+        const listener = (updatedTabId: number, changeInfo: { status?: string }) => {
+          if (updatedTabId === tabId && changeInfo.status === 'complete') {
+            done();
+          }
+        };
+        if (api.tabs.onUpdated && api.tabs.onUpdated.addListener) {
+          try { api.tabs.onUpdated.addListener(listener); } catch {}
+        }
+        setTimeout(done, 5000);
+        api.tabs.update(tabId, { url }, () => {});
+      });
+      // Settle buffer for content script injection & DOM layout
+      await new Promise((r) => setTimeout(r, 1000));
+    }
   }
 
   async getStorage<T>(key: string): Promise<T | null> {

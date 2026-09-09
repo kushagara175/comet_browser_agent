@@ -356,5 +356,145 @@ test('Domain Playbooks: Reddit and Search engines (DuckDuckGo, Google, Wikipedia
   assert.equal(metric.value, '142');
 });
 
+test('Domain Playbooks: ISRO_PLAYBOOK matches isro.gov.in hostnames and resolves intents', async () => {
+  const {
+    ISRO_PLAYBOOK,
+    lookupDomainPlaybook,
+    resolvePlaybookIntent,
+    extractMetricsWithPlaybook
+  } = await import('../packages/protocol/dist/index.js');
+
+  assert.equal(lookupDomainPlaybook('https://isro.gov.in')?.domain, 'isro.gov.in');
+  assert.equal(lookupDomainPlaybook('https://www.isro.gov.in/Missions.html')?.domain, 'isro.gov.in');
+  assert.equal(lookupDomainPlaybook('https://careers.isro.gov.in')?.domain, 'isro.gov.in');
+
+  // Search missions intent -> fill_field targeting Search ISRO
+  const searchRes = resolvePlaybookIntent(ISRO_PLAYBOOK, 'search for chandrayaan missions', 'https://www.isro.gov.in');
+  assert.equal(searchRes.matchedIntent, 'fill_field');
+  assert.equal(searchRes.targetPhrase, 'Search ISRO');
+  assert.equal(searchRes.targetRole, 'input');
+
+  // Launchers navigation -> click_landmark targeting Launchers
+  const launcherRes = resolvePlaybookIntent(ISRO_PLAYBOOK, 'view launch vehicles and rockets', 'https://www.isro.gov.in');
+  assert.equal(launcherRes.matchedIntent, 'click_landmark');
+  assert.equal(launcherRes.targetPhrase, 'Launchers');
+
+  // Metric extraction for spacecraft missions
+  const metricRule = ISRO_PLAYBOOK.metricsRules.find(r => r.metricId === 'spacecraft_missions');
+  assert.ok(metricRule);
+  const metric = extractMetricsWithPlaybook('Spacecraft Missions: 125 successful spacecraft launched.', metricRule);
+  assert.ok(metric);
+  assert.equal(metric.value, '125');
+  assert.equal(metric.label, 'spacecraft_missions');
+});
+
+test('Domain Playbooks: extractTargetUrlFromGoal correctly extracts navigation targets from natural language goals', async () => {
+  const { extractTargetUrlFromGoal } = await import('../packages/protocol/dist/index.js');
+
+  // Explicit URLs
+  assert.equal(extractTargetUrlFromGoal('go to https://sih.gov.in/signin'), 'https://sih.gov.in/signin');
+  assert.equal(extractTargetUrlFromGoal('open http://localhost:4500 and verify login'), 'http://localhost:4500');
+
+  // Direct domains
+  assert.equal(extractTargetUrlFromGoal('open sih.gov.in and search isro'), 'https://sih.gov.in');
+  assert.equal(extractTargetUrlFromGoal('go to isro.gov.in and search missions'), 'https://isro.gov.in');
+  assert.equal(extractTargetUrlFromGoal('visit github.com'), 'https://github.com');
+
+  // Contextual phrases ("in the isro website...")
+  assert.equal(extractTargetUrlFromGoal('in the isro website find launch missions'), 'https://www.isro.gov.in');
+  assert.equal(extractTargetUrlFromGoal('in sih website search for isro problem statement'), 'https://sih.gov.in');
+
+  // Directive shortcuts ("open isro and search missions")
+  assert.equal(extractTargetUrlFromGoal('open isro and search missions'), 'https://www.isro.gov.in');
+  assert.equal(extractTargetUrlFromGoal('open sih and search PS 171'), 'https://sih.gov.in');
+  assert.equal(extractTargetUrlFromGoal('open wikipedia and find quantum computing'), 'https://www.wikipedia.org');
+});
+
+test('Domain Playbooks: RunCoordinator auto-navigates from scratch on blank/restricted tab and completes goal', async () => {
+  const { RunCoordinator } = await import('../apps/extension/dist/background/coordinator.js');
+
+  let currentUrl = 'chrome://newtab';
+  const navigatedUrls = [];
+  const executedProposals = [];
+
+  const isroPageElements = [
+    {
+      localId: 'el_isro_search',
+      role: 'input',
+      sanitizedName: 'Search ISRO',
+      coarseBounds: [0.3, 0.1, 0.4, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['type']
+    },
+    {
+      localId: 'el_isro_missions',
+      role: 'link',
+      sanitizedName: 'Missions',
+      coarseBounds: [0.1, 0.1, 0.15, 0.04],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    }
+  ];
+
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 1, url: currentUrl, title: currentUrl.includes('isro') ? 'ISRO Official Portal' : 'New Tab' };
+    },
+    async navigateTab(tabId, url) {
+      navigatedUrls.push(url);
+      currentUrl = url;
+    },
+    async sendMessageToTab(tabId, msg) {
+      if (msg.type === 'EXTRACT_DOM_SNAPSHOT') {
+        return {
+          success: true,
+          captureId: msg.captureId || 'cap_1',
+          snapshot: { elements: isroPageElements }
+        };
+      }
+      if (msg.type === 'EXECUTE_ACTION') {
+        executedProposals.push(msg.proposal);
+        return {
+          success: true,
+          actionId: msg.proposal.actionId,
+          semanticOutcomeVerified: true
+        };
+      }
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_scratch_isro',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements: isroPageElements,
+        pageState: { title: 'ISRO Official Portal', url: currentUrl, viewport: [1280, 720] },
+        redactionManifest: { totalRedactions: 0, categoriesRedacted: [] },
+        payloadDigestSha256: 'digest_mock'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser);
+  const result = await coordinator.startRun('open isro.gov.in and search missions', { maxSteps: 5 });
+
+  // Verification
+  assert.ok(result.success, `Run should succeed: ${result.error || result.message}`);
+  assert.equal(navigatedUrls.length, 1);
+  assert.equal(navigatedUrls[0], 'https://isro.gov.in');
+  assert.ok(executedProposals.length >= 1);
+  const searchAction = executedProposals.find(p => p.kind === 'type');
+  assert.ok(searchAction, 'Should execute type action into Search ISRO input');
+  assert.equal(searchAction.targetLocalId, 'el_isro_search');
+  assert.equal(searchAction.textToType, 'missions');
+});
+
+
 
 

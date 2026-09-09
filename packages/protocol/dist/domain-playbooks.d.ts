@@ -76,6 +76,11 @@ export declare const GOOGLE_PLAYBOOK: DomainPlaybook;
  */
 export declare const WIKIPEDIA_PLAYBOOK: DomainPlaybook;
 /**
+ * Built-in playbook for Indian Space Research Organisation (isro.gov.in) portal.
+ * Core domain for SIH problem statement SIH26171 / SIH26209.
+ */
+export declare const ISRO_PLAYBOOK: DomainPlaybook;
+/**
  * Registry of known domain playbooks.
  */
 export declare const REGISTERED_PLAYBOOKS: ReadonlyArray<DomainPlaybook>;
@@ -105,4 +110,13 @@ export declare function extractMetricsWithPlaybook(textContext: string, metricRu
  *      "search Chinmaya in search box" -> "Chinmaya"
  */
 export declare function extractSearchQueryFromGoal(goal: string): string;
+/**
+ * Extracts a target navigation URL from a natural language goal when starting from scratch
+ * or when the user explicitly directs navigation to a website.
+ * E.g. "open sih.gov.in and search isro" -> "https://sih.gov.in"
+ *      "go to isro.gov.in and search missions" -> "https://isro.gov.in"
+ *      "in the isro website find launches" -> "https://www.isro.gov.in"
+ *      "http://localhost:4500" -> "http://localhost:4500"
+ */
+export declare function extractTargetUrlFromGoal(goal: string): string | undefined;
 //# sourceMappingURL=domain-playbooks.d.ts.map

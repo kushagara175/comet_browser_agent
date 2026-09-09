@@ -988,6 +988,23 @@ if (typeof document !== 'undefined') {
         (async () => {
           if (message.type === 'COORDINATOR_STATE_CHANGED') {
             setAgentStatus(message.state);
+            if (message.message) {
+              addAuditEntry('AGENT', message.message, 'info');
+            }
+          }
+
+          if (message.type === 'COORDINATOR_STEP_PROGRESS') {
+            if (message.message) {
+              addAuditEntry(`STEP ${message.step}/${message.maxSteps}`, message.message, 'info');
+            }
+          }
+
+          if (message.type === 'COORDINATOR_ACTION_PROPOSED') {
+            const act = message.action;
+            if (act) {
+              const actDesc = `${act.kind ? act.kind.toUpperCase() : 'ACT'} ${act.sanitizedTargetName || act.targetLocalId || ''}`.trim();
+              addAuditEntry('PLAN', `${actDesc}: ${act.rationale || 'Executing action'}`, 'pass');
+            }
           }
 
           if (message.type === 'COORDINATOR_SANITIZATION_COMPLETE') {

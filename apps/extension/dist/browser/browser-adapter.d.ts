@@ -23,6 +23,7 @@ export interface BrowserAdapter {
         title: string;
         windowId?: number;
     }>;
+    navigateTab?(tabId: number, url: string): Promise<void>;
     getStorage<T>(key: string): Promise<T | null>;
     setStorage<T>(key: string, value: T): Promise<void>;
     runInSanitizerHost(request: SanitizationHostRequest): Promise<SanitizedContext>;
@@ -41,6 +42,7 @@ export declare class WebExtensionAdapter implements BrowserAdapter {
         title: string;
         windowId?: number;
     }>;
+    navigateTab(tabId: number, url: string): Promise<void>;
     getStorage<T>(key: string): Promise<T | null>;
     setStorage<T>(key: string, value: T): Promise<void>;
     /**

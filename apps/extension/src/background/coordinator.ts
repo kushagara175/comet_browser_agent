@@ -30,7 +30,8 @@ import {
   lookupDomainPlaybook,
   resolvePlaybookIntent,
   extractMetricsWithPlaybook,
-  extractSearchQueryFromGoal
+  extractSearchQueryFromGoal,
+  extractTargetUrlFromGoal
 } from '@privapilot/protocol';
 import { BrowserAdapter, WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
@@ -551,7 +552,7 @@ export class RunCoordinator {
       // D. Fill Field (e.g. search input on page)
       const isSearchDirective =
         resolution.matchedIntent === 'fill_field' ||
-        (this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_playbook_nav_')) &&
+        (this.actionHistory.some((a) => a.actionId && (a.actionId.startsWith('act_playbook_nav_') || a.actionId.startsWith('act_init_nav_'))) &&
           /(?:(?:search(?:\s+for)?|find|filter(?:\s+by)?)\s+)/i.test(trimmedGoal));
 
       if (isSearchDirective) {
@@ -1118,11 +1119,33 @@ export class RunCoordinator {
 
       // Step 1: Capture active tab DOM & screenshot (fresh captureId each cycle)
       this.transition('capturing', `Step ${step}/${maxSteps}: Capturing active tab DOM & screenshot`);
-      const activeTab = await this.browser.getActiveTab(this.currentTabId);
+      let activeTab = await this.browser.getActiveTab(this.currentTabId);
 
       // Guard: Block restricted browser surfaces (chrome://, chrome-extension://, file://, devtools://)
       const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
       if (restrictedCheck.isRestricted) {
+        // If tab is on a restricted or blank page (e.g. chrome://newtab, about:blank),
+        // check if user's goal specifies a website to navigate to from scratch!
+        const targetUrl = extractTargetUrlFromGoal(goal);
+        if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1) {
+          const navAction: ActionProposal = {
+            actionId: `act_init_nav_${Date.now()}`,
+            kind: 'navigate' as any,
+            confidence: 1.0,
+            risk: 'safe',
+            rationale: `Direct navigation from blank tab to target website: ${targetUrl}`,
+            expectedPostcondition: { kind: 'status_changed' }
+          };
+          this.actionHistory.push(navAction);
+          this.listeners.onActionProposed?.(navAction, this.currentRunId);
+
+          this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
+          this.transition('executing', `Navigating from blank tab to ${targetUrl}...`);
+          await this.browser.navigateTab(activeTab.id, targetUrl);
+          this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
+          continue;
+        }
+
         const errorMsg = `Capture blocked: ${restrictedCheck.reason}`;
         this.transition('blocked-local-only', errorMsg);
         const res: CoordinatorRunResult = {
@@ -1134,6 +1157,37 @@ export class RunCoordinator {
         return this.completeWithResult(res);
       }
 
+      // If on step 1, check if user's goal specifies navigating to a different domain from scratch
+      if (step === 1 && typeof this.browser.navigateTab === 'function') {
+        const targetUrl = extractTargetUrlFromGoal(goal);
+        if (targetUrl && activeTab?.url) {
+          try {
+            const currentHost = new URL(activeTab.url).hostname.replace(/^www\./, '').toLowerCase();
+            const targetHost = new URL(targetUrl).hostname.replace(/^www\./, '').toLowerCase();
+            if (currentHost && targetHost && currentHost !== targetHost && !currentHost.endsWith(`.${targetHost}`) && !targetHost.endsWith(`.${currentHost}`)) {
+              const navAction: ActionProposal = {
+                actionId: `act_init_nav_${Date.now()}`,
+                kind: 'navigate' as any,
+                confidence: 1.0,
+                risk: 'safe',
+                rationale: `Cross-site navigation to target website: ${targetUrl}`,
+                expectedPostcondition: { kind: 'status_changed' }
+              };
+              this.actionHistory.push(navAction);
+              this.listeners.onActionProposed?.(navAction, this.currentRunId);
+
+              this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
+              this.transition('executing', `Navigating tab to ${targetUrl}...`);
+              await this.browser.navigateTab(activeTab.id, targetUrl);
+              this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
+              continue;
+            }
+          } catch {
+            // URL parse failure, proceed to DOM capture
+          }
+        }
+      }
+
       const captureId = `cap_${Date.now()}_${step}`;
       let domResponse: any;
       try {
@@ -1142,6 +1196,14 @@ export class RunCoordinator {
           captureId
         });
       } catch (err: any) {
+        // If content script is not yet attached at step 1 and goal specifies a target URL, try navigating
+        const targetUrl = extractTargetUrlFromGoal(goal);
+        if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1 && (!activeTab?.url || !activeTab.url.includes(new URL(targetUrl).hostname))) {
+          this.transition('executing', `Navigating tab to ${targetUrl}...`);
+          await this.browser.navigateTab(activeTab.id, targetUrl);
+          continue;
+        }
+
         const errorMsg = 'Could not connect to webpage. Please reload the target tab (Cmd+R / F5) so the extension content script attaches.';
         this.transition('failed-safe', errorMsg);
         const res: CoordinatorRunResult = {
