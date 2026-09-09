@@ -11,7 +11,7 @@
  * 7. Semantically Verify UI Outcome
  * 8. Repeat perception cycle up to bounded step budget or until finish/failure
  */
-import { classifyActionRisk, validateActionProposal, resolveTaskContract, groundTargetCandidates, scoreCandidate, tokenizeSemanticText } from '@privapilot/protocol';
+import { classifyActionRisk, validateActionProposal, resolveTaskContract, groundTargetCandidates, scoreCandidate, tokenizeSemanticText, lookupDomainPlaybook, resolvePlaybookIntent, extractMetricsWithPlaybook } from '@privapilot/protocol';
 import { WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
@@ -170,7 +170,7 @@ export class RunCoordinator {
         }
         return false;
     }
-    tryResolveLocalSafeAction(goal, sanitized, step) {
+    tryResolveLocalSafeAction(goal, sanitized, step, currentUrl) {
         const trimmedGoal = (goal || '').trim().toLowerCase();
         // 1. Explicit scroll command. Use the normalized task contract rather than
         // reparsing raw wording, so "please/can you scroll down" stays deterministic.
@@ -307,6 +307,101 @@ export class RunCoordinator {
                 risk: 'safe',
                 rationale: `Information retrieval completed for "${topic}": ${anyStats}`
             };
+        }
+        // 1c. Domain Playbook Intelligence (Site-specific navigation, target grounding, metrics)
+        const urlForPlaybook = currentUrl || (sanitized.pageState?.routeFingerprint ? `https://sih.gov.in${sanitized.pageState.routeFingerprint}` : '');
+        const playbook = lookupDomainPlaybook(urlForPlaybook) || (trimmedGoal.includes('sih') ? lookupDomainPlaybook('sih.gov.in') : undefined);
+        if (playbook) {
+            const resolution = resolvePlaybookIntent(playbook, goal, currentUrl);
+            // A. Metric Extraction from page context
+            if (resolution.matchedIntent === 'extract_metric' && resolution.metricRule) {
+                const allText = [
+                    ...(sanitized.pageState?.counters || []).map(c => `${c.label}: ${c.value}`),
+                    ...(sanitized.pageState?.contentSummaries || []),
+                    ...(sanitized.pageState?.statusSummaries || []),
+                    sanitized.pageState?.title || ''
+                ].join(' ');
+                const metricFound = extractMetricsWithPlaybook(allText, resolution.metricRule);
+                if (metricFound) {
+                    return {
+                        actionId: `act_playbook_metric_${step}_${Date.now()}`,
+                        kind: 'finish',
+                        confidence: resolution.confidence,
+                        risk: 'safe',
+                        rationale: `Playbook verified: Found ${metricFound.value} ${resolution.metricRule.labelKeywords[0]} on ${playbook.name}`
+                    };
+                }
+            }
+            // B. Click Landmark (e.g. "Know Your SPOC", "SIH Login", "Problem Statements")
+            if (resolution.matchedIntent === 'click_landmark' && resolution.targetPhrase) {
+                const targetTokens = tokenizeSemanticText(resolution.targetPhrase);
+                const matchingEl = sanitized.elements.find((el) => {
+                    const nameNorm = el.sanitizedName.toLowerCase();
+                    const phraseNorm = resolution.targetPhrase.toLowerCase();
+                    if (nameNorm === phraseNorm || nameNorm.includes(phraseNorm) || phraseNorm.includes(nameNorm))
+                        return true;
+                    return targetTokens.length > 0 && targetTokens.every(t => nameNorm.includes(t));
+                });
+                if (matchingEl) {
+                    return {
+                        actionId: `act_playbook_click_${step}_${Date.now()}`,
+                        kind: 'click',
+                        targetLocalId: matchingEl.localId,
+                        confidence: resolution.confidence,
+                        risk: 'safe',
+                        rationale: `Playbook landmark grounded: ${resolution.rationale}`,
+                        expectedPostcondition: { kind: 'status_changed' }
+                    };
+                }
+            }
+            // C. Navigation to route via link on page
+            if (resolution.matchedIntent === 'navigate' && resolution.targetUrl) {
+                const routeKeywordTokens = tokenizeSemanticText(goal);
+                const navLink = sanitized.elements.find((el) => {
+                    if (el.role !== 'link' && el.role !== 'button' && el.role !== 'tab')
+                        return false;
+                    const nameNorm = el.sanitizedName.toLowerCase();
+                    return routeKeywordTokens.some(t => t.length > 3 && nameNorm.includes(t));
+                });
+                if (navLink) {
+                    return {
+                        actionId: `act_playbook_nav_${step}_${Date.now()}`,
+                        kind: 'click',
+                        targetLocalId: navLink.localId,
+                        confidence: resolution.confidence,
+                        risk: 'safe',
+                        rationale: `Playbook navigation grounded to link "${navLink.sanitizedName}" (${resolution.targetUrl})`,
+                        expectedPostcondition: { kind: 'status_changed' }
+                    };
+                }
+            }
+            // D. Fill Field (e.g. search PS 171)
+            if (resolution.matchedIntent === 'fill_field' && resolution.targetPhrase) {
+                const targetTokens = tokenizeSemanticText(resolution.targetPhrase);
+                const matchingEl = sanitized.elements.find((el) => {
+                    if (el.role !== 'input' && el.role !== 'textarea')
+                        return false;
+                    const nameNorm = el.sanitizedName.toLowerCase();
+                    const phraseNorm = resolution.targetPhrase.toLowerCase();
+                    if (nameNorm.includes(phraseNorm) || phraseNorm.includes(nameNorm))
+                        return true;
+                    return targetTokens.some(t => nameNorm.includes(t));
+                });
+                if (matchingEl) {
+                    const psMatch = goal.match(/\b(?:ps|problem\s*statement|id)?\s*([a-zA-Z0-9_-]{3,15})\b/i);
+                    const textToType = psMatch ? psMatch[1] : goal;
+                    return {
+                        actionId: `act_playbook_fill_${step}_${Date.now()}`,
+                        kind: 'type',
+                        targetLocalId: matchingEl.localId,
+                        textToType,
+                        pressEnter: true,
+                        confidence: resolution.confidence,
+                        risk: 'safe',
+                        rationale: `Playbook search input grounded: ${resolution.rationale}`
+                    };
+                }
+            }
         }
         // 2. Local terminal finish if preview/dialog was opened in previous step and is now visible with matching contract
         if (step > 1 && this.actionHistory.length > 0 && this.currentTaskContract) {
@@ -840,7 +935,7 @@ export class RunCoordinator {
                 this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
             }
             // Step 3: Local Safe Action Router (Stage D6) vs Server Reasoning
-            const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step);
+            const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
             let proposal;
             let decisionOrigin = 'server';
             let networkRequestMade = true;
@@ -1632,18 +1727,21 @@ export class RunCoordinator {
             this.transition('failed-safe', errorMsg);
             return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg });
         }
-        if (!domResponse || !domResponse.snapshot || !domResponse.snapshot.elements) {
+        if (!domResponse || !domResponse.snapshot) {
             const errorMsg = 'Could not locate form fields on page';
             this.transition('failed-safe', errorMsg);
             return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg });
         }
-        const elements = domResponse.snapshot.elements;
+        const elements = domResponse.snapshot.interactiveElements || domResponse.snapshot.elements || [];
+        const domElements = domResponse.snapshot.domElements || [];
         let filledCount = 0;
         // A. Fill username/email if provided
         if (inputs.username) {
             const userEl = elements.find((e) => {
-                const name = (e.sanitizedName || '').toLowerCase();
+                const name = (e.sanitizedName || e.rawName || e.name || '').toLowerCase();
                 const role = e.role;
+                const domDesc = domElements.find((d) => d.id === e.localId)?.descriptor;
+                const descName = (domDesc?.name || domDesc?.placeholder || domDesc?.id || '').toLowerCase();
                 return ((role === 'input' || role === 'textbox') &&
                     (name.includes('user') ||
                         name.includes('email') ||
@@ -1651,15 +1749,18 @@ export class RunCoordinator {
                         name.includes('account') ||
                         name.includes('id') ||
                         name.includes('phone') ||
-                        name.includes('enter') ||
-                        name.includes('credential') ||
-                        name.includes('signin')));
+                        name.includes('signin') ||
+                        descName.includes('user') ||
+                        descName.includes('email') ||
+                        descName.includes('login') ||
+                        domDesc?.type === 'email'));
             }) || elements.find((e) => {
                 const role = e.role;
-                const name = (e.sanitizedName || '').toLowerCase();
+                const name = (e.sanitizedName || e.rawName || e.name || '').toLowerCase();
+                const domDesc = domElements.find((d) => d.id === e.localId)?.descriptor;
+                const isPass = domDesc?.type === 'password' || name.includes('pass') || name.includes('pwd');
                 return ((role === 'input' || role === 'textbox') &&
-                    !name.includes('pass') &&
-                    !name.includes('pwd') &&
+                    !isPass &&
                     !name.includes('search') &&
                     !name.includes('captcha'));
             });
@@ -1685,9 +1786,10 @@ export class RunCoordinator {
         // B. Fill password if provided
         if (inputs.password) {
             const passEl = elements.find((e) => {
-                const name = (e.sanitizedName || '').toLowerCase();
+                const name = (e.sanitizedName || e.rawName || e.name || '').toLowerCase();
+                const domDesc = domElements.find((d) => d.id === e.localId)?.descriptor;
                 return ((e.role === 'input' || e.role === 'textbox') &&
-                    (name.includes('password') || name.includes('pass') || name.includes('pwd')));
+                    (domDesc?.type === 'password' || name.includes('password') || name.includes('pass') || name.includes('pwd')));
             });
             if (passEl) {
                 await this.browser.sendMessageToTab(activeTab.id, {
@@ -1730,6 +1832,24 @@ export class RunCoordinator {
             }
         }
         if (filledCount === 0) {
+            // Direct fill self-healing fallback via content script
+            try {
+                const directRes = await this.browser.sendMessageToTab(activeTab.id, {
+                    type: 'FILL_FORM_FIELDS',
+                    username: inputs.username,
+                    password: inputs.password
+                });
+                if (directRes && directRes.userFilled || directRes?.passFilled) {
+                    this.transition('complete', 'Credentials securely filled locally');
+                    return this.completeWithResult({
+                        success: true,
+                        state: 'complete',
+                        message: 'Credentials filled locally',
+                        stepCount: 1
+                    });
+                }
+            }
+            catch (_) { }
             const errorMsg = 'No matching input fields found on the page to fill';
             this.transition('failed-safe', errorMsg);
             return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg });

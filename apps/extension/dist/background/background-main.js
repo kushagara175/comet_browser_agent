@@ -14697,7 +14697,7 @@ var PROHIBITED_SCRIPT_PATTERNS = [
   /javascript:/i,
   /vbscript:/i,
   /data:text\/html/i,
-  /on\w+\s*=/i,
+  /\bon\w+\s*=/i,
   /\beval\s*\(/i,
   /\bexpression\s*\(/i
 ];
@@ -14930,6 +14930,290 @@ function classifyActionRisk(proposal, elementName) {
     return "safe";
   }
   return proposal.risk || "protected";
+}
+
+// ../../packages/protocol/dist/domain-playbooks.js
+var SIH_PLAYBOOK = {
+  domain: "sih.gov.in",
+  name: "Smart India Hackathon Portal",
+  aliases: ["sih.gov.in", "www.sih.gov.in", "sih", "smart indiahackathon"],
+  routes: [
+    {
+      name: "signin",
+      path: "/signin",
+      description: "SIH login & authentication page for teams, institutes, and evaluators",
+      matchKeywords: ["login", "signin", "sign in", "log in", "portal login", "auth"]
+    },
+    {
+      name: "problemStatements",
+      path: "/problem-statements",
+      description: "Problem statements search and directory listing",
+      matchKeywords: ["problem statement", "problem statements", "ps", "problem list", "view ps", "problems"]
+    },
+    {
+      name: "spoc",
+      path: "/know-your-spoc",
+      description: "Know Your College / Institute SPOC search directory",
+      matchKeywords: ["spoc", "know your spoc", "college spoc", "find spoc", "spoc details", "institute spoc"]
+    },
+    {
+      name: "home",
+      path: "/",
+      description: "SIH main landing page and announcements",
+      matchKeywords: ["home", "homepage", "main page", "landing page", "overview"]
+    },
+    {
+      name: "results",
+      path: "/results",
+      description: "Hackathon round results and nominated finalists",
+      matchKeywords: ["result", "results", "winners", "shortlisted", "finalists", "evaluations"]
+    },
+    {
+      name: "guidelines",
+      path: "/guidelines",
+      description: "Hackathon rules, submission process and guidelines",
+      matchKeywords: ["guidelines", "process", "rules", "instructions", "flow"]
+    }
+  ],
+  landmarks: [
+    {
+      id: "spoc_link",
+      phrase: "Know Your SPOC",
+      aliases: ["know your spoc", "spoc", "college spoc", "find your spoc", "spoc directory", "institute spoc"],
+      role: "link",
+      description: "Direct link to college SPOC verification tool",
+      intentAction: "click"
+    },
+    {
+      id: "login_btn",
+      phrase: "SIH Login",
+      aliases: ["login", "sih login", "sign in", "institute login", "student login"],
+      role: "link",
+      description: "Login button for SIH portal",
+      intentAction: "click"
+    },
+    {
+      id: "problem_statements_nav",
+      phrase: "Problem Statements",
+      aliases: ["problem statements", "problem statement", "ps list", "browse problem statements"],
+      role: "link",
+      description: "Navigation link to browse Hackathon problem statements",
+      intentAction: "click"
+    },
+    {
+      id: "ps_search_field",
+      phrase: "Search Problem Statement",
+      aliases: ["search", "search by ps", "filter by ps", "ps number", "ps id", "enter keyword", "search input"],
+      role: "input",
+      description: "Search box to filter problem statements by ID or theme",
+      intentAction: "type"
+    },
+    {
+      id: "submissions_nav",
+      phrase: "Submitted Ideas",
+      aliases: ["submitted ideas", "submissions", "total submissions", "my submissions", "nominations"],
+      role: "tab",
+      description: "Tab or section showing team idea submissions",
+      intentAction: "click"
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: "total_submissions",
+      labelKeywords: ["submission", "submissions", "submitted ideas", "ideas submitted", "total submissions", "nominations"],
+      containerHints: ["stat", "card", "metric", "table", "counter", "dashboard", "box"],
+      valuePattern: "\\b\\d+(?:,\\d+)*\\b",
+      description: "Number of submitted ideas or team nominations"
+    },
+    {
+      metricId: "total_problem_statements",
+      labelKeywords: ["problem statements", "total ps", "problems count", "active ps"],
+      containerHints: ["counter", "stat", "badge", "card"],
+      valuePattern: "\\b\\d+\\b",
+      description: "Total number of problem statements available"
+    }
+  ],
+  formFieldHints: {
+    username: ["email", "username", "user name", "registered email", "userid", "login id"],
+    password: ["password", "pass", "pwd", "enter password"]
+  }
+};
+var REGISTERED_PLAYBOOKS = [
+  SIH_PLAYBOOK
+];
+function lookupDomainPlaybook(urlOrHostname) {
+  if (!urlOrHostname)
+    return void 0;
+  let hostname = urlOrHostname.toLowerCase().trim();
+  try {
+    if (hostname.includes("://")) {
+      hostname = new URL(hostname).hostname;
+    }
+  } catch {
+    hostname = hostname.replace(/^[a-z]+:\/\//i, "").split("/")[0].split(":")[0];
+  }
+  return REGISTERED_PLAYBOOKS.find((playbook) => {
+    if (hostname === playbook.domain || hostname.endsWith(`.${playbook.domain}`)) {
+      return true;
+    }
+    return playbook.aliases.some((alias) => hostname.includes(alias.toLowerCase()));
+  });
+}
+function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
+  const normQuery = normalizeSemanticText(userQuery);
+  const queryTokens = tokenizeSemanticText(normQuery);
+  if (!normQuery) {
+    return {
+      playbookName: playbook.name,
+      matchedIntent: "none",
+      confidence: 0,
+      rationale: "Empty user query"
+    };
+  }
+  const isMetricQuery = queryTokens.some((t) => ["how", "many", "count", "total", "number", "status", "check", "show"].includes(t));
+  if (isMetricQuery) {
+    for (const rule of playbook.metricsRules) {
+      const match = rule.labelKeywords.some((kw) => {
+        const kwTokens = tokenizeSemanticText(kw);
+        return kwTokens.every((kt2) => queryTokens.includes(kt2) || queryTokens.some((qt2) => isFuzzyTokenMatch(kt2, qt2)));
+      });
+      if (match) {
+        return {
+          playbookName: playbook.name,
+          matchedIntent: "extract_metric",
+          confidence: 0.95,
+          metricRule: rule,
+          targetPhrase: rule.labelKeywords[0],
+          rationale: `Matched metric extraction rule '${rule.metricId}' (${rule.description}) based on query keywords`
+        };
+      }
+    }
+  }
+  const isNavQuery = queryTokens.some((t) => ["go", "navigate", "open", "visit", "load", "take"].includes(t));
+  if (isNavQuery) {
+    for (const route of playbook.routes) {
+      const match = route.matchKeywords.some((kw) => {
+        const kwNorm = normalizeSemanticText(kw);
+        if (normQuery.includes(kwNorm))
+          return true;
+        const kwTokens = tokenizeSemanticText(kwNorm);
+        return kwTokens.length > 0 && kwTokens.every((kt2) => queryTokens.includes(kt2) || queryTokens.some((qt2) => isFuzzyTokenMatch(kt2, qt2)));
+      });
+      if (match) {
+        const targetUrl = `https://${playbook.domain}${route.path}`;
+        const isAlreadyOnRoute = currentUrl ? currentUrl.includes(route.path) : false;
+        return {
+          playbookName: playbook.name,
+          matchedIntent: isAlreadyOnRoute ? "none" : "navigate",
+          confidence: 0.95,
+          targetUrl,
+          rationale: isAlreadyOnRoute ? `Already on route '${route.name}' (${route.path})` : `Matched playbook route '${route.name}' (${route.path}) from user intent`
+        };
+      }
+    }
+  }
+  for (const landmark of playbook.landmarks) {
+    const allAliases = [landmark.phrase, ...landmark.aliases];
+    const match = allAliases.some((alias) => {
+      const aliasNorm = normalizeSemanticText(alias);
+      if (normQuery.includes(aliasNorm))
+        return true;
+      const aliasTokens = tokenizeSemanticText(aliasNorm);
+      return aliasTokens.length > 0 && aliasTokens.every((at) => queryTokens.includes(at) || queryTokens.some((qt2) => isFuzzyTokenMatch(at, qt2)));
+    });
+    if (match) {
+      if (landmark.role === "input" || landmark.intentAction === "type") {
+        return {
+          playbookName: playbook.name,
+          matchedIntent: "fill_field",
+          confidence: 0.92,
+          targetPhrase: landmark.phrase,
+          targetRole: landmark.role,
+          rationale: `Matched landmark '${landmark.phrase}' (${landmark.description}) for input/search intent`
+        };
+      }
+      return {
+        playbookName: playbook.name,
+        matchedIntent: "click_landmark",
+        confidence: 0.94,
+        targetPhrase: landmark.phrase,
+        targetRole: landmark.role,
+        rationale: `Matched landmark '${landmark.phrase}' (${landmark.description}) in playbook for domain '${playbook.domain}'`
+      };
+    }
+  }
+  for (const route of playbook.routes) {
+    const match = route.matchKeywords.some((kw) => {
+      const kwNorm = normalizeSemanticText(kw);
+      if (normQuery.includes(kwNorm))
+        return true;
+      const kwTokens = tokenizeSemanticText(kwNorm);
+      return kwTokens.length > 0 && kwTokens.every((kt2) => queryTokens.includes(kt2) || queryTokens.some((qt2) => isFuzzyTokenMatch(kt2, qt2)));
+    });
+    if (match) {
+      const targetUrl = `https://${playbook.domain}${route.path}`;
+      const isAlreadyOnRoute = currentUrl ? currentUrl.includes(route.path) : false;
+      return {
+        playbookName: playbook.name,
+        matchedIntent: isAlreadyOnRoute ? "none" : "navigate",
+        confidence: 0.85,
+        targetUrl,
+        rationale: isAlreadyOnRoute ? `Already on route '${route.name}' (${route.path})` : `Matched playbook route '${route.name}' (${route.path}) from user intent`
+      };
+    }
+  }
+  return {
+    playbookName: playbook.name,
+    matchedIntent: "none",
+    confidence: 0.2,
+    rationale: "No domain playbook route or landmark matched query tokens directly"
+  };
+}
+function extractMetricsWithPlaybook(textContext, metricRule) {
+  if (!textContext || !metricRule)
+    return void 0;
+  const textLower = textContext.toLowerCase();
+  const pattern = new RegExp(metricRule.valuePattern, "g");
+  for (const kw of metricRule.labelKeywords) {
+    const kwLower = kw.toLowerCase();
+    let kwIndex = textLower.indexOf(kwLower);
+    while (kwIndex !== -1) {
+      const start = Math.max(0, kwIndex - 15);
+      const end = Math.min(textContext.length, kwIndex + kwLower.length + 45);
+      const snippet = textContext.slice(start, end);
+      const afterSnippet = textContext.slice(kwIndex + kwLower.length, end);
+      const afterMatch = afterSnippet.match(new RegExp(metricRule.valuePattern));
+      if (afterMatch) {
+        return {
+          value: afterMatch[0],
+          label: metricRule.metricId
+        };
+      }
+      const snippetMatches = [...snippet.matchAll(pattern)];
+      if (snippetMatches.length > 0) {
+        return {
+          value: snippetMatches[0][0],
+          label: metricRule.metricId
+        };
+      }
+      kwIndex = textLower.indexOf(kwLower, kwIndex + 1);
+    }
+  }
+  const matches = [...textContext.matchAll(pattern)];
+  for (const match of matches) {
+    const matchIndex = match.index ?? -1;
+    if (matchIndex >= 0) {
+      const surrounding = textLower.slice(Math.max(0, matchIndex - 25), Math.min(textLower.length, matchIndex + match[0].length + 25));
+      const hasKeyword = metricRule.labelKeywords.some((kw) => surrounding.includes(kw.toLowerCase()));
+      if (hasKeyword) {
+        return {
+          value: match[0],
+          label: metricRule.metricId
+        };
+      }
+    }
+  }
+  return void 0;
 }
 
 // ../../packages/pii-rules/dist/luhn.js
@@ -17650,7 +17934,7 @@ var RunCoordinator = class {
     }
     return false;
   }
-  tryResolveLocalSafeAction(goal, sanitized, step) {
+  tryResolveLocalSafeAction(goal, sanitized, step, currentUrl) {
     const trimmedGoal = (goal || "").trim().toLowerCase();
     const scrollContract = this.currentTaskContract?.expectedTerminal.kind === "scroll_changed" ? this.currentTaskContract.expectedTerminal : null;
     if (scrollContract) {
@@ -17755,6 +18039,92 @@ var RunCoordinator = class {
         risk: "safe",
         rationale: `Information retrieval completed for "${topic}": ${anyStats}`
       };
+    }
+    const urlForPlaybook = currentUrl || (sanitized.pageState?.routeFingerprint ? `https://sih.gov.in${sanitized.pageState.routeFingerprint}` : "");
+    const playbook = lookupDomainPlaybook(urlForPlaybook) || (trimmedGoal.includes("sih") ? lookupDomainPlaybook("sih.gov.in") : void 0);
+    if (playbook) {
+      const resolution = resolvePlaybookIntent(playbook, goal, currentUrl);
+      if (resolution.matchedIntent === "extract_metric" && resolution.metricRule) {
+        const allText = [
+          ...(sanitized.pageState?.counters || []).map((c) => `${c.label}: ${c.value}`),
+          ...sanitized.pageState?.contentSummaries || [],
+          ...sanitized.pageState?.statusSummaries || [],
+          sanitized.pageState?.title || ""
+        ].join(" ");
+        const metricFound = extractMetricsWithPlaybook(allText, resolution.metricRule);
+        if (metricFound) {
+          return {
+            actionId: `act_playbook_metric_${step}_${Date.now()}`,
+            kind: "finish",
+            confidence: resolution.confidence,
+            risk: "safe",
+            rationale: `Playbook verified: Found ${metricFound.value} ${resolution.metricRule.labelKeywords[0]} on ${playbook.name}`
+          };
+        }
+      }
+      if (resolution.matchedIntent === "click_landmark" && resolution.targetPhrase) {
+        const targetTokens = tokenizeSemanticText(resolution.targetPhrase);
+        const matchingEl = sanitized.elements.find((el2) => {
+          const nameNorm = el2.sanitizedName.toLowerCase();
+          const phraseNorm = resolution.targetPhrase.toLowerCase();
+          if (nameNorm === phraseNorm || nameNorm.includes(phraseNorm) || phraseNorm.includes(nameNorm)) return true;
+          return targetTokens.length > 0 && targetTokens.every((t) => nameNorm.includes(t));
+        });
+        if (matchingEl) {
+          return {
+            actionId: `act_playbook_click_${step}_${Date.now()}`,
+            kind: "click",
+            targetLocalId: matchingEl.localId,
+            confidence: resolution.confidence,
+            risk: "safe",
+            rationale: `Playbook landmark grounded: ${resolution.rationale}`,
+            expectedPostcondition: { kind: "status_changed" }
+          };
+        }
+      }
+      if (resolution.matchedIntent === "navigate" && resolution.targetUrl) {
+        const routeKeywordTokens = tokenizeSemanticText(goal);
+        const navLink = sanitized.elements.find((el2) => {
+          if (el2.role !== "link" && el2.role !== "button" && el2.role !== "tab") return false;
+          const nameNorm = el2.sanitizedName.toLowerCase();
+          return routeKeywordTokens.some((t) => t.length > 3 && nameNorm.includes(t));
+        });
+        if (navLink) {
+          return {
+            actionId: `act_playbook_nav_${step}_${Date.now()}`,
+            kind: "click",
+            targetLocalId: navLink.localId,
+            confidence: resolution.confidence,
+            risk: "safe",
+            rationale: `Playbook navigation grounded to link "${navLink.sanitizedName}" (${resolution.targetUrl})`,
+            expectedPostcondition: { kind: "status_changed" }
+          };
+        }
+      }
+      if (resolution.matchedIntent === "fill_field" && resolution.targetPhrase) {
+        const targetTokens = tokenizeSemanticText(resolution.targetPhrase);
+        const matchingEl = sanitized.elements.find((el2) => {
+          if (el2.role !== "input" && el2.role !== "textarea") return false;
+          const nameNorm = el2.sanitizedName.toLowerCase();
+          const phraseNorm = resolution.targetPhrase.toLowerCase();
+          if (nameNorm.includes(phraseNorm) || phraseNorm.includes(nameNorm)) return true;
+          return targetTokens.some((t) => nameNorm.includes(t));
+        });
+        if (matchingEl) {
+          const psMatch = goal.match(/\b(?:ps|problem\s*statement|id)?\s*([a-zA-Z0-9_-]{3,15})\b/i);
+          const textToType = psMatch ? psMatch[1] : goal;
+          return {
+            actionId: `act_playbook_fill_${step}_${Date.now()}`,
+            kind: "type",
+            targetLocalId: matchingEl.localId,
+            textToType,
+            pressEnter: true,
+            confidence: resolution.confidence,
+            risk: "safe",
+            rationale: `Playbook search input grounded: ${resolution.rationale}`
+          };
+        }
+      }
     }
     if (step > 1 && this.actionHistory.length > 0 && this.currentTaskContract) {
       const lastAction = this.actionHistory[this.actionHistory.length - 1];
@@ -18240,7 +18610,7 @@ var RunCoordinator = class {
       if (this.listeners.onSanitizationComplete) {
         this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
       }
-      const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step);
+      const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
       let proposal;
       let decisionOrigin = "server";
       let networkRequestMade = true;
@@ -18993,22 +19363,27 @@ ${detail}`,
       this.transition("failed-safe", errorMsg);
       return this.completeWithResult({ success: false, state: "failed-safe", error: errorMsg });
     }
-    if (!domResponse || !domResponse.snapshot || !domResponse.snapshot.elements) {
+    if (!domResponse || !domResponse.snapshot) {
       const errorMsg = "Could not locate form fields on page";
       this.transition("failed-safe", errorMsg);
       return this.completeWithResult({ success: false, state: "failed-safe", error: errorMsg });
     }
-    const elements = domResponse.snapshot.elements;
+    const elements = domResponse.snapshot.interactiveElements || domResponse.snapshot.elements || [];
+    const domElements = domResponse.snapshot.domElements || [];
     let filledCount = 0;
     if (inputs.username) {
       const userEl = elements.find((e) => {
-        const name2 = (e.sanitizedName || "").toLowerCase();
+        const name2 = (e.sanitizedName || e.rawName || e.name || "").toLowerCase();
         const role = e.role;
-        return (role === "input" || role === "textbox") && (name2.includes("user") || name2.includes("email") || name2.includes("login") || name2.includes("account") || name2.includes("id") || name2.includes("phone") || name2.includes("enter") || name2.includes("credential") || name2.includes("signin"));
+        const domDesc = domElements.find((d) => d.id === e.localId)?.descriptor;
+        const descName = (domDesc?.name || domDesc?.placeholder || domDesc?.id || "").toLowerCase();
+        return (role === "input" || role === "textbox") && (name2.includes("user") || name2.includes("email") || name2.includes("login") || name2.includes("account") || name2.includes("id") || name2.includes("phone") || name2.includes("signin") || descName.includes("user") || descName.includes("email") || descName.includes("login") || domDesc?.type === "email");
       }) || elements.find((e) => {
         const role = e.role;
-        const name2 = (e.sanitizedName || "").toLowerCase();
-        return (role === "input" || role === "textbox") && !name2.includes("pass") && !name2.includes("pwd") && !name2.includes("search") && !name2.includes("captcha");
+        const name2 = (e.sanitizedName || e.rawName || e.name || "").toLowerCase();
+        const domDesc = domElements.find((d) => d.id === e.localId)?.descriptor;
+        const isPass = domDesc?.type === "password" || name2.includes("pass") || name2.includes("pwd");
+        return (role === "input" || role === "textbox") && !isPass && !name2.includes("search") && !name2.includes("captcha");
       });
       if (userEl) {
         await this.browser.sendMessageToTab(activeTab.id, {
@@ -19031,8 +19406,9 @@ ${detail}`,
     }
     if (inputs.password) {
       const passEl = elements.find((e) => {
-        const name2 = (e.sanitizedName || "").toLowerCase();
-        return (e.role === "input" || e.role === "textbox") && (name2.includes("password") || name2.includes("pass") || name2.includes("pwd"));
+        const name2 = (e.sanitizedName || e.rawName || e.name || "").toLowerCase();
+        const domDesc = domElements.find((d) => d.id === e.localId)?.descriptor;
+        return (e.role === "input" || e.role === "textbox") && (domDesc?.type === "password" || name2.includes("password") || name2.includes("pass") || name2.includes("pwd"));
       });
       if (passEl) {
         await this.browser.sendMessageToTab(activeTab.id, {
@@ -19074,6 +19450,23 @@ ${detail}`,
       }
     }
     if (filledCount === 0) {
+      try {
+        const directRes = await this.browser.sendMessageToTab(activeTab.id, {
+          type: "FILL_FORM_FIELDS",
+          username: inputs.username,
+          password: inputs.password
+        });
+        if (directRes && directRes.userFilled || directRes?.passFilled) {
+          this.transition("complete", "Credentials securely filled locally");
+          return this.completeWithResult({
+            success: true,
+            state: "complete",
+            message: "Credentials filled locally",
+            stepCount: 1
+          });
+        }
+      } catch (_) {
+      }
       const errorMsg = "No matching input fields found on the page to fill";
       this.transition("failed-safe", errorMsg);
       return this.completeWithResult({ success: false, state: "failed-safe", error: errorMsg });

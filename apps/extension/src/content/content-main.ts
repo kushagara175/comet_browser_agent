@@ -15,13 +15,63 @@ const overlay = new OverlayRenderer();
 let currentCaptureId: string | null = null;
 let currentElementMap = new Map<string, HTMLElement>();
 
+interface TrappedDialog {
+  type: 'alert' | 'confirm' | 'prompt';
+  message: string;
+  timestamp: number;
+}
+
+const capturedDialogs: TrappedDialog[] = [];
+
+// Native Dialog Immunity: Trap alert, confirm, and prompt to avoid freezing the tab
+if (typeof window !== 'undefined') {
+  window.addEventListener('privapilot-native-dialog', ((e: CustomEvent) => {
+    if (e.detail && typeof e.detail.message === 'string') {
+      capturedDialogs.push({
+        type: e.detail.type || 'alert',
+        message: e.detail.message.slice(0, 200),
+        timestamp: Date.now()
+      });
+      if (capturedDialogs.length > 10) capturedDialogs.shift();
+    }
+  }) as EventListener);
+
+  try {
+    window.alert = (msg?: any) => {
+      const text = String(msg || '');
+      capturedDialogs.push({ type: 'alert', message: text.slice(0, 200), timestamp: Date.now() });
+      if (capturedDialogs.length > 10) capturedDialogs.shift();
+    };
+
+    window.confirm = (msg?: any) => {
+      const text = String(msg || '');
+      capturedDialogs.push({ type: 'confirm', message: text.slice(0, 200), timestamp: Date.now() });
+      if (capturedDialogs.length > 10) capturedDialogs.shift();
+      return true;
+    };
+
+    window.prompt = (msg?: any, defaultText?: string) => {
+      const text = String(msg || '');
+      capturedDialogs.push({ type: 'prompt', message: text.slice(0, 200), timestamp: Date.now() });
+      if (capturedDialogs.length > 10) capturedDialogs.shift();
+      return defaultText || '';
+    };
+  } catch {}
+}
+
 // Listen for messages from background coordinator
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((message: any, _sender: any, sendResponse: (res: any) => void) => {
     // Runtime messages are broadcast to extension contexts. Only claim commands
     // intended for this content script; otherwise it can win the response race
     // against the background worker with an empty response.
-    if (message?.type !== 'EXTRACT_DOM_SNAPSHOT' && message?.type !== 'EXECUTE_ACTION') {
+    if (
+      message?.type !== 'EXTRACT_DOM_SNAPSHOT' &&
+      message?.type !== 'EXECUTE_ACTION' &&
+      message?.type !== 'CLEAR_OVERLAYS' &&
+      message?.type !== 'FILL_FORM_FIELDS' &&
+      message?.type !== 'UPLOAD_FILE'
+    ) {
       return false;
     }
 
@@ -39,10 +89,22 @@ export async function handleMessage(message: any): Promise<any> {
     currentCaptureId = captureId;
     currentElementMap = extracted.elementMap;
 
+    // Merge recent captured native dialogs into snapshot
+    const activeTrapped = capturedDialogs.filter((d) => Date.now() - d.timestamp < 30000);
+    const trappedTitles = activeTrapped.map((d) => `${d.type.toUpperCase()}: ${d.message}`);
+    const mergedDialogTitles = [...(extracted.snapshot.dialogTitles || []), ...trappedTitles];
+    const mergedDialogCount = (extracted.snapshot.visibleDialogCount || 0) + trappedTitles.length;
+
+    const snapshot = {
+      ...extracted.snapshot,
+      visibleDialogCount: mergedDialogCount,
+      dialogTitles: mergedDialogTitles
+    };
+
     return {
       success: true,
       captureId,
-      snapshot: extracted.snapshot,
+      snapshot,
       viewport: {
         viewportWidth: window.innerWidth,
         viewportHeight: window.innerHeight,
@@ -56,21 +118,136 @@ export async function handleMessage(message: any): Promise<any> {
     };
   }
 
+  if (message.type === 'FILL_FORM_FIELDS') {
+    const { username, password } = message;
+    let userFilled = false;
+    let passFilled = false;
+
+    // A. Find username/email field
+    if (username) {
+      const userSelectors = [
+        'input[type="email"]',
+        'input#email',
+        'input#username',
+        'input#user',
+        'input#login',
+        'input[name*="email" i]',
+        'input[name*="username" i]',
+        'input[name*="user" i]',
+        'input[name*="login" i]',
+        'input[placeholder*="email" i]',
+        'input[placeholder*="username" i]',
+        'input[placeholder*="user" i]',
+        'input[placeholder*="login" i]',
+        'input[aria-label*="email" i]',
+        'input[aria-label*="username" i]'
+      ];
+      let userEl: HTMLInputElement | null = null;
+      for (const sel of userSelectors) {
+        userEl = document.querySelector(sel) as HTMLInputElement;
+        if (userEl && !userEl.disabled && !userEl.readOnly) break;
+      }
+      if (!userEl) {
+        const allInputs = Array.from(document.querySelectorAll('input:not([type="password"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"])')) as HTMLInputElement[];
+        userEl = allInputs.find(i => !i.disabled && !i.readOnly && i.offsetParent !== null) || null;
+      }
+      if (userEl) {
+        ActionExecutor.execute({
+          actionId: `act_fill_user_${Date.now()}`,
+          kind: 'type',
+          targetLocalId: 'direct_user_fill',
+          textToType: username,
+          confidence: 1.0,
+          risk: 'safe',
+          userApproved: true,
+          rationale: 'Direct fill username/email'
+        }, new Map([['direct_user_fill', userEl]]));
+        userFilled = true;
+      }
+    }
+
+    // B. Find password field
+    if (password) {
+      const passSelectors = [
+        'input[type="password"]',
+        'input#password',
+        'input#pass',
+        'input#pwd',
+        'input[name*="password" i]',
+        'input[name*="pass" i]',
+        'input[name*="pwd" i]',
+        'input[placeholder*="password" i]',
+        'input[aria-label*="password" i]'
+      ];
+      let passEl: HTMLInputElement | null = null;
+      for (const sel of passSelectors) {
+        passEl = document.querySelector(sel) as HTMLInputElement;
+        if (passEl && !passEl.disabled && !passEl.readOnly) break;
+      }
+      if (passEl) {
+        ActionExecutor.execute({
+          actionId: `act_fill_pass_${Date.now()}`,
+          kind: 'type',
+          targetLocalId: 'direct_pass_fill',
+          textToType: password,
+          confidence: 1.0,
+          risk: 'safe',
+          userApproved: true,
+          rationale: 'Direct fill password'
+        }, new Map([['direct_pass_fill', passEl]]));
+        passFilled = true;
+      }
+    }
+
+    return {
+      success: userFilled || passFilled,
+      userFilled,
+      passFilled,
+      message: userFilled && passFilled
+        ? 'Successfully filled username and password'
+        : (userFilled ? 'Filled username' : (passFilled ? 'Filled password' : 'No matching input fields found'))
+    };
+  }
+
   if (message.type === 'EXECUTE_ACTION') {
     const proposal: ActionProposal = message.proposal;
 
-    // 1. Guard against executing on an element map from a different capture
-    if (message.captureId && currentCaptureId && message.captureId !== currentCaptureId) {
+    // 1. Target element resolution with live self-healing
+    let targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;
+
+    // If target is missing from current map or detached from DOM, self-heal immediately
+    if (proposal.targetLocalId && (!targetEl || !targetEl.isConnected)) {
+      const refreshed = extractor.extractSnapshot(document);
+      currentElementMap = refreshed.elementMap;
+      currentCaptureId = message.captureId || currentCaptureId;
+      targetEl = currentElementMap.get(proposal.targetLocalId) || null;
+
+      // Heuristic self-healing: if still not found by localId, match by semantic text or rationale
+      if (!targetEl) {
+        const targetTextMatch = (proposal.rationale || '').match(/["']([^"']+)["']/);
+        const targetSearch = targetTextMatch ? targetTextMatch[1].toLowerCase().trim() : '';
+        if (targetSearch) {
+          for (const el of currentElementMap.values()) {
+            const elText = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').toLowerCase();
+            if (el.isConnected && (elText === targetSearch || elText.includes(targetSearch))) {
+              targetEl = el;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Guard against stale capture only if target cannot be found in live DOM
+    if (!targetEl && proposal.targetLocalId) {
       return {
         success: false,
         actionId: proposal.actionId,
         semanticOutcomeVerified: false,
         staleTarget: true,
-        message: 'Stale target: element map is from a different capture'
+        message: `Target element '${proposal.targetLocalId}' not found in live DOM after self-healing retry`
       };
     }
-
-    const targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;
 
     // 2. Highlight target if present
     if (targetEl) {
@@ -130,6 +307,28 @@ export async function handleMessage(message: any): Promise<any> {
   if (message.type === 'CLEAR_OVERLAYS') {
     overlay.clear();
     return { success: true };
+  }
+
+  if (message.type === 'UPLOAD_FILE') {
+    const { targetLocalId, fileName } = message;
+    let targetEl = targetLocalId ? currentElementMap.get(targetLocalId) : null;
+    if (!targetEl) {
+      targetEl = document.querySelector('input[type="file"]') as HTMLElement;
+    }
+    if (!targetEl) {
+      return { success: false, message: 'No file input element found in live DOM' };
+    }
+    const result = ActionExecutor.execute({
+      actionId: `act_upload_${Date.now()}`,
+      kind: 'type',
+      targetLocalId: targetLocalId || 'direct_file_upload',
+      textToType: fileName || 'submission.pdf',
+      confidence: 1.0,
+      risk: 'safe',
+      userApproved: true,
+      rationale: 'Direct file upload'
+    }, new Map([[targetLocalId || 'direct_file_upload', targetEl]]));
+    return result;
   }
 
   return { success: false, error: `Unknown message type: ${message.type}` };

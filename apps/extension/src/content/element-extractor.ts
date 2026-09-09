@@ -129,8 +129,10 @@ export class ElementExtractor {
       offset: { x: number; y: number } = { x: 0, y: 0 },
       depth: number = 0
     ) => {
-      // 1. Extract interactive controls & form inputs
-      const candidates = currentDoc.querySelectorAll('button, a, input, select, textarea, [role="button"], [tabindex="0"]');
+      // 1. Extract interactive controls & form inputs (including custom dropdowns, comboboxes, and tabs)
+      const candidates = currentDoc.querySelectorAll(
+        'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"]'
+      );
 
       candidates.forEach((node) => {
         const el = node as HTMLElement;
@@ -154,8 +156,14 @@ export class ElementExtractor {
         // Determine role
         let role: ElementRole = 'generic';
         const tag = el.tagName.toLowerCase();
-        if (tag === 'button' || (typeof el.getAttribute === 'function' && el.getAttribute('role') === 'button')) role = 'button';
-        else if (tag === 'a') role = 'link';
+        const roleAttr = (typeof el.getAttribute === 'function' ? el.getAttribute('role') || '' : '').toLowerCase();
+        const ariaHasPopup = (typeof el.getAttribute === 'function' ? el.getAttribute('aria-haspopup') || '' : '').toLowerCase();
+
+        if (tag === 'button' || roleAttr === 'button') role = 'button';
+        else if (tag === 'a' || roleAttr === 'link') role = 'link';
+        else if (roleAttr === 'tab') role = 'tab';
+        else if (roleAttr === 'menuitem') role = 'menuitem';
+        else if (roleAttr === 'combobox' || roleAttr === 'listbox' || ariaHasPopup === 'listbox') role = 'select';
         else if (tag === 'input') {
           const type = (typeof el.getAttribute === 'function' ? el.getAttribute('type') || 'text' : 'text').toLowerCase();
           if (type === 'checkbox') role = 'checkbox';
@@ -524,6 +532,21 @@ export class ElementExtractor {
           }
         }
       });
+
+      // 4g. Open Shadow DOM Roots Piercing (Web Components & Custom Elements)
+      if (depth < 6) {
+        try {
+          const shadowCandidates = currentDoc.querySelectorAll('*');
+          shadowCandidates.forEach((node) => {
+            const shadowRoot = (node as any).shadowRoot;
+            if (shadowRoot && typeof shadowRoot.querySelectorAll === 'function') {
+              processDocumentLevel(shadowRoot, offset, depth + 1);
+            }
+          });
+        } catch {
+          // Gracefully continue in environments where Shadow DOM access is restricted
+        }
+      }
     };
 
     // Execute top-level extraction

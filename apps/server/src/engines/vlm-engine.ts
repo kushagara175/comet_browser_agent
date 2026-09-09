@@ -488,7 +488,9 @@ export class VlmReasoningEngine {
 
     if (isOpenRouter) {
       requestBody.route = 'fallback';
-      requestBody.models = [status.modelName, 'qwen/qwen-2.5-72b-instruct'];
+      requestBody.models = (status.modelName && status.modelName.includes(':free'))
+        ? [status.modelName, 'meta-llama/llama-3.3-70b-instruct:free']
+        : [status.modelName, 'qwen/qwen-2.5-72b-instruct'];
     }
 
     const res = await this.fetchWithTimeout(
@@ -696,7 +698,9 @@ export class VlmReasoningEngine {
 
       if (isOpenRouter) {
         requestBody.route = 'fallback';
-        requestBody.models = [modelName, 'qwen/qwen-2.5-72b-instruct'];
+        requestBody.models = (modelName && modelName.includes(':free'))
+          ? [modelName, 'meta-llama/llama-3.3-70b-instruct:free']
+          : [modelName, 'qwen/qwen-2.5-72b-instruct'];
       }
 
       return this.fetchWithTimeout(

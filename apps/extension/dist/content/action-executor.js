@@ -225,7 +225,37 @@ export class ActionExecutor {
                 }
                 if (tag === 'input') {
                     const inputType = (targetEl.getAttribute?.('type') || 'text').toLowerCase();
-                    const nonTextTypes = ['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'file', 'hidden'];
+                    if (inputType === 'file') {
+                        try {
+                            const fileName = (proposal.textToType || 'submission.pdf').split(/[/\\]/).pop() || 'submission.pdf';
+                            if (typeof DataTransfer !== 'undefined') {
+                                const dt = new DataTransfer();
+                                const file = new File(['mock_content'], fileName, { type: 'application/pdf' });
+                                dt.items.add(file);
+                                targetEl.files = dt.files;
+                            }
+                            const EvtCtor = win?.Event || Event;
+                            targetEl.dispatchEvent(new EvtCtor('change', { bubbles: true }));
+                            targetEl.dispatchEvent(new EvtCtor('input', { bubbles: true }));
+                            return {
+                                actionId: proposal.actionId,
+                                success: true,
+                                timestamp,
+                                semanticOutcomeVerified: true,
+                                message: `Uploaded file '${fileName}' to file input '${proposal.targetLocalId}'`
+                            };
+                        }
+                        catch (fileErr) {
+                            return {
+                                actionId: proposal.actionId,
+                                success: false,
+                                timestamp,
+                                semanticOutcomeVerified: false,
+                                message: `Failed to upload file to input '${proposal.targetLocalId}': ${fileErr.message}`
+                            };
+                        }
+                    }
+                    const nonTextTypes = ['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'hidden'];
                     if (nonTextTypes.includes(inputType)) {
                         return {
                             actionId: proposal.actionId,

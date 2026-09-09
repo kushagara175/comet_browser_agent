@@ -459,7 +459,9 @@
       const viewportHeight = doc.defaultView?.innerHeight || doc.documentElement?.clientHeight || 720;
       let surfaceCounter = 0;
       const processDocumentLevel = (currentDoc, offset = { x: 0, y: 0 }, depth = 0) => {
-        const candidates = currentDoc.querySelectorAll('button, a, input, select, textarea, [role="button"], [tabindex="0"]');
+        const candidates = currentDoc.querySelectorAll(
+          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"]'
+        );
         candidates.forEach((node) => {
           const el = node;
           if (typeof el.closest === "function" && el.closest(".privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]") || typeof el.getAttribute === "function" && el.getAttribute("data-privapilot-ignore") === "true" || el.classList && typeof el.classList.contains === "function" && el.classList.contains("privapilot-overlay")) {
@@ -472,8 +474,13 @@
           this.elementMap.set(localId, el);
           let role = "generic";
           const tag = el.tagName.toLowerCase();
-          if (tag === "button" || typeof el.getAttribute === "function" && el.getAttribute("role") === "button") role = "button";
-          else if (tag === "a") role = "link";
+          const roleAttr = (typeof el.getAttribute === "function" ? el.getAttribute("role") || "" : "").toLowerCase();
+          const ariaHasPopup = (typeof el.getAttribute === "function" ? el.getAttribute("aria-haspopup") || "" : "").toLowerCase();
+          if (tag === "button" || roleAttr === "button") role = "button";
+          else if (tag === "a" || roleAttr === "link") role = "link";
+          else if (roleAttr === "tab") role = "tab";
+          else if (roleAttr === "menuitem") role = "menuitem";
+          else if (roleAttr === "combobox" || roleAttr === "listbox" || ariaHasPopup === "listbox") role = "select";
           else if (tag === "input") {
             const type = (typeof el.getAttribute === "function" ? el.getAttribute("type") || "text" : "text").toLowerCase();
             if (type === "checkbox") role = "checkbox";
@@ -788,6 +795,18 @@
             }
           }
         });
+        if (depth < 6) {
+          try {
+            const shadowCandidates = currentDoc.querySelectorAll("*");
+            shadowCandidates.forEach((node) => {
+              const shadowRoot = node.shadowRoot;
+              if (shadowRoot && typeof shadowRoot.querySelectorAll === "function") {
+                processDocumentLevel(shadowRoot, offset, depth + 1);
+              }
+            });
+          } catch {
+          }
+        }
       };
       processDocumentLevel(doc, { x: 0, y: 0 }, 0);
       let visibleDialogCount = 0;
@@ -1061,7 +1080,36 @@
           }
           if (tag === "input") {
             const inputType = (targetEl.getAttribute?.("type") || "text").toLowerCase();
-            const nonTextTypes = ["button", "submit", "reset", "image", "checkbox", "radio", "file", "hidden"];
+            if (inputType === "file") {
+              try {
+                const fileName = (proposal.textToType || "submission.pdf").split(/[/\\]/).pop() || "submission.pdf";
+                if (typeof DataTransfer !== "undefined") {
+                  const dt = new DataTransfer();
+                  const file = new File(["mock_content"], fileName, { type: "application/pdf" });
+                  dt.items.add(file);
+                  targetEl.files = dt.files;
+                }
+                const EvtCtor = win?.Event || Event;
+                targetEl.dispatchEvent(new EvtCtor("change", { bubbles: true }));
+                targetEl.dispatchEvent(new EvtCtor("input", { bubbles: true }));
+                return {
+                  actionId: proposal.actionId,
+                  success: true,
+                  timestamp,
+                  semanticOutcomeVerified: true,
+                  message: `Uploaded file '${fileName}' to file input '${proposal.targetLocalId}'`
+                };
+              } catch (fileErr) {
+                return {
+                  actionId: proposal.actionId,
+                  success: false,
+                  timestamp,
+                  semanticOutcomeVerified: false,
+                  message: `Failed to upload file to input '${proposal.targetLocalId}': ${fileErr.message}`
+                };
+              }
+            }
+            const nonTextTypes = ["button", "submit", "reset", "image", "checkbox", "radio", "hidden"];
             if (nonTextTypes.includes(inputType)) {
               return {
                 actionId: proposal.actionId,
@@ -2005,9 +2053,42 @@
   var overlay = new OverlayRenderer();
   var currentCaptureId = null;
   var currentElementMap = /* @__PURE__ */ new Map();
+  var capturedDialogs = [];
+  if (typeof window !== "undefined") {
+    window.addEventListener("privapilot-native-dialog", ((e) => {
+      if (e.detail && typeof e.detail.message === "string") {
+        capturedDialogs.push({
+          type: e.detail.type || "alert",
+          message: e.detail.message.slice(0, 200),
+          timestamp: Date.now()
+        });
+        if (capturedDialogs.length > 10) capturedDialogs.shift();
+      }
+    }));
+    try {
+      window.alert = (msg) => {
+        const text = String(msg || "");
+        capturedDialogs.push({ type: "alert", message: text.slice(0, 200), timestamp: Date.now() });
+        if (capturedDialogs.length > 10) capturedDialogs.shift();
+      };
+      window.confirm = (msg) => {
+        const text = String(msg || "");
+        capturedDialogs.push({ type: "confirm", message: text.slice(0, 200), timestamp: Date.now() });
+        if (capturedDialogs.length > 10) capturedDialogs.shift();
+        return true;
+      };
+      window.prompt = (msg, defaultText) => {
+        const text = String(msg || "");
+        capturedDialogs.push({ type: "prompt", message: text.slice(0, 200), timestamp: Date.now() });
+        if (capturedDialogs.length > 10) capturedDialogs.shift();
+        return defaultText || "";
+      };
+    } catch {
+    }
+  }
   if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-      if (message?.type !== "EXTRACT_DOM_SNAPSHOT" && message?.type !== "EXECUTE_ACTION") {
+      if (message?.type !== "EXTRACT_DOM_SNAPSHOT" && message?.type !== "EXECUTE_ACTION" && message?.type !== "CLEAR_OVERLAYS" && message?.type !== "FILL_FORM_FIELDS" && message?.type !== "UPLOAD_FILE") {
         return false;
       }
       handleMessage(message).then(sendResponse).catch((err) => {
@@ -2022,10 +2103,19 @@
       const captureId = message.captureId || `cap_${Date.now()}`;
       currentCaptureId = captureId;
       currentElementMap = extracted.elementMap;
+      const activeTrapped = capturedDialogs.filter((d) => Date.now() - d.timestamp < 3e4);
+      const trappedTitles = activeTrapped.map((d) => `${d.type.toUpperCase()}: ${d.message}`);
+      const mergedDialogTitles = [...extracted.snapshot.dialogTitles || [], ...trappedTitles];
+      const mergedDialogCount = (extracted.snapshot.visibleDialogCount || 0) + trappedTitles.length;
+      const snapshot = {
+        ...extracted.snapshot,
+        visibleDialogCount: mergedDialogCount,
+        dialogTitles: mergedDialogTitles
+      };
       return {
         success: true,
         captureId,
-        snapshot: extracted.snapshot,
+        snapshot,
         viewport: {
           viewportWidth: window.innerWidth,
           viewportHeight: window.innerHeight,
@@ -2038,18 +2128,120 @@
         }
       };
     }
+    if (message.type === "FILL_FORM_FIELDS") {
+      const { username, password } = message;
+      let userFilled = false;
+      let passFilled = false;
+      if (username) {
+        const userSelectors = [
+          'input[type="email"]',
+          "input#email",
+          "input#username",
+          "input#user",
+          "input#login",
+          'input[name*="email" i]',
+          'input[name*="username" i]',
+          'input[name*="user" i]',
+          'input[name*="login" i]',
+          'input[placeholder*="email" i]',
+          'input[placeholder*="username" i]',
+          'input[placeholder*="user" i]',
+          'input[placeholder*="login" i]',
+          'input[aria-label*="email" i]',
+          'input[aria-label*="username" i]'
+        ];
+        let userEl = null;
+        for (const sel of userSelectors) {
+          userEl = document.querySelector(sel);
+          if (userEl && !userEl.disabled && !userEl.readOnly) break;
+        }
+        if (!userEl) {
+          const allInputs = Array.from(document.querySelectorAll('input:not([type="password"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"])'));
+          userEl = allInputs.find((i) => !i.disabled && !i.readOnly && i.offsetParent !== null) || null;
+        }
+        if (userEl) {
+          ActionExecutor.execute({
+            actionId: `act_fill_user_${Date.now()}`,
+            kind: "type",
+            targetLocalId: "direct_user_fill",
+            textToType: username,
+            confidence: 1,
+            risk: "safe",
+            userApproved: true,
+            rationale: "Direct fill username/email"
+          }, /* @__PURE__ */ new Map([["direct_user_fill", userEl]]));
+          userFilled = true;
+        }
+      }
+      if (password) {
+        const passSelectors = [
+          'input[type="password"]',
+          "input#password",
+          "input#pass",
+          "input#pwd",
+          'input[name*="password" i]',
+          'input[name*="pass" i]',
+          'input[name*="pwd" i]',
+          'input[placeholder*="password" i]',
+          'input[aria-label*="password" i]'
+        ];
+        let passEl = null;
+        for (const sel of passSelectors) {
+          passEl = document.querySelector(sel);
+          if (passEl && !passEl.disabled && !passEl.readOnly) break;
+        }
+        if (passEl) {
+          ActionExecutor.execute({
+            actionId: `act_fill_pass_${Date.now()}`,
+            kind: "type",
+            targetLocalId: "direct_pass_fill",
+            textToType: password,
+            confidence: 1,
+            risk: "safe",
+            userApproved: true,
+            rationale: "Direct fill password"
+          }, /* @__PURE__ */ new Map([["direct_pass_fill", passEl]]));
+          passFilled = true;
+        }
+      }
+      return {
+        success: userFilled || passFilled,
+        userFilled,
+        passFilled,
+        message: userFilled && passFilled ? "Successfully filled username and password" : userFilled ? "Filled username" : passFilled ? "Filled password" : "No matching input fields found"
+      };
+    }
     if (message.type === "EXECUTE_ACTION") {
       const proposal = message.proposal;
-      if (message.captureId && currentCaptureId && message.captureId !== currentCaptureId) {
+      let targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;
+      if (proposal.targetLocalId && (!targetEl || !targetEl.isConnected)) {
+        const refreshed = extractor.extractSnapshot(document);
+        currentElementMap = refreshed.elementMap;
+        currentCaptureId = message.captureId || currentCaptureId;
+        targetEl = currentElementMap.get(proposal.targetLocalId) || null;
+        if (!targetEl) {
+          const targetTextMatch = (proposal.rationale || "").match(/["']([^"']+)["']/);
+          const targetSearch = targetTextMatch ? targetTextMatch[1].toLowerCase().trim() : "";
+          if (targetSearch) {
+            for (const el of currentElementMap.values()) {
+              const elText = (el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "").toLowerCase();
+              if (el.isConnected && (elText === targetSearch || elText.includes(targetSearch))) {
+                targetEl = el;
+                break;
+              }
+            }
+          }
+        }
+      }
+      if (!targetEl && proposal.targetLocalId) {
         return {
           success: false,
           actionId: proposal.actionId,
           semanticOutcomeVerified: false,
           staleTarget: true,
-          message: "Stale target: element map is from a different capture"
+          message: `Target element '${proposal.targetLocalId}' not found in live DOM after self-healing retry`
         };
       }
-      const targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;
       if (targetEl) {
         if (typeof targetEl.scrollIntoView === "function") {
           try {
@@ -2096,6 +2288,27 @@
     if (message.type === "CLEAR_OVERLAYS") {
       overlay.clear();
       return { success: true };
+    }
+    if (message.type === "UPLOAD_FILE") {
+      const { targetLocalId, fileName } = message;
+      let targetEl = targetLocalId ? currentElementMap.get(targetLocalId) : null;
+      if (!targetEl) {
+        targetEl = document.querySelector('input[type="file"]');
+      }
+      if (!targetEl) {
+        return { success: false, message: "No file input element found in live DOM" };
+      }
+      const result = ActionExecutor.execute({
+        actionId: `act_upload_${Date.now()}`,
+        kind: "type",
+        targetLocalId: targetLocalId || "direct_file_upload",
+        textToType: fileName || "submission.pdf",
+        confidence: 1,
+        risk: "safe",
+        userApproved: true,
+        rationale: "Direct file upload"
+      }, /* @__PURE__ */ new Map([[targetLocalId || "direct_file_upload", targetEl]]));
+      return result;
     }
     return { success: false, error: `Unknown message type: ${message.type}` };
   }

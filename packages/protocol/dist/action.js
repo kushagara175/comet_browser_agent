@@ -412,7 +412,7 @@ const PROHIBITED_SCRIPT_PATTERNS = [
     /javascript:/i,
     /vbscript:/i,
     /data:text\/html/i,
-    /on\w+\s*=/i,
+    /\bon\w+\s*=/i,
     /\beval\s*\(/i,
     /\bexpression\s*\(/i
 ];

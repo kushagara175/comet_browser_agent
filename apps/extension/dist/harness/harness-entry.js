@@ -14479,7 +14479,9 @@ as ORT format: ${n}`);
       const viewportHeight = doc.defaultView?.innerHeight || doc.documentElement?.clientHeight || 720;
       let surfaceCounter = 0;
       const processDocumentLevel = (currentDoc, offset = { x: 0, y: 0 }, depth = 0) => {
-        const candidates = currentDoc.querySelectorAll('button, a, input, select, textarea, [role="button"], [tabindex="0"]');
+        const candidates = currentDoc.querySelectorAll(
+          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"]'
+        );
         candidates.forEach((node) => {
           const el2 = node;
           if (typeof el2.closest === "function" && el2.closest(".privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]") || typeof el2.getAttribute === "function" && el2.getAttribute("data-privapilot-ignore") === "true" || el2.classList && typeof el2.classList.contains === "function" && el2.classList.contains("privapilot-overlay")) {
@@ -14492,8 +14494,13 @@ as ORT format: ${n}`);
           this.elementMap.set(localId, el2);
           let role = "generic";
           const tag = el2.tagName.toLowerCase();
-          if (tag === "button" || typeof el2.getAttribute === "function" && el2.getAttribute("role") === "button") role = "button";
-          else if (tag === "a") role = "link";
+          const roleAttr = (typeof el2.getAttribute === "function" ? el2.getAttribute("role") || "" : "").toLowerCase();
+          const ariaHasPopup = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-haspopup") || "" : "").toLowerCase();
+          if (tag === "button" || roleAttr === "button") role = "button";
+          else if (tag === "a" || roleAttr === "link") role = "link";
+          else if (roleAttr === "tab") role = "tab";
+          else if (roleAttr === "menuitem") role = "menuitem";
+          else if (roleAttr === "combobox" || roleAttr === "listbox" || ariaHasPopup === "listbox") role = "select";
           else if (tag === "input") {
             const type = (typeof el2.getAttribute === "function" ? el2.getAttribute("type") || "text" : "text").toLowerCase();
             if (type === "checkbox") role = "checkbox";
@@ -14808,6 +14815,18 @@ as ORT format: ${n}`);
             }
           }
         });
+        if (depth < 6) {
+          try {
+            const shadowCandidates = currentDoc.querySelectorAll("*");
+            shadowCandidates.forEach((node) => {
+              const shadowRoot = node.shadowRoot;
+              if (shadowRoot && typeof shadowRoot.querySelectorAll === "function") {
+                processDocumentLevel(shadowRoot, offset, depth + 1);
+              }
+            });
+          } catch {
+          }
+        }
       };
       processDocumentLevel(doc, { x: 0, y: 0 }, 0);
       let visibleDialogCount = 0;

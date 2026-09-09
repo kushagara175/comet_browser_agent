@@ -33,6 +33,11 @@ export function isBrowserActionRequest(message) {
     previous = normalized;
     normalized = normalized.replace(ACTION_REQUEST_PREFIX, '').trim();
   }
+  // Information retrieval & question-answering directives per cababling.md
+  if (/(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:the\s+count|the\s+number|the\s+total|the\s+status|about\s+submissions)|find\s+.*?\s+and\s+tell)/i.test(normalized)) {
+    return true;
+  }
+
   // Questions or advisory queries should stay chat
   if (/^(?:tell\s+me\s+how|how\s+(?:do|can|to)|what\s+(?:would|is|are)|why\s+|explain\b)/i.test(normalized)) {
     return false;
