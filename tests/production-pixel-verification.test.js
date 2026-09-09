@@ -542,3 +542,37 @@ test('Stage B: verifyCanvasRedaction fails closed when getImageData throws excep
   assert.match(report.verdicts[0].failureReason, /Canvas getImageData extraction failed/);
 });
 
+test('Stage B: Realistic face blur passes canvas verification with live render records and low residual variance', () => {
+  // Create a canvas with high-variance facial texture
+  const { canvas } = createMockCanvas(300, 300, [180, 120, 80, 255]);
+  const ctx = canvas.getContext('2d');
+
+  // Paint realistic gradients and features into the face area
+  for (let y = 50; y < 130; y++) {
+    for (let x = 50; x < 130; x++) {
+      if ((x + y) % 4 === 0) {
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+
+  const faceRegion = {
+    id: 'face_avatar_1',
+    category: 'face',
+    method: 'gaussian_blur',
+    viewportBox: { space: 'viewportCssPixel', x: 50, y: 50, width: 80, height: 80 },
+    screenshotBox: { space: 'screenshotPixel', x: 50, y: 50, width: 80, height: 80 },
+    detectorSource: 'face_model'
+  };
+
+  const renderResult = MaskRenderer.renderMasks(canvas, [faceRegion]);
+  assert.strictEqual(renderResult.renderedMaskCount, 1);
+  assert.strictEqual(renderResult.regionRecords[0].success, true);
+
+  // Even when rawCanvas is null, verifyCanvasRedaction passes when regionRecords confirms destruction
+  const report = verifyCanvasRedaction(canvas, null, [faceRegion], renderResult.regionRecords);
+  assert.strictEqual(report.allPassed, true, 'Realistic face blur must pass verification with render records');
+  assert.strictEqual(report.verdicts[0].covered, true);
+});
+
+

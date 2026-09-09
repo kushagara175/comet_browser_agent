@@ -1245,6 +1245,7 @@ export class RunCoordinator {
           if (navRes && typeof navRes === 'object' && navRes.tabId) {
             this.currentTabId = navRes.tabId;
           }
+          this.currentStep = 0;
           this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
           continue;
         }
@@ -1287,6 +1288,7 @@ export class RunCoordinator {
               if (navRes && typeof navRes === 'object' && navRes.tabId) {
                 this.currentTabId = navRes.tabId;
               }
+              this.currentStep = 0;
               this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
               continue;
             }

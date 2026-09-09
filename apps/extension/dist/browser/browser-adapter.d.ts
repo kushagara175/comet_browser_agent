@@ -28,7 +28,7 @@ export interface BrowserAdapter {
         tabId: number;
         url?: string;
     } | void>;
-    waitForTabReady?(tabId: number, timeoutMs?: number): Promise<{
+    waitForTabReady?(tabId: number, timeoutMs?: number, expectedUrl?: string): Promise<{
         id: number;
         url: string;
         title: string;
@@ -48,7 +48,7 @@ export declare class WebExtensionAdapter implements BrowserAdapter {
     captureVisibleTab(targetWindowId?: number | null): Promise<string>;
     sendMessageToTab<T = any>(tabId: number, message: any): Promise<T>;
     ensureContentScript(tabId: number): Promise<boolean>;
-    waitForTabReady(tabId: number, timeoutMs?: number): Promise<{
+    waitForTabReady(tabId: number, timeoutMs?: number, expectedUrl?: string): Promise<{
         id: number;
         url: string;
         title: string;

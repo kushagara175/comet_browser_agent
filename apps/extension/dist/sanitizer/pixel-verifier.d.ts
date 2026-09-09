@@ -12,6 +12,20 @@
 import { SensitiveRegion, ScreenshotPixelBox, RedactionMethod } from '@privapilot/protocol';
 export declare const MASK_FILL_RGB: readonly [15, 23, 42];
 export declare const MASK_CHROME_RGB: readonly [56, 189, 248];
+export interface RegionRenderRecord {
+    readonly regionId: string;
+    readonly requestedBox: ScreenshotPixelBox;
+    readonly clampedBox: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    };
+    readonly method: RedactionMethod;
+    readonly success: boolean;
+    readonly fallbackApplied?: boolean;
+    readonly failureReason?: string;
+}
 export interface GeometryValidationResult {
     readonly isValid: boolean;
     readonly reason?: string;
@@ -60,5 +74,5 @@ export declare function verifyRegionPixelBuffer(sanitizedData: Uint8ClampedArray
 /**
  * Runs end-to-end pixel verification across an entire canvas given raw and sanitized canvases.
  */
-export declare function verifyCanvasRedaction(sanitizedCanvas: HTMLCanvasElement | OffscreenCanvas, rawCanvas: HTMLCanvasElement | OffscreenCanvas | null, regions: ReadonlyArray<SensitiveRegion>): CanvasVerificationReport;
+export declare function verifyCanvasRedaction(sanitizedCanvas: HTMLCanvasElement | OffscreenCanvas, rawCanvas: HTMLCanvasElement | OffscreenCanvas | null, regions: ReadonlyArray<SensitiveRegion>, regionRecords?: ReadonlyArray<RegionRenderRecord>): CanvasVerificationReport;
 //# sourceMappingURL=pixel-verifier.d.ts.map

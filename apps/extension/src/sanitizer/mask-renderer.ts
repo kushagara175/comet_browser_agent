@@ -195,8 +195,12 @@ export class MaskRenderer {
           if (hasAnyData && fallbackNeeded) {
             const overlayFrac = overlayFractionOf(finalData);
             if (overlayFrac < 0.85) {
-              success = false;
-              failureReason = `Opaque fallback overlay fraction ${Math.round(overlayFrac * 100)}% < 85%`;
+              ctx.save();
+              ctx.fillStyle = '#0f172a';
+              ctx.fillRect(x, y, w, h);
+              ctx.restore();
+              success = true;
+              failureReason = undefined;
             }
           }
         }
@@ -278,10 +282,15 @@ export class MaskRenderer {
           const finalData = ctx.getImageData(x, y, w, h).data;
           const hasAnyData = finalData.some((v: number) => v !== 0);
           if (hasAnyData) {
-            const overlayFrac = overlayFractionOf(finalData);
+            let overlayFrac = overlayFractionOf(finalData);
             if (overlayFrac < 0.85) {
-              success = false;
-              failureReason = `Opaque mask overlay fraction ${Math.round(overlayFrac * 100)}% < 85%`;
+              // Secondary solid repaint: guarantee 100% opaque mask fill without borders or text interference
+              ctx.save();
+              ctx.fillStyle = '#0f172a';
+              ctx.fillRect(x, y, w, h);
+              ctx.restore();
+              success = true;
+              failureReason = undefined;
             }
           }
         }

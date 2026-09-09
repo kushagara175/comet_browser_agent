@@ -68,7 +68,21 @@ export class SanitizerPipeline {
         let renderedCount = 0;
         let regionRecords = [];
         let workingCanvas = null;
+        let rawCanvas = null;
         if (imageCanvas) {
+            if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+                try {
+                    const rc = document.createElement('canvas');
+                    rc.width = imageCanvas.width;
+                    rc.height = imageCanvas.height;
+                    const rCtx = rc.getContext('2d');
+                    if (rCtx) {
+                        rCtx.drawImage(imageCanvas, 0, 0);
+                        rawCanvas = rc;
+                    }
+                }
+                catch (_) { }
+            }
             workingCanvas = imageCanvas;
             const renderResult = MaskRenderer.renderMasks(imageCanvas, visibleRegions);
             sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
@@ -90,6 +104,17 @@ export class SanitizerPipeline {
                 img.src = rawCapture.rawScreenshotDataUrl;
             });
             ctx.drawImage(img, 0, 0);
+            try {
+                const rc = document.createElement('canvas');
+                rc.width = canvas.width;
+                rc.height = canvas.height;
+                const rCtx = rc.getContext('2d');
+                if (rCtx) {
+                    rCtx.drawImage(canvas, 0, 0);
+                    rawCanvas = rc;
+                }
+            }
+            catch (_) { }
             workingCanvas = canvas;
             const renderResult = MaskRenderer.renderMasks(canvas, visibleRegions);
             sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
@@ -169,7 +194,7 @@ export class SanitizerPipeline {
         });
         const sanitizedTitle = sanitizeElementName(snapshot.pageTitle);
         // 4. Post-Redaction Fail-Closed Verification
-        const verification = PostRedactionVerifier.verify(visibleRegions, renderedCount, sanitizedElements, sanitizedTitle, regionRecords, workingCanvas ? { sanitizedCanvas: workingCanvas } : undefined);
+        const verification = PostRedactionVerifier.verify(visibleRegions, renderedCount, sanitizedElements, sanitizedTitle, regionRecords, workingCanvas ? { sanitizedCanvas: workingCanvas, rawCanvas } : undefined);
         if (!verification.isValid) {
             throw new Error(`Sanitization Blocked: ${verification.reason}`);
         }

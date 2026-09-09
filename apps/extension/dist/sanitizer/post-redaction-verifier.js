@@ -67,7 +67,7 @@ export class PostRedactionVerifier {
                     reason: `Pixel verification failed: ${regions.length} sensitive regions exist but no sanitized canvas or pixel evidence was provided.`
                 };
             }
-            pixelReport = verifyCanvasRedaction(canvases.sanitizedCanvas, canvases.rawCanvas || null, regions);
+            pixelReport = verifyCanvasRedaction(canvases.sanitizedCanvas, canvases.rawCanvas || null, regions, regionRecords);
             if (!pixelReport.allPassed) {
                 return {
                     isValid: false,

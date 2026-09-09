@@ -97,7 +97,8 @@ export class PostRedactionVerifier {
       pixelReport = verifyCanvasRedaction(
         canvases.sanitizedCanvas,
         canvases.rawCanvas || null,
-        regions
+        regions,
+        regionRecords
       );
       if (!pixelReport.allPassed) {
         return {

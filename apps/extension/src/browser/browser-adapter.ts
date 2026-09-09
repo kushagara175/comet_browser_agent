@@ -24,7 +24,7 @@ export interface BrowserAdapter {
   sendMessageToRuntime<T = any>(message: any): Promise<T>;
   getActiveTab(preferredTabId?: number): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string }>;
   navigateTab?(tabId: number, url: string): Promise<{ tabId: number; url?: string } | void>;
-  waitForTabReady?(tabId: number, timeoutMs?: number): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string } | null>;
+  waitForTabReady?(tabId: number, timeoutMs?: number, expectedUrl?: string): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string } | null>;
   ensureContentScript?(tabId: number): Promise<boolean>;
   getStorage<T>(key: string): Promise<T | null>;
   setStorage<T>(key: string, value: T): Promise<void>;
@@ -187,7 +187,8 @@ export class WebExtensionAdapter implements BrowserAdapter {
 
   async waitForTabReady(
     tabId: number,
-    timeoutMs = 8000
+    timeoutMs = 8000,
+    expectedUrl?: string
   ): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string } | null> {
     const api = this.browserAPI;
     if (!api || !api.tabs || !tabId) return null;
@@ -195,6 +196,17 @@ export class WebExtensionAdapter implements BrowserAdapter {
     return new Promise((resolve) => {
       let settledTimer: any = null;
       let timeoutTimer: any = null;
+
+      const isUrlSettled = (tabUrl?: string) => {
+        if (!expectedUrl || !tabUrl) return true;
+        try {
+          const tabHost = new URL(tabUrl).hostname.toLowerCase().replace(/^www\./, '');
+          const expHost = new URL(expectedUrl).hostname.toLowerCase().replace(/^www\./, '');
+          return tabHost === expHost;
+        } catch (_) {
+          return true;
+        }
+      };
 
       const cleanup = () => {
         if (settledTimer) clearTimeout(settledTimer);
@@ -222,11 +234,13 @@ export class WebExtensionAdapter implements BrowserAdapter {
             cleanup();
             return resolve(null);
           }
-          if (tab.status === 'complete') {
+          if (tab.status === 'complete' && isUrlSettled(tab.url)) {
             // Debounce 400ms to catch immediate client-side JS or meta-refresh redirects
             settledTimer = setTimeout(() => {
               api.tabs.get(tabId, (finalTab: any) => {
-                finishWithTab(finalTab || tab);
+                if (isUrlSettled(finalTab?.url || tab.url)) {
+                  finishWithTab(finalTab || tab);
+                }
               });
             }, 400);
           }
@@ -243,6 +257,7 @@ export class WebExtensionAdapter implements BrowserAdapter {
             settledTimer = null;
           }
         } else if (changeInfo.status === 'complete') {
+          if (!isUrlSettled(tab?.url)) return;
           if (settledTimer) clearTimeout(settledTimer);
           settledTimer = setTimeout(() => {
             finishWithTab(tab);
@@ -376,7 +391,7 @@ export class WebExtensionAdapter implements BrowserAdapter {
           api.tabs.create({ url, active: true }, (tab: any) => resolve(tab));
         });
         targetTabId = createdTab?.id || 0;
-        const readyTab = await this.waitForTabReady(targetTabId, 8000);
+        const readyTab = await this.waitForTabReady(targetTabId, 10000, url);
         await this.ensureContentScript(targetTabId);
         return { tabId: targetTabId, url: readyTab?.url || url };
       }
@@ -385,7 +400,7 @@ export class WebExtensionAdapter implements BrowserAdapter {
         await new Promise<void>((resolve) => {
           api.tabs.update(targetTabId, { url, active: true }, () => resolve());
         });
-        const readyTab = await this.waitForTabReady(targetTabId, 8000);
+        const readyTab = await this.waitForTabReady(targetTabId, 10000, url);
         await this.ensureContentScript(targetTabId);
         return { tabId: targetTabId, url: readyTab?.url || url };
       }

@@ -118,7 +118,21 @@ export class SanitizerPipeline {
     let regionRecords: ReadonlyArray<RegionRenderRecord> = [];
     let workingCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
 
+    let rawCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
+
     if (imageCanvas) {
+      if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+        try {
+          const rc = document.createElement('canvas');
+          rc.width = imageCanvas.width;
+          rc.height = imageCanvas.height;
+          const rCtx = rc.getContext('2d');
+          if (rCtx) {
+            rCtx.drawImage(imageCanvas as any, 0, 0);
+            rawCanvas = rc;
+          }
+        } catch (_) {}
+      }
       workingCanvas = imageCanvas;
       const renderResult = MaskRenderer.renderMasks(imageCanvas, visibleRegions);
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
@@ -141,6 +155,16 @@ export class SanitizerPipeline {
       });
 
       ctx.drawImage(img, 0, 0);
+      try {
+        const rc = document.createElement('canvas');
+        rc.width = canvas.width;
+        rc.height = canvas.height;
+        const rCtx = rc.getContext('2d');
+        if (rCtx) {
+          rCtx.drawImage(canvas, 0, 0);
+          rawCanvas = rc;
+        }
+      } catch (_) {}
       workingCanvas = canvas;
       const renderResult = MaskRenderer.renderMasks(canvas, visibleRegions);
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
@@ -232,7 +256,7 @@ export class SanitizerPipeline {
       sanitizedElements,
       sanitizedTitle,
       regionRecords,
-      workingCanvas ? { sanitizedCanvas: workingCanvas } : undefined
+      workingCanvas ? { sanitizedCanvas: workingCanvas, rawCanvas } : undefined
     );
 
     if (!verification.isValid) {

@@ -42,6 +42,11 @@ export function isBrowserActionRequest(message) {
   if (/^(?:tell\s+me\s+how|how\s+(?:do|can|to)|what\s+(?:would|is|are)|why\s+|explain\b)/i.test(normalized)) {
     return false;
   }
+  // Direct URL or domain navigation directives (e.g. "https://www.isro.gov.in/ ...", "www.isro.gov.in", "sih.gov.in")
+  if (/^https?:\/\//i.test(normalized) || /^www\.[a-z0-9-]+\.[a-z]+/i.test(normalized) || /^(?:[a-zA-Z0-9-]+\.)+(?:gov\.in|nic\.in|ac\.in|org\.in|co\.in|com|org|net|io|in|edu|gov|dev|app|ai|me)\b/i.test(normalized)) {
+    return true;
+  }
+
   if (ACTION_VERB.test(normalized)) return true;
 
   // Prepositional phrases: "in the place of name type ...", "in name put ...", "for email enter ..."

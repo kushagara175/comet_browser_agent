@@ -170,13 +170,25 @@ export class WebExtensionAdapter {
         }
         return false;
     }
-    async waitForTabReady(tabId, timeoutMs = 8000) {
+    async waitForTabReady(tabId, timeoutMs = 8000, expectedUrl) {
         const api = this.browserAPI;
         if (!api || !api.tabs || !tabId)
             return null;
         return new Promise((resolve) => {
             let settledTimer = null;
             let timeoutTimer = null;
+            const isUrlSettled = (tabUrl) => {
+                if (!expectedUrl || !tabUrl)
+                    return true;
+                try {
+                    const tabHost = new URL(tabUrl).hostname.toLowerCase().replace(/^www\./, '');
+                    const expHost = new URL(expectedUrl).hostname.toLowerCase().replace(/^www\./, '');
+                    return tabHost === expHost;
+                }
+                catch (_) {
+                    return true;
+                }
+            };
             const cleanup = () => {
                 if (settledTimer)
                     clearTimeout(settledTimer);
@@ -207,11 +219,13 @@ export class WebExtensionAdapter {
                         cleanup();
                         return resolve(null);
                     }
-                    if (tab.status === 'complete') {
+                    if (tab.status === 'complete' && isUrlSettled(tab.url)) {
                         // Debounce 400ms to catch immediate client-side JS or meta-refresh redirects
                         settledTimer = setTimeout(() => {
                             api.tabs.get(tabId, (finalTab) => {
-                                finishWithTab(finalTab || tab);
+                                if (isUrlSettled(finalTab?.url || tab.url)) {
+                                    finishWithTab(finalTab || tab);
+                                }
                             });
                         }, 400);
                     }
@@ -228,6 +242,8 @@ export class WebExtensionAdapter {
                     }
                 }
                 else if (changeInfo.status === 'complete') {
+                    if (!isUrlSettled(tab?.url))
+                        return;
                     if (settledTimer)
                         clearTimeout(settledTimer);
                     settledTimer = setTimeout(() => {
@@ -358,7 +374,7 @@ export class WebExtensionAdapter {
                     api.tabs.create({ url, active: true }, (tab) => resolve(tab));
                 });
                 targetTabId = createdTab?.id || 0;
-                const readyTab = await this.waitForTabReady(targetTabId, 8000);
+                const readyTab = await this.waitForTabReady(targetTabId, 10000, url);
                 await this.ensureContentScript(targetTabId);
                 return { tabId: targetTabId, url: readyTab?.url || url };
             }
@@ -366,7 +382,7 @@ export class WebExtensionAdapter {
                 await new Promise((resolve) => {
                     api.tabs.update(targetTabId, { url, active: true }, () => resolve());
                 });
-                const readyTab = await this.waitForTabReady(targetTabId, 8000);
+                const readyTab = await this.waitForTabReady(targetTabId, 10000, url);
                 await this.ensureContentScript(targetTabId);
                 return { tabId: targetTabId, url: readyTab?.url || url };
             }
