@@ -890,8 +890,24 @@ export class RunCoordinator {
             const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
             if (restrictedCheck.isRestricted) {
                 // If tab is on a restricted or blank page (e.g. chrome://newtab, about:blank),
-                // check if user's goal specifies a website to navigate to from scratch!
-                const targetUrl = extractTargetUrlFromGoal(goal);
+                // automatically navigate to target site or infer target from prompt!
+                let targetUrl = extractTargetUrlFromGoal(goal);
+                if (!targetUrl) {
+                    const lowerGoal = (goal || '').toLowerCase();
+                    if (lowerGoal.includes('isro') || lowerGoal.includes('chandrayaan') || lowerGoal.includes('gaganyaan') || lowerGoal.includes('aditya') || lowerGoal.includes('satellite') || lowerGoal.includes('rocket') || lowerGoal.includes('launcher') || lowerGoal.includes('mission')) {
+                        targetUrl = 'https://www.isro.gov.in';
+                    }
+                    else if (lowerGoal.includes('sih') || lowerGoal.includes('hackathon') || lowerGoal.includes('problem statement') || lowerGoal.includes('spoc') || lowerGoal.includes('submission')) {
+                        targetUrl = 'https://sih.gov.in';
+                    }
+                    else if (lowerGoal.includes('github') || lowerGoal.includes('repo')) {
+                        targetUrl = 'https://github.com';
+                    }
+                    else {
+                        // Default to Google search so execution NEVER blocks on newtab
+                        targetUrl = 'https://www.google.com';
+                    }
+                }
                 if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1) {
                     const navAction = {
                         actionId: `act_init_nav_${Date.now()}`,
@@ -905,7 +921,7 @@ export class RunCoordinator {
                     this.listeners.onActionProposed?.(navAction, this.currentRunId);
                     this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
                     this.transition('executing', `Navigating from blank tab to ${targetUrl}...`);
-                    await this.browser.navigateTab(activeTab.id, targetUrl);
+                    await this.browser.navigateTab(activeTab?.id || 0, targetUrl);
                     this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
                     continue;
                 }

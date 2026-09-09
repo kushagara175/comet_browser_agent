@@ -221,37 +221,55 @@ export class WebExtensionAdapter {
     }
     async navigateTab(tabId, url) {
         const api = this.browserAPI;
-        if (api && api.tabs && api.tabs.update) {
-            await new Promise((resolve) => {
-                let finished = false;
-                const done = () => {
-                    if (!finished) {
-                        finished = true;
-                        if (api.tabs.onUpdated && api.tabs.onUpdated.removeListener) {
-                            try {
-                                api.tabs.onUpdated.removeListener(listener);
-                            }
-                            catch { }
-                        }
-                        resolve();
-                    }
-                };
-                const listener = (updatedTabId, changeInfo) => {
-                    if (updatedTabId === tabId && changeInfo.status === 'complete') {
-                        done();
-                    }
-                };
-                if (api.tabs.onUpdated && api.tabs.onUpdated.addListener) {
-                    try {
-                        api.tabs.onUpdated.addListener(listener);
-                    }
-                    catch { }
+        if (api && api.tabs) {
+            let targetTabId = tabId;
+            if (!targetTabId && api.tabs.query) {
+                const activeTabs = await new Promise((resolve) => {
+                    api.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => resolve(tabs || []));
+                });
+                if (activeTabs && activeTabs.length > 0) {
+                    targetTabId = activeTabs[0].id;
                 }
-                setTimeout(done, 5000);
-                api.tabs.update(tabId, { url }, () => { });
-            });
-            // Settle buffer for content script injection & DOM layout
-            await new Promise((r) => setTimeout(r, 1000));
+            }
+            if (!targetTabId && api.tabs.create) {
+                await new Promise((resolve) => {
+                    api.tabs.create({ url }, () => resolve());
+                });
+                await new Promise((r) => setTimeout(r, 2000));
+                return;
+            }
+            if (api.tabs.update) {
+                await new Promise((resolve) => {
+                    let finished = false;
+                    const done = () => {
+                        if (!finished) {
+                            finished = true;
+                            if (api.tabs.onUpdated && api.tabs.onUpdated.removeListener) {
+                                try {
+                                    api.tabs.onUpdated.removeListener(listener);
+                                }
+                                catch { }
+                            }
+                            resolve();
+                        }
+                    };
+                    const listener = (updatedTabId, changeInfo) => {
+                        if (updatedTabId === targetTabId && changeInfo.status === 'complete') {
+                            done();
+                        }
+                    };
+                    if (api.tabs.onUpdated && api.tabs.onUpdated.addListener) {
+                        try {
+                            api.tabs.onUpdated.addListener(listener);
+                        }
+                        catch { }
+                    }
+                    setTimeout(done, 5000);
+                    api.tabs.update(targetTabId, { url }, () => { });
+                });
+                // Settle buffer for content script injection & DOM layout
+                await new Promise((r) => setTimeout(r, 1000));
+            }
         }
     }
     async getStorage(key) {

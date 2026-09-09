@@ -17980,37 +17980,55 @@ var WebExtensionAdapter = class {
   }
   async navigateTab(tabId, url) {
     const api = this.browserAPI;
-    if (api && api.tabs && api.tabs.update) {
-      await new Promise((resolve) => {
-        let finished = false;
-        const done = () => {
-          if (!finished) {
-            finished = true;
-            if (api.tabs.onUpdated && api.tabs.onUpdated.removeListener) {
-              try {
-                api.tabs.onUpdated.removeListener(listener);
-              } catch {
-              }
-            }
-            resolve();
-          }
-        };
-        const listener = (updatedTabId, changeInfo) => {
-          if (updatedTabId === tabId && changeInfo.status === "complete") {
-            done();
-          }
-        };
-        if (api.tabs.onUpdated && api.tabs.onUpdated.addListener) {
-          try {
-            api.tabs.onUpdated.addListener(listener);
-          } catch {
-          }
-        }
-        setTimeout(done, 5e3);
-        api.tabs.update(tabId, { url }, () => {
+    if (api && api.tabs) {
+      let targetTabId = tabId;
+      if (!targetTabId && api.tabs.query) {
+        const activeTabs = await new Promise((resolve) => {
+          api.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => resolve(tabs || []));
         });
-      });
-      await new Promise((r) => setTimeout(r, 1e3));
+        if (activeTabs && activeTabs.length > 0) {
+          targetTabId = activeTabs[0].id;
+        }
+      }
+      if (!targetTabId && api.tabs.create) {
+        await new Promise((resolve) => {
+          api.tabs.create({ url }, () => resolve());
+        });
+        await new Promise((r) => setTimeout(r, 2e3));
+        return;
+      }
+      if (api.tabs.update) {
+        await new Promise((resolve) => {
+          let finished = false;
+          const done = () => {
+            if (!finished) {
+              finished = true;
+              if (api.tabs.onUpdated && api.tabs.onUpdated.removeListener) {
+                try {
+                  api.tabs.onUpdated.removeListener(listener);
+                } catch {
+                }
+              }
+              resolve();
+            }
+          };
+          const listener = (updatedTabId, changeInfo) => {
+            if (updatedTabId === targetTabId && changeInfo.status === "complete") {
+              done();
+            }
+          };
+          if (api.tabs.onUpdated && api.tabs.onUpdated.addListener) {
+            try {
+              api.tabs.onUpdated.addListener(listener);
+            } catch {
+            }
+          }
+          setTimeout(done, 5e3);
+          api.tabs.update(targetTabId, { url }, () => {
+          });
+        });
+        await new Promise((r) => setTimeout(r, 1e3));
+      }
     }
   }
   async getStorage(key) {
@@ -19493,7 +19511,19 @@ var RunCoordinator = class {
       let activeTab = await this.browser.getActiveTab(this.currentTabId);
       const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
       if (restrictedCheck.isRestricted) {
-        const targetUrl = extractTargetUrlFromGoal(goal);
+        let targetUrl = extractTargetUrlFromGoal(goal);
+        if (!targetUrl) {
+          const lowerGoal = (goal || "").toLowerCase();
+          if (lowerGoal.includes("isro") || lowerGoal.includes("chandrayaan") || lowerGoal.includes("gaganyaan") || lowerGoal.includes("aditya") || lowerGoal.includes("satellite") || lowerGoal.includes("rocket") || lowerGoal.includes("launcher") || lowerGoal.includes("mission")) {
+            targetUrl = "https://www.isro.gov.in";
+          } else if (lowerGoal.includes("sih") || lowerGoal.includes("hackathon") || lowerGoal.includes("problem statement") || lowerGoal.includes("spoc") || lowerGoal.includes("submission")) {
+            targetUrl = "https://sih.gov.in";
+          } else if (lowerGoal.includes("github") || lowerGoal.includes("repo")) {
+            targetUrl = "https://github.com";
+          } else {
+            targetUrl = "https://www.google.com";
+          }
+        }
         if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1) {
           const navAction = {
             actionId: `act_init_nav_${Date.now()}`,
@@ -19507,7 +19537,7 @@ var RunCoordinator = class {
           this.listeners.onActionProposed?.(navAction, this.currentRunId);
           this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
           this.transition("executing", `Navigating from blank tab to ${targetUrl}...`);
-          await this.browser.navigateTab(activeTab.id, targetUrl);
+          await this.browser.navigateTab(activeTab?.id || 0, targetUrl);
           this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
           continue;
         }
