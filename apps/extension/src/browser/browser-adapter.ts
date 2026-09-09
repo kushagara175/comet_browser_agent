@@ -22,8 +22,10 @@ export interface BrowserAdapter {
   captureVisibleTab(targetWindowId?: number | null): Promise<string>;
   sendMessageToTab<T = any>(tabId: number, message: any): Promise<T>;
   sendMessageToRuntime<T = any>(message: any): Promise<T>;
-  getActiveTab(preferredTabId?: number): Promise<{ id: number; url: string; title: string; windowId?: number }>;
-  navigateTab?(tabId: number, url: string): Promise<void>;
+  getActiveTab(preferredTabId?: number): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string }>;
+  navigateTab?(tabId: number, url: string): Promise<{ tabId: number; url?: string } | void>;
+  waitForTabReady?(tabId: number, timeoutMs?: number): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string } | null>;
+  ensureContentScript?(tabId: number): Promise<boolean>;
   getStorage<T>(key: string): Promise<T | null>;
   setStorage<T>(key: string, value: T): Promise<void>;
   runInSanitizerHost(request: SanitizationHostRequest): Promise<SanitizedContext>;
@@ -119,8 +121,8 @@ export class WebExtensionAdapter implements BrowserAdapter {
     const trySend = (): Promise<T> => {
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
-          reject(new Error('Content script did not respond within 3000ms'));
-        }, 3000);
+          reject(new Error('Content script did not respond within 7000ms'));
+        }, 7000);
 
         api.tabs.sendMessage(tabId, message, (response: T) => {
           clearTimeout(timer);
@@ -136,14 +138,11 @@ export class WebExtensionAdapter implements BrowserAdapter {
     try {
       return await trySend();
     } catch (initialErr: any) {
-      // If content script was detached during extension reload, auto-inject and retry
-      if (api.scripting && typeof api.scripting.executeScript === 'function') {
+      // If content script was detached during extension reload or page redirect, auto-inject and retry
+      const injected = await this.ensureContentScript(tabId);
+      if (injected) {
+        await new Promise((r) => setTimeout(r, 200));
         try {
-          await api.scripting.executeScript({
-            target: { tabId },
-            files: ['dist/content/content-main.js']
-          });
-          await new Promise((r) => setTimeout(r, 150));
           return await trySend();
         } catch {
           throw initialErr;
@@ -151,6 +150,123 @@ export class WebExtensionAdapter implements BrowserAdapter {
       }
       throw initialErr;
     }
+  }
+
+  async ensureContentScript(tabId: number): Promise<boolean> {
+    const api = this.browserAPI;
+    if (!api || !tabId) return false;
+
+    // Check if script is already responsive
+    try {
+      const ping = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), 600);
+        api.tabs.sendMessage(tabId, { type: 'CLEAR_OVERLAYS' }, (res: any) => {
+          clearTimeout(timer);
+          if (api.runtime.lastError || !res) resolve(false);
+          else resolve(true);
+        });
+      });
+      if (ping) return true;
+    } catch (_) {}
+
+    // Inject content script programmatically
+    if (api.scripting && typeof api.scripting.executeScript === 'function') {
+      try {
+        await api.scripting.executeScript({
+          target: { tabId },
+          files: ['dist/content/content-main.js']
+        });
+        await new Promise((r) => setTimeout(r, 250));
+        return true;
+      } catch (err) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  async waitForTabReady(
+    tabId: number,
+    timeoutMs = 8000
+  ): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string } | null> {
+    const api = this.browserAPI;
+    if (!api || !api.tabs || !tabId) return null;
+
+    return new Promise((resolve) => {
+      let settledTimer: any = null;
+      let timeoutTimer: any = null;
+
+      const cleanup = () => {
+        if (settledTimer) clearTimeout(settledTimer);
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        if (api.tabs.onUpdated && api.tabs.onUpdated.removeListener) {
+          try { api.tabs.onUpdated.removeListener(onUpdatedListener); } catch {}
+        }
+      };
+
+      const finishWithTab = (tab: any) => {
+        cleanup();
+        resolve(tab ? {
+          id: tab.id,
+          url: tab.url || '',
+          title: tab.title || '',
+          windowId: tab.windowId,
+          status: tab.status || 'complete'
+        } : null);
+      };
+
+      const checkCurrentStatus = () => {
+        if (!api.tabs.get) return resolve(null);
+        api.tabs.get(tabId, (tab: any) => {
+          if (api.runtime.lastError || !tab) {
+            cleanup();
+            return resolve(null);
+          }
+          if (tab.status === 'complete') {
+            // Debounce 400ms to catch immediate client-side JS or meta-refresh redirects
+            settledTimer = setTimeout(() => {
+              api.tabs.get(tabId, (finalTab: any) => {
+                finishWithTab(finalTab || tab);
+              });
+            }, 400);
+          }
+        });
+      };
+
+      const onUpdatedListener = (updatedTabId: number, changeInfo: { status?: string; url?: string }, tab: any) => {
+        if (updatedTabId !== tabId) return;
+
+        // If a new navigation or redirect begins loading, reset debounce
+        if (changeInfo.status === 'loading') {
+          if (settledTimer) {
+            clearTimeout(settledTimer);
+            settledTimer = null;
+          }
+        } else if (changeInfo.status === 'complete') {
+          if (settledTimer) clearTimeout(settledTimer);
+          settledTimer = setTimeout(() => {
+            finishWithTab(tab);
+          }, 400);
+        }
+      };
+
+      if (api.tabs.onUpdated && api.tabs.onUpdated.addListener) {
+        try { api.tabs.onUpdated.addListener(onUpdatedListener); } catch {}
+      }
+
+      timeoutTimer = setTimeout(() => {
+        cleanup();
+        if (api.tabs.get) {
+          api.tabs.get(tabId, (tab: any) => {
+            finishWithTab(tab);
+          });
+        } else {
+          resolve(null);
+        }
+      }, timeoutMs);
+
+      checkCurrentStatus();
+    });
   }
 
   async sendMessageToRuntime<T = any>(message: any): Promise<T> {
@@ -170,10 +286,10 @@ export class WebExtensionAdapter implements BrowserAdapter {
     });
   }
 
-  async getActiveTab(preferredTabId?: number): Promise<{ id: number; url: string; title: string; windowId?: number }> {
+  async getActiveTab(preferredTabId?: number): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string }> {
     const api = this.browserAPI;
     if (!api || !api.tabs || !api.tabs.query) {
-      return { id: 1, url: 'https://app.example.local/', title: 'Workspace', windowId: 1 };
+      return { id: 1, url: 'https://app.example.local/', title: 'Workspace', windowId: 1, status: 'complete' };
     }
 
     // If caller explicitly provided a target tab ID, verify and return it directly
@@ -193,7 +309,8 @@ export class WebExtensionAdapter implements BrowserAdapter {
             id: explicitTab.id,
             url: explicitTab.url || '',
             title: explicitTab.title || '',
-            windowId: explicitTab.windowId
+            windowId: explicitTab.windowId,
+            status: explicitTab.status || 'complete'
           };
         }
       } catch (_) {}
@@ -207,7 +324,8 @@ export class WebExtensionAdapter implements BrowserAdapter {
             id: tabs[0].id,
             url: tabs[0].url || '',
             title: tabs[0].title || '',
-            windowId: tabs[0].windowId
+            windowId: tabs[0].windowId,
+            status: tabs[0].status || 'complete'
           });
         }
 
@@ -218,7 +336,8 @@ export class WebExtensionAdapter implements BrowserAdapter {
               id: currentTabs[0].id,
               url: currentTabs[0].url || '',
               title: currentTabs[0].title || '',
-              windowId: currentTabs[0].windowId
+              windowId: currentTabs[0].windowId,
+              status: currentTabs[0].status || 'complete'
             });
           }
 
@@ -229,17 +348,18 @@ export class WebExtensionAdapter implements BrowserAdapter {
                 id: anyTabs[0].id,
                 url: anyTabs[0].url || '',
                 title: anyTabs[0].title || '',
-                windowId: anyTabs[0].windowId
+                windowId: anyTabs[0].windowId,
+                status: anyTabs[0].status || 'complete'
               });
             }
-            resolve({ id: 0, url: '', title: '' });
+            resolve({ id: 0, url: '', title: '', status: 'complete' });
           });
         });
       });
     });
   }
 
-  async navigateTab(tabId: number, url: string): Promise<void> {
+  async navigateTab(tabId: number, url: string): Promise<{ tabId: number; url?: string }> {
     const api = this.browserAPI;
     if (api && api.tabs) {
       let targetTabId = tabId;
@@ -252,40 +372,25 @@ export class WebExtensionAdapter implements BrowserAdapter {
         }
       }
       if (!targetTabId && api.tabs.create) {
-        await new Promise<void>((resolve) => {
-          api.tabs.create({ url }, () => resolve());
+        const createdTab = await new Promise<any>((resolve) => {
+          api.tabs.create({ url, active: true }, (tab: any) => resolve(tab));
         });
-        await new Promise((r) => setTimeout(r, 2000));
-        return;
+        targetTabId = createdTab?.id || 0;
+        const readyTab = await this.waitForTabReady(targetTabId, 8000);
+        await this.ensureContentScript(targetTabId);
+        return { tabId: targetTabId, url: readyTab?.url || url };
       }
 
-      if (api.tabs.update) {
+      if (api.tabs.update && targetTabId) {
         await new Promise<void>((resolve) => {
-          let finished = false;
-          const done = () => {
-            if (!finished) {
-              finished = true;
-              if (api.tabs.onUpdated && api.tabs.onUpdated.removeListener) {
-                try { api.tabs.onUpdated.removeListener(listener); } catch {}
-              }
-              resolve();
-            }
-          };
-          const listener = (updatedTabId: number, changeInfo: { status?: string }) => {
-            if (updatedTabId === targetTabId && changeInfo.status === 'complete') {
-              done();
-            }
-          };
-          if (api.tabs.onUpdated && api.tabs.onUpdated.addListener) {
-            try { api.tabs.onUpdated.addListener(listener); } catch {}
-          }
-          setTimeout(done, 5000);
-          api.tabs.update(targetTabId, { url }, () => {});
+          api.tabs.update(targetTabId, { url, active: true }, () => resolve());
         });
-        // Settle buffer for content script injection & DOM layout
-        await new Promise((r) => setTimeout(r, 1000));
+        const readyTab = await this.waitForTabReady(targetTabId, 8000);
+        await this.ensureContentScript(targetTabId);
+        return { tabId: targetTabId, url: readyTab?.url || url };
       }
     }
+    return { tabId: tabId || 0, url };
   }
 
   async getStorage<T>(key: string): Promise<T | null> {

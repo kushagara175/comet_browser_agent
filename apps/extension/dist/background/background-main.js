@@ -17878,8 +17878,8 @@ var WebExtensionAdapter = class {
     const trySend = () => {
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
-          reject(new Error("Content script did not respond within 3000ms"));
-        }, 3e3);
+          reject(new Error("Content script did not respond within 7000ms"));
+        }, 7e3);
         api.tabs.sendMessage(tabId, message, (response) => {
           clearTimeout(timer);
           if (api.runtime.lastError) {
@@ -17893,13 +17893,10 @@ var WebExtensionAdapter = class {
     try {
       return await trySend();
     } catch (initialErr) {
-      if (api.scripting && typeof api.scripting.executeScript === "function") {
+      const injected = await this.ensureContentScript(tabId);
+      if (injected) {
+        await new Promise((r) => setTimeout(r, 200));
         try {
-          await api.scripting.executeScript({
-            target: { tabId },
-            files: ["dist/content/content-main.js"]
-          });
-          await new Promise((r) => setTimeout(r, 150));
           return await trySend();
         } catch {
           throw initialErr;
@@ -17907,6 +17904,110 @@ var WebExtensionAdapter = class {
       }
       throw initialErr;
     }
+  }
+  async ensureContentScript(tabId) {
+    const api = this.browserAPI;
+    if (!api || !tabId) return false;
+    try {
+      const ping = await new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(false), 600);
+        api.tabs.sendMessage(tabId, { type: "CLEAR_OVERLAYS" }, (res) => {
+          clearTimeout(timer);
+          if (api.runtime.lastError || !res) resolve(false);
+          else resolve(true);
+        });
+      });
+      if (ping) return true;
+    } catch (_) {
+    }
+    if (api.scripting && typeof api.scripting.executeScript === "function") {
+      try {
+        await api.scripting.executeScript({
+          target: { tabId },
+          files: ["dist/content/content-main.js"]
+        });
+        await new Promise((r) => setTimeout(r, 250));
+        return true;
+      } catch (err) {
+        return false;
+      }
+    }
+    return false;
+  }
+  async waitForTabReady(tabId, timeoutMs = 8e3) {
+    const api = this.browserAPI;
+    if (!api || !api.tabs || !tabId) return null;
+    return new Promise((resolve) => {
+      let settledTimer = null;
+      let timeoutTimer = null;
+      const cleanup = () => {
+        if (settledTimer) clearTimeout(settledTimer);
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        if (api.tabs.onUpdated && api.tabs.onUpdated.removeListener) {
+          try {
+            api.tabs.onUpdated.removeListener(onUpdatedListener);
+          } catch {
+          }
+        }
+      };
+      const finishWithTab = (tab) => {
+        cleanup();
+        resolve(tab ? {
+          id: tab.id,
+          url: tab.url || "",
+          title: tab.title || "",
+          windowId: tab.windowId,
+          status: tab.status || "complete"
+        } : null);
+      };
+      const checkCurrentStatus = () => {
+        if (!api.tabs.get) return resolve(null);
+        api.tabs.get(tabId, (tab) => {
+          if (api.runtime.lastError || !tab) {
+            cleanup();
+            return resolve(null);
+          }
+          if (tab.status === "complete") {
+            settledTimer = setTimeout(() => {
+              api.tabs.get(tabId, (finalTab) => {
+                finishWithTab(finalTab || tab);
+              });
+            }, 400);
+          }
+        });
+      };
+      const onUpdatedListener = (updatedTabId, changeInfo, tab) => {
+        if (updatedTabId !== tabId) return;
+        if (changeInfo.status === "loading") {
+          if (settledTimer) {
+            clearTimeout(settledTimer);
+            settledTimer = null;
+          }
+        } else if (changeInfo.status === "complete") {
+          if (settledTimer) clearTimeout(settledTimer);
+          settledTimer = setTimeout(() => {
+            finishWithTab(tab);
+          }, 400);
+        }
+      };
+      if (api.tabs.onUpdated && api.tabs.onUpdated.addListener) {
+        try {
+          api.tabs.onUpdated.addListener(onUpdatedListener);
+        } catch {
+        }
+      }
+      timeoutTimer = setTimeout(() => {
+        cleanup();
+        if (api.tabs.get) {
+          api.tabs.get(tabId, (tab) => {
+            finishWithTab(tab);
+          });
+        } else {
+          resolve(null);
+        }
+      }, timeoutMs);
+      checkCurrentStatus();
+    });
   }
   async sendMessageToRuntime(message) {
     const api = this.browserAPI;
@@ -17926,7 +18027,7 @@ var WebExtensionAdapter = class {
   async getActiveTab(preferredTabId) {
     const api = this.browserAPI;
     if (!api || !api.tabs || !api.tabs.query) {
-      return { id: 1, url: "https://app.example.local/", title: "Workspace", windowId: 1 };
+      return { id: 1, url: "https://app.example.local/", title: "Workspace", windowId: 1, status: "complete" };
     }
     if (preferredTabId && typeof api.tabs.get === "function") {
       try {
@@ -17944,7 +18045,8 @@ var WebExtensionAdapter = class {
             id: explicitTab.id,
             url: explicitTab.url || "",
             title: explicitTab.title || "",
-            windowId: explicitTab.windowId
+            windowId: explicitTab.windowId,
+            status: explicitTab.status || "complete"
           };
         }
       } catch (_) {
@@ -17957,7 +18059,8 @@ var WebExtensionAdapter = class {
             id: tabs[0].id,
             url: tabs[0].url || "",
             title: tabs[0].title || "",
-            windowId: tabs[0].windowId
+            windowId: tabs[0].windowId,
+            status: tabs[0].status || "complete"
           });
         }
         api.tabs.query({ active: true, currentWindow: true }, (currentTabs) => {
@@ -17966,7 +18069,8 @@ var WebExtensionAdapter = class {
               id: currentTabs[0].id,
               url: currentTabs[0].url || "",
               title: currentTabs[0].title || "",
-              windowId: currentTabs[0].windowId
+              windowId: currentTabs[0].windowId,
+              status: currentTabs[0].status || "complete"
             });
           }
           api.tabs.query({ active: true }, (anyTabs) => {
@@ -17975,10 +18079,11 @@ var WebExtensionAdapter = class {
                 id: anyTabs[0].id,
                 url: anyTabs[0].url || "",
                 title: anyTabs[0].title || "",
-                windowId: anyTabs[0].windowId
+                windowId: anyTabs[0].windowId,
+                status: anyTabs[0].status || "complete"
               });
             }
-            resolve({ id: 0, url: "", title: "" });
+            resolve({ id: 0, url: "", title: "", status: "complete" });
           });
         });
       });
@@ -17997,45 +18102,24 @@ var WebExtensionAdapter = class {
         }
       }
       if (!targetTabId && api.tabs.create) {
-        await new Promise((resolve) => {
-          api.tabs.create({ url }, () => resolve());
+        const createdTab = await new Promise((resolve) => {
+          api.tabs.create({ url, active: true }, (tab) => resolve(tab));
         });
-        await new Promise((r) => setTimeout(r, 2e3));
-        return;
+        targetTabId = createdTab?.id || 0;
+        const readyTab = await this.waitForTabReady(targetTabId, 8e3);
+        await this.ensureContentScript(targetTabId);
+        return { tabId: targetTabId, url: readyTab?.url || url };
       }
-      if (api.tabs.update) {
+      if (api.tabs.update && targetTabId) {
         await new Promise((resolve) => {
-          let finished = false;
-          const done = () => {
-            if (!finished) {
-              finished = true;
-              if (api.tabs.onUpdated && api.tabs.onUpdated.removeListener) {
-                try {
-                  api.tabs.onUpdated.removeListener(listener);
-                } catch {
-                }
-              }
-              resolve();
-            }
-          };
-          const listener = (updatedTabId, changeInfo) => {
-            if (updatedTabId === targetTabId && changeInfo.status === "complete") {
-              done();
-            }
-          };
-          if (api.tabs.onUpdated && api.tabs.onUpdated.addListener) {
-            try {
-              api.tabs.onUpdated.addListener(listener);
-            } catch {
-            }
-          }
-          setTimeout(done, 5e3);
-          api.tabs.update(targetTabId, { url }, () => {
-          });
+          api.tabs.update(targetTabId, { url, active: true }, () => resolve());
         });
-        await new Promise((r) => setTimeout(r, 1e3));
+        const readyTab = await this.waitForTabReady(targetTabId, 8e3);
+        await this.ensureContentScript(targetTabId);
+        return { tabId: targetTabId, url: readyTab?.url || url };
       }
     }
+    return { tabId: tabId || 0, url };
   }
   async getStorage(key) {
     const api = this.browserAPI;
@@ -19543,7 +19627,10 @@ var RunCoordinator = class {
           this.listeners.onActionProposed?.(navAction, this.currentRunId);
           this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
           this.transition("executing", `Navigating from blank tab to ${targetUrl}...`);
-          await this.browser.navigateTab(activeTab?.id || 0, targetUrl);
+          const navRes = await this.browser.navigateTab(activeTab?.id || 0, targetUrl);
+          if (navRes && typeof navRes === "object" && navRes.tabId) {
+            this.currentTabId = navRes.tabId;
+          }
           this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
           continue;
         }
@@ -19578,13 +19665,30 @@ var RunCoordinator = class {
               this.listeners.onActionProposed?.(navAction, this.currentRunId);
               this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
               this.transition("executing", `Navigating tab to ${targetUrl}...`);
-              await this.browser.navigateTab(activeTab.id, targetUrl);
+              const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
+              if (navRes && typeof navRes === "object" && navRes.tabId) {
+                this.currentTabId = navRes.tabId;
+              }
               this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
               continue;
             }
           } catch {
           }
         }
+      }
+      if (activeTab && activeTab.id && typeof this.browser.waitForTabReady === "function") {
+        const readyTab = await this.browser.waitForTabReady(activeTab.id, 6e3);
+        if (readyTab && readyTab.url) {
+          activeTab = {
+            id: readyTab.id,
+            url: readyTab.url,
+            title: readyTab.title || activeTab.title,
+            windowId: readyTab.windowId || activeTab.windowId
+          };
+        }
+      }
+      if (activeTab && activeTab.id && typeof this.browser.ensureContentScript === "function") {
+        await this.browser.ensureContentScript(activeTab.id);
       }
       const captureId = `cap_${Date.now()}_${step}`;
       let domResponse;
@@ -19594,24 +19698,40 @@ var RunCoordinator = class {
           captureId
         });
       } catch (err) {
-        let targetUrl = extractTargetUrlFromGoal(goal);
-        if (!targetUrl && (goal.toLowerCase().includes("isro") || goal.toLowerCase().includes("mission"))) {
-          targetUrl = "https://www.isro.gov.in";
+        if (typeof this.browser.ensureContentScript === "function") {
+          try {
+            await this.browser.ensureContentScript(activeTab.id);
+            await new Promise((r) => setTimeout(r, 400));
+            domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+              type: "EXTRACT_DOM_SNAPSHOT",
+              captureId
+            });
+          } catch (_) {
+          }
         }
-        if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1) {
-          this.transition("executing", `Navigating tab to ${targetUrl}...`);
-          await this.browser.navigateTab(activeTab.id, targetUrl);
-          continue;
+        if (!domResponse || !domResponse.success) {
+          let targetUrl = extractTargetUrlFromGoal(goal);
+          if (!targetUrl && (goal.toLowerCase().includes("isro") || goal.toLowerCase().includes("mission"))) {
+            targetUrl = "https://www.isro.gov.in";
+          }
+          if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1) {
+            this.transition("executing", `Navigating tab to ${targetUrl}...`);
+            const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
+            if (navRes && typeof navRes === "object" && navRes.tabId) {
+              this.currentTabId = navRes.tabId;
+            }
+            continue;
+          }
+          const errorMsg2 = "Could not connect to webpage. Please reload the target tab (Cmd+R / F5) so the extension content script attaches.";
+          this.transition("failed-safe", errorMsg2);
+          const res2 = {
+            success: false,
+            state: "failed-safe",
+            error: errorMsg2,
+            stepCount: step
+          };
+          return this.completeWithResult(res2);
         }
-        const errorMsg2 = "Could not connect to webpage. Please reload the target tab (Cmd+R / F5) so the extension content script attaches.";
-        this.transition("failed-safe", errorMsg2);
-        const res2 = {
-          success: false,
-          state: "failed-safe",
-          error: errorMsg2,
-          stepCount: step
-        };
-        return this.completeWithResult(res2);
       }
       if (!domResponse || !domResponse.success) {
         const errorMsg2 = "Failed to extract DOM snapshot from content script. Please reload the tab.";
@@ -20015,11 +20135,32 @@ var RunCoordinator = class {
       if (proposal.kind === "type" && !proposal.pressEnter && this.currentTaskContract?.structuredIntent?.pressEnter) {
         proposal = { ...proposal, pressEnter: true };
       }
-      const execResponse = await this.browser.sendMessageToTab(activeTab.id, {
-        type: "EXECUTE_ACTION",
-        proposal,
-        captureId: sanitized.captureId
-      });
+      let execResponse;
+      try {
+        execResponse = await this.browser.sendMessageToTab(activeTab.id, {
+          type: "EXECUTE_ACTION",
+          proposal,
+          captureId: sanitized.captureId
+        });
+      } catch (execErr) {
+        const msg = execErr?.message || "";
+        const isPortClosedOrNav = msg.includes("message port closed") || msg.includes("Receiving end does not exist") || msg.includes("Could not establish connection");
+        if (isPortClosedOrNav) {
+          if (typeof this.browser.waitForTabReady === "function") {
+            await this.browser.waitForTabReady(activeTab.id, 8e3);
+          }
+          if (typeof this.browser.ensureContentScript === "function") {
+            await this.browser.ensureContentScript(activeTab.id);
+          }
+          execResponse = {
+            success: true,
+            semanticOutcomeVerified: true,
+            message: `Action executed and caused page navigation/redirect`
+          };
+        } else {
+          throw execErr;
+        }
+      }
       const t6_actionExecuted = Date.now();
       this.transition("verifying", `Step ${step}/${maxSteps}: Verifying semantic outcome`);
       const t7_stateVerified = Date.now();

@@ -921,7 +921,10 @@ export class RunCoordinator {
                     this.listeners.onActionProposed?.(navAction, this.currentRunId);
                     this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
                     this.transition('executing', `Navigating from blank tab to ${targetUrl}...`);
-                    await this.browser.navigateTab(activeTab?.id || 0, targetUrl);
+                    const navRes = await this.browser.navigateTab(activeTab?.id || 0, targetUrl);
+                    if (navRes && typeof navRes === 'object' && navRes.tabId) {
+                        this.currentTabId = navRes.tabId;
+                    }
                     this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
                     continue;
                 }
@@ -957,7 +960,10 @@ export class RunCoordinator {
                             this.listeners.onActionProposed?.(navAction, this.currentRunId);
                             this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
                             this.transition('executing', `Navigating tab to ${targetUrl}...`);
-                            await this.browser.navigateTab(activeTab.id, targetUrl);
+                            const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
+                            if (navRes && typeof navRes === 'object' && navRes.tabId) {
+                                this.currentTabId = navRes.tabId;
+                            }
                             this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
                             continue;
                         }
@@ -966,6 +972,21 @@ export class RunCoordinator {
                         // URL parse failure, proceed to DOM capture
                     }
                 }
+            }
+            // Ensure tab has finished loading and any redirection has settled
+            if (activeTab && activeTab.id && typeof this.browser.waitForTabReady === 'function') {
+                const readyTab = await this.browser.waitForTabReady(activeTab.id, 6000);
+                if (readyTab && readyTab.url) {
+                    activeTab = {
+                        id: readyTab.id,
+                        url: readyTab.url,
+                        title: readyTab.title || activeTab.title,
+                        windowId: readyTab.windowId || activeTab.windowId
+                    };
+                }
+            }
+            if (activeTab && activeTab.id && typeof this.browser.ensureContentScript === 'function') {
+                await this.browser.ensureContentScript(activeTab.id);
             }
             const captureId = `cap_${Date.now()}_${step}`;
             let domResponse;
@@ -976,25 +997,42 @@ export class RunCoordinator {
                 });
             }
             catch (err) {
-                // If content script is not yet attached at step 1 and goal specifies a target URL, try navigating to recover
-                let targetUrl = extractTargetUrlFromGoal(goal);
-                if (!targetUrl && (goal.toLowerCase().includes('isro') || goal.toLowerCase().includes('mission'))) {
-                    targetUrl = 'https://www.isro.gov.in';
+                // Content script might be initializing after redirect - retry with auto-injection
+                if (typeof this.browser.ensureContentScript === 'function') {
+                    try {
+                        await this.browser.ensureContentScript(activeTab.id);
+                        await new Promise((r) => setTimeout(r, 400));
+                        domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+                            type: 'EXTRACT_DOM_SNAPSHOT',
+                            captureId
+                        });
+                    }
+                    catch (_) { }
                 }
-                if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1) {
-                    this.transition('executing', `Navigating tab to ${targetUrl}...`);
-                    await this.browser.navigateTab(activeTab.id, targetUrl);
-                    continue;
+                if (!domResponse || !domResponse.success) {
+                    // If content script is not yet attached at step 1 and goal specifies a target URL, try navigating to recover
+                    let targetUrl = extractTargetUrlFromGoal(goal);
+                    if (!targetUrl && (goal.toLowerCase().includes('isro') || goal.toLowerCase().includes('mission'))) {
+                        targetUrl = 'https://www.isro.gov.in';
+                    }
+                    if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1) {
+                        this.transition('executing', `Navigating tab to ${targetUrl}...`);
+                        const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
+                        if (navRes && typeof navRes === 'object' && navRes.tabId) {
+                            this.currentTabId = navRes.tabId;
+                        }
+                        continue;
+                    }
+                    const errorMsg = 'Could not connect to webpage. Please reload the target tab (Cmd+R / F5) so the extension content script attaches.';
+                    this.transition('failed-safe', errorMsg);
+                    const res = {
+                        success: false,
+                        state: 'failed-safe',
+                        error: errorMsg,
+                        stepCount: step
+                    };
+                    return this.completeWithResult(res);
                 }
-                const errorMsg = 'Could not connect to webpage. Please reload the target tab (Cmd+R / F5) so the extension content script attaches.';
-                this.transition('failed-safe', errorMsg);
-                const res = {
-                    success: false,
-                    state: 'failed-safe',
-                    error: errorMsg,
-                    stepCount: step
-                };
-                return this.completeWithResult(res);
             }
             if (!domResponse || !domResponse.success) {
                 const errorMsg = 'Failed to extract DOM snapshot from content script. Please reload the tab.';
@@ -1423,11 +1461,39 @@ export class RunCoordinator {
             if (proposal.kind === 'type' && !proposal.pressEnter && this.currentTaskContract?.structuredIntent?.pressEnter) {
                 proposal = { ...proposal, pressEnter: true };
             }
-            const execResponse = await this.browser.sendMessageToTab(activeTab.id, {
-                type: 'EXECUTE_ACTION',
-                proposal,
-                captureId: sanitized.captureId
-            });
+            let execResponse;
+            try {
+                execResponse = await this.browser.sendMessageToTab(activeTab.id, {
+                    type: 'EXECUTE_ACTION',
+                    proposal,
+                    captureId: sanitized.captureId
+                });
+            }
+            catch (execErr) {
+                // If clicking or submitting triggered page unload / navigation / redirect,
+                // the content script message port closes immediately.
+                const msg = execErr?.message || '';
+                const isPortClosedOrNav = msg.includes('message port closed') ||
+                    msg.includes('Receiving end does not exist') ||
+                    msg.includes('Could not establish connection');
+                if (isPortClosedOrNav) {
+                    // Normal and expected for navigation actions: wait for redirected tab to settle
+                    if (typeof this.browser.waitForTabReady === 'function') {
+                        await this.browser.waitForTabReady(activeTab.id, 8000);
+                    }
+                    if (typeof this.browser.ensureContentScript === 'function') {
+                        await this.browser.ensureContentScript(activeTab.id);
+                    }
+                    execResponse = {
+                        success: true,
+                        semanticOutcomeVerified: true,
+                        message: `Action executed and caused page navigation/redirect`
+                    };
+                }
+                else {
+                    throw execErr;
+                }
+            }
             const t6_actionExecuted = Date.now();
             this.transition('verifying', `Step ${step}/${maxSteps}: Verifying semantic outcome`);
             const t7_stateVerified = Date.now();

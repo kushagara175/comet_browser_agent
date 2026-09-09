@@ -66,6 +66,9 @@ function createFakeBrowserAdapter(options = {}) {
 
       if (message.type === 'EXECUTE_ACTION') {
         actionExecuted = true;
+        if (options.executeActionThrows) {
+          throw new Error(options.executeActionThrows);
+        }
         if (options.executeResponse) {
           return options.executeResponse;
         }
@@ -496,5 +499,59 @@ test('Coordinator Tracing: Ordered multi-step trace captures click, execution, v
   assert.strictEqual(result.steps[1].executed, false);
   assert.strictEqual(result.steps[1].verification?.verified, true);
 });
+
+test('Coordinator Redirection Resilience: Action causing page navigation/port-close recovers cleanly', async () => {
+  let tabReadyCalled = false;
+  let contentScriptEnsured = false;
+
+  const browser = createFakeBrowserAdapter({
+    executeActionThrows: 'The message port closed before a response was received.'
+  });
+  browser.waitForTabReady = async (tabId) => {
+    tabReadyCalled = true;
+    return { id: tabId, url: 'https://www.isro.gov.in/Missions.html', title: 'Missions - ISRO' };
+  };
+  browser.ensureContentScript = async (tabId) => {
+    contentScriptEnsured = true;
+    return true;
+  };
+
+  let stepCall = 0;
+  const multiStepHttpClient = {
+    async requestReasoningAction() {
+      stepCall++;
+      if (stepCall === 1) {
+        return {
+          actionId: 'act_nav_link_1',
+          kind: 'click',
+          targetLocalId: 'el_btn_1',
+          confidence: 0.95,
+          risk: 'safe',
+          rationale: 'Click link that navigates/redirects'
+        };
+      }
+      return {
+        actionId: 'act_finish_2',
+        kind: 'finish',
+        confidence: 1.0,
+        risk: 'safe',
+        rationale: 'Redirected destination loaded successfully'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, multiStepHttpClient);
+  const result = await coordinator.startRun('Open the safe preview and see results');
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.state, 'complete');
+  assert.strictEqual(tabReadyCalled, true, 'waitForTabReady should have been called upon port closure');
+  assert.strictEqual(contentScriptEnsured, true, 'ensureContentScript should have been called');
+  assert.ok(result.steps);
+  assert.strictEqual(result.steps.length, 2);
+  assert.strictEqual(result.steps[0].executed, true);
+  assert.strictEqual(result.steps[0].executionResult?.success, true);
+});
+
 
 

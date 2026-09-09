@@ -22,8 +22,20 @@ export interface BrowserAdapter {
         url: string;
         title: string;
         windowId?: number;
+        status?: string;
     }>;
-    navigateTab?(tabId: number, url: string): Promise<void>;
+    navigateTab?(tabId: number, url: string): Promise<{
+        tabId: number;
+        url?: string;
+    } | void>;
+    waitForTabReady?(tabId: number, timeoutMs?: number): Promise<{
+        id: number;
+        url: string;
+        title: string;
+        windowId?: number;
+        status?: string;
+    } | null>;
+    ensureContentScript?(tabId: number): Promise<boolean>;
     getStorage<T>(key: string): Promise<T | null>;
     setStorage<T>(key: string, value: T): Promise<void>;
     runInSanitizerHost(request: SanitizationHostRequest): Promise<SanitizedContext>;
@@ -35,14 +47,26 @@ export declare class WebExtensionAdapter implements BrowserAdapter {
     private get browserAPI();
     captureVisibleTab(targetWindowId?: number | null): Promise<string>;
     sendMessageToTab<T = any>(tabId: number, message: any): Promise<T>;
+    ensureContentScript(tabId: number): Promise<boolean>;
+    waitForTabReady(tabId: number, timeoutMs?: number): Promise<{
+        id: number;
+        url: string;
+        title: string;
+        windowId?: number;
+        status?: string;
+    } | null>;
     sendMessageToRuntime<T = any>(message: any): Promise<T>;
     getActiveTab(preferredTabId?: number): Promise<{
         id: number;
         url: string;
         title: string;
         windowId?: number;
+        status?: string;
     }>;
-    navigateTab(tabId: number, url: string): Promise<void>;
+    navigateTab(tabId: number, url: string): Promise<{
+        tabId: number;
+        url?: string;
+    }>;
     getStorage<T>(key: string): Promise<T | null>;
     setStorage<T>(key: string, value: T): Promise<void>;
     /**
