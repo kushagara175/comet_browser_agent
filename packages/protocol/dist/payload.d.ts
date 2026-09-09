@@ -40,7 +40,7 @@ export interface DetectionReport {
     readonly failClosedReason?: string;
 }
 export type ElementRole = 'button' | 'link' | 'input' | 'select' | 'textarea' | 'checkbox' | 'radio' | 'menuitem' | 'tab' | 'heading' | 'dialog' | 'generic';
-export type ActionCapability = 'click' | 'type' | 'select' | 'scroll';
+export type ActionCapability = 'click' | 'type' | 'select' | 'scroll' | 'hover' | 'drag' | 'upload';
 export interface SanitizedElement {
     readonly localId: string;
     readonly role: ElementRole;

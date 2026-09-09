@@ -166,10 +166,512 @@ export const SIH_PLAYBOOK: DomainPlaybook = {
 };
 
 /**
+ * Playbook for GitHub (github.com)
+ */
+export const GITHUB_PLAYBOOK: DomainPlaybook = {
+  domain: 'github.com',
+  name: 'GitHub',
+  aliases: ['github.com', 'www.github.com', 'github'],
+  routes: [
+    {
+      name: 'login',
+      path: '/login',
+      description: 'GitHub user sign in page',
+      matchKeywords: ['login', 'sign in', 'signin', 'auth', 'log in']
+    },
+    {
+      name: 'search',
+      path: '/search',
+      description: 'GitHub global search for code, repos, issues',
+      matchKeywords: ['search', 'find repository', 'search code', 'search repos']
+    },
+    {
+      name: 'trending',
+      path: '/trending',
+      description: 'Trending repositories and developers',
+      matchKeywords: ['trending', 'trending repositories', 'popular repos']
+    },
+    {
+      name: 'pulls',
+      path: '/pulls',
+      description: 'Global pull requests dashboard',
+      matchKeywords: ['pull requests', 'prs', 'my prs']
+    },
+    {
+      name: 'issues',
+      path: '/issues',
+      description: 'Global issues dashboard',
+      matchKeywords: ['issues', 'my issues']
+    },
+    {
+      name: 'home',
+      path: '/',
+      description: 'GitHub dashboard / home feed',
+      matchKeywords: ['home', 'dashboard', 'feed']
+    }
+  ],
+  landmarks: [
+    {
+      id: 'search_github',
+      phrase: 'Type / to search',
+      aliases: ['Search or jump to...', 'Search GitHub', 'Search', 'search box', 'search input'],
+      role: 'input',
+      description: 'Global search bar for code, repositories, and topics',
+      intentAction: 'type'
+    },
+    {
+      id: 'new_repo',
+      phrase: 'New',
+      aliases: ['New repository', 'Create repository', '+ New'],
+      role: 'button',
+      description: 'Create new repository button',
+      intentAction: 'click'
+    },
+    {
+      id: 'star_repo',
+      phrase: 'Star',
+      aliases: ['Star repository', 'Unstar'],
+      role: 'button',
+      description: 'Star repository button',
+      intentAction: 'click'
+    },
+    {
+      id: 'fork_repo',
+      phrase: 'Fork',
+      aliases: ['Fork repository', 'Create fork'],
+      role: 'button',
+      description: 'Fork repository button',
+      intentAction: 'click'
+    },
+    {
+      id: 'pull_requests_tab',
+      phrase: 'Pull requests',
+      aliases: ['PRs', 'Pull requests tab'],
+      role: 'tab',
+      description: 'Repository pull requests tab',
+      intentAction: 'click'
+    },
+    {
+      id: 'issues_tab',
+      phrase: 'Issues',
+      aliases: ['Issues tab', 'Bug reports'],
+      role: 'tab',
+      description: 'Repository issues tab',
+      intentAction: 'click'
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: 'stars',
+      labelKeywords: ['stars', 'starred', 'stargazers'],
+      containerHints: ['social-count', 'star-count', 'repo-stars', 'badge', 'counter'],
+      valuePattern: '\\b\\d+(?:\\.\\d+)?[kKmM]?\\b',
+      description: 'Number of stars on repository'
+    },
+    {
+      metricId: 'forks',
+      labelKeywords: ['forks', 'forked'],
+      containerHints: ['social-count', 'fork-count', 'repo-forks', 'counter'],
+      valuePattern: '\\b\\d+(?:\\.\\d+)?[kKmM]?\\b',
+      description: 'Number of forks of repository'
+    },
+    {
+      metricId: 'open_issues',
+      labelKeywords: ['open issues', 'issues open', 'issues'],
+      containerHints: ['issues-repo', 'counter', 'tab-count'],
+      valuePattern: '\\b\\d+(?:,\\d+)*\\b',
+      description: 'Number of open issues'
+    }
+  ],
+  formFieldHints: {
+    username: ['login_field', 'username', 'email', 'login'],
+    password: ['password', 'current-password', 'pwd'],
+    search: ['query-builder-test', 'search', 'q']
+  }
+};
+
+/**
+ * Playbook for YouTube (youtube.com)
+ */
+export const YOUTUBE_PLAYBOOK: DomainPlaybook = {
+  domain: 'youtube.com',
+  name: 'YouTube',
+  aliases: ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'youtube'],
+  routes: [
+    {
+      name: 'search',
+      path: '/results',
+      description: 'YouTube video search results',
+      matchKeywords: ['search', 'search video', 'results', 'find video']
+    },
+    {
+      name: 'subscriptions',
+      path: '/feed/subscriptions',
+      description: 'Subscribed channel videos',
+      matchKeywords: ['subscriptions', 'subscribed', 'sub feed']
+    },
+    {
+      name: 'trending',
+      path: '/feed/trending',
+      description: 'Trending and viral videos',
+      matchKeywords: ['trending', 'trending videos', 'explore']
+    },
+    {
+      name: 'home',
+      path: '/',
+      description: 'YouTube home recommendation feed',
+      matchKeywords: ['home', 'homepage', 'feed']
+    }
+  ],
+  landmarks: [
+    {
+      id: 'yt_search',
+      phrase: 'Search',
+      aliases: ['search_query', 'Search YouTube', 'search box', 'search input'],
+      role: 'input',
+      description: 'Main YouTube search input box',
+      intentAction: 'type'
+    },
+    {
+      id: 'subscribe_btn',
+      phrase: 'Subscribe',
+      aliases: ['Subscribed', 'Join'],
+      role: 'button',
+      description: 'Channel subscribe button',
+      intentAction: 'click'
+    },
+    {
+      id: 'like_btn',
+      phrase: 'Like',
+      aliases: ['like this video', 'thumbs up'],
+      role: 'button',
+      description: 'Video like button',
+      intentAction: 'click'
+    },
+    {
+      id: 'play_pause',
+      phrase: 'Play',
+      aliases: ['Pause', 'Toggle play', 'Play (k)'],
+      role: 'button',
+      description: 'Player play / pause toggle',
+      intentAction: 'click'
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: 'views',
+      labelKeywords: ['views', 'view count'],
+      containerHints: ['view-count', 'description', 'metadata-line', 'video-info'],
+      valuePattern: '\\b\\d+(?:[.,]\\d+)?[kKmMbB]?\\s*(?:views)?\\b',
+      description: 'Total video view count'
+    },
+    {
+      metricId: 'subscribers',
+      labelKeywords: ['subscribers', 'subs'],
+      containerHints: ['owner-sub-count', 'channel-sub-count', 'subscriber-count'],
+      valuePattern: '\\b\\d+(?:\\.\\d+)?[kKmM]?\\s*(?:subscribers)?\\b',
+      description: 'Channel subscriber count'
+    }
+  ],
+  formFieldHints: {
+    search: ['search_query', 'search', 'query']
+  }
+};
+
+/**
+ * Playbook for Reddit (reddit.com)
+ */
+export const REDDIT_PLAYBOOK: DomainPlaybook = {
+  domain: 'reddit.com',
+  name: 'Reddit',
+  aliases: ['reddit.com', 'www.reddit.com', 'old.reddit.com', 'reddit'],
+  routes: [
+    {
+      name: 'popular',
+      path: '/r/popular',
+      description: 'Popular posts across all communities',
+      matchKeywords: ['popular', 'popular posts', 'hot']
+    },
+    {
+      name: 'all',
+      path: '/r/all',
+      description: 'All reddit posts',
+      matchKeywords: ['all', 'r/all']
+    },
+    {
+      name: 'search',
+      path: '/search',
+      description: 'Reddit search for posts, communities, users',
+      matchKeywords: ['search', 'find post', 'search reddit']
+    },
+    {
+      name: 'login',
+      path: '/login',
+      description: 'Reddit user login',
+      matchKeywords: ['login', 'signin', 'log in']
+    },
+    {
+      name: 'home',
+      path: '/',
+      description: 'Reddit frontpage / home feed',
+      matchKeywords: ['home', 'frontpage', 'feed']
+    }
+  ],
+  landmarks: [
+    {
+      id: 'reddit_search',
+      phrase: 'Search Reddit',
+      aliases: ['Search', 'search input', 'search query'],
+      role: 'input',
+      description: 'Global Reddit search input',
+      intentAction: 'type'
+    },
+    {
+      id: 'create_post',
+      phrase: 'Create Post',
+      aliases: ['Create', 'Post', '+ Create'],
+      role: 'button',
+      description: 'Create new post button',
+      intentAction: 'click'
+    },
+    {
+      id: 'upvote',
+      phrase: 'Upvote',
+      aliases: ['up vote', 'like post'],
+      role: 'button',
+      description: 'Post or comment upvote button',
+      intentAction: 'click'
+    },
+    {
+      id: 'comments',
+      phrase: 'Comments',
+      aliases: ['View comments', 'comment count'],
+      role: 'button',
+      description: 'Open discussion comments',
+      intentAction: 'click'
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: 'upvotes',
+      labelKeywords: ['upvotes', 'votes', 'points'],
+      containerHints: ['score', 'vote-count', 'post-score'],
+      valuePattern: '\\b\\d+(?:\\.\\d+)?[kK]?\\b',
+      description: 'Upvotes or karma score'
+    },
+    {
+      metricId: 'comments_count',
+      labelKeywords: ['comments', 'comment'],
+      containerHints: ['comment-count', 'post-comments'],
+      valuePattern: '\\b\\d+(?:\\.\\d+)?[kK]?\\s*comments?\\b',
+      description: 'Number of discussion comments'
+    }
+  ],
+  formFieldHints: {
+    search: ['q', 'search', 'query'],
+    username: ['username', 'user'],
+    password: ['password', 'passwd']
+  }
+};
+
+/**
+ * Playbook for DuckDuckGo (duckduckgo.com)
+ */
+export const DUCKDUCKGO_PLAYBOOK: DomainPlaybook = {
+  domain: 'duckduckgo.com',
+  name: 'DuckDuckGo',
+  aliases: ['duckduckgo.com', 'www.duckduckgo.com', 'html.duckduckgo.com', 'duckduckgo', 'ddg'],
+  routes: [
+    {
+      name: 'home',
+      path: '/',
+      description: 'DuckDuckGo private search engine homepage',
+      matchKeywords: ['home', 'homepage', 'search']
+    },
+    {
+      name: 'settings',
+      path: '/settings',
+      description: 'Search preferences and themes',
+      matchKeywords: ['settings', 'preferences', 'theme']
+    }
+  ],
+  landmarks: [
+    {
+      id: 'ddg_search',
+      phrase: 'Search without being tracked',
+      aliases: ['Search the web without being tracked', 'search input', 'search query', 'Search', 'q'],
+      role: 'input',
+      description: 'Main DuckDuckGo search query input',
+      intentAction: 'type'
+    },
+    {
+      id: 'clear_search',
+      phrase: 'Clear',
+      aliases: ['Clear search', 'Reset search'],
+      role: 'button',
+      description: 'Clear input query button',
+      intentAction: 'click'
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: 'results_count',
+      labelKeywords: ['results', 'found'],
+      containerHints: ['result-count', 'search-meta'],
+      valuePattern: '\\b\\d+(?:,\\d+)*\\b',
+      description: 'Number of search results'
+    }
+  ],
+  formFieldHints: {
+    search: ['q', 'search_form_input', 'search_form_input_homepage']
+  }
+};
+
+/**
+ * Playbook for Google Search (google.com)
+ */
+export const GOOGLE_PLAYBOOK: DomainPlaybook = {
+  domain: 'google.com',
+  name: 'Google',
+  aliases: ['google.com', 'www.google.com', 'google'],
+  routes: [
+    {
+      name: 'home',
+      path: '/',
+      description: 'Google Search homepage',
+      matchKeywords: ['home', 'homepage', 'search']
+    },
+    {
+      name: 'search',
+      path: '/search',
+      description: 'Google Search results page',
+      matchKeywords: ['results', 'search results']
+    },
+    {
+      name: 'preferences',
+      path: '/preferences',
+      description: 'Search settings & safe search',
+      matchKeywords: ['preferences', 'settings', 'safesearch']
+    }
+  ],
+  landmarks: [
+    {
+      id: 'google_search_input',
+      phrase: 'Search',
+      aliases: ['Search query', 'search box', 'search input', 'q'],
+      role: 'input',
+      description: 'Google search text input',
+      intentAction: 'type'
+    },
+    {
+      id: 'google_search_button',
+      phrase: 'Google Search',
+      aliases: ['Search button', 'Google search'],
+      role: 'button',
+      description: 'Trigger Google search button',
+      intentAction: 'click'
+    },
+    {
+      id: 'lucky_button',
+      phrase: "I'm Feeling Lucky",
+      aliases: ['Feeling lucky', 'lucky button'],
+      role: 'button',
+      description: "I'm Feeling Lucky direct navigation button",
+      intentAction: 'click'
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: 'search_results_count',
+      labelKeywords: ['about', 'results', 'seconds'],
+      containerHints: ['result-stats', 'appbar'],
+      valuePattern: '\\b\\d+(?:,\\d+)*(?:\\.\\d+)?\\s*(?:results)?\\b',
+      description: 'Estimated count of search results'
+    }
+  ],
+  formFieldHints: {
+    search: ['q', 'search', 'query']
+  }
+};
+
+/**
+ * Playbook for Wikipedia (wikipedia.org)
+ */
+export const WIKIPEDIA_PLAYBOOK: DomainPlaybook = {
+  domain: 'wikipedia.org',
+  name: 'Wikipedia',
+  aliases: ['wikipedia.org', 'en.wikipedia.org', 'www.wikipedia.org', 'wikipedia', 'wiki'],
+  routes: [
+    {
+      name: 'mainPage',
+      path: '/wiki/Main_Page',
+      description: 'Wikipedia main encyclopedia portal',
+      matchKeywords: ['main page', 'home', 'frontpage', 'portal']
+    },
+    {
+      name: 'search',
+      path: '/wiki/Special:Search',
+      description: 'Wikipedia article search',
+      matchKeywords: ['search', 'search wikipedia', 'find article']
+    },
+    {
+      name: 'random',
+      path: '/wiki/Special:Random',
+      description: 'Random encyclopedia article',
+      matchKeywords: ['random', 'random article', 'surprise me']
+    }
+  ],
+  landmarks: [
+    {
+      id: 'wiki_search',
+      phrase: 'Search Wikipedia',
+      aliases: ['search input', 'Search', 'search box', 'searchInput'],
+      role: 'input',
+      description: 'Search Wikipedia encyclopedia articles',
+      intentAction: 'type'
+    },
+    {
+      id: 'contents_link',
+      phrase: 'Contents',
+      aliases: ['Table of contents', 'Articles content'],
+      role: 'link',
+      description: 'Wikipedia contents directory',
+      intentAction: 'click'
+    },
+    {
+      id: 'random_article',
+      phrase: 'Random article',
+      aliases: ['Random', 'Special:Random'],
+      role: 'link',
+      description: 'Navigate to random article',
+      intentAction: 'click'
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: 'references_count',
+      labelKeywords: ['references', 'citations'],
+      containerHints: ['reflist', 'references'],
+      valuePattern: '\\b\\d+\\b',
+      description: 'Total number of citations/references'
+    }
+  ],
+  formFieldHints: {
+    search: ['search', 'searchInput', 'query']
+  }
+};
+
+/**
  * Registry of known domain playbooks.
  */
 export const REGISTERED_PLAYBOOKS: ReadonlyArray<DomainPlaybook> = [
-  SIH_PLAYBOOK
+  SIH_PLAYBOOK,
+  GITHUB_PLAYBOOK,
+  YOUTUBE_PLAYBOOK,
+  REDDIT_PLAYBOOK,
+  DUCKDUCKGO_PLAYBOOK,
+  GOOGLE_PLAYBOOK,
+  WIKIPEDIA_PLAYBOOK
 ];
 
 /**
@@ -265,9 +767,9 @@ export function resolvePlaybookIntent(
   }
 
   // 2. If user intent is explicit navigation (e.g. "go to", "navigate to"), check routes first
-  const isNavQuery = queryTokens.some((t) =>
-    ['go', 'navigate', 'open', 'visit', 'load', 'take'].includes(t)
-  );
+  const isNavQuery =
+    /^(?:(?:please|kindly)\s+)?(?:go\s+to|navigate\s+to|visit|open|load|take\s+me\s+to)\b/i.test(userQuery) ||
+    (queryTokens.length > 0 && ['go', 'navigate', 'visit', 'load'].includes(queryTokens[0]));
 
   if (isNavQuery) {
     for (const route of playbook.routes) {
@@ -406,24 +908,48 @@ export function extractMetricsWithPlaybook(
   const textLower = textContext.toLowerCase();
   const pattern = new RegExp(metricRule.valuePattern, 'g');
 
-  // 1. Anchor search to keyword first (e.g. "Total Submissions: 12,850")
+  // 1. Anchor search to keyword first (e.g. "Total Submissions: 12,850" or "15.2k stars")
   for (const kw of metricRule.labelKeywords) {
     const kwLower = kw.toLowerCase();
     let kwIndex = textLower.indexOf(kwLower);
     while (kwIndex !== -1) {
-      const start = Math.max(0, kwIndex - 15);
+      const start = Math.max(0, kwIndex - 25);
       const end = Math.min(textContext.length, kwIndex + kwLower.length + 45);
-      const snippet = textContext.slice(start, end);
 
       const afterSnippet = textContext.slice(kwIndex + kwLower.length, end);
+      const beforeSnippet = textContext.slice(start, kwIndex);
+
+      // 1a. If afterSnippet directly follows with colon or equals (e.g. "Total Submissions: 12,850")
+      const afterDirectMatch = afterSnippet.match(/^[\s:=]+([0-9][0-9,.]*[kKmMbB]?)/);
+      if (afterDirectMatch) {
+        return {
+          value: afterDirectMatch[1],
+          label: metricRule.metricId
+        };
+      }
+
+      // 1b. Check if value directly precedes the keyword (e.g. "15.2k stars", "4.8M views", "142 citations")
+      const beforeMatches = [...beforeSnippet.matchAll(new RegExp(metricRule.valuePattern, 'g'))];
+      if (beforeMatches.length > 0) {
+        const lastBefore = beforeMatches[beforeMatches.length - 1];
+        if (lastBefore.index !== undefined && beforeSnippet.length - (lastBefore.index + lastBefore[0].length) <= 5) {
+          return {
+            value: lastBefore[0],
+            label: metricRule.metricId
+          };
+        }
+      }
+
+      // 1c. General afterSnippet match
       const afterMatch = afterSnippet.match(new RegExp(metricRule.valuePattern));
-      if (afterMatch) {
+      if (afterMatch && (afterMatch.index ?? 99) <= 15) {
         return {
           value: afterMatch[0],
           label: metricRule.metricId
         };
       }
 
+      const snippet = textContext.slice(start, end);
       const snippetMatches = [...snippet.matchAll(pattern)];
       if (snippetMatches.length > 0) {
         return {

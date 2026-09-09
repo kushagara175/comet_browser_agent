@@ -212,3 +212,148 @@ test('Native Dialog Immunity: alert, confirm, and prompt do not freeze execution
   assert.equal(capturedDialogs[0].message, 'Submission deadline reminder');
   assert.equal(capturedDialogs[1].message, 'Do you confirm idea finalization?');
 });
+
+test('Interaction Skill: ActionExecutor dispatches hover events (mouseenter, mouseover, mousemove)', () => {
+  const events = [];
+  const mockTarget = {
+    tagName: 'BUTTON',
+    isConnected: true,
+    ownerDocument: { contains: () => true },
+    getBoundingClientRect() { return { x: 50, y: 50, width: 100, height: 30 }; },
+    focus() {},
+    dispatchEvent(evt) {
+      events.push(evt.type);
+      return true;
+    }
+  };
+
+  const elementMap = new Map([['el_btn', mockTarget]]);
+  const proposal = {
+    actionId: 'act_hover_1',
+    kind: 'hover',
+    targetLocalId: 'el_btn',
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Hover over button to trigger menu'
+  };
+
+  const result = ActionExecutor.execute(proposal, elementMap);
+  assert.equal(result.success, true);
+  assert.ok(result.message.includes('Hovered over element'));
+});
+
+test('Interaction Skill: ActionExecutor dispatches synthetic drag_and_drop sequence', () => {
+  const sourceEvents = [];
+  const destEvents = [];
+
+  const mockSource = {
+    tagName: 'DIV',
+    id: 'source_item',
+    isConnected: true,
+    ownerDocument: { contains: () => true },
+    getBoundingClientRect() { return { x: 10, y: 10, width: 50, height: 50 }; },
+    dispatchEvent(evt) {
+      sourceEvents.push(evt.type);
+      return true;
+    }
+  };
+
+  const mockDest = {
+    tagName: 'DIV',
+    id: 'drop_zone',
+    isConnected: true,
+    ownerDocument: { contains: () => true },
+    getBoundingClientRect() { return { x: 200, y: 200, width: 100, height: 100 }; },
+    dispatchEvent(evt) {
+      destEvents.push(evt.type);
+      return true;
+    }
+  };
+
+  const elementMap = new Map([
+    ['el_src', mockSource],
+    ['el_dest', mockDest]
+  ]);
+
+  const proposal = {
+    actionId: 'act_drag_1',
+    kind: 'drag_and_drop',
+    targetLocalId: 'el_src',
+    destinationLocalId: 'el_dest',
+    confidence: 0.9,
+    risk: 'safe',
+    rationale: 'Drag item into drop zone'
+  };
+
+  const result = ActionExecutor.execute(proposal, elementMap);
+  assert.equal(result.success, true);
+  assert.ok(result.message.includes("Dragged element 'el_src' to 'el_dest'"));
+  assert.ok(sourceEvents.includes('dragstart'));
+  assert.ok(destEvents.includes('drop'));
+});
+
+test('Interaction Skill: ActionExecutor executes upload_file with fileName and payload', () => {
+  let changeFired = false;
+  let inputFired = false;
+
+  const mockFileInput = {
+    tagName: 'INPUT',
+    id: 'upload_ctrl',
+    isConnected: true,
+    ownerDocument: { contains: () => true },
+    getAttribute(name) { return name === 'type' ? 'file' : null; },
+    getBoundingClientRect() { return { x: 0, y: 0, width: 100, height: 25 }; },
+    dispatchEvent(evt) {
+      if (evt.type === 'change') changeFired = true;
+      if (evt.type === 'input') inputFired = true;
+      return true;
+    }
+  };
+
+  const elementMap = new Map([['el_upload', mockFileInput]]);
+  const proposal = {
+    actionId: 'act_upload_1',
+    kind: 'upload_file',
+    targetLocalId: 'el_upload',
+    fileName: 'sih_team_solution.pdf',
+    fileData: 'JVBERi0xLjQK...',
+    mimeType: 'application/pdf',
+    confidence: 1.0,
+    risk: 'protected',
+    userApproved: true,
+    rationale: 'Upload solution PDF'
+  };
+
+  const result = ActionExecutor.execute(proposal, elementMap);
+  assert.equal(result.success, true);
+  assert.ok(result.message.includes('sih_team_solution.pdf'));
+  assert.equal(changeFired, true);
+  assert.equal(inputFired, true);
+});
+
+test('Agent Helpers: setNativeControlledValue sets value on mock elements', async () => {
+  const { setNativeControlledValue } = await import('../packages/protocol/dist/index.js');
+  const mockInput = {
+    tagName: 'INPUT',
+    value: '',
+    dispatchEvent() { return true; }
+  };
+
+  const success = setNativeControlledValue(mockInput, 'Testing controlled input');
+  assert.equal(success, true);
+  assert.equal(mockInput.value, 'Testing controlled input');
+});
+
+test('Agent Helpers: collectOpenShadowRoots returns all shadow roots recursively', async () => {
+  const { collectOpenShadowRoots } = await import('../packages/protocol/dist/index.js');
+  const mockChildShadow = { tagName: 'INNER-SHADOW' };
+  const mockParentShadow = {
+    tagName: 'OUTER-SHADOW',
+    shadowRoot: {
+      children: [{ shadowRoot: mockChildShadow }]
+    }
+  };
+
+  const roots = collectOpenShadowRoots(mockParentShadow);
+  assert.equal(roots.length, 2);
+});

@@ -1,6 +1,6 @@
 import { SanitizedElement } from './payload.js';
 import { StructuredTaskIntent, FormFieldAssignment } from './grounding.js';
-export type ActionKind = 'observe' | 'click' | 'type' | 'select' | 'scroll' | 'wait' | 'extract' | 'answer' | 'request_user_confirmation' | 'finish' | 'blocked';
+export type ActionKind = 'observe' | 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'extract' | 'answer' | 'request_user_confirmation' | 'finish' | 'blocked';
 export type RiskLevel = 'safe' | 'protected' | 'blocked';
 export type ExpectedPostcondition = {
     readonly kind: 'dialog_visible';
@@ -62,14 +62,19 @@ export interface ActionProposal {
     readonly actionId: string;
     readonly kind: ActionKind;
     readonly targetLocalId?: string;
+    readonly destinationLocalId?: string;
     readonly confidence: number;
     readonly risk: RiskLevel;
     readonly rationale: string;
     readonly expectedState?: string;
     readonly expectedPostcondition?: ExpectedPostcondition;
     readonly textToType?: string;
+    readonly fileName?: string;
+    readonly fileData?: string;
+    readonly mimeType?: string;
     readonly selectOptionValue?: string;
     readonly scrollDirection?: 'up' | 'down' | 'top' | 'bottom';
+    readonly tabId?: number;
     readonly userApproved?: boolean;
     readonly pressEnter?: boolean;
     readonly extractedData?: string;

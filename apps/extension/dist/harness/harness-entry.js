@@ -14480,7 +14480,7 @@ as ORT format: ${n}`);
       let surfaceCounter = 0;
       const processDocumentLevel = (currentDoc, offset = { x: 0, y: 0 }, depth = 0) => {
         const candidates = currentDoc.querySelectorAll(
-          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"]'
+          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed]'
         );
         candidates.forEach((node) => {
           const el2 = node;
@@ -14508,9 +14508,15 @@ as ORT format: ${n}`);
             else role = "input";
           } else if (tag === "select") role = "select";
           else if (tag === "textarea") role = "textarea";
-          const caps = ["click"];
-          if (role === "input" || role === "textarea") caps.push("type");
+          const caps = ["click", "hover"];
+          if (role === "input" || role === "textarea") {
+            caps.push("type");
+            const inputType = (typeof el2.getAttribute === "function" ? el2.getAttribute("type") || "" : "").toLowerCase();
+            if (inputType === "file") caps.push("upload");
+          }
           if (role === "select") caps.push("select");
+          const isDraggable = el2.getAttribute?.("draggable") === "true" || el2.getAttribute?.("role") === "slider" || typeof el2.getAttribute === "function" && el2.getAttribute("aria-grabbed") !== null;
+          if (isDraggable) caps.push("drag");
           let rawName = "";
           let associatedLabelText = "";
           if (tag === "input" || tag === "textarea" || tag === "select") {

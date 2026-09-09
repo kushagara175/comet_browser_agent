@@ -134,4 +134,120 @@ test('Action Policy - Correctly Classifies Safe vs Protected vs Blocked Actions'
     rationale: 'Enter password'
   };
   assert.strictEqual(classifyActionRisk(blockedProposal, 'Station Password Field'), 'blocked');
+
+  // 4. Hover Action: safe
+  const hoverProposal = {
+    actionId: 'act_4',
+    kind: 'hover',
+    targetLocalId: 'el_10',
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Hover over menu'
+  };
+  assert.strictEqual(classifyActionRisk(hoverProposal), 'safe');
+
+  // 5. Upload File: protected by default, safe if userApproved
+  const uploadProposal = {
+    actionId: 'act_5',
+    kind: 'upload_file',
+    targetLocalId: 'el_11',
+    fileName: 'doc.pdf',
+    confidence: 0.95,
+    risk: 'protected',
+    rationale: 'Upload document'
+  };
+  assert.strictEqual(classifyActionRisk(uploadProposal), 'protected');
+  assert.strictEqual(classifyActionRisk({ ...uploadProposal, userApproved: true }), 'safe');
+});
+
+test('Task Contracts - hover, drag_and_drop, and upload_file commands resolve contracts', async () => {
+  const { resolveTaskContract } = await import('../packages/protocol/dist/index.js');
+
+  const hoverC = resolveTaskContract('hover over the problem statements button');
+  assert.strictEqual(hoverC.supported, true);
+  assert.strictEqual(hoverC.goalPattern, 'hover_control');
+  assert.strictEqual(hoverC.structuredIntent.intent, 'hover');
+
+  const dragC = resolveTaskContract('drag task 1 into completed column');
+  assert.strictEqual(dragC.supported, true);
+  assert.strictEqual(dragC.goalPattern, 'drag_and_drop');
+  assert.strictEqual(dragC.structuredIntent.intent, 'drag_and_drop');
+
+  const uploadC = resolveTaskContract('upload resume.pdf to file input');
+  assert.strictEqual(uploadC.supported, true);
+  assert.strictEqual(uploadC.goalPattern, 'upload_file');
+  assert.strictEqual(uploadC.structuredIntent.intent, 'upload_file');
+});
+
+test('Action Schema Validation - Validates hover, drag_and_drop, upload_file, and closed schema properties', async () => {
+  const { validateActionProposal } = await import('../packages/protocol/dist/index.js');
+
+  // Valid hover
+  const validHover = {
+    actionId: 'act_h1',
+    kind: 'hover',
+    targetLocalId: 'el_1',
+    confidence: 0.9,
+    risk: 'safe',
+    rationale: 'Hover to open menu'
+  };
+  assert.strictEqual(validateActionProposal(validHover).isValid, true);
+
+  // Valid drag_and_drop
+  const validDrag = {
+    actionId: 'act_d1',
+    kind: 'drag_and_drop',
+    targetLocalId: 'el_1',
+    destinationLocalId: 'el_2',
+    confidence: 0.9,
+    risk: 'safe',
+    rationale: 'Drag item to destination'
+  };
+  assert.strictEqual(validateActionProposal(validDrag).isValid, true);
+
+  // Missing destinationLocalId on drag_and_drop
+  const invalidDrag = {
+    actionId: 'act_d2',
+    kind: 'drag_and_drop',
+    targetLocalId: 'el_1',
+    confidence: 0.9,
+    risk: 'safe',
+    rationale: 'Missing destination'
+  };
+  assert.strictEqual(validateActionProposal(invalidDrag).isValid, false);
+
+  // Valid upload_file
+  const validUpload = {
+    actionId: 'act_u1',
+    kind: 'upload_file',
+    targetLocalId: 'el_1',
+    fileName: 'resume.pdf',
+    confidence: 0.95,
+    risk: 'protected',
+    rationale: 'Upload resume'
+  };
+  assert.strictEqual(validateActionProposal(validUpload).isValid, true);
+
+  // Prohibited path traversal in fileName
+  const traversalUpload = {
+    actionId: 'act_u2',
+    kind: 'upload_file',
+    targetLocalId: 'el_1',
+    fileName: '../../etc/passwd',
+    confidence: 0.95,
+    risk: 'protected',
+    rationale: 'Attempt directory traversal'
+  };
+  assert.strictEqual(validateActionProposal(traversalUpload).isValid, false);
+
+  // Invalid tabId (negative)
+  const invalidTab = {
+    actionId: 'act_t1',
+    kind: 'observe',
+    confidence: 0.9,
+    risk: 'safe',
+    rationale: 'Observe with negative tabId',
+    tabId: -1
+  };
+  assert.strictEqual(validateActionProposal(invalidTab).isValid, false);
 });

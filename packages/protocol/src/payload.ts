@@ -75,7 +75,7 @@ export type ElementRole =
   | 'dialog'
   | 'generic';
 
-export type ActionCapability = 'click' | 'type' | 'select' | 'scroll';
+export type ActionCapability = 'click' | 'type' | 'select' | 'scroll' | 'hover' | 'drag' | 'upload';
 
 export interface SanitizedElement {
   readonly localId: string; // e.g. "el_1", "el_2"

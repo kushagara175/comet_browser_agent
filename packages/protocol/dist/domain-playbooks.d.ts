@@ -52,6 +52,30 @@ export interface PlaybookResolution {
  */
 export declare const SIH_PLAYBOOK: DomainPlaybook;
 /**
+ * Playbook for GitHub (github.com)
+ */
+export declare const GITHUB_PLAYBOOK: DomainPlaybook;
+/**
+ * Playbook for YouTube (youtube.com)
+ */
+export declare const YOUTUBE_PLAYBOOK: DomainPlaybook;
+/**
+ * Playbook for Reddit (reddit.com)
+ */
+export declare const REDDIT_PLAYBOOK: DomainPlaybook;
+/**
+ * Playbook for DuckDuckGo (duckduckgo.com)
+ */
+export declare const DUCKDUCKGO_PLAYBOOK: DomainPlaybook;
+/**
+ * Playbook for Google Search (google.com)
+ */
+export declare const GOOGLE_PLAYBOOK: DomainPlaybook;
+/**
+ * Playbook for Wikipedia (wikipedia.org)
+ */
+export declare const WIKIPEDIA_PLAYBOOK: DomainPlaybook;
+/**
  * Registry of known domain playbooks.
  */
 export declare const REGISTERED_PLAYBOOKS: ReadonlyArray<DomainPlaybook>;

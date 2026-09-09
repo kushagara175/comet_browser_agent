@@ -272,5 +272,89 @@ test('Domain Playbooks: RunCoordinator executes DataTable search directly on sih
   assert.equal(executedProposals[0].pressEnter, true);
 });
 
+test('Domain Playbooks: lookupDomainPlaybook matches GitHub, YouTube, Reddit, DuckDuckGo, Google, and Wikipedia', async () => {
+  const {
+    lookupDomainPlaybook,
+    GITHUB_PLAYBOOK,
+    YOUTUBE_PLAYBOOK,
+    REDDIT_PLAYBOOK,
+    DUCKDUCKGO_PLAYBOOK,
+    GOOGLE_PLAYBOOK,
+    WIKIPEDIA_PLAYBOOK
+  } = await import('../packages/protocol/dist/index.js');
+
+  assert.equal(lookupDomainPlaybook('https://github.com/browser-use/browser-harness')?.domain, 'github.com');
+  assert.equal(lookupDomainPlaybook('https://www.youtube.com/watch?v=123')?.domain, 'youtube.com');
+  assert.equal(lookupDomainPlaybook('https://reddit.com/r/technology')?.domain, 'reddit.com');
+  assert.equal(lookupDomainPlaybook('https://duckduckgo.com/?q=test')?.domain, 'duckduckgo.com');
+  assert.equal(lookupDomainPlaybook('https://www.google.com/search?q=test')?.domain, 'google.com');
+  assert.equal(lookupDomainPlaybook('https://en.wikipedia.org/wiki/Artificial_intelligence')?.domain, 'wikipedia.org');
+});
+
+test('Domain Playbooks: GitHub playbook navigation, landmarks, and metrics', async () => {
+  const { GITHUB_PLAYBOOK, resolvePlaybookIntent, extractMetricsWithPlaybook } = await import('../packages/protocol/dist/index.js');
+
+  // Route navigation
+  const navRes = resolvePlaybookIntent(GITHUB_PLAYBOOK, 'go to trending repositories', 'https://github.com');
+  assert.equal(navRes.matchedIntent, 'navigate');
+  assert.equal(navRes.targetUrl, 'https://github.com/trending');
+
+  // Landmark match
+  const searchRes = resolvePlaybookIntent(GITHUB_PLAYBOOK, 'search for browser-use', 'https://github.com');
+  assert.equal(searchRes.matchedIntent, 'fill_field');
+  assert.ok(searchRes.confidence >= 0.9);
+
+  // Metric extraction
+  const starsRule = GITHUB_PLAYBOOK.metricsRules.find(r => r.metricId === 'stars');
+  assert.ok(starsRule);
+  const metric = extractMetricsWithPlaybook('Repository Stats: 15.2k stars, 1.4k forks', starsRule);
+  assert.ok(metric);
+  assert.equal(metric.value, '15.2k');
+});
+
+test('Domain Playbooks: YouTube playbook search and views extraction', async () => {
+  const { YOUTUBE_PLAYBOOK, resolvePlaybookIntent, extractMetricsWithPlaybook } = await import('../packages/protocol/dist/index.js');
+
+  const searchRes = resolvePlaybookIntent(YOUTUBE_PLAYBOOK, 'search for space launch live', 'https://youtube.com');
+  assert.equal(searchRes.matchedIntent, 'fill_field');
+  assert.equal(searchRes.targetPhrase, 'Search');
+
+  const viewsRule = YOUTUBE_PLAYBOOK.metricsRules.find(r => r.metricId === 'views');
+  assert.ok(viewsRule);
+  const metric = extractMetricsWithPlaybook('ISRO Chandrayaan Mission: 4.8M views streamed 2 days ago', viewsRule);
+  assert.ok(metric);
+  assert.ok(metric.value.includes('4.8M'));
+});
+
+test('Domain Playbooks: Reddit and Search engines (DuckDuckGo, Google, Wikipedia)', async () => {
+  const {
+    REDDIT_PLAYBOOK,
+    DUCKDUCKGO_PLAYBOOK,
+    GOOGLE_PLAYBOOK,
+    WIKIPEDIA_PLAYBOOK,
+    resolvePlaybookIntent,
+    extractMetricsWithPlaybook
+  } = await import('../packages/protocol/dist/index.js');
+
+  // Reddit
+  const redditRes = resolvePlaybookIntent(REDDIT_PLAYBOOK, 'search for open source', 'https://reddit.com');
+  assert.equal(redditRes.matchedIntent, 'fill_field');
+
+  // DuckDuckGo
+  const ddgRes = resolvePlaybookIntent(DUCKDUCKGO_PLAYBOOK, 'search without being tracked', 'https://duckduckgo.com');
+  assert.equal(ddgRes.matchedIntent, 'fill_field');
+
+  // Google
+  const googleRes = resolvePlaybookIntent(GOOGLE_PLAYBOOK, 'google search for privacy agent', 'https://google.com');
+  assert.ok(googleRes.matchedIntent === 'fill_field' || googleRes.matchedIntent === 'click_landmark');
+
+  // Wikipedia
+  const wikiRule = WIKIPEDIA_PLAYBOOK.metricsRules.find(r => r.metricId === 'references_count');
+  assert.ok(wikiRule);
+  const metric = extractMetricsWithPlaybook('References: 142 citations cited in this article', wikiRule);
+  assert.ok(metric);
+  assert.equal(metric.value, '142');
+});
+
 
 

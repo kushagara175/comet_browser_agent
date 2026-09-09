@@ -131,7 +131,7 @@ export class ElementExtractor {
     ) => {
       // 1. Extract interactive controls & form inputs (including custom dropdowns, comboboxes, and tabs)
       const candidates = currentDoc.querySelectorAll(
-        'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"]'
+        'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed]'
       );
 
       candidates.forEach((node) => {
@@ -173,9 +173,15 @@ export class ElementExtractor {
         else if (tag === 'textarea') role = 'textarea';
 
         // Determine capabilities
-        const caps: ActionCapability[] = ['click'];
-        if (role === 'input' || role === 'textarea') caps.push('type');
+        const caps: ActionCapability[] = ['click', 'hover'];
+        if (role === 'input' || role === 'textarea') {
+          caps.push('type');
+          const inputType = (typeof el.getAttribute === 'function' ? el.getAttribute('type') || '' : '').toLowerCase();
+          if (inputType === 'file') caps.push('upload');
+        }
         if (role === 'select') caps.push('select');
+        const isDraggable = el.getAttribute?.('draggable') === 'true' || el.getAttribute?.('role') === 'slider' || (typeof el.getAttribute === 'function' && el.getAttribute('aria-grabbed') !== null);
+        if (isDraggable) caps.push('drag');
 
         // Safe Semantic Name Derivation (NEVER use live input/textarea/select .value property or attribute)
         let rawName = '';

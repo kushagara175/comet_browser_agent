@@ -13,13 +13,15 @@ export interface FormFieldAssignment {
 }
 
 export interface StructuredTaskIntent {
-  readonly intent: 'click' | 'type' | 'select' | 'scroll' | 'observe' | 'dismiss';
+  readonly intent: 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'observe' | 'dismiss';
   readonly targetPhrase?: string;
   readonly roleHint?: ElementRole;
   readonly targetTokens: ReadonlyArray<string>;
   readonly contextPhrase?: string;
   readonly requestedValue?: string;
   readonly requestedOption?: string;
+  readonly destinationPhrase?: string;
+  readonly fileName?: string;
   readonly isProtected?: boolean;
   readonly submitAfter?: boolean;
   readonly pressEnter?: boolean;
@@ -132,9 +134,25 @@ export function scoreCandidate(
 ): { score: number; confidence: number; rationale: string; isDisqualified: boolean } {
   // 1. Capability verification (Hard requirement)
   let requiredCap: ActionCapability | null = null;
-  if (intent.intent === 'click' || intent.intent === 'dismiss') requiredCap = 'click';
-  else if (intent.intent === 'type') requiredCap = 'type';
-  else if (intent.intent === 'select') requiredCap = 'select';
+  if (intent.intent === 'click' || intent.intent === 'dismiss') {
+    requiredCap = 'click';
+  } else if (intent.intent === 'type') {
+    requiredCap = 'type';
+  } else if (intent.intent === 'select') {
+    requiredCap = 'select';
+  } else if (intent.intent === 'hover') {
+    if (!element.actionCapabilities.includes('hover') && !element.actionCapabilities.includes('click')) {
+      requiredCap = 'hover';
+    }
+  } else if (intent.intent === 'drag_and_drop') {
+    if (!element.actionCapabilities.includes('drag') && !element.actionCapabilities.includes('click')) {
+      requiredCap = 'drag';
+    }
+  } else if (intent.intent === 'upload_file') {
+    if (!element.actionCapabilities.includes('upload') && !element.actionCapabilities.includes('type')) {
+      requiredCap = 'upload';
+    }
+  }
 
   if (requiredCap && !element.actionCapabilities.includes(requiredCap)) {
     return {

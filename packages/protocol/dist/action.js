@@ -320,6 +320,59 @@ export function resolveTaskContract(goal) {
             }
         };
     }
+    // 7b. Drag and Drop
+    const dragMatch = g.match(/^(?:(?:please|kindly)\s+)?drag\s+(.+?)\s+(?:to|onto|into|and\s+drop\s+(?:to|on|onto))\s+(.+)$/i);
+    if (dragMatch) {
+        const source = dragMatch[1].trim();
+        const destination = dragMatch[2].trim();
+        return {
+            supported: true,
+            goalPattern: 'drag_and_drop',
+            expectedTerminal: { kind: 'status_changed' },
+            expectedTargetNameSubstring: source,
+            structuredIntent: {
+                intent: 'drag_and_drop',
+                targetPhrase: source,
+                destinationPhrase: destination,
+                targetTokens: tokenizeSemanticText(source)
+            }
+        };
+    }
+    // 7c. File Upload
+    const uploadMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:upload|attach)\s+(?:file|document|image)?\s*(.+?)(?:\s+(?:to|into|on)\s+(.+))?$/i);
+    if (uploadMatch && (uploadMatch[1] || uploadMatch[2])) {
+        const filePart = (uploadMatch[1] || '').trim();
+        const targetPart = (uploadMatch[2] || '').trim();
+        const targetPhrase = targetPart || 'upload';
+        return {
+            supported: true,
+            goalPattern: 'upload_file',
+            expectedTerminal: { kind: 'value_present', expectedValueFragment: filePart || undefined },
+            expectedTargetNameSubstring: targetPhrase,
+            structuredIntent: {
+                intent: 'upload_file',
+                targetPhrase,
+                fileName: filePart || undefined,
+                targetTokens: tokenizeSemanticText(targetPhrase)
+            }
+        };
+    }
+    // 7d. Hover
+    const hoverMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:hover(?:\s+over)?|mouse\s+over|move\s+mouse\s+to)\s+(?:on\s+)?(?:the\s+)?(.+)$/i);
+    if (hoverMatch) {
+        const target = hoverMatch[1].trim();
+        return {
+            supported: true,
+            goalPattern: 'hover_control',
+            expectedTerminal: { kind: 'status_changed' },
+            expectedTargetNameSubstring: target,
+            structuredIntent: {
+                intent: 'hover',
+                targetPhrase: target,
+                targetTokens: tokenizeSemanticText(target)
+            }
+        };
+    }
     // 8. Generic clicking / interactions / navigation (button, link, item, admin, finish, sanitize, navigate, go to, show, open, tap, expand, delete, remove)
     // Extracts target phrase, role hints, and contextual qualifiers (e.g. "Open View Details for SIH26003")
     const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|delete|remove)\s+(?:on\s+)?(?:the\s+)?/i);
@@ -365,14 +418,19 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
     'actionId',
     'kind',
     'targetLocalId',
+    'destinationLocalId',
     'confidence',
     'risk',
     'rationale',
     'expectedState',
     'expectedPostcondition',
     'textToType',
+    'fileName',
+    'fileData',
+    'mimeType',
     'selectOptionValue',
     'scrollDirection',
+    'tabId',
     'userApproved',
     'pressEnter',
     'extractedData',
@@ -381,8 +439,11 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
 const VALID_ACTION_KINDS = new Set([
     'observe',
     'click',
+    'hover',
     'type',
     'select',
+    'drag_and_drop',
+    'upload_file',
     'scroll',
     'wait',
     'extract',
@@ -525,7 +586,8 @@ export function validateActionProposal(proposal, validElements) {
             'select_changed',
             'status_changed',
             'scroll_changed',
-            'visibility_changed'
+            'visibility_changed',
+            'answer_supported'
         ]);
         if (!allowedKinds.has(pc.kind)) {
             return { isValid: false, errorMessage: `Invalid expectedPostcondition kind "${pc.kind}"` };
@@ -561,6 +623,37 @@ export function validateActionProposal(proposal, validElements) {
             return { isValid: false, errorMessage: 'Field "scrollDirection" must be one of "up", "down", "top", "bottom"' };
         }
     }
+    // 8b. destinationLocalId
+    if (proposal.destinationLocalId !== undefined) {
+        if (typeof proposal.destinationLocalId !== 'string' || !LOCAL_ID_REGEX.test(proposal.destinationLocalId) || hasProhibitedSelectorPattern(proposal.destinationLocalId)) {
+            return { isValid: false, errorMessage: 'Invalid destinationLocalId format. Raw selectors and script patterns prohibited' };
+        }
+    }
+    // 8c. tabId
+    if (proposal.tabId !== undefined) {
+        if (typeof proposal.tabId !== 'number' || !Number.isInteger(proposal.tabId) || proposal.tabId < 0) {
+            return { isValid: false, errorMessage: 'Field "tabId" must be a non-negative integer' };
+        }
+    }
+    // 8d. fileName, fileData, mimeType
+    if (proposal.fileName !== undefined) {
+        if (typeof proposal.fileName !== 'string' || proposal.fileName.length === 0 || proposal.fileName.length > 255) {
+            return { isValid: false, errorMessage: 'Field "fileName" must be a non-empty string up to 255 characters' };
+        }
+        if (hasProhibitedScriptPattern(proposal.fileName) || proposal.fileName.includes('..') || proposal.fileName.includes('/') || proposal.fileName.includes('\\')) {
+            return { isValid: false, errorMessage: 'Field "fileName" contains invalid or prohibited patterns' };
+        }
+    }
+    if (proposal.fileData !== undefined) {
+        if (typeof proposal.fileData !== 'string' || proposal.fileData.length > 5 * 1024 * 1024) {
+            return { isValid: false, errorMessage: 'Field "fileData" must be a string up to 5MB' };
+        }
+    }
+    if (proposal.mimeType !== undefined) {
+        if (typeof proposal.mimeType !== 'string' || proposal.mimeType.length > 100 || !/^[a-zA-Z0-9.+/-]+$/.test(proposal.mimeType)) {
+            return { isValid: false, errorMessage: 'Field "mimeType" must be a valid MIME string up to 100 characters' };
+        }
+    }
     // 9. targetLocalId & action-specific requirements
     const kind = proposal.kind;
     if (proposal.targetLocalId !== undefined) {
@@ -569,9 +662,24 @@ export function validateActionProposal(proposal, validElements) {
         }
     }
     // Actions requiring targetLocalId
-    if (kind === 'click' || kind === 'type' || kind === 'select') {
+    if (kind === 'click' || kind === 'hover' || kind === 'type' || kind === 'select' || kind === 'upload_file') {
         if (!proposal.targetLocalId || typeof proposal.targetLocalId !== 'string') {
             return { isValid: false, errorMessage: `Action kind "${kind}" requires a valid "targetLocalId"` };
+        }
+    }
+    // drag_and_drop requirements
+    if (kind === 'drag_and_drop') {
+        if (!proposal.targetLocalId || typeof proposal.targetLocalId !== 'string') {
+            return { isValid: false, errorMessage: 'Action kind "drag_and_drop" requires a valid "targetLocalId"' };
+        }
+        if (!proposal.destinationLocalId || typeof proposal.destinationLocalId !== 'string') {
+            return { isValid: false, errorMessage: 'Action kind "drag_and_drop" requires a valid "destinationLocalId"' };
+        }
+    }
+    // upload_file requirements
+    if (kind === 'upload_file') {
+        if (!proposal.fileName || typeof proposal.fileName !== 'string') {
+            return { isValid: false, errorMessage: 'Action kind "upload_file" requires a valid "fileName"' };
         }
     }
     // Type action requirements
@@ -646,6 +754,33 @@ export function validateActionProposal(proposal, validElements) {
                         errorMessage: 'Target element does not support "select" action capability'
                     };
                 }
+                if (kind === 'hover' && !caps.includes('hover') && !caps.includes('click')) {
+                    return {
+                        isValid: false,
+                        errorMessage: 'Target element does not support "hover" action capability'
+                    };
+                }
+                if (kind === 'drag_and_drop' && !caps.includes('drag') && !caps.includes('click')) {
+                    return {
+                        isValid: false,
+                        errorMessage: 'Target element does not support "drag" action capability'
+                    };
+                }
+                if (kind === 'upload_file' && !caps.includes('upload') && !caps.includes('type')) {
+                    return {
+                        isValid: false,
+                        errorMessage: 'Target element does not support "upload" action capability'
+                    };
+                }
+            }
+        }
+        if (proposal.destinationLocalId) {
+            const destElement = validElements.find((e) => e.localId === proposal.destinationLocalId);
+            if (!destElement) {
+                return {
+                    isValid: false,
+                    errorMessage: 'Destination element with destinationLocalId not found in sanitized context'
+                };
             }
         }
     }
@@ -681,6 +816,14 @@ export function classifyActionRisk(proposal, elementName) {
     if (proposal.userApproved) {
         return 'safe';
     }
+    // Upload file is protected by default unless explicitly user approved
+    if (kind === 'upload_file') {
+        return 'protected';
+    }
+    // Hover is safe
+    if (kind === 'hover') {
+        return 'safe';
+    }
     // Protected actions requiring human confirmation
     if (kind === 'request_user_confirmation' ||
         name.includes('submit') ||
@@ -696,6 +839,10 @@ export function classifyActionRisk(proposal, elementName) {
         name.includes('transfer') ||
         name.includes('confirm order')) {
         return 'protected';
+    }
+    // Drag and drop is safe unless target or action was protected above
+    if (kind === 'drag_and_drop') {
+        return proposal.risk || 'safe';
     }
     // Safe reversible actions
     if (kind === 'observe' ||

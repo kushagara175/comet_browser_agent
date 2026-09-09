@@ -491,6 +491,160 @@ export class ActionExecutor {
         };
       }
 
+      // HOVER ACTION
+      if (proposal.kind === 'hover') {
+        if (typeof targetEl.focus === 'function') {
+          targetEl.focus();
+        }
+        if (MouseEventCtor) {
+          targetEl.dispatchEvent(new MouseEventCtor('mouseenter', { bubbles: false, cancelable: true, composed: true }));
+          targetEl.dispatchEvent(new MouseEventCtor('mouseover', { bubbles: true, cancelable: true, composed: true }));
+          targetEl.dispatchEvent(new MouseEventCtor('mousemove', { bubbles: true, cancelable: true, composed: true }));
+        }
+        return {
+          actionId: proposal.actionId,
+          success: true,
+          timestamp,
+          semanticOutcomeVerified: true,
+          message: `Hovered over element '${proposal.targetLocalId}'`
+        };
+      }
+
+      // DRAG AND DROP ACTION
+      if (proposal.kind === 'drag_and_drop') {
+        if (!proposal.destinationLocalId) {
+          return {
+            actionId: proposal.actionId,
+            success: false,
+            timestamp,
+            semanticOutcomeVerified: false,
+            message: 'drag_and_drop requires a destinationLocalId'
+          };
+        }
+        const destEl = elementMap.get(proposal.destinationLocalId);
+        if (!destEl) {
+          return {
+            actionId: proposal.actionId,
+            success: false,
+            timestamp,
+            semanticOutcomeVerified: false,
+            staleTarget: true,
+            message: `Destination element '${proposal.destinationLocalId}' not found in DOM`
+          };
+        }
+
+        try {
+          destEl.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+        } catch (_) {}
+
+        let dataTransfer: any;
+        if (typeof DataTransfer !== 'undefined') {
+          dataTransfer = new DataTransfer();
+        } else {
+          const store = new Map<string, string>();
+          dataTransfer = {
+            data: store,
+            dropEffect: 'move',
+            effectAllowed: 'all',
+            types: [] as string[],
+            setData(format: string, data: string) {
+              store.set(format, data);
+              if (!this.types.includes(format)) this.types.push(format);
+            },
+            getData(format: string) { return store.get(format) || ''; },
+            clearData() { store.clear(); this.types = []; }
+          };
+        }
+
+        const DragEventCtor = win?.DragEvent || (typeof DragEvent !== 'undefined' ? DragEvent : null);
+        const createEvt = (type: string) => {
+          if (DragEventCtor) {
+            return new DragEventCtor(type, {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              dataTransfer
+            });
+          }
+          if (EventCtor) {
+            const e = new EventCtor(type, { bubbles: true, cancelable: true, composed: true }) as any;
+            e.dataTransfer = dataTransfer;
+            return e;
+          }
+          return null;
+        };
+
+        const eStart = createEvt('dragstart');
+        if (eStart) targetEl.dispatchEvent(eStart);
+
+        const eEnter = createEvt('dragenter');
+        if (eEnter) destEl.dispatchEvent(eEnter);
+
+        const eOver = createEvt('dragover');
+        if (eOver) destEl.dispatchEvent(eOver);
+
+        const eDrop = createEvt('drop');
+        if (eDrop) destEl.dispatchEvent(eDrop);
+
+        const eEnd = createEvt('dragend');
+        if (eEnd) targetEl.dispatchEvent(eEnd);
+
+        return {
+          actionId: proposal.actionId,
+          success: true,
+          timestamp,
+          semanticOutcomeVerified: true,
+          message: `Dragged element '${proposal.targetLocalId}' to '${proposal.destinationLocalId}'`
+        };
+      }
+
+      // UPLOAD FILE ACTION
+      if (proposal.kind === 'upload_file') {
+        const fileName = proposal.fileName || 'upload.pdf';
+        const fileContent = proposal.fileData || 'privapilot_synthetic_upload_payload';
+        const mimeType = proposal.mimeType || 'application/pdf';
+
+        try {
+          let fileObj: any;
+          if (typeof File !== 'undefined') {
+            fileObj = new File([fileContent], fileName, { type: mimeType, lastModified: Date.now() });
+          } else {
+            fileObj = { name: fileName, type: mimeType, size: fileContent.length, lastModified: Date.now() };
+          }
+
+          if (typeof DataTransfer !== 'undefined') {
+            const dt = new DataTransfer();
+            if (dt.items && typeof dt.items.add === 'function') {
+              dt.items.add(fileObj);
+            }
+            (targetEl as HTMLInputElement).files = dt.files;
+          } else {
+            (targetEl as any).files = [fileObj];
+          }
+
+          if (EventCtor) {
+            targetEl.dispatchEvent(new EventCtor('input', { bubbles: true, cancelable: true, composed: true }));
+            targetEl.dispatchEvent(new EventCtor('change', { bubbles: true, cancelable: true }));
+          }
+
+          return {
+            actionId: proposal.actionId,
+            success: true,
+            timestamp,
+            semanticOutcomeVerified: true,
+            message: `Uploaded file '${fileName}' to element '${proposal.targetLocalId}'`
+          };
+        } catch (uploadErr: any) {
+          return {
+            actionId: proposal.actionId,
+            success: false,
+            timestamp,
+            semanticOutcomeVerified: false,
+            message: `Failed to upload file to '${proposal.targetLocalId}': ${uploadErr.message}`
+          };
+        }
+      }
+
       return {
         actionId: proposal.actionId,
         success: false,

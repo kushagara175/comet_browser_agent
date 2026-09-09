@@ -10,13 +10,15 @@ export interface FormFieldAssignment {
     readonly value: string;
 }
 export interface StructuredTaskIntent {
-    readonly intent: 'click' | 'type' | 'select' | 'scroll' | 'observe' | 'dismiss';
+    readonly intent: 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'observe' | 'dismiss';
     readonly targetPhrase?: string;
     readonly roleHint?: ElementRole;
     readonly targetTokens: ReadonlyArray<string>;
     readonly contextPhrase?: string;
     readonly requestedValue?: string;
     readonly requestedOption?: string;
+    readonly destinationPhrase?: string;
+    readonly fileName?: string;
     readonly isProtected?: boolean;
     readonly submitAfter?: boolean;
     readonly pressEnter?: boolean;

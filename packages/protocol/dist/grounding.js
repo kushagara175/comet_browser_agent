@@ -94,12 +94,30 @@ const GENERIC_CONTROL_NAMES = new Set([
 export function scoreCandidate(element, intent, activeDialogVisible = false) {
     // 1. Capability verification (Hard requirement)
     let requiredCap = null;
-    if (intent.intent === 'click' || intent.intent === 'dismiss')
+    if (intent.intent === 'click' || intent.intent === 'dismiss') {
         requiredCap = 'click';
-    else if (intent.intent === 'type')
+    }
+    else if (intent.intent === 'type') {
         requiredCap = 'type';
-    else if (intent.intent === 'select')
+    }
+    else if (intent.intent === 'select') {
         requiredCap = 'select';
+    }
+    else if (intent.intent === 'hover') {
+        if (!element.actionCapabilities.includes('hover') && !element.actionCapabilities.includes('click')) {
+            requiredCap = 'hover';
+        }
+    }
+    else if (intent.intent === 'drag_and_drop') {
+        if (!element.actionCapabilities.includes('drag') && !element.actionCapabilities.includes('click')) {
+            requiredCap = 'drag';
+        }
+    }
+    else if (intent.intent === 'upload_file') {
+        if (!element.actionCapabilities.includes('upload') && !element.actionCapabilities.includes('type')) {
+            requiredCap = 'upload';
+        }
+    }
     if (requiredCap && !element.actionCapabilities.includes(requiredCap)) {
         return {
             score: 0,
