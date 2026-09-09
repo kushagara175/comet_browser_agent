@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-09T19:47:48.996Z",
+  "timestamp": "2026-09-09T19:56:53.630Z",
   "harness": "extension-e2e",
   "measured": true,
   "metadata": {
@@ -7,7 +7,7 @@
     "environment": "darwin arm64 (Node v22.22.0)",
     "chromePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "extensionId": "knnfeljhnohhfjiecikkaeibfecekiem",
-    "gitSha": "6731736",
+    "gitSha": "a45d7d6",
     "model": {
       "name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
       "provider": "vlm-cloud",
@@ -20,7 +20,7 @@
   "error": null,
   "diagnostic": null,
   "proposal": {
-    "actionId": "act_local_finish_2_1788983268965",
+    "actionId": "act_local_finish_2_1788983813600",
     "kind": "finish",
     "confidence": 1,
     "risk": "safe",
@@ -28,30 +28,30 @@
   },
   "maskCount": 5,
   "elementsTransmitted": 12,
-  "sanitizedScreenshotBytes": 284489,
+  "sanitizedScreenshotBytes": 283976,
   "telemetry": {
-    "runId": "run_1788983260895_6rqrz39",
-    "t0_start": 1788983260900,
-    "t1_captureComplete": 1788983268927,
-    "t2_detectionComplete": 1788983268927,
-    "t3_sanitizationValidated": 1788983268961,
-    "t4_reasoningReceived": 1788983268965,
-    "t5_actionValidated": 1788983268965,
-    "t6_actionExecuted": 1788983268965,
-    "t7_stateVerified": 1788983268965,
-    "totalLatencyMs": 8065,
-    "clientLatencyMs": 1090,
-    "serverLatencyMs": 6974,
+    "runId": "run_1788983806139_40w7x06",
+    "t0_start": 1788983806143,
+    "t1_captureComplete": 1788983813561,
+    "t2_detectionComplete": 1788983813561,
+    "t3_sanitizationValidated": 1788983813597,
+    "t4_reasoningReceived": 1788983813600,
+    "t5_actionValidated": 1788983813600,
+    "t6_actionExecuted": 1788983813600,
+    "t7_stateVerified": 1788983813600,
+    "totalLatencyMs": 7457,
+    "clientLatencyMs": 587,
+    "serverLatencyMs": 6869,
     "stepCount": 10,
     "stepsCompleted": 2
   },
   "steps": [
     {
       "step": 1,
-      "captureId": "cap_1788983260903_1",
-      "pageGeneration": "cap_1788983260903_1",
+      "captureId": "cap_1788983806147_1",
+      "pageGeneration": "cap_1788983806147_1",
       "maskCount": 5,
-      "sanitizedScreenshotBytes": 356722,
+      "sanitizedScreenshotBytes": 356798,
       "decisionOrigin": "server",
       "proposal": {
         "actionId": "act_1",
@@ -60,7 +60,7 @@
         "confidence": 0.96,
         "risk": "safe",
         "rationale": "Click the 'Open Safe Preview' button to view the safe preview of the pending request #REQ-1044",
-        "expectedState": "Safe preview modal or panel appears showing details of request #REQ-1044"
+        "expectedState": "Safe preview modal opens showing details of request #REQ-1044"
       },
       "riskDecision": "safe",
       "confidenceDecision": "accepted",
@@ -78,24 +78,24 @@
       },
       "networkRequestMade": true,
       "timings": {
-        "tCapture": 35,
+        "tCapture": 34,
         "tDetection": 0,
-        "tSanitization": 869,
-        "tReasoning": 6970,
-        "tExecution": 127,
+        "tSanitization": 347,
+        "tReasoning": 6866,
+        "tExecution": 135,
         "tVerification": 0,
-        "total": 8001
+        "total": 7382
       }
     },
     {
       "step": 2,
-      "captureId": "cap_1788983268903_2",
-      "pageGeneration": "cap_1788983268903_2",
+      "captureId": "cap_1788983813530_2",
+      "pageGeneration": "cap_1788983813530_2",
       "maskCount": 5,
-      "sanitizedScreenshotBytes": 379318,
+      "sanitizedScreenshotBytes": 378634,
       "decisionOrigin": "local",
       "proposal": {
-        "actionId": "act_local_finish_2_1788983268965",
+        "actionId": "act_local_finish_2_1788983813600",
         "kind": "finish",
         "confidence": 1,
         "risk": "safe",
@@ -111,9 +111,9 @@
       },
       "networkRequestMade": false,
       "timings": {
-        "total": 63
+        "total": 74
       }
     }
   ],
-  "wallClockMs": 8104
+  "wallClockMs": 7699
 }
