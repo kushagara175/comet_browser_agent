@@ -1176,15 +1176,17 @@ export class RunCoordinator {
         const targetUrl = extractTargetUrlFromGoal(goal);
         if (targetUrl && activeTab?.url) {
           try {
-            const currentHost = new URL(activeTab.url).hostname.replace(/^www\./, '').toLowerCase();
-            const targetHost = new URL(targetUrl).hostname.replace(/^www\./, '').toLowerCase();
-            if (currentHost && targetHost && currentHost !== targetHost && !currentHost.endsWith(`.${targetHost}`) && !targetHost.endsWith(`.${currentHost}`)) {
+            const currentHost = new URL(activeTab.url).hostname.toLowerCase();
+            const targetHost = new URL(targetUrl).hostname.toLowerCase();
+            const isMissingWww = currentHost === 'isro.gov.in' && targetHost === 'www.isro.gov.in';
+            const isDifferentSite = currentHost.replace(/^www\./, '') !== targetHost.replace(/^www\./, '');
+            if (isMissingWww || isDifferentSite) {
               const navAction: ActionProposal = {
                 actionId: `act_init_nav_${Date.now()}`,
                 kind: 'navigate' as any,
                 confidence: 1.0,
                 risk: 'safe',
-                rationale: `Cross-site navigation to target website: ${targetUrl}`,
+                rationale: `Navigation to target website: ${targetUrl}`,
                 expectedPostcondition: { kind: 'status_changed' }
               };
               this.actionHistory.push(navAction);
@@ -1210,9 +1212,12 @@ export class RunCoordinator {
           captureId
         });
       } catch (err: any) {
-        // If content script is not yet attached at step 1 and goal specifies a target URL, try navigating
-        const targetUrl = extractTargetUrlFromGoal(goal);
-        if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1 && (!activeTab?.url || !activeTab.url.includes(new URL(targetUrl).hostname))) {
+        // If content script is not yet attached at step 1 and goal specifies a target URL, try navigating to recover
+        let targetUrl = extractTargetUrlFromGoal(goal);
+        if (!targetUrl && (goal.toLowerCase().includes('isro') || goal.toLowerCase().includes('mission'))) {
+          targetUrl = 'https://www.isro.gov.in';
+        }
+        if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1) {
           this.transition('executing', `Navigating tab to ${targetUrl}...`);
           await this.browser.navigateTab(activeTab.id, targetUrl);
           continue;

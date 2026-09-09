@@ -364,9 +364,9 @@ test('Domain Playbooks: ISRO_PLAYBOOK matches isro.gov.in hostnames and resolves
     extractMetricsWithPlaybook
   } = await import('../packages/protocol/dist/index.js');
 
-  assert.equal(lookupDomainPlaybook('https://isro.gov.in')?.domain, 'isro.gov.in');
-  assert.equal(lookupDomainPlaybook('https://www.isro.gov.in/Missions.html')?.domain, 'isro.gov.in');
-  assert.equal(lookupDomainPlaybook('https://careers.isro.gov.in')?.domain, 'isro.gov.in');
+  assert.equal(lookupDomainPlaybook('https://isro.gov.in')?.domain, 'www.isro.gov.in');
+  assert.equal(lookupDomainPlaybook('https://www.isro.gov.in/Missions.html')?.domain, 'www.isro.gov.in');
+  assert.equal(lookupDomainPlaybook('https://careers.isro.gov.in')?.domain, 'www.isro.gov.in');
 
   // Search missions intent -> fill_field targeting Search ISRO
   const searchRes = resolvePlaybookIntent(ISRO_PLAYBOOK, 'search for chandrayaan missions', 'https://www.isro.gov.in');
@@ -395,9 +395,9 @@ test('Domain Playbooks: extractTargetUrlFromGoal correctly extracts navigation t
   assert.equal(extractTargetUrlFromGoal('go to https://sih.gov.in/signin'), 'https://sih.gov.in/signin');
   assert.equal(extractTargetUrlFromGoal('open http://localhost:4500 and verify login'), 'http://localhost:4500');
 
-  // Direct domains
+  // Direct domains (isro canonicalized to www.isro.gov.in due to DNS requirements)
   assert.equal(extractTargetUrlFromGoal('open sih.gov.in and search isro'), 'https://sih.gov.in');
-  assert.equal(extractTargetUrlFromGoal('go to isro.gov.in and search missions'), 'https://isro.gov.in');
+  assert.equal(extractTargetUrlFromGoal('go to isro.gov.in and search missions'), 'https://www.isro.gov.in');
   assert.equal(extractTargetUrlFromGoal('visit github.com'), 'https://github.com');
 
   // Contextual phrases ("in the isro website...")
@@ -487,7 +487,7 @@ test('Domain Playbooks: RunCoordinator auto-navigates from scratch on blank/rest
   // Verification
   assert.ok(result.success, `Run should succeed: ${result.error || result.message}`);
   assert.equal(navigatedUrls.length, 1);
-  assert.equal(navigatedUrls[0], 'https://isro.gov.in');
+  assert.equal(navigatedUrls[0], 'https://www.isro.gov.in');
   assert.ok(executedProposals.length >= 1);
   const searchAction = executedProposals.find(p => p.kind === 'type');
   assert.ok(searchAction, 'Should execute type action into Search ISRO input');

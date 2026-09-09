@@ -15667,7 +15667,7 @@ var WIKIPEDIA_PLAYBOOK = {
   }
 };
 var ISRO_PLAYBOOK = {
-  domain: "isro.gov.in",
+  domain: "www.isro.gov.in",
   name: "Indian Space Research Organisation",
   aliases: ["isro.gov.in", "www.isro.gov.in", "isro", "indian space research organisation", "isro portal"],
   routes: [
@@ -16034,6 +16034,9 @@ function extractTargetUrlFromGoal(goal) {
   if (urlMatch) {
     let u = urlMatch[0];
     u = u.replace(/[.,;!?)]+$/, "");
+    if (/^https?:\/\/isro\.gov\.in(\/.*)?$/i.test(u)) {
+      u = u.replace("://isro.gov.in", "://www.isro.gov.in");
+    }
     return u;
   }
   const localhostMatch = g.match(/\b(localhost:\d+(?:\/[^\s"'<>]*)?)\b/i);
@@ -16042,8 +16045,11 @@ function extractTargetUrlFromGoal(goal) {
   }
   const domainMatch = g.match(/\b((?:[a-zA-Z0-9-]+\.)+(?:gov\.in|nic\.in|ac\.in|org\.in|co\.in|com|org|net|io|in|edu|gov|dev|app|ai|me))(?:\/([^\s"'<>]*))?\b/i);
   if (domainMatch) {
-    const domain = domainMatch[1];
+    let domain = domainMatch[1];
     const path = domainMatch[2] ? `/${domainMatch[2]}` : "";
+    if (domain.toLowerCase() === "isro.gov.in") {
+      domain = "www.isro.gov.in";
+    }
     return `https://${domain}${path}`;
   }
   const contextMatch = g.match(/\b(?:in|on|at|open|load|visit|go\s+to|navigate\s+to)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+(?:website|portal|site|page|org|organisation)\b/i);
@@ -19555,15 +19561,17 @@ var RunCoordinator = class {
         const targetUrl = extractTargetUrlFromGoal(goal);
         if (targetUrl && activeTab?.url) {
           try {
-            const currentHost = new URL(activeTab.url).hostname.replace(/^www\./, "").toLowerCase();
-            const targetHost = new URL(targetUrl).hostname.replace(/^www\./, "").toLowerCase();
-            if (currentHost && targetHost && currentHost !== targetHost && !currentHost.endsWith(`.${targetHost}`) && !targetHost.endsWith(`.${currentHost}`)) {
+            const currentHost = new URL(activeTab.url).hostname.toLowerCase();
+            const targetHost = new URL(targetUrl).hostname.toLowerCase();
+            const isMissingWww = currentHost === "isro.gov.in" && targetHost === "www.isro.gov.in";
+            const isDifferentSite = currentHost.replace(/^www\./, "") !== targetHost.replace(/^www\./, "");
+            if (isMissingWww || isDifferentSite) {
               const navAction = {
                 actionId: `act_init_nav_${Date.now()}`,
                 kind: "navigate",
                 confidence: 1,
                 risk: "safe",
-                rationale: `Cross-site navigation to target website: ${targetUrl}`,
+                rationale: `Navigation to target website: ${targetUrl}`,
                 expectedPostcondition: { kind: "status_changed" }
               };
               this.actionHistory.push(navAction);
@@ -19586,8 +19594,11 @@ var RunCoordinator = class {
           captureId
         });
       } catch (err) {
-        const targetUrl = extractTargetUrlFromGoal(goal);
-        if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1 && (!activeTab?.url || !activeTab.url.includes(new URL(targetUrl).hostname))) {
+        let targetUrl = extractTargetUrlFromGoal(goal);
+        if (!targetUrl && (goal.toLowerCase().includes("isro") || goal.toLowerCase().includes("mission"))) {
+          targetUrl = "https://www.isro.gov.in";
+        }
+        if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1) {
           this.transition("executing", `Navigating tab to ${targetUrl}...`);
           await this.browser.navigateTab(activeTab.id, targetUrl);
           continue;

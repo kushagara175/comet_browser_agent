@@ -666,7 +666,7 @@ export const WIKIPEDIA_PLAYBOOK: DomainPlaybook = {
  * Core domain for SIH problem statement SIH26171 / SIH26209.
  */
 export const ISRO_PLAYBOOK: DomainPlaybook = {
-  domain: 'isro.gov.in',
+  domain: 'www.isro.gov.in',
   name: 'Indian Space Research Organisation',
   aliases: ['isro.gov.in', 'www.isro.gov.in', 'isro', 'indian space research organisation', 'isro portal'],
   routes: [
@@ -1130,6 +1130,9 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
   if (urlMatch) {
     let u = urlMatch[0];
     u = u.replace(/[.,;!?)]+$/, '');
+    if (/^https?:\/\/isro\.gov\.in(\/.*)?$/i.test(u)) {
+      u = u.replace('://isro.gov.in', '://www.isro.gov.in');
+    }
     return u;
   }
 
@@ -1142,8 +1145,11 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
   // 3. Direct domain pattern (e.g. sih.gov.in, isro.gov.in, github.com)
   const domainMatch = g.match(/\b((?:[a-zA-Z0-9-]+\.)+(?:gov\.in|nic\.in|ac\.in|org\.in|co\.in|com|org|net|io|in|edu|gov|dev|app|ai|me))(?:\/([^\s"'<>]*))?\b/i);
   if (domainMatch) {
-    const domain = domainMatch[1];
+    let domain = domainMatch[1];
     const path = domainMatch[2] ? `/${domainMatch[2]}` : '';
+    if (domain.toLowerCase() === 'isro.gov.in') {
+      domain = 'www.isro.gov.in';
+    }
     return `https://${domain}${path}`;
   }
 
