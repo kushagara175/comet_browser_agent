@@ -183,7 +183,9 @@ export class ElementExtractor {
                     const placeholder = (typeof el.getAttribute === 'function' ? el.getAttribute('placeholder') || '' : '').trim();
                     const title = (typeof el.getAttribute === 'function' ? el.getAttribute('title') || '' : '').trim();
                     const nameAttr = (typeof el.getAttribute === 'function' ? el.getAttribute('name') || '' : '').trim();
-                    rawName = associatedLabelText || ariaLabel || placeholder || title || nameAttr || role;
+                    const typeAttr = (typeof el.getAttribute === 'function' ? el.getAttribute('type') || '' : '').trim().toLowerCase();
+                    const ariaControls = (typeof el.getAttribute === 'function' ? el.getAttribute('aria-controls') || '' : '').trim();
+                    rawName = associatedLabelText || ariaLabel || placeholder || title || (typeAttr === 'search' ? 'Search' : '') || (ariaControls.toLowerCase().includes('table') ? 'Search' : '') || nameAttr || role;
                 }
                 else {
                     // For buttons, links, custom clickable controls

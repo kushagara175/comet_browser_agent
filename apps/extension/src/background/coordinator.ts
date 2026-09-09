@@ -510,37 +510,48 @@ export class RunCoordinator {
 
       // C. Navigation to route via link on page
       if (resolution.matchedIntent === 'navigate' && resolution.targetUrl) {
-        const targetPhraseNorm = (resolution.targetPhrase || '').toLowerCase();
-        const phraseTokens = tokenizeSemanticText(targetPhraseNorm);
-        const routeKeywordTokens = tokenizeSemanticText(goal);
+        const hasAlreadyNavigated = this.actionHistory.some(
+          (a) => a.actionId && a.actionId.startsWith('act_playbook_nav_')
+        );
 
-        const navLink = sanitized.elements.find((el) => {
-          if (el.role !== 'link' && el.role !== 'button' && el.role !== 'tab') return false;
-          const nameNorm = el.sanitizedName.toLowerCase();
-          if (targetPhraseNorm && (nameNorm === targetPhraseNorm || nameNorm.includes(targetPhraseNorm) || targetPhraseNorm.includes(nameNorm))) {
-            return true;
-          }
-          if (phraseTokens.length > 0 && phraseTokens.every((t) => nameNorm.includes(t))) {
-            return true;
-          }
-          return routeKeywordTokens.some((t) => t.length > 3 && nameNorm.includes(t));
-        });
+        if (!hasAlreadyNavigated) {
+          const targetPhraseNorm = (resolution.targetPhrase || '').toLowerCase();
+          const phraseTokens = tokenizeSemanticText(targetPhraseNorm);
+          const routeKeywordTokens = tokenizeSemanticText(goal);
 
-        if (navLink) {
-          return {
-            actionId: `act_playbook_nav_${step}_${Date.now()}`,
-            kind: 'click',
-            targetLocalId: navLink.localId,
-            confidence: resolution.confidence,
-            risk: 'safe',
-            rationale: `Playbook navigation grounded to link "${navLink.sanitizedName}"`,
-            expectedPostcondition: { kind: 'status_changed' }
-          };
+          const navLink = sanitized.elements.find((el) => {
+            if (el.role !== 'link' && el.role !== 'button' && el.role !== 'tab') return false;
+            const nameNorm = el.sanitizedName.toLowerCase();
+            if (targetPhraseNorm && (nameNorm === targetPhraseNorm || nameNorm.includes(targetPhraseNorm) || targetPhraseNorm.includes(nameNorm))) {
+              return true;
+            }
+            if (phraseTokens.length > 0 && phraseTokens.every((t) => nameNorm.includes(t))) {
+              return true;
+            }
+            return routeKeywordTokens.some((t) => t.length > 3 && nameNorm.includes(t));
+          });
+
+          if (navLink) {
+            return {
+              actionId: `act_playbook_nav_${step}_${Date.now()}`,
+              kind: 'click',
+              targetLocalId: navLink.localId,
+              confidence: resolution.confidence,
+              risk: 'safe',
+              rationale: `Playbook navigation grounded to link "${navLink.sanitizedName}"`,
+              expectedPostcondition: { kind: 'status_changed' }
+            };
+          }
         }
       }
 
       // D. Fill Field (e.g. search input on page)
-      if (resolution.matchedIntent === 'fill_field' && resolution.targetPhrase) {
+      const isSearchDirective =
+        resolution.matchedIntent === 'fill_field' ||
+        (this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_playbook_nav_')) &&
+          /^(?:(?:please\s+|kindly\s+)?(?:search(?:\s+for)?|find|filter(?:\s+by)?)\s+)/i.test(trimmedGoal));
+
+      if (isSearchDirective) {
         const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_playbook_fill_'));
         if (hasAlreadyFilled) {
           const query = extractSearchQueryFromGoal(goal) || 'query';
@@ -553,14 +564,14 @@ export class RunCoordinator {
           };
         }
 
-        const targetTokens = tokenizeSemanticText(resolution.targetPhrase);
+        const phraseToMatch = (resolution.targetPhrase || 'search').toLowerCase();
+        const targetTokens = tokenizeSemanticText(phraseToMatch);
         const searchKeywords = ['search', 'filter', 'query', 'find', 'keyword'];
 
         const matchingEl = sanitized.elements.find((el) => {
           if (el.role !== 'input' && el.role !== 'textarea') return false;
           const nameNorm = el.sanitizedName.toLowerCase();
-          const phraseNorm = resolution.targetPhrase!.toLowerCase();
-          if (nameNorm === phraseNorm || nameNorm.includes(phraseNorm) || phraseNorm.includes(nameNorm)) return true;
+          if (nameNorm === phraseToMatch || nameNorm.includes(phraseToMatch) || phraseToMatch.includes(nameNorm)) return true;
           if (targetTokens.some((t) => nameNorm.includes(t))) return true;
           if (searchKeywords.some((kw) => nameNorm.includes(kw))) return true;
           return false;
@@ -574,7 +585,7 @@ export class RunCoordinator {
             targetLocalId: matchingEl.localId,
             textToType,
             pressEnter: true,
-            confidence: resolution.confidence,
+            confidence: resolution.confidence || 0.92,
             risk: 'safe',
             rationale: `Search query "${textToType}" grounded into input "${matchingEl.sanitizedName}"`
           };

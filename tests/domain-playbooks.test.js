@@ -189,4 +189,88 @@ test('Domain Playbooks: RunCoordinator executes cross-page navigation from know-
   assert.equal(executedProposals[1].pressEnter, true);
 });
 
+test('Domain Playbooks: Recognizes sih2026PS as Problem Statements route and grounds search directly', () => {
+  const res = resolvePlaybookIntent(SIH_PLAYBOOK, 'search for PS 171', 'https://sih.gov.in/sih2026PS');
+  assert.equal(res.matchedIntent, 'fill_field');
+  assert.equal(res.targetPhrase, 'Search Problem Statement');
+});
+
+test('Domain Playbooks: RunCoordinator executes DataTable search directly on sih2026PS without loop', async () => {
+  const { RunCoordinator } = await import('../apps/extension/dist/background/coordinator.js');
+
+  const currentUrl = 'https://sih.gov.in/sih2026PS';
+  const executedProposals = [];
+
+  const elements = [
+    {
+      localId: 'el_ps_nav',
+      role: 'link',
+      sanitizedName: 'PROBLEM STATEMENTS',
+      coarseBounds: [0.2, 0.05, 0.15, 0.04],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    },
+    {
+      localId: 'el_datatable_search',
+      role: 'input',
+      sanitizedName: 'Search:',
+      coarseBounds: [0.7, 0.45, 0.2, 0.04],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['type', 'click']
+    }
+  ];
+
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 1, url: currentUrl, title: 'Smart India Hackathon' };
+    },
+    async sendMessageToTab(tabId, msg) {
+      if (msg.type === 'EXTRACT_DOM_SNAPSHOT') {
+        return { success: true, captureId: msg.captureId || 'cap_ps', snapshot: { elements } };
+      }
+      if (msg.type === 'EXECUTE_ACTION') {
+        executedProposals.push(msg.proposal);
+        return { success: true, actionId: msg.proposal.actionId, semanticOutcomeVerified: true };
+      }
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_direct_ps',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements,
+        pageState: { title: 'Smart India Hackathon', url: currentUrl, viewport: [1280, 720] },
+        maskCount: 0,
+        payloadDigestSha256: 'sha256_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  const httpClient = {
+    async requestReasoningAction() {
+      throw new Error('Should resolve locally via playbook without server calls');
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, httpClient, undefined, { defaultMaxSteps: 5 });
+  const result = await coordinator.startRun('search for PS 171');
+
+  assert.equal(result.success, true);
+  assert.equal(result.state, 'complete');
+  assert.equal(executedProposals.length, 1);
+  assert.equal(executedProposals[0].kind, 'type');
+  assert.equal(executedProposals[0].targetLocalId, 'el_datatable_search');
+  assert.equal(executedProposals[0].textToType, 'PS 171');
+  assert.equal(executedProposals[0].pressEnter, true);
+});
+
+
 

@@ -8,6 +8,7 @@
 export interface PlaybookRoute {
     readonly name: string;
     readonly path: string;
+    readonly aliases?: ReadonlyArray<string>;
     readonly description: string;
     readonly matchKeywords: ReadonlyArray<string>;
 }
@@ -58,6 +59,10 @@ export declare const REGISTERED_PLAYBOOKS: ReadonlyArray<DomainPlaybook>;
  * Normalizes host/URL to identify matching domain playbook.
  */
 export declare function lookupDomainPlaybook(urlOrHostname: string): DomainPlaybook | undefined;
+/**
+ * Checks if a given URL matches a playbook route, including any path aliases and domain-specific conventions.
+ */
+export declare function isUrlMatchingRoute(url: string | undefined, route: PlaybookRoute): boolean;
 /**
  * Resolves user query intent against a domain playbook to provide deterministic navigation,
  * target grounding, or metric extraction recommendations.

@@ -14540,7 +14540,9 @@ as ORT format: ${n}`);
             const placeholder = (typeof el2.getAttribute === "function" ? el2.getAttribute("placeholder") || "" : "").trim();
             const title = (typeof el2.getAttribute === "function" ? el2.getAttribute("title") || "" : "").trim();
             const nameAttr = (typeof el2.getAttribute === "function" ? el2.getAttribute("name") || "" : "").trim();
-            rawName = associatedLabelText || ariaLabel || placeholder || title || nameAttr || role;
+            const typeAttr = (typeof el2.getAttribute === "function" ? el2.getAttribute("type") || "" : "").trim().toLowerCase();
+            const ariaControls = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-controls") || "" : "").trim();
+            rawName = associatedLabelText || ariaLabel || placeholder || title || (typeAttr === "search" ? "Search" : "") || (ariaControls.toLowerCase().includes("table") ? "Search" : "") || nameAttr || role;
           } else {
             rawName = el2.innerText?.trim() || (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-label")?.trim() || el2.getAttribute("title")?.trim() : "") || role;
           }

@@ -24,6 +24,7 @@ export const SIH_PLAYBOOK = {
         {
             name: 'problemStatements',
             path: '/problem-statements',
+            aliases: ['/sih2026PS', '/sih2025PS', '/sih2024PS', '/problem-statements'],
             description: 'Problem statements search and directory listing',
             matchKeywords: ['problem statement', 'problem statements', 'ps', 'problem list', 'view ps', 'problems']
         },
@@ -145,6 +146,30 @@ export function lookupDomainPlaybook(urlOrHostname) {
     });
 }
 /**
+ * Checks if a given URL matches a playbook route, including any path aliases and domain-specific conventions.
+ */
+export function isUrlMatchingRoute(url, route) {
+    if (!url)
+        return false;
+    const u = url.toLowerCase();
+    const rPath = route.path.toLowerCase();
+    if (u.includes(rPath))
+        return true;
+    if (route.aliases) {
+        for (const alias of route.aliases) {
+            if (u.includes(alias.toLowerCase()))
+                return true;
+        }
+    }
+    // Special handling for problem statements on SIH (handles sih2026PS, sih2025PS, /problem-statement, etc.)
+    if (route.name === 'problemStatements') {
+        if (u.includes('problem-statement') || u.includes('problemstatement') || /\/sih\d*ps/i.test(u) || u.includes('sih2026ps')) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
  * Resolves user query intent against a domain playbook to provide deterministic navigation,
  * target grounding, or metric extraction recommendations.
  */
@@ -192,12 +217,14 @@ export function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
             });
             if (match) {
                 const targetUrl = `https://${playbook.domain}${route.path}`;
-                const isAlreadyOnRoute = currentUrl ? currentUrl.includes(route.path) : false;
+                const isAlreadyOnRoute = isUrlMatchingRoute(currentUrl, route);
                 return {
                     playbookName: playbook.name,
                     matchedIntent: isAlreadyOnRoute ? 'none' : 'navigate',
                     confidence: 0.95,
                     targetUrl,
+                    targetPhrase: route.name === 'problemStatements' ? 'Problem Statements' : route.matchKeywords[0],
+                    targetRole: 'link',
                     rationale: isAlreadyOnRoute
                         ? `Already on route '${route.name}' (${route.path})`
                         : `Matched playbook route '${route.name}' (${route.path}) from user intent`
@@ -211,8 +238,9 @@ export function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
         normQuery.includes('problem statements') ||
         /\bps\s*\d+\b/i.test(userQuery) ||
         (queryTokens.includes('ps') && queryTokens.some((t) => /\d+/.test(t)));
-    if (mentionsProblemStatements && currentUrl && !currentUrl.includes('problem-statement')) {
-        const psRoute = playbook.routes.find((r) => r.name === 'problemStatements');
+    const psRoute = playbook.routes.find((r) => r.name === 'problemStatements');
+    const alreadyOnPsRoute = psRoute ? isUrlMatchingRoute(currentUrl, psRoute) : false;
+    if (mentionsProblemStatements && currentUrl && !alreadyOnPsRoute) {
         if (psRoute) {
             return {
                 playbookName: playbook.name,

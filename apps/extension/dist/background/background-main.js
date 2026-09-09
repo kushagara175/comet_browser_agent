@@ -14947,6 +14947,7 @@ var SIH_PLAYBOOK = {
     {
       name: "problemStatements",
       path: "/problem-statements",
+      aliases: ["/sih2026PS", "/sih2025PS", "/sih2024PS", "/problem-statements"],
       description: "Problem statements search and directory listing",
       matchKeywords: ["problem statement", "problem statements", "ps", "problem list", "view ps", "problems"]
     },
@@ -15059,6 +15060,26 @@ function lookupDomainPlaybook(urlOrHostname) {
     return playbook.aliases.some((alias) => hostname.includes(alias.toLowerCase()));
   });
 }
+function isUrlMatchingRoute(url, route) {
+  if (!url)
+    return false;
+  const u = url.toLowerCase();
+  const rPath = route.path.toLowerCase();
+  if (u.includes(rPath))
+    return true;
+  if (route.aliases) {
+    for (const alias of route.aliases) {
+      if (u.includes(alias.toLowerCase()))
+        return true;
+    }
+  }
+  if (route.name === "problemStatements") {
+    if (u.includes("problem-statement") || u.includes("problemstatement") || /\/sih\d*ps/i.test(u) || u.includes("sih2026ps")) {
+      return true;
+    }
+  }
+  return false;
+}
 function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
   const normQuery = normalizeSemanticText(userQuery);
   const queryTokens = tokenizeSemanticText(normQuery);
@@ -15101,20 +15122,23 @@ function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
       });
       if (match) {
         const targetUrl = `https://${playbook.domain}${route.path}`;
-        const isAlreadyOnRoute = currentUrl ? currentUrl.includes(route.path) : false;
+        const isAlreadyOnRoute = isUrlMatchingRoute(currentUrl, route);
         return {
           playbookName: playbook.name,
           matchedIntent: isAlreadyOnRoute ? "none" : "navigate",
           confidence: 0.95,
           targetUrl,
+          targetPhrase: route.name === "problemStatements" ? "Problem Statements" : route.matchKeywords[0],
+          targetRole: "link",
           rationale: isAlreadyOnRoute ? `Already on route '${route.name}' (${route.path})` : `Matched playbook route '${route.name}' (${route.path}) from user intent`
         };
       }
     }
   }
   const mentionsProblemStatements = normQuery.includes("problem statement") || normQuery.includes("problem statements") || /\bps\s*\d+\b/i.test(userQuery) || queryTokens.includes("ps") && queryTokens.some((t) => /\d+/.test(t));
-  if (mentionsProblemStatements && currentUrl && !currentUrl.includes("problem-statement")) {
-    const psRoute = playbook.routes.find((r) => r.name === "problemStatements");
+  const psRoute = playbook.routes.find((r) => r.name === "problemStatements");
+  const alreadyOnPsRoute = psRoute ? isUrlMatchingRoute(currentUrl, psRoute) : false;
+  if (mentionsProblemStatements && currentUrl && !alreadyOnPsRoute) {
     if (psRoute) {
       return {
         playbookName: playbook.name,
@@ -18105,33 +18129,39 @@ var RunCoordinator = class {
         }
       }
       if (resolution.matchedIntent === "navigate" && resolution.targetUrl) {
-        const targetPhraseNorm = (resolution.targetPhrase || "").toLowerCase();
-        const phraseTokens = tokenizeSemanticText(targetPhraseNorm);
-        const routeKeywordTokens = tokenizeSemanticText(goal);
-        const navLink = sanitized.elements.find((el2) => {
-          if (el2.role !== "link" && el2.role !== "button" && el2.role !== "tab") return false;
-          const nameNorm = el2.sanitizedName.toLowerCase();
-          if (targetPhraseNorm && (nameNorm === targetPhraseNorm || nameNorm.includes(targetPhraseNorm) || targetPhraseNorm.includes(nameNorm))) {
-            return true;
+        const hasAlreadyNavigated = this.actionHistory.some(
+          (a) => a.actionId && a.actionId.startsWith("act_playbook_nav_")
+        );
+        if (!hasAlreadyNavigated) {
+          const targetPhraseNorm = (resolution.targetPhrase || "").toLowerCase();
+          const phraseTokens = tokenizeSemanticText(targetPhraseNorm);
+          const routeKeywordTokens = tokenizeSemanticText(goal);
+          const navLink = sanitized.elements.find((el2) => {
+            if (el2.role !== "link" && el2.role !== "button" && el2.role !== "tab") return false;
+            const nameNorm = el2.sanitizedName.toLowerCase();
+            if (targetPhraseNorm && (nameNorm === targetPhraseNorm || nameNorm.includes(targetPhraseNorm) || targetPhraseNorm.includes(nameNorm))) {
+              return true;
+            }
+            if (phraseTokens.length > 0 && phraseTokens.every((t) => nameNorm.includes(t))) {
+              return true;
+            }
+            return routeKeywordTokens.some((t) => t.length > 3 && nameNorm.includes(t));
+          });
+          if (navLink) {
+            return {
+              actionId: `act_playbook_nav_${step}_${Date.now()}`,
+              kind: "click",
+              targetLocalId: navLink.localId,
+              confidence: resolution.confidence,
+              risk: "safe",
+              rationale: `Playbook navigation grounded to link "${navLink.sanitizedName}"`,
+              expectedPostcondition: { kind: "status_changed" }
+            };
           }
-          if (phraseTokens.length > 0 && phraseTokens.every((t) => nameNorm.includes(t))) {
-            return true;
-          }
-          return routeKeywordTokens.some((t) => t.length > 3 && nameNorm.includes(t));
-        });
-        if (navLink) {
-          return {
-            actionId: `act_playbook_nav_${step}_${Date.now()}`,
-            kind: "click",
-            targetLocalId: navLink.localId,
-            confidence: resolution.confidence,
-            risk: "safe",
-            rationale: `Playbook navigation grounded to link "${navLink.sanitizedName}"`,
-            expectedPostcondition: { kind: "status_changed" }
-          };
         }
       }
-      if (resolution.matchedIntent === "fill_field" && resolution.targetPhrase) {
+      const isSearchDirective = resolution.matchedIntent === "fill_field" || this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_playbook_nav_")) && /^(?:(?:please\s+|kindly\s+)?(?:search(?:\s+for)?|find|filter(?:\s+by)?)\s+)/i.test(trimmedGoal);
+      if (isSearchDirective) {
         const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_playbook_fill_"));
         if (hasAlreadyFilled) {
           const query = extractSearchQueryFromGoal(goal) || "query";
@@ -18143,13 +18173,13 @@ var RunCoordinator = class {
             rationale: `Playbook search query "${query}" executed and filtered results displayed`
           };
         }
-        const targetTokens = tokenizeSemanticText(resolution.targetPhrase);
+        const phraseToMatch = (resolution.targetPhrase || "search").toLowerCase();
+        const targetTokens = tokenizeSemanticText(phraseToMatch);
         const searchKeywords = ["search", "filter", "query", "find", "keyword"];
         const matchingEl = sanitized.elements.find((el2) => {
           if (el2.role !== "input" && el2.role !== "textarea") return false;
           const nameNorm = el2.sanitizedName.toLowerCase();
-          const phraseNorm = resolution.targetPhrase.toLowerCase();
-          if (nameNorm === phraseNorm || nameNorm.includes(phraseNorm) || phraseNorm.includes(nameNorm)) return true;
+          if (nameNorm === phraseToMatch || nameNorm.includes(phraseToMatch) || phraseToMatch.includes(nameNorm)) return true;
           if (targetTokens.some((t) => nameNorm.includes(t))) return true;
           if (searchKeywords.some((kw) => nameNorm.includes(kw))) return true;
           return false;
@@ -18162,7 +18192,7 @@ var RunCoordinator = class {
             targetLocalId: matchingEl.localId,
             textToType,
             pressEnter: true,
-            confidence: resolution.confidence,
+            confidence: resolution.confidence || 0.92,
             risk: "safe",
             rationale: `Search query "${textToType}" grounded into input "${matchingEl.sanitizedName}"`
           };
