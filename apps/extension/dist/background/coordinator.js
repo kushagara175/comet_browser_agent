@@ -175,12 +175,14 @@ export class RunCoordinator {
         const trimmedGoal = (goal || '').trim().toLowerCase();
         // 1. Explicit scroll command. Use the normalized task contract rather than
         // reparsing raw wording, so "please/can you scroll down" stays deterministic.
+        const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) ||
+            /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?)\b/i.test(this.currentGoal || '');
         const scrollContract = this.currentTaskContract?.expectedTerminal.kind === 'scroll_changed'
             ? this.currentTaskContract.expectedTerminal
             : null;
         if (scrollContract) {
             const dir = scrollContract.direction;
-            if (step > 1 && this.actionHistory.length > 0 && this.actionHistory[this.actionHistory.length - 1].kind === 'scroll') {
+            if (!isMultiStepGoal && step > 1 && this.actionHistory.length > 0 && this.actionHistory[this.actionHistory.length - 1].kind === 'scroll') {
                 return {
                     actionId: `act_local_finish_${step}_${Date.now()}`,
                     kind: 'finish',
@@ -390,7 +392,7 @@ export class RunCoordinator {
             // D. Fill Field (e.g. search input on page)
             const isSearchDirective = resolution.matchedIntent === 'fill_field' ||
                 (this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_playbook_nav_')) &&
-                    /^(?:(?:please\s+|kindly\s+)?(?:search(?:\s+for)?|find|filter(?:\s+by)?)\s+)/i.test(trimmedGoal));
+                    /(?:(?:search(?:\s+for)?|find|filter(?:\s+by)?)\s+)/i.test(trimmedGoal));
             if (isSearchDirective) {
                 const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_playbook_fill_'));
                 if (hasAlreadyFilled) {
@@ -687,7 +689,7 @@ export class RunCoordinator {
                 return { satisfied: true };
             }
             case 'value_present': {
-                const hasAction = actionHistory.some(a => a.kind === 'type' || a.kind === 'click');
+                const hasAction = actionHistory.some(a => a.kind === 'type' || a.kind === 'click' || a.kind === 'upload_file');
                 if (!hasAction) {
                     return { satisfied: false, reason: 'No type or filter action executed to set required value' };
                 }
@@ -714,7 +716,13 @@ export class RunCoordinator {
                 return { satisfied: true };
             }
             case 'status_changed': {
-                const hasMutatingAction = actionHistory.some(a => a.kind === 'click' || a.kind === 'type' || a.kind === 'select' || a.kind === 'scroll');
+                const hasMutatingAction = actionHistory.some(a => a.kind === 'click' ||
+                    a.kind === 'type' ||
+                    a.kind === 'select' ||
+                    a.kind === 'scroll' ||
+                    a.kind === 'hover' ||
+                    a.kind === 'drag_and_drop' ||
+                    a.kind === 'upload_file');
                 if (!hasMutatingAction) {
                     return { satisfied: false, reason: 'Action history contains only wait without any preceding trigger action' };
                 }
@@ -1440,7 +1448,9 @@ export class RunCoordinator {
             }
             // Deterministic early completion: if the executed action satisfies the task contract
             // (e.g. one-step scroll navigation directive), complete immediately without redundant perception cycles
-            if (this.currentTaskContract?.expectedTerminal.kind === 'scroll_changed' && proposal.kind === 'scroll') {
+            const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) ||
+                /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?)\b/i.test(this.currentGoal || '');
+            if (!isMultiStepGoal && this.currentTaskContract?.expectedTerminal.kind === 'scroll_changed' && proposal.kind === 'scroll') {
                 const tFin = Date.now();
                 const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
                 if (this.listeners.onTelemetryUpdated) {
@@ -1460,7 +1470,8 @@ export class RunCoordinator {
                 return this.completeWithResult(res);
             }
             // Single-action direct click completion ("terminal if done")
-            if (this.currentTaskContract?.goalPattern === 'click_control' &&
+            if (!isMultiStepGoal &&
+                this.currentTaskContract?.goalPattern === 'click_control' &&
                 proposal.kind === 'click' &&
                 this.currentTaskContract?.structuredIntent?.targetPhrase &&
                 !/\b(repeatedly|again|multiple|times|until|loop)\b/i.test(this.currentGoal || '')) {

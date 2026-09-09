@@ -357,3 +357,139 @@ test('Agent Helpers: collectOpenShadowRoots returns all shadow roots recursively
   const roots = collectOpenShadowRoots(mockParentShadow);
   assert.equal(roots.length, 2);
 });
+
+test('Skills Routing: isBrowserActionRequest recognizes hover, drag, drop, upload, attach, move', async () => {
+  const { isBrowserActionRequest } = await import('../apps/extension/src/sidepanel/sidepanel.js');
+  assert.equal(isBrowserActionRequest('hover over the problem statement button'), true);
+  assert.equal(isBrowserActionRequest('drag task card 1 to completed column'), true);
+  assert.equal(isBrowserActionRequest('drop the item here'), true);
+  assert.equal(isBrowserActionRequest('upload presentation.pdf to file input'), true);
+  assert.equal(isBrowserActionRequest('attach resume.pdf to the upload form'), true);
+  assert.equal(isBrowserActionRequest('move slider to maximum'), true);
+  assert.equal(isBrowserActionRequest('what is the meaning of life'), false);
+});
+
+test('Server Payload Validator: accepts hover, drag, and upload action capabilities', async () => {
+  const { validateSanitizedPayload } = await import('../apps/server/dist/schemas/payload-validator.js');
+  const samplePayload = {
+    protocolVersion: '1.0',
+    runId: 'run_test_skills_capabilities',
+    goal: 'Test skill actions',
+    screenshot: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    elements: [
+      {
+        localId: 'el_hover',
+        role: 'button',
+        sanitizedName: 'Products Menu',
+        coarseBounds: [0.1, 0.1, 0.2, 0.05],
+        state: ['visible', 'enabled'],
+        actionCapabilities: ['hover', 'click']
+      },
+      {
+        localId: 'el_drag',
+        role: 'generic',
+        sanitizedName: 'Kanban Card 1',
+        coarseBounds: [0.3, 0.2, 0.15, 0.1],
+        state: ['visible', 'enabled'],
+        actionCapabilities: ['drag']
+      },
+      {
+        localId: 'el_upload',
+        role: 'input',
+        sanitizedName: 'Upload Resume',
+        coarseBounds: [0.5, 0.5, 0.2, 0.05],
+        state: ['visible', 'enabled'],
+        actionCapabilities: ['upload']
+      }
+    ],
+    pageState: {
+      title: 'Skills Test Page',
+      viewport: [1280, 800]
+    }
+  };
+
+  const validation = validateSanitizedPayload(samplePayload);
+  assert.equal(validation.isValid, true, validation.errorMessage);
+});
+
+test('Server Mock Engine: resolves hover, drag_and_drop, and upload_file', async () => {
+  const { MockReasoningEngine } = await import('../apps/server/dist/engines/mock-engine.js');
+  const engine = new MockReasoningEngine();
+
+  const elements = [
+    {
+      localId: 'el_1',
+      role: 'button',
+      sanitizedName: 'Dropdown Menu',
+      coarseBounds: [0.1, 0.1, 0.1, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['hover', 'click']
+    },
+    {
+      localId: 'el_2',
+      role: 'generic',
+      sanitizedName: 'Target Dropzone',
+      coarseBounds: [0.4, 0.4, 0.2, 0.2],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    },
+    {
+      localId: 'el_3',
+      role: 'input',
+      sanitizedName: 'Resume Upload',
+      coarseBounds: [0.7, 0.7, 0.2, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['upload']
+    }
+  ];
+
+  // Hover
+  const hoverRes = await engine.decideNextAction({
+    protocolVersion: '1.0',
+    runId: 'r1',
+    goal: 'hover over Dropdown Menu',
+    screenshot: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    elements,
+    pageState: { title: 'Test', viewport: [1280, 800] }
+  });
+  assert.equal(hoverRes.kind, 'hover');
+  assert.equal(hoverRes.targetLocalId, 'el_1');
+
+  // Drag and drop
+  const dragRes = await engine.decideNextAction({
+    protocolVersion: '1.0',
+    runId: 'r2',
+    goal: 'drag Dropdown Menu onto Target Dropzone',
+    screenshot: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    elements,
+    pageState: { title: 'Test', viewport: [1280, 800] }
+  });
+  assert.equal(dragRes.kind, 'drag_and_drop');
+  assert.equal(dragRes.targetLocalId, 'el_1');
+  assert.equal(dragRes.destinationLocalId, 'el_2');
+
+  // File upload
+  const uploadRes = await engine.decideNextAction({
+    protocolVersion: '1.0',
+    runId: 'r3',
+    goal: 'upload portfolio.pdf to Resume Upload',
+    screenshot: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    elements,
+    pageState: { title: 'Test', viewport: [1280, 800] }
+  });
+  assert.equal(uploadRes.kind, 'upload_file');
+  assert.equal(uploadRes.targetLocalId, 'el_3');
+  assert.equal(uploadRes.fileName, 'portfolio.pdf');
+});
+
+test('Multi-Step Contract: marks compound goals with isMultiStep: true', async () => {
+  const { resolveTaskContract } = await import('../packages/protocol/dist/index.js');
+  const c1 = resolveTaskContract('click on problem statements and search 26003');
+  assert.equal(c1.isMultiStep, true);
+
+  const c2 = resolveTaskContract('hover over products and click pricing');
+  assert.equal(c2.isMultiStep, true);
+
+  const c3 = resolveTaskContract('click Search Button');
+  assert.equal(Boolean(c3.isMultiStep), false);
+});

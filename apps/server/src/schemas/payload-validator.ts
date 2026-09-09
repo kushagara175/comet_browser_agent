@@ -101,7 +101,10 @@ const VALID_ACTION_CAPABILITIES = new Set([
   'click',
   'type',
   'select',
-  'scroll'
+  'scroll',
+  'hover',
+  'drag',
+  'upload'
 ]);
 
 const PROHIBITED_PROPERTY_NAMES = new Set([

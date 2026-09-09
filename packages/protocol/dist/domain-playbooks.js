@@ -890,7 +890,13 @@ export function extractMetricsWithPlaybook(textContext, metricRule) {
  */
 export function extractSearchQueryFromGoal(goal) {
     let q = (goal || '').trim();
-    q = q.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, '');
+    const compoundMatch = q.match(/(?:and|then|after\s+that)\s+(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type)\s+(.+)$/i);
+    if (compoundMatch) {
+        q = compoundMatch[1].trim();
+    }
+    else {
+        q = q.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, '');
+    }
     q = q.replace(/\s+(?:in|into|on)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page)$/i, '');
     return q.trim();
 }

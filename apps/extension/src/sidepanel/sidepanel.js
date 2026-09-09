@@ -19,7 +19,7 @@ export function escapeHtml(str) {
 }
 
 const ACTION_REQUEST_PREFIX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?)+/i;
-const ACTION_VERB = /^(?:click|open|type|fill|enter|write|set|press|select|choose|scroll|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log\s+in|buy|checkout|inspect|audit|check|go\s+to|navigate)(?:\b|\s)/i;
+const ACTION_VERB = /^(?:click|open|type|fill|enter|write|set|press|select|choose|scroll|hover|drag|drop|upload|attach|move|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log\s+in|buy|checkout|inspect|audit|check|go\s+to|navigate)(?:\b|\s)/i;
 
 /**
  * Distinguishes an instruction to operate the current page from a question.

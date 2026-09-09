@@ -40,6 +40,7 @@ export interface TaskContract {
     readonly structuredIntent?: StructuredTaskIntent;
     readonly isPassive?: boolean;
     readonly isAnswerGoal?: boolean;
+    readonly isMultiStep?: boolean;
     readonly mode?: 'act' | 'answer' | 'extract';
     readonly queryTopic?: string;
     readonly abstentionReason?: string;

@@ -342,6 +342,73 @@ export class MockReasoningEngine {
       }
     }
 
+    // 4b. Hover directive
+    if (contract.goalPattern === 'hover_control' || goal.includes('hover') || goal.includes('mouse over')) {
+      const targetPhrase = (contract.structuredIntent?.targetPhrase || '').toLowerCase();
+      const target = elements.find((el) => targetPhrase && el.sanitizedName.toLowerCase().includes(targetPhrase)) ||
+        elements.find((el) => el.actionCapabilities.includes('hover')) ||
+        elements[0];
+      if (target) {
+        return {
+          actionId: `act_${Date.now()}`,
+          kind: 'hover',
+          targetLocalId: target.localId,
+          confidence: 0.95,
+          risk: 'safe',
+          rationale: `Hovering over "${target.sanitizedName}" to inspect flyout/submenu`,
+          expectedState: 'Hover trigger activated'
+        };
+      }
+    }
+
+    // 4c. Drag and drop directive
+    if (contract.goalPattern === 'drag_and_drop' || goal.includes('drag')) {
+      const sourcePhrase = (contract.structuredIntent?.targetPhrase || '').toLowerCase();
+      const destPhrase = (contract.structuredIntent?.destinationPhrase || '').toLowerCase();
+      const sourceEl = elements.find((el) => sourcePhrase && el.sanitizedName.toLowerCase().includes(sourcePhrase)) ||
+        elements.find((el) => el.actionCapabilities.includes('drag')) ||
+        elements[0];
+      const destEl = elements.find((el) => destPhrase && el.localId !== sourceEl?.localId && el.sanitizedName.toLowerCase().includes(destPhrase)) ||
+        elements.find((el) => el.localId !== sourceEl?.localId) ||
+        elements[1] || elements[0];
+      if (sourceEl && destEl) {
+        return {
+          actionId: `act_${Date.now()}`,
+          kind: 'drag_and_drop',
+          targetLocalId: sourceEl.localId,
+          destinationLocalId: destEl.localId,
+          confidence: 0.95,
+          risk: 'safe',
+          rationale: `Dragging "${sourceEl.sanitizedName}" onto "${destEl.sanitizedName}"`,
+          expectedState: 'Element dragged and dropped to destination'
+        };
+      }
+    }
+
+    // 4d. File upload directive
+    if (contract.goalPattern === 'upload_file' || goal.includes('upload') || goal.includes('attach')) {
+      const targetPhrase = (contract.structuredIntent?.targetPhrase || '').toLowerCase();
+      const fileName = contract.structuredIntent?.fileName || 'document.pdf';
+      const fileInput = elements.find((el) =>
+        (el.actionCapabilities.includes('upload') || el.role === 'input') &&
+        (!targetPhrase || el.sanitizedName.toLowerCase().includes(targetPhrase))
+      ) ||
+        elements.find((el) => el.actionCapabilities.includes('upload')) ||
+        elements.find((el) => el.role === 'input');
+      if (fileInput) {
+        return {
+          actionId: `act_${Date.now()}`,
+          kind: 'upload_file',
+          targetLocalId: fileInput.localId,
+          fileName,
+          confidence: 0.95,
+          risk: 'safe',
+          rationale: `Uploading file "${fileName}" to input "${fileInput.sanitizedName}"`,
+          expectedState: 'File uploaded and value present'
+        };
+      }
+    }
+
     // 5. Explicit button matching (e.g. Refresh Sync button)
     if (goal.includes('sync') || goal.includes('refresh')) {
       const syncBtn = elements.find(

@@ -14420,6 +14420,7 @@ function resolveTaskContract(goal) {
       abstentionReason: "EMPTY_GOAL: Goal cannot be empty"
     };
   }
+  const isMultiStep = /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload)\b/i.test(g) || /(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many)/i.test(g);
   if (/(?:poem|story|recipe|joke|capital of|calculate|solve math|2\+2|weather|song|quantum)/i.test(g)) {
     return {
       supported: false,
@@ -14442,6 +14443,7 @@ function resolveTaskContract(goal) {
       goalPattern: "answer_question",
       mode: "answer",
       isAnswerGoal: true,
+      isMultiStep: true,
       isPassive: false,
       // NOT passive - allows active tab switching, navigation, and extraction
       queryTopic,
@@ -14508,7 +14510,8 @@ function resolveTaskContract(goal) {
       }
     };
   }
-  const isExplicitClickVerb = /^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+/i.test(g) && !/(?:type|fill|enter|write)\s+/i.test(g);
+  const hasCompoundAction = /\b(?:and\s+then|then|after\s+that|next)\s+(?:type|fill|enter|write|search|filter|find)\b/i.test(g) || /\b(?:and|then)\s+(?:type|fill|enter|write)\b/i.test(g);
+  const isExplicitClickVerb = /^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+/i.test(g) && !hasCompoundAction && !/^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+(?:on\s+)?(?:the\s+)?(?:search(?:\s+bar|\s+box|\s+input|\s+field)?|input|field)\s+(?:and\s+)?(?:type|fill|enter|write)\b/i.test(g);
   if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry|chatbox|chat\b)/i.test(g)) {
     const hasSubmitSuffix = /\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i.test(g);
     let cleanGoal = g.replace(/\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i, "").trim();
@@ -14548,6 +14551,7 @@ function resolveTaskContract(goal) {
     return {
       supported: true,
       goalPattern: "search_filter",
+      isMultiStep,
       expectedTerminal: { kind: "value_present", expectedValueFragment: requestedValue || void 0 },
       expectedTargetNameSubstring: targetPhrase2,
       structuredIntent: {
@@ -14657,12 +14661,13 @@ function resolveTaskContract(goal) {
       }
     };
   }
-  const hoverMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:hover(?:\s+over)?|mouse\s+over|move\s+mouse\s+to)\s+(?:on\s+)?(?:the\s+)?(.+)$/i);
+  const hoverMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:hover(?:\s+over)?|mouse\s+over|move\s+mouse\s+to)\s+(?:on\s+)?(?:the\s+)?(.+?)(?:\s+(?:and|\bthen\b)\s+(.+))?$/i);
   if (hoverMatch) {
     const target = hoverMatch[1].trim();
     return {
       supported: true,
       goalPattern: "hover_control",
+      isMultiStep: isMultiStep || Boolean(hoverMatch[2]),
       expectedTerminal: { kind: "status_changed" },
       expectedTargetNameSubstring: target,
       structuredIntent: {
@@ -14698,6 +14703,7 @@ function resolveTaskContract(goal) {
   return {
     supported: true,
     goalPattern: "click_control",
+    isMultiStep,
     expectedTerminal: isNavOrLink && pathFragment ? { kind: "url_changed", expectedPathFragment: pathFragment } : { kind: "status_changed" },
     expectedTargetNameSubstring: targetPhrase,
     structuredIntent: {
@@ -15901,7 +15907,12 @@ function extractMetricsWithPlaybook(textContext, metricRule) {
 }
 function extractSearchQueryFromGoal(goal) {
   let q2 = (goal || "").trim();
-  q2 = q2.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, "");
+  const compoundMatch = q2.match(/(?:and|then|after\s+that)\s+(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type)\s+(.+)$/i);
+  if (compoundMatch) {
+    q2 = compoundMatch[1].trim();
+  } else {
+    q2 = q2.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, "");
+  }
   q2 = q2.replace(/\s+(?:in|into|on)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page)$/i, "");
   return q2.trim();
 }
@@ -18627,10 +18638,11 @@ var RunCoordinator = class {
   }
   tryResolveLocalSafeAction(goal, sanitized, step, currentUrl) {
     const trimmedGoal = (goal || "").trim().toLowerCase();
+    const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) || /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?)\b/i.test(this.currentGoal || "");
     const scrollContract = this.currentTaskContract?.expectedTerminal.kind === "scroll_changed" ? this.currentTaskContract.expectedTerminal : null;
     if (scrollContract) {
       const dir = scrollContract.direction;
-      if (step > 1 && this.actionHistory.length > 0 && this.actionHistory[this.actionHistory.length - 1].kind === "scroll") {
+      if (!isMultiStepGoal && step > 1 && this.actionHistory.length > 0 && this.actionHistory[this.actionHistory.length - 1].kind === "scroll") {
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
           kind: "finish",
@@ -18805,7 +18817,7 @@ var RunCoordinator = class {
           }
         }
       }
-      const isSearchDirective = resolution.matchedIntent === "fill_field" || this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_playbook_nav_")) && /^(?:(?:please\s+|kindly\s+)?(?:search(?:\s+for)?|find|filter(?:\s+by)?)\s+)/i.test(trimmedGoal);
+      const isSearchDirective = resolution.matchedIntent === "fill_field" || this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_playbook_nav_")) && /(?:(?:search(?:\s+for)?|find|filter(?:\s+by)?)\s+)/i.test(trimmedGoal);
       if (isSearchDirective) {
         const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_playbook_fill_"));
         if (hasAlreadyFilled) {
@@ -19064,7 +19076,7 @@ var RunCoordinator = class {
         return { satisfied: true };
       }
       case "value_present": {
-        const hasAction = actionHistory.some((a) => a.kind === "type" || a.kind === "click");
+        const hasAction = actionHistory.some((a) => a.kind === "type" || a.kind === "click" || a.kind === "upload_file");
         if (!hasAction) {
           return { satisfied: false, reason: "No type or filter action executed to set required value" };
         }
@@ -19091,7 +19103,9 @@ var RunCoordinator = class {
         return { satisfied: true };
       }
       case "status_changed": {
-        const hasMutatingAction = actionHistory.some((a) => a.kind === "click" || a.kind === "type" || a.kind === "select" || a.kind === "scroll");
+        const hasMutatingAction = actionHistory.some(
+          (a) => a.kind === "click" || a.kind === "type" || a.kind === "select" || a.kind === "scroll" || a.kind === "hover" || a.kind === "drag_and_drop" || a.kind === "upload_file"
+        );
         if (!hasMutatingAction) {
           return { satisfied: false, reason: "Action history contains only wait without any preceding trigger action" };
         }
@@ -19777,7 +19791,8 @@ var RunCoordinator = class {
         };
         return this.completeWithResult(res2);
       }
-      if (this.currentTaskContract?.expectedTerminal.kind === "scroll_changed" && proposal.kind === "scroll") {
+      const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) || /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?)\b/i.test(this.currentGoal || "");
+      if (!isMultiStepGoal && this.currentTaskContract?.expectedTerminal.kind === "scroll_changed" && proposal.kind === "scroll") {
         const tFin = Date.now();
         const telemetry2 = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
         if (this.listeners.onTelemetryUpdated) {
@@ -19796,7 +19811,7 @@ var RunCoordinator = class {
         };
         return this.completeWithResult(res2);
       }
-      if (this.currentTaskContract?.goalPattern === "click_control" && proposal.kind === "click" && this.currentTaskContract?.structuredIntent?.targetPhrase && !/\b(repeatedly|again|multiple|times|until|loop)\b/i.test(this.currentGoal || "")) {
+      if (!isMultiStepGoal && this.currentTaskContract?.goalPattern === "click_control" && proposal.kind === "click" && this.currentTaskContract?.structuredIntent?.targetPhrase && !/\b(repeatedly|again|multiple|times|until|loop)\b/i.test(this.currentGoal || "")) {
         const matchesTarget = targetElement && scoreCandidate(targetElement, this.currentTaskContract.structuredIntent, false).score >= 50;
         if (matchesTarget) {
           const tFin = Date.now();

@@ -43,6 +43,7 @@ export interface TaskContract {
   readonly structuredIntent?: StructuredTaskIntent;
   readonly isPassive?: boolean;
   readonly isAnswerGoal?: boolean;
+  readonly isMultiStep?: boolean;
   readonly mode?: 'act' | 'answer' | 'extract';
   readonly queryTopic?: string;
   readonly abstentionReason?: string;
@@ -153,6 +154,9 @@ export function resolveTaskContract(goal: string): TaskContract {
     };
   }
 
+  const isMultiStep = /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload)\b/i.test(g) ||
+    (/(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many)/i.test(g));
+
   // Explicit out-of-domain rejection
   if (/(?:poem|story|recipe|joke|capital of|calculate|solve math|2\+2|weather|song|quantum)/i.test(g)) {
     return {
@@ -178,6 +182,7 @@ export function resolveTaskContract(goal: string): TaskContract {
       goalPattern: 'answer_question',
       mode: 'answer',
       isAnswerGoal: true,
+      isMultiStep: true,
       isPassive: false, // NOT passive - allows active tab switching, navigation, and extraction
       queryTopic,
       expectedTerminal: { kind: 'answer_supported', queryTopic },
@@ -255,7 +260,13 @@ export function resolveTaskContract(goal: string): TaskContract {
   }
 
   // 3. Search / Find / Locate / Type / Fill / Enter / Set / Write / Filter / Chatbox
-  const isExplicitClickVerb = /^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+/i.test(g) && !/(?:type|fill|enter|write)\s+/i.test(g);
+  const hasCompoundAction =
+    /\b(?:and\s+then|then|after\s+that|next)\s+(?:type|fill|enter|write|search|filter|find)\b/i.test(g) ||
+    /\b(?:and|then)\s+(?:type|fill|enter|write)\b/i.test(g);
+  const isExplicitClickVerb =
+    /^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+/i.test(g) &&
+    !hasCompoundAction &&
+    !/^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+(?:on\s+)?(?:the\s+)?(?:search(?:\s+bar|\s+box|\s+input|\s+field)?|input|field)\s+(?:and\s+)?(?:type|fill|enter|write)\b/i.test(g);
   if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry|chatbox|chat\b)/i.test(g)) {
     const hasSubmitSuffix = /\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i.test(g);
     let cleanGoal = g.replace(/\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i, '').trim();
@@ -304,6 +315,7 @@ export function resolveTaskContract(goal: string): TaskContract {
     return {
       supported: true,
       goalPattern: 'search_filter',
+      isMultiStep,
       expectedTerminal: { kind: 'value_present', expectedValueFragment: requestedValue || undefined },
       expectedTargetNameSubstring: targetPhrase,
       structuredIntent: {
@@ -427,12 +439,13 @@ export function resolveTaskContract(goal: string): TaskContract {
   }
 
   // 7d. Hover
-  const hoverMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:hover(?:\s+over)?|mouse\s+over|move\s+mouse\s+to)\s+(?:on\s+)?(?:the\s+)?(.+)$/i);
+  const hoverMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:hover(?:\s+over)?|mouse\s+over|move\s+mouse\s+to)\s+(?:on\s+)?(?:the\s+)?(.+?)(?:\s+(?:and|\bthen\b)\s+(.+))?$/i);
   if (hoverMatch) {
     const target = hoverMatch[1].trim();
     return {
       supported: true,
       goalPattern: 'hover_control',
+      isMultiStep: isMultiStep || Boolean(hoverMatch[2]),
       expectedTerminal: { kind: 'status_changed' },
       expectedTargetNameSubstring: target,
       structuredIntent: {
@@ -475,6 +488,7 @@ export function resolveTaskContract(goal: string): TaskContract {
   return {
     supported: true,
     goalPattern: 'click_control',
+    isMultiStep,
     expectedTerminal: isNavOrLink && pathFragment
       ? { kind: 'url_changed', expectedPathFragment: pathFragment }
       : { kind: 'status_changed' },
