@@ -205,6 +205,26 @@ export function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
             }
         }
     }
+    // 2b. If query references Problem Statements (e.g. "search for PS 171", "find PS 171", "PS 171")
+    // and current page is NOT problem-statements, route navigation to problem statements page is required first!
+    const mentionsProblemStatements = normQuery.includes('problem statement') ||
+        normQuery.includes('problem statements') ||
+        /\bps\s*\d+\b/i.test(userQuery) ||
+        (queryTokens.includes('ps') && queryTokens.some((t) => /\d+/.test(t)));
+    if (mentionsProblemStatements && currentUrl && !currentUrl.includes('problem-statement')) {
+        const psRoute = playbook.routes.find((r) => r.name === 'problemStatements');
+        if (psRoute) {
+            return {
+                playbookName: playbook.name,
+                matchedIntent: 'navigate',
+                confidence: 0.96,
+                targetUrl: `https://${playbook.domain}${psRoute.path}`,
+                targetPhrase: 'Problem Statements',
+                targetRole: 'link',
+                rationale: `Query references Problem Statements while currently on '${currentUrl}'. Navigating to Problem Statements page first.`
+            };
+        }
+    }
     // 3. Check for landmark match (e.g. "click know your spoc", "sih login")
     for (const landmark of playbook.landmarks) {
         const allAliases = [landmark.phrase, ...landmark.aliases];
@@ -316,5 +336,16 @@ export function extractMetricsWithPlaybook(textContext, metricRule) {
         }
     }
     return undefined;
+}
+/**
+ * Cleanly extracts search target text from a search directive.
+ * E.g. "search for PS 171" -> "PS 171"
+ *      "search Chinmaya in search box" -> "Chinmaya"
+ */
+export function extractSearchQueryFromGoal(goal) {
+    let q = (goal || '').trim();
+    q = q.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, '');
+    q = q.replace(/\s+(?:in|into|on)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page)$/i, '');
+    return q.trim();
 }
 //# sourceMappingURL=domain-playbooks.js.map

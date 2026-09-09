@@ -15112,6 +15112,21 @@ function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
       }
     }
   }
+  const mentionsProblemStatements = normQuery.includes("problem statement") || normQuery.includes("problem statements") || /\bps\s*\d+\b/i.test(userQuery) || queryTokens.includes("ps") && queryTokens.some((t) => /\d+/.test(t));
+  if (mentionsProblemStatements && currentUrl && !currentUrl.includes("problem-statement")) {
+    const psRoute = playbook.routes.find((r) => r.name === "problemStatements");
+    if (psRoute) {
+      return {
+        playbookName: playbook.name,
+        matchedIntent: "navigate",
+        confidence: 0.96,
+        targetUrl: `https://${playbook.domain}${psRoute.path}`,
+        targetPhrase: "Problem Statements",
+        targetRole: "link",
+        rationale: `Query references Problem Statements while currently on '${currentUrl}'. Navigating to Problem Statements page first.`
+      };
+    }
+  }
   for (const landmark of playbook.landmarks) {
     const allAliases = [landmark.phrase, ...landmark.aliases];
     const match = allAliases.some((alias) => {
@@ -15214,6 +15229,12 @@ function extractMetricsWithPlaybook(textContext, metricRule) {
     }
   }
   return void 0;
+}
+function extractSearchQueryFromGoal(goal) {
+  let q2 = (goal || "").trim();
+  q2 = q2.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, "");
+  q2 = q2.replace(/\s+(?:in|into|on)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page)$/i, "");
+  return q2.trim();
 }
 
 // ../../packages/pii-rules/dist/luhn.js
@@ -17912,6 +17933,7 @@ var RunCoordinator = class {
   }
   recordActionHistory(proposal) {
     this.actionHistory.push({
+      actionId: proposal.actionId,
       kind: proposal.kind,
       targetLocalId: proposal.targetLocalId,
       textToType: proposal.textToType,
@@ -18083,10 +18105,18 @@ var RunCoordinator = class {
         }
       }
       if (resolution.matchedIntent === "navigate" && resolution.targetUrl) {
+        const targetPhraseNorm = (resolution.targetPhrase || "").toLowerCase();
+        const phraseTokens = tokenizeSemanticText(targetPhraseNorm);
         const routeKeywordTokens = tokenizeSemanticText(goal);
         const navLink = sanitized.elements.find((el2) => {
           if (el2.role !== "link" && el2.role !== "button" && el2.role !== "tab") return false;
           const nameNorm = el2.sanitizedName.toLowerCase();
+          if (targetPhraseNorm && (nameNorm === targetPhraseNorm || nameNorm.includes(targetPhraseNorm) || targetPhraseNorm.includes(nameNorm))) {
+            return true;
+          }
+          if (phraseTokens.length > 0 && phraseTokens.every((t) => nameNorm.includes(t))) {
+            return true;
+          }
           return routeKeywordTokens.some((t) => t.length > 3 && nameNorm.includes(t));
         });
         if (navLink) {
@@ -18096,23 +18126,36 @@ var RunCoordinator = class {
             targetLocalId: navLink.localId,
             confidence: resolution.confidence,
             risk: "safe",
-            rationale: `Playbook navigation grounded to link "${navLink.sanitizedName}" (${resolution.targetUrl})`,
+            rationale: `Playbook navigation grounded to link "${navLink.sanitizedName}"`,
             expectedPostcondition: { kind: "status_changed" }
           };
         }
       }
       if (resolution.matchedIntent === "fill_field" && resolution.targetPhrase) {
+        const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_playbook_fill_"));
+        if (hasAlreadyFilled) {
+          const query = extractSearchQueryFromGoal(goal) || "query";
+          return {
+            actionId: `act_local_finish_${step}_${Date.now()}`,
+            kind: "finish",
+            confidence: 0.98,
+            risk: "safe",
+            rationale: `Playbook search query "${query}" executed and filtered results displayed`
+          };
+        }
         const targetTokens = tokenizeSemanticText(resolution.targetPhrase);
+        const searchKeywords = ["search", "filter", "query", "find", "keyword"];
         const matchingEl = sanitized.elements.find((el2) => {
           if (el2.role !== "input" && el2.role !== "textarea") return false;
           const nameNorm = el2.sanitizedName.toLowerCase();
           const phraseNorm = resolution.targetPhrase.toLowerCase();
-          if (nameNorm.includes(phraseNorm) || phraseNorm.includes(nameNorm)) return true;
-          return targetTokens.some((t) => nameNorm.includes(t));
+          if (nameNorm === phraseNorm || nameNorm.includes(phraseNorm) || phraseNorm.includes(nameNorm)) return true;
+          if (targetTokens.some((t) => nameNorm.includes(t))) return true;
+          if (searchKeywords.some((kw) => nameNorm.includes(kw))) return true;
+          return false;
         });
         if (matchingEl) {
-          const psMatch = goal.match(/\b(?:ps|problem\s*statement|id)?\s*([a-zA-Z0-9_-]{3,15})\b/i);
-          const textToType = psMatch ? psMatch[1] : goal;
+          const textToType = extractSearchQueryFromGoal(goal);
           return {
             actionId: `act_playbook_fill_${step}_${Date.now()}`,
             kind: "type",
@@ -18121,7 +18164,7 @@ var RunCoordinator = class {
             pressEnter: true,
             confidence: resolution.confidence,
             risk: "safe",
-            rationale: `Playbook search input grounded: ${resolution.rationale}`
+            rationale: `Search query "${textToType}" grounded into input "${matchingEl.sanitizedName}"`
           };
         }
       }
@@ -18141,6 +18184,16 @@ var RunCoordinator = class {
           confidence: 1,
           risk: "safe",
           rationale: `Safe ${reqFragment} drawer is visible and verified; task completed locally`
+        };
+      }
+      if (lastAction.actionId && lastAction.actionId.startsWith("act_playbook_fill_")) {
+        const query = extractSearchQueryFromGoal(goal) || "query";
+        return {
+          actionId: `act_local_finish_${step}_${Date.now()}`,
+          kind: "finish",
+          confidence: 0.98,
+          risk: "safe",
+          rationale: `Playbook search query "${query}" executed and filtered results displayed`
         };
       }
       const isStatusGoal = this.currentTaskContract.expectedTerminal.kind === "status_changed";

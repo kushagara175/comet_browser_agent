@@ -29,7 +29,8 @@ import {
   tokenizeSemanticText,
   lookupDomainPlaybook,
   resolvePlaybookIntent,
-  extractMetricsWithPlaybook
+  extractMetricsWithPlaybook,
+  extractSearchQueryFromGoal
 } from '@privapilot/protocol';
 import { BrowserAdapter, WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
@@ -195,7 +196,7 @@ export class RunCoordinator {
   private pendingAction: ActionProposal | null = null;
   private currentSanitizedContext: SanitizedContext | null = null;
   private lastRunResult: CoordinatorRunResult | null = null;
-  private actionHistory: Array<{ kind: string; targetLocalId?: string; textToType?: string; selectOptionValue?: string; scrollDirection?: string }> = [];
+  private actionHistory: Array<{ actionId?: string; kind: string; targetLocalId?: string; textToType?: string; selectOptionValue?: string; scrollDirection?: string }> = [];
   private t0_runStart: number = 0;
   private cumulativeClientLatency: number = 0;
   private cumulativeServerLatency: number = 0;
@@ -257,6 +258,7 @@ export class RunCoordinator {
 
   private recordActionHistory(proposal: ActionProposal): void {
     this.actionHistory.push({
+      actionId: proposal.actionId,
       kind: proposal.kind,
       targetLocalId: proposal.targetLocalId,
       textToType: proposal.textToType,
@@ -508,11 +510,20 @@ export class RunCoordinator {
 
       // C. Navigation to route via link on page
       if (resolution.matchedIntent === 'navigate' && resolution.targetUrl) {
+        const targetPhraseNorm = (resolution.targetPhrase || '').toLowerCase();
+        const phraseTokens = tokenizeSemanticText(targetPhraseNorm);
         const routeKeywordTokens = tokenizeSemanticText(goal);
+
         const navLink = sanitized.elements.find((el) => {
           if (el.role !== 'link' && el.role !== 'button' && el.role !== 'tab') return false;
           const nameNorm = el.sanitizedName.toLowerCase();
-          return routeKeywordTokens.some(t => t.length > 3 && nameNorm.includes(t));
+          if (targetPhraseNorm && (nameNorm === targetPhraseNorm || nameNorm.includes(targetPhraseNorm) || targetPhraseNorm.includes(nameNorm))) {
+            return true;
+          }
+          if (phraseTokens.length > 0 && phraseTokens.every((t) => nameNorm.includes(t))) {
+            return true;
+          }
+          return routeKeywordTokens.some((t) => t.length > 3 && nameNorm.includes(t));
         });
 
         if (navLink) {
@@ -522,26 +533,41 @@ export class RunCoordinator {
             targetLocalId: navLink.localId,
             confidence: resolution.confidence,
             risk: 'safe',
-            rationale: `Playbook navigation grounded to link "${navLink.sanitizedName}" (${resolution.targetUrl})`,
+            rationale: `Playbook navigation grounded to link "${navLink.sanitizedName}"`,
             expectedPostcondition: { kind: 'status_changed' }
           };
         }
       }
 
-      // D. Fill Field (e.g. search PS 171)
+      // D. Fill Field (e.g. search input on page)
       if (resolution.matchedIntent === 'fill_field' && resolution.targetPhrase) {
+        const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_playbook_fill_'));
+        if (hasAlreadyFilled) {
+          const query = extractSearchQueryFromGoal(goal) || 'query';
+          return {
+            actionId: `act_local_finish_${step}_${Date.now()}`,
+            kind: 'finish',
+            confidence: 0.98,
+            risk: 'safe',
+            rationale: `Playbook search query "${query}" executed and filtered results displayed`
+          };
+        }
+
         const targetTokens = tokenizeSemanticText(resolution.targetPhrase);
+        const searchKeywords = ['search', 'filter', 'query', 'find', 'keyword'];
+
         const matchingEl = sanitized.elements.find((el) => {
           if (el.role !== 'input' && el.role !== 'textarea') return false;
           const nameNorm = el.sanitizedName.toLowerCase();
           const phraseNorm = resolution.targetPhrase!.toLowerCase();
-          if (nameNorm.includes(phraseNorm) || phraseNorm.includes(nameNorm)) return true;
-          return targetTokens.some(t => nameNorm.includes(t));
+          if (nameNorm === phraseNorm || nameNorm.includes(phraseNorm) || phraseNorm.includes(nameNorm)) return true;
+          if (targetTokens.some((t) => nameNorm.includes(t))) return true;
+          if (searchKeywords.some((kw) => nameNorm.includes(kw))) return true;
+          return false;
         });
 
         if (matchingEl) {
-          const psMatch = goal.match(/\b(?:ps|problem\s*statement|id)?\s*([a-zA-Z0-9_-]{3,15})\b/i);
-          const textToType = psMatch ? psMatch[1] : goal;
+          const textToType = extractSearchQueryFromGoal(goal);
           return {
             actionId: `act_playbook_fill_${step}_${Date.now()}`,
             kind: 'type',
@@ -550,7 +576,7 @@ export class RunCoordinator {
             pressEnter: true,
             confidence: resolution.confidence,
             risk: 'safe',
-            rationale: `Playbook search input grounded: ${resolution.rationale}`
+            rationale: `Search query "${textToType}" grounded into input "${matchingEl.sanitizedName}"`
           };
         }
       }
@@ -574,6 +600,19 @@ export class RunCoordinator {
           confidence: 1.0,
           risk: 'safe',
           rationale: `Safe ${reqFragment} drawer is visible and verified; task completed locally`
+        };
+      }
+
+      // Local finish for playbook search/fill execution:
+      // When a playbook fill action was executed with enter, search results are now filtered and displayed.
+      if (lastAction.actionId && lastAction.actionId.startsWith('act_playbook_fill_')) {
+        const query = extractSearchQueryFromGoal(goal) || 'query';
+        return {
+          actionId: `act_local_finish_${step}_${Date.now()}`,
+          kind: 'finish',
+          confidence: 0.98,
+          risk: 'safe',
+          rationale: `Playbook search query "${query}" executed and filtered results displayed`
         };
       }
 
@@ -772,7 +811,7 @@ export class RunCoordinator {
   private verifyTerminalPostcondition(
     contract: TaskContract,
     sanitized: SanitizedContext,
-    actionHistory: ReadonlyArray<{ kind: string; targetLocalId?: string; textToType?: string; selectOptionValue?: string; scrollDirection?: string }>
+    actionHistory: ReadonlyArray<{ actionId?: string; kind: string; targetLocalId?: string; textToType?: string; selectOptionValue?: string; scrollDirection?: string }>
   ): { satisfied: boolean; reason?: string } {
     if (contract.isPassive) {
       if (sanitized.elements.length === 0) {

@@ -70,4 +70,10 @@ export declare function extractMetricsWithPlaybook(textContext: string, metricRu
     value: string;
     label: string;
 } | undefined;
+/**
+ * Cleanly extracts search target text from a search directive.
+ * E.g. "search for PS 171" -> "PS 171"
+ *      "search Chinmaya in search box" -> "Chinmaya"
+ */
+export declare function extractSearchQueryFromGoal(goal: string): string;
 //# sourceMappingURL=domain-playbooks.d.ts.map
