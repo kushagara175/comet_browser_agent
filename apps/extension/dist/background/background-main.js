@@ -14416,6 +14416,10 @@ function resolveTaskContract(goal) {
     prev = g;
     g = g.replace(ACTION_PREFIX_REGEX, "").trim();
   }
+  const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and|then|,)\s+(.+)$/i);
+  if (navPrefixMatch && navPrefixMatch[1]) {
+    g = navPrefixMatch[1].trim();
+  }
   if (!g) {
     return {
       supported: false,
@@ -14681,7 +14685,7 @@ function resolveTaskContract(goal) {
       }
     };
   }
-  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|delete|remove)\s+(?:on\s+)?(?:the\s+)?/i);
+  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove)\s+(?:on\s+)?(?:the\s+)?/i);
   const hasInteractionVerb = Boolean(verbMatch);
   let cleanStr = hasInteractionVerb ? g.replace(verbMatch[0], "").trim() : g;
   cleanStr = cleanStr.replace(/\s+(?:repeatedly|again|multiple\s+times|continuously|twice|until\s+done)\b/i, "").trim();
@@ -15089,6 +15093,15 @@ function classifyActionRisk(proposal, elementName) {
     return "safe";
   }
   return proposal.risk || "protected";
+}
+function stripNavigationPrefixFromGoal(goal) {
+  if (!goal || typeof goal !== "string")
+    return goal;
+  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and|then|,)\s+(.+)$/i);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  return goal.trim();
 }
 
 // ../../packages/protocol/dist/domain-playbooks.js
@@ -18494,28 +18507,37 @@ var WebExtensionAdapter = class {
   async navigateTab(tabId, url) {
     const api = this.browserAPI;
     if (api && api.tabs) {
-      let targetTabId = tabId;
+      let targetTabId = tabId && tabId > 0 ? tabId : 0;
       if (!targetTabId && api.tabs.query) {
-        const activeTabs = await new Promise((resolve) => {
-          api.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => resolve(tabs || []));
+        const tabs = await new Promise((resolve) => {
+          api.tabs.query({ active: true, lastFocusedWindow: true }, (res) => {
+            if (!api.runtime.lastError && res && res.length > 0) return resolve(res);
+            api.tabs.query({ active: true }, (res2) => {
+              if (!api.runtime.lastError && res2 && res2.length > 0) return resolve(res2);
+              api.tabs.query({}, (all) => resolve(all || []));
+            });
+          });
         });
-        if (activeTabs && activeTabs.length > 0) {
-          targetTabId = activeTabs[0].id;
+        const normalTab = tabs.find(
+          (t) => t.id && t.url && !t.url.startsWith("chrome-extension://") && !t.url.startsWith("devtools://")
+        ) || tabs[0];
+        if (normalTab && normalTab.id) {
+          targetTabId = normalTab.id;
         }
+      }
+      if (targetTabId && api.tabs.update) {
+        await new Promise((resolve) => {
+          api.tabs.update(targetTabId, { url, active: true }, () => resolve());
+        });
+        const readyTab = await this.waitForTabReady(targetTabId, 1e4, url);
+        await this.ensureContentScript(targetTabId);
+        return { tabId: targetTabId, url: readyTab?.url || url };
       }
       if (!targetTabId && api.tabs.create) {
         const createdTab = await new Promise((resolve) => {
           api.tabs.create({ url, active: true }, (tab) => resolve(tab));
         });
         targetTabId = createdTab?.id || 0;
-        const readyTab = await this.waitForTabReady(targetTabId, 1e4, url);
-        await this.ensureContentScript(targetTabId);
-        return { tabId: targetTabId, url: readyTab?.url || url };
-      }
-      if (api.tabs.update && targetTabId) {
-        await new Promise((resolve) => {
-          api.tabs.update(targetTabId, { url, active: true }, () => resolve());
-        });
         const readyTab = await this.waitForTabReady(targetTabId, 1e4, url);
         await this.ensureContentScript(targetTabId);
         return { tabId: targetTabId, url: readyTab?.url || url };
@@ -20109,6 +20131,10 @@ var RunCoordinator = class {
           if (navRes && typeof navRes === "object" && navRes.tabId) {
             this.currentTabId = navRes.tabId;
           }
+          const subGoal = stripNavigationPrefixFromGoal(goal);
+          if (subGoal && subGoal !== goal) {
+            this.currentGoal = subGoal;
+          }
           this.currentStep = 0;
           this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
           continue;
@@ -20147,6 +20173,10 @@ var RunCoordinator = class {
               const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
               if (navRes && typeof navRes === "object" && navRes.tabId) {
                 this.currentTabId = navRes.tabId;
+              }
+              const subGoal = stripNavigationPrefixFromGoal(goal);
+              if (subGoal && subGoal !== goal) {
+                this.currentGoal = subGoal;
               }
               this.currentStep = 0;
               this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
@@ -20199,6 +20229,10 @@ var RunCoordinator = class {
             const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
             if (navRes && typeof navRes === "object" && navRes.tabId) {
               this.currentTabId = navRes.tabId;
+            }
+            const subGoal = stripNavigationPrefixFromGoal(goal);
+            if (subGoal && subGoal !== goal) {
+              this.currentGoal = subGoal;
             }
             continue;
           }

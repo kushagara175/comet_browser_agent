@@ -11,7 +11,7 @@
  * 7. Semantically Verify UI Outcome
  * 8. Repeat perception cycle up to bounded step budget or until finish/failure
  */
-import { classifyActionRisk, validateActionProposal, resolveTaskContract, groundTargetCandidates, scoreCandidate, tokenizeSemanticText, lookupDomainPlaybook, resolvePlaybookIntent, extractMetricsWithPlaybook, extractSearchQueryFromGoal, extractTargetUrlFromGoal } from '@privapilot/protocol';
+import { classifyActionRisk, validateActionProposal, resolveTaskContract, groundTargetCandidates, scoreCandidate, tokenizeSemanticText, lookupDomainPlaybook, resolvePlaybookIntent, extractMetricsWithPlaybook, extractSearchQueryFromGoal, extractTargetUrlFromGoal, stripNavigationPrefixFromGoal } from '@privapilot/protocol';
 import { WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
@@ -1006,6 +1006,10 @@ export class RunCoordinator {
                     if (navRes && typeof navRes === 'object' && navRes.tabId) {
                         this.currentTabId = navRes.tabId;
                     }
+                    const subGoal = stripNavigationPrefixFromGoal(goal);
+                    if (subGoal && subGoal !== goal) {
+                        this.currentGoal = subGoal;
+                    }
                     this.currentStep = 0;
                     this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
                     continue;
@@ -1045,6 +1049,10 @@ export class RunCoordinator {
                             const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
                             if (navRes && typeof navRes === 'object' && navRes.tabId) {
                                 this.currentTabId = navRes.tabId;
+                            }
+                            const subGoal = stripNavigationPrefixFromGoal(goal);
+                            if (subGoal && subGoal !== goal) {
+                                this.currentGoal = subGoal;
                             }
                             this.currentStep = 0;
                             this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
@@ -1103,6 +1111,10 @@ export class RunCoordinator {
                         const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
                         if (navRes && typeof navRes === 'object' && navRes.tabId) {
                             this.currentTabId = navRes.tabId;
+                        }
+                        const subGoal = stripNavigationPrefixFromGoal(goal);
+                        if (subGoal && subGoal !== goal) {
+                            this.currentGoal = subGoal;
                         }
                         continue;
                     }

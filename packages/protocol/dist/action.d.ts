@@ -104,4 +104,8 @@ export declare function validateActionProposal(proposal: any, validElements?: Re
  * Validates whether an action proposed by the reasoning server is safe to auto-execute.
  */
 export declare function classifyActionRisk(proposal: ActionProposal, elementName?: string): RiskLevel;
+/**
+ * Strips leading navigation clauses from compound goals (e.g. "open bhuvan and explore earth observation" -> "explore earth observation")
+ */
+export declare function stripNavigationPrefixFromGoal(goal: string): string;
 //# sourceMappingURL=action.d.ts.map

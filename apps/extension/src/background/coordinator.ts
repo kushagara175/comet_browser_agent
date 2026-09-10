@@ -31,7 +31,8 @@ import {
   resolvePlaybookIntent,
   extractMetricsWithPlaybook,
   extractSearchQueryFromGoal,
-  extractTargetUrlFromGoal
+  extractTargetUrlFromGoal,
+  stripNavigationPrefixFromGoal
 } from '@privapilot/protocol';
 import { BrowserAdapter, WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
@@ -1245,6 +1246,10 @@ export class RunCoordinator {
           if (navRes && typeof navRes === 'object' && navRes.tabId) {
             this.currentTabId = navRes.tabId;
           }
+          const subGoal = stripNavigationPrefixFromGoal(goal);
+          if (subGoal && subGoal !== goal) {
+            this.currentGoal = subGoal;
+          }
           this.currentStep = 0;
           this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
           continue;
@@ -1287,6 +1292,10 @@ export class RunCoordinator {
               const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
               if (navRes && typeof navRes === 'object' && navRes.tabId) {
                 this.currentTabId = navRes.tabId;
+              }
+              const subGoal = stripNavigationPrefixFromGoal(goal);
+              if (subGoal && subGoal !== goal) {
+                this.currentGoal = subGoal;
               }
               this.currentStep = 0;
               this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
@@ -1345,6 +1354,10 @@ export class RunCoordinator {
             const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
             if (navRes && typeof navRes === 'object' && navRes.tabId) {
               this.currentTabId = navRes.tabId;
+            }
+            const subGoal = stripNavigationPrefixFromGoal(goal);
+            if (subGoal && subGoal !== goal) {
+              this.currentGoal = subGoal;
             }
             continue;
           }

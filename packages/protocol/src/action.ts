@@ -145,6 +145,12 @@ export function resolveTaskContract(goal: string): TaskContract {
     g = g.replace(ACTION_PREFIX_REGEX, '').trim();
   }
 
+  // Strip leading navigation clauses (e.g. "open bhuvan and explore earth observation" -> "explore earth observation")
+  const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and|then|,)\s+(.+)$/i);
+  if (navPrefixMatch && navPrefixMatch[1]) {
+    g = navPrefixMatch[1].trim();
+  }
+
   if (!g) {
     return {
       supported: false,
@@ -458,7 +464,7 @@ export function resolveTaskContract(goal: string): TaskContract {
 
   // 8. Generic clicking / interactions / navigation (button, link, item, admin, finish, sanitize, navigate, go to, show, open, tap, expand, delete, remove)
   // Extracts target phrase, role hints, and contextual qualifiers (e.g. "Open View Details for SIH26003")
-  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|delete|remove)\s+(?:on\s+)?(?:the\s+)?/i);
+  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove)\s+(?:on\s+)?(?:the\s+)?/i);
   const hasInteractionVerb = Boolean(verbMatch);
   let cleanStr = hasInteractionVerb ? g.replace(verbMatch![0], '').trim() : g;
 
@@ -1049,3 +1055,14 @@ export function classifyActionRisk(
   return proposal.risk || 'protected';
 }
 
+/**
+ * Strips leading navigation clauses from compound goals (e.g. "open bhuvan and explore earth observation" -> "explore earth observation")
+ */
+export function stripNavigationPrefixFromGoal(goal: string): string {
+  if (!goal || typeof goal !== 'string') return goal;
+  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and|then|,)\s+(.+)$/i);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  return goal.trim();
+}

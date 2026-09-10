@@ -159,7 +159,7 @@ export class VlmReasoningEngine {
       timeoutMs: config.timeoutMs ?? parseInt(process.env.VLM_TIMEOUT_MS || '90000', 10),
       probeTimeoutMs: config.probeTimeoutMs ?? parseInt(process.env.VLM_PROBE_TIMEOUT_MS || '4000', 10),
       numCtx: config.numCtx ?? parseInt(process.env.VLM_NUM_CTX || '8192', 10),
-      maxTokens: config.maxTokens ?? parseInt(process.env.VLM_MAX_TOKENS || '600', 10)
+      maxTokens: config.maxTokens ?? parseInt(process.env.VLM_MAX_TOKENS || '2500', 10)
     };
     this.mockFallback = new MockReasoningEngine();
   }
@@ -721,7 +721,11 @@ export class VlmReasoningEngine {
     }
 
     const data: any = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
+    const content =
+      data.choices?.[0]?.message?.content ||
+      data.choices?.[0]?.message?.reasoning ||
+      data.choices?.[0]?.message?.reasoning_content ||
+      '';
 
     try {
       return this.parseActionProposal(content, payload);
@@ -745,7 +749,11 @@ export class VlmReasoningEngine {
       }
 
       const repairData: any = await repairResponse.json();
-      const repairContent = repairData.choices?.[0]?.message?.content || '';
+      const repairContent =
+        repairData.choices?.[0]?.message?.content ||
+        repairData.choices?.[0]?.message?.reasoning ||
+        repairData.choices?.[0]?.message?.reasoning_content ||
+        '';
       return this.parseActionProposal(repairContent, payload);
     }
   }
@@ -754,35 +762,112 @@ export class VlmReasoningEngine {
    * Extracts and validates an ActionProposal from raw model output string.
    */
   private parseActionProposal(content: string, payload: SanitizedNetworkPayload): ActionProposal {
-    // 1. Strip markdown code fences if present (```json ... ```)
-    let cleanJson = content.trim();
+    // 1. Strip thinking tags: <think> ... </think> or <thought> ... </thought>
+    let cleanJson = (content || '')
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+      .trim();
+
+    // 2. Strip markdown code fences if present (```json ... ```)
     const codeBlockMatch = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     if (codeBlockMatch) {
       cleanJson = codeBlockMatch[1].trim();
     }
 
-    // 2. Extract first valid JSON block
+    // 3. Extract first valid JSON block
     const jsonStart = cleanJson.indexOf('{');
     const jsonEnd = cleanJson.lastIndexOf('}');
     if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
       cleanJson = cleanJson.slice(jsonStart, jsonEnd + 1);
     }
 
+    // 4. Remove trailing commas before } or ]
+    cleanJson = cleanJson.replace(/,\s*([}\]])/g, '$1');
+
     let parsed: any;
     try {
       parsed = JSON.parse(cleanJson);
     } catch {
-      throw new Error('Model output could not be parsed as JSON');
+      // If parsing failed, try extracting any balanced JSON block
+      const match = cleanJson.match(/\{(?:[^{}]|(\{[^{}]*\}))*\}/);
+      if (match) {
+        try {
+          parsed = JSON.parse(match[0].replace(/,\s*([}\]])/g, '$1'));
+        } catch (_) {}
+      }
+      if (!parsed) {
+        throw new Error('Model output could not be parsed as JSON');
+      }
     }
 
     // Clean empty strings and normalize common LLM variations
     if (parsed && typeof parsed === 'object') {
-      if (!parsed.rationale && (parsed.explanation || parsed.thought || parsed.reasoning || parsed.summary)) {
-        parsed.rationale = String(parsed.explanation || parsed.thought || parsed.reasoning || parsed.summary).slice(0, 500);
+      // If model wrapped response inside a sub-object (e.g. { "action": { ... } } or { "exploration": { ... } })
+      if (parsed.action && typeof parsed.action === 'object' && !parsed.kind) {
+        parsed = { ...parsed.action, ...parsed };
       }
-      if (!parsed.targetLocalId && (parsed.target || parsed.elementId || parsed.id || parsed.targetId)) {
-        parsed.targetLocalId = String(parsed.target || parsed.elementId || parsed.id || parsed.targetId);
+      if (parsed.actionProposal && typeof parsed.actionProposal === 'object' && !parsed.kind) {
+        parsed = { ...parsed.actionProposal, ...parsed };
       }
+      if (parsed.exploration && typeof parsed.exploration === 'object' && !parsed.kind) {
+        parsed = { ...parsed.exploration, ...parsed };
+      }
+
+      // If kind is missing, infer kind from fields
+      if (!parsed.kind) {
+        if (parsed.status === 'completed' || parsed.status === 'finished' || parsed.action === 'finish') {
+          parsed.kind = 'finish';
+        } else if (parsed.textToType || parsed.text || parsed.input) {
+          parsed.kind = 'type';
+        } else if (parsed.targetLocalId || parsed.target || parsed.elementId || parsed.element) {
+          parsed.kind = 'click';
+        } else {
+          parsed.kind = 'finish';
+        }
+      }
+
+      if (!parsed.targetLocalId && (parsed.target || parsed.elementId || parsed.id || parsed.targetId || parsed.element || parsed.elementName)) {
+        parsed.targetLocalId = String(parsed.target || parsed.elementId || parsed.id || parsed.targetId || parsed.element || parsed.elementName);
+      }
+
+      // If targetLocalId does not match an element ID directly, try resolving it by element name
+      if (parsed.targetLocalId && !payload.elements.some((e) => e.localId === parsed.targetLocalId)) {
+        const lowTarget = parsed.targetLocalId.toLowerCase();
+        const found = payload.elements.find(
+          (e) =>
+            e.localId.toLowerCase() === lowTarget ||
+            e.sanitizedName.toLowerCase() === lowTarget ||
+            e.sanitizedName.toLowerCase().includes(lowTarget) ||
+            lowTarget.includes(e.sanitizedName.toLowerCase())
+        );
+        if (found) {
+          parsed.targetLocalId = found.localId;
+        }
+      }
+
+      if (!parsed.actionId) {
+        parsed.actionId = `act_${Date.now()}`;
+      }
+      if (typeof parsed.confidence !== 'number') {
+        parsed.confidence = 0.95;
+      }
+      if (!parsed.risk) {
+        parsed.risk = 'safe';
+      }
+      if (!parsed.rationale) {
+        parsed.rationale = String(
+          parsed.explanation ||
+          parsed.thought ||
+          parsed.reasoning ||
+          parsed.information ||
+          parsed.summary ||
+          `Execute ${parsed.kind} on target`
+        ).slice(0, 500);
+      }
+      if (!parsed.expectedState) {
+        parsed.expectedState = parsed.kind === 'finish' ? 'Goal complete' : 'UI updates after action';
+      }
+
       if (!parsed.textToType && (parsed.text || parsed.value || parsed.input || parsed.content)) {
         parsed.textToType = String(parsed.text || parsed.value || parsed.input || parsed.content);
       }

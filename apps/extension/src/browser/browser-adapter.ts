@@ -420,29 +420,44 @@ export class WebExtensionAdapter implements BrowserAdapter {
   async navigateTab(tabId: number, url: string): Promise<{ tabId: number; url?: string }> {
     const api = this.browserAPI;
     if (api && api.tabs) {
-      let targetTabId = tabId;
+      let targetTabId = tabId && tabId > 0 ? tabId : 0;
       if (!targetTabId && api.tabs.query) {
-        const activeTabs = await new Promise<any[]>((resolve) => {
-          api.tabs.query({ active: true, lastFocusedWindow: true }, (tabs: any[]) => resolve(tabs || []));
+        const tabs = await new Promise<any[]>((resolve) => {
+          api.tabs.query({ active: true, lastFocusedWindow: true }, (res: any[]) => {
+            if (!api.runtime.lastError && res && res.length > 0) return resolve(res);
+            api.tabs.query({ active: true }, (res2: any[]) => {
+              if (!api.runtime.lastError && res2 && res2.length > 0) return resolve(res2);
+              api.tabs.query({}, (all: any[]) => resolve(all || []));
+            });
+          });
         });
-        if (activeTabs && activeTabs.length > 0) {
-          targetTabId = activeTabs[0].id;
+        const normalTab =
+          tabs.find(
+            (t: any) =>
+              t.id &&
+              t.url &&
+              !t.url.startsWith('chrome-extension://') &&
+              !t.url.startsWith('devtools://')
+          ) || tabs[0];
+        if (normalTab && normalTab.id) {
+          targetTabId = normalTab.id;
         }
       }
-      if (!targetTabId && api.tabs.create) {
-        const createdTab = await new Promise<any>((resolve) => {
-          api.tabs.create({ url, active: true }, (tab: any) => resolve(tab));
+
+      if (targetTabId && api.tabs.update) {
+        await new Promise<void>((resolve) => {
+          api.tabs.update(targetTabId, { url, active: true }, () => resolve());
         });
-        targetTabId = createdTab?.id || 0;
         const readyTab = await this.waitForTabReady(targetTabId, 10000, url);
         await this.ensureContentScript(targetTabId);
         return { tabId: targetTabId, url: readyTab?.url || url };
       }
 
-      if (api.tabs.update && targetTabId) {
-        await new Promise<void>((resolve) => {
-          api.tabs.update(targetTabId, { url, active: true }, () => resolve());
+      if (!targetTabId && api.tabs.create) {
+        const createdTab = await new Promise<any>((resolve) => {
+          api.tabs.create({ url, active: true }, (tab: any) => resolve(tab));
         });
+        targetTabId = createdTab?.id || 0;
         const readyTab = await this.waitForTabReady(targetTabId, 10000, url);
         await this.ensureContentScript(targetTabId);
         return { tabId: targetTabId, url: readyTab?.url || url };

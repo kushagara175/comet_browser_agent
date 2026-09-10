@@ -197,6 +197,43 @@ export class MockReasoningEngine {
         };
       }
       if (intent.targetPhrase && grounding.status === 'no_match' && !goal.includes('pending') && !goal.includes('clearance') && !goal.includes('approval')) {
+        // Fallback 1: If there is an active search/input field, type the search/target query
+        const searchInput = elements.find(
+          (el) => el.actionCapabilities.includes('type') && !el.state.includes('disabled')
+        );
+        if (searchInput && intent.targetPhrase) {
+          return {
+            actionId: `act_${Date.now()}`,
+            kind: 'type',
+            targetLocalId: searchInput.localId,
+            textToType: intent.targetPhrase,
+            confidence: 0.88,
+            risk: 'safe',
+            rationale: `Search bar "${searchInput.sanitizedName}" found on page. Entering "${intent.targetPhrase}" to locate relevant content.`,
+            expectedState: `Query "${intent.targetPhrase}" entered into search input`
+          };
+        }
+
+        // Fallback 2: Check for navigational explore, category, or application links
+        const exploreLink = elements.find(
+          (el) =>
+            el.actionCapabilities.includes('click') &&
+            /\b(explore|applications|services|thematic|data|store|overview|menu|about|updates|kyr)\b/i.test(
+              el.sanitizedName
+            )
+        );
+        if (exploreLink) {
+          return {
+            actionId: `act_${Date.now()}`,
+            kind: 'click',
+            targetLocalId: exploreLink.localId,
+            confidence: 0.85,
+            risk: 'safe',
+            rationale: `Navigating to "${exploreLink.sanitizedName}" to explore relevant resources for "${intent.targetPhrase}".`,
+            expectedState: `"${exploreLink.sanitizedName}" page opens`
+          };
+        }
+
         return {
           actionId: `act_${Date.now()}`,
           kind: 'finish',
