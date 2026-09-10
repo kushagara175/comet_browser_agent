@@ -44,9 +44,12 @@ export class WebExtensionAdapter implements BrowserAdapter {
 
   async captureVisibleTab(targetWindowId?: number | null): Promise<string> {
     const api = this.browserAPI;
+    const FALLBACK_1X1_PNG =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
     if (!api || !api.tabs || !api.tabs.captureVisibleTab) {
       // Mock fallback for Node.js / offline tests
-      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      return FALLBACK_1X1_PNG;
     }
 
     // Chrome MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND guard:
@@ -58,46 +61,85 @@ export class WebExtensionAdapter implements BrowserAdapter {
     }
     this.lastCaptureTime = Date.now();
 
-    const doCapture = (): Promise<string> => {
+    // Resolve target window ID if not explicitly provided
+    let windowId = typeof targetWindowId === 'number' && targetWindowId > 0 ? targetWindowId : undefined;
+    if (windowId == null && api.tabs && api.tabs.query) {
+      try {
+        const activeTabs = await new Promise<any[]>((resolve) => {
+          api.tabs.query({ active: true, lastFocusedWindow: true }, (tabs: any[]) => {
+            if (!api.runtime.lastError && tabs && tabs.length > 0) return resolve(tabs);
+            api.tabs.query({ active: true }, (tabs2: any[]) => resolve(tabs2 || []));
+          });
+        });
+        const normalTab =
+          activeTabs.find(
+            (t: any) =>
+              t.windowId != null &&
+              t.url &&
+              !t.url.startsWith('chrome-extension://') &&
+              !t.url.startsWith('devtools://')
+          ) || activeTabs[0];
+        if (normalTab && typeof normalTab.windowId === 'number' && normalTab.windowId > 0) {
+          windowId = normalTab.windowId;
+        }
+      } catch (_) {}
+    }
+
+    const captureWithWindow = (wId?: number): Promise<string> => {
       return new Promise((resolve, reject) => {
         try {
-          api.tabs.captureVisibleTab(targetWindowId ?? null, { format: 'png' }, (dataUrl: string) => {
+          const callback = (dataUrl: string) => {
             if (api.runtime.lastError) {
-              try {
-                api.tabs.captureVisibleTab({ format: 'png' }, (fallbackDataUrl: string) => {
-                  if (api.runtime.lastError) {
-                    reject(new Error(api.runtime.lastError.message));
-                  } else if (!fallbackDataUrl) {
-                    reject(new Error('Tab capture returned empty data'));
-                  } else {
-                    resolve(fallbackDataUrl);
-                  }
-                });
-              } catch (err: any) {
-                reject(new Error(err.message || api.runtime.lastError.message));
-              }
+              reject(new Error(api.runtime.lastError.message));
             } else if (!dataUrl) {
               reject(new Error('Tab capture returned empty data'));
             } else {
               resolve(dataUrl);
             }
-          });
-        } catch (err: any) {
-          try {
-            api.tabs.captureVisibleTab({ format: 'png' }, (dataUrl: string) => {
-              if (api.runtime.lastError) {
-                reject(new Error(api.runtime.lastError.message));
-              } else if (!dataUrl) {
-                reject(new Error('Tab capture returned empty data'));
-              } else {
-                resolve(dataUrl);
-              }
-            });
-          } catch (e: any) {
-            reject(new Error(e.message || err.message));
+          };
+
+          if (typeof wId === 'number' && wId > 0) {
+            api.tabs.captureVisibleTab(wId, { format: 'png' }, callback);
+          } else {
+            api.tabs.captureVisibleTab({ format: 'png' }, callback);
           }
+        } catch (e: any) {
+          reject(new Error(e?.message || 'Exception during captureVisibleTab'));
         }
       });
+    };
+
+    const doCapture = async (): Promise<string> => {
+      // 1. Try with resolved window ID
+      if (typeof windowId === 'number') {
+        try {
+          return await captureWithWindow(windowId);
+        } catch (_) {
+          // If windowId failed, continue to fallback attempts
+        }
+      }
+
+      // 2. Try with lastFocused normal window if available
+      if (api.windows && api.windows.getLastFocused) {
+        try {
+          const lastWin = await new Promise<any>((resolve) => {
+            api.windows.getLastFocused({ windowTypes: ['normal'] }, (win: any) => resolve(win));
+          });
+          if (lastWin && typeof lastWin.id === 'number' && lastWin.id !== windowId) {
+            return await captureWithWindow(lastWin.id);
+          }
+        } catch (_) {}
+      }
+
+      // 3. Try default captureVisibleTab without windowId
+      try {
+        return await captureWithWindow();
+      } catch (err: any) {
+        // 4. Graceful fallback: If Chrome rejects tab capture (e.g. empty URL "", restricted frame),
+        // yield neutral 1x1 image so DOM-based autonomous perception and actions continue uninterrupted.
+        console.warn(`[BrowserAdapter] captureVisibleTab failed (${err?.message || 'restricted view'}). Yielding fallback canvas.`);
+        return FALLBACK_1X1_PNG;
+      }
     };
 
     try {
@@ -108,7 +150,7 @@ export class WebExtensionAdapter implements BrowserAdapter {
         this.lastCaptureTime = Date.now();
         return await doCapture();
       }
-      throw err;
+      return FALLBACK_1X1_PNG;
     }
   }
 
@@ -198,7 +240,8 @@ export class WebExtensionAdapter implements BrowserAdapter {
       let timeoutTimer: any = null;
 
       const isUrlSettled = (tabUrl?: string) => {
-        if (!expectedUrl || !tabUrl) return true;
+        if (!tabUrl || (tabUrl === 'about:blank' && expectedUrl !== 'about:blank')) return false;
+        if (!expectedUrl) return true;
         try {
           const tabHost = new URL(tabUrl).hostname.toLowerCase().replace(/^www\./, '');
           const expHost = new URL(expectedUrl).hostname.toLowerCase().replace(/^www\./, '');

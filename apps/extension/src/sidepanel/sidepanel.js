@@ -339,22 +339,33 @@ if (typeof document !== 'undefined') {
     let currentActiveTabId = null;
 
     // Fetch and Track Active Tab URL and Tab ID
+    function applyTab(tab) {
+      if (tab) {
+        currentActiveTabId = tab.id;
+        if (tab.url && activeTabUrl) {
+          try {
+            const urlObj = new URL(tab.url);
+            activeTabUrl.textContent = urlObj.hostname + (urlObj.port ? `:${urlObj.port}` : '') + urlObj.pathname;
+            activeTabUrl.title = tab.url;
+          } catch {
+            activeTabUrl.textContent = tab.url;
+          }
+        }
+      }
+    }
+
     function updateActiveTabUrl() {
       if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query) {
         chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
           const tab = (tabs && tabs[0]) || null;
-          if (tab) {
-            currentActiveTabId = tab.id;
-            if (tab.url && activeTabUrl) {
-              try {
-                const urlObj = new URL(tab.url);
-                activeTabUrl.textContent = urlObj.hostname + (urlObj.port ? `:${urlObj.port}` : '') + urlObj.pathname;
-                activeTabUrl.title = tab.url;
-              } catch {
-                activeTabUrl.textContent = tab.url;
-              }
-            }
+          if (!tab || (tab.url && tab.url.startsWith('chrome-extension://'))) {
+            chrome.tabs.query({ active: true }, (allTabs) => {
+              const normalTab = (allTabs || []).find((t) => t.url && !t.url.startsWith('chrome-extension://')) || allTabs?.[0];
+              if (normalTab) applyTab(normalTab);
+            });
+            return;
           }
+          applyTab(tab);
         });
       }
     }

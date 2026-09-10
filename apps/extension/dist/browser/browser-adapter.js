@@ -21,9 +21,10 @@ export class WebExtensionAdapter {
     }
     async captureVisibleTab(targetWindowId) {
         const api = this.browserAPI;
+        const FALLBACK_1X1_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
         if (!api || !api.tabs || !api.tabs.captureVisibleTab) {
             // Mock fallback for Node.js / offline tests
-            return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+            return FALLBACK_1X1_PNG;
         }
         // Chrome MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND guard:
         // Ensure at least 550ms between captures to prevent quota exhaustion
@@ -33,27 +34,33 @@ export class WebExtensionAdapter {
             await new Promise((r) => setTimeout(r, 550 - elapsed));
         }
         this.lastCaptureTime = Date.now();
-        const doCapture = () => {
+        // Resolve target window ID if not explicitly provided
+        let windowId = typeof targetWindowId === 'number' && targetWindowId > 0 ? targetWindowId : undefined;
+        if (windowId == null && api.tabs && api.tabs.query) {
+            try {
+                const activeTabs = await new Promise((resolve) => {
+                    api.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+                        if (!api.runtime.lastError && tabs && tabs.length > 0)
+                            return resolve(tabs);
+                        api.tabs.query({ active: true }, (tabs2) => resolve(tabs2 || []));
+                    });
+                });
+                const normalTab = activeTabs.find((t) => t.windowId != null &&
+                    t.url &&
+                    !t.url.startsWith('chrome-extension://') &&
+                    !t.url.startsWith('devtools://')) || activeTabs[0];
+                if (normalTab && typeof normalTab.windowId === 'number' && normalTab.windowId > 0) {
+                    windowId = normalTab.windowId;
+                }
+            }
+            catch (_) { }
+        }
+        const captureWithWindow = (wId) => {
             return new Promise((resolve, reject) => {
                 try {
-                    api.tabs.captureVisibleTab(targetWindowId ?? null, { format: 'png' }, (dataUrl) => {
+                    const callback = (dataUrl) => {
                         if (api.runtime.lastError) {
-                            try {
-                                api.tabs.captureVisibleTab({ format: 'png' }, (fallbackDataUrl) => {
-                                    if (api.runtime.lastError) {
-                                        reject(new Error(api.runtime.lastError.message));
-                                    }
-                                    else if (!fallbackDataUrl) {
-                                        reject(new Error('Tab capture returned empty data'));
-                                    }
-                                    else {
-                                        resolve(fallbackDataUrl);
-                                    }
-                                });
-                            }
-                            catch (err) {
-                                reject(new Error(err.message || api.runtime.lastError.message));
-                            }
+                            reject(new Error(api.runtime.lastError.message));
                         }
                         else if (!dataUrl) {
                             reject(new Error('Tab capture returned empty data'));
@@ -61,27 +68,51 @@ export class WebExtensionAdapter {
                         else {
                             resolve(dataUrl);
                         }
-                    });
+                    };
+                    if (typeof wId === 'number' && wId > 0) {
+                        api.tabs.captureVisibleTab(wId, { format: 'png' }, callback);
+                    }
+                    else {
+                        api.tabs.captureVisibleTab({ format: 'png' }, callback);
+                    }
                 }
-                catch (err) {
-                    try {
-                        api.tabs.captureVisibleTab({ format: 'png' }, (dataUrl) => {
-                            if (api.runtime.lastError) {
-                                reject(new Error(api.runtime.lastError.message));
-                            }
-                            else if (!dataUrl) {
-                                reject(new Error('Tab capture returned empty data'));
-                            }
-                            else {
-                                resolve(dataUrl);
-                            }
-                        });
-                    }
-                    catch (e) {
-                        reject(new Error(e.message || err.message));
-                    }
+                catch (e) {
+                    reject(new Error(e?.message || 'Exception during captureVisibleTab'));
                 }
             });
+        };
+        const doCapture = async () => {
+            // 1. Try with resolved window ID
+            if (typeof windowId === 'number') {
+                try {
+                    return await captureWithWindow(windowId);
+                }
+                catch (_) {
+                    // If windowId failed, continue to fallback attempts
+                }
+            }
+            // 2. Try with lastFocused normal window if available
+            if (api.windows && api.windows.getLastFocused) {
+                try {
+                    const lastWin = await new Promise((resolve) => {
+                        api.windows.getLastFocused({ windowTypes: ['normal'] }, (win) => resolve(win));
+                    });
+                    if (lastWin && typeof lastWin.id === 'number' && lastWin.id !== windowId) {
+                        return await captureWithWindow(lastWin.id);
+                    }
+                }
+                catch (_) { }
+            }
+            // 3. Try default captureVisibleTab without windowId
+            try {
+                return await captureWithWindow();
+            }
+            catch (err) {
+                // 4. Graceful fallback: If Chrome rejects tab capture (e.g. empty URL "", restricted frame),
+                // yield neutral 1x1 image so DOM-based autonomous perception and actions continue uninterrupted.
+                console.warn(`[BrowserAdapter] captureVisibleTab failed (${err?.message || 'restricted view'}). Yielding fallback canvas.`);
+                return FALLBACK_1X1_PNG;
+            }
         };
         try {
             return await doCapture();
@@ -92,7 +123,7 @@ export class WebExtensionAdapter {
                 this.lastCaptureTime = Date.now();
                 return await doCapture();
             }
-            throw err;
+            return FALLBACK_1X1_PNG;
         }
     }
     async sendMessageToTab(tabId, message) {
@@ -178,7 +209,9 @@ export class WebExtensionAdapter {
             let settledTimer = null;
             let timeoutTimer = null;
             const isUrlSettled = (tabUrl) => {
-                if (!expectedUrl || !tabUrl)
+                if (!tabUrl || (tabUrl === 'about:blank' && expectedUrl !== 'about:blank'))
+                    return false;
+                if (!expectedUrl)
                     return true;
                 try {
                     const tabHost = new URL(tabUrl).hostname.toLowerCase().replace(/^www\./, '');
