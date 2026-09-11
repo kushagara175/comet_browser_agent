@@ -18,6 +18,67 @@ export function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+/**
+ * Renders rich formatted markdown safely by escaping HTML first.
+ * Supports bold, italic, inline code, code blocks, lists, headers, links, and paragraphs.
+ */
+export function renderMarkdown(text) {
+  if (text === null || text === undefined) return '';
+  let html = escapeHtml(String(text));
+
+  // 1. Code blocks (```lang\ncode\n```)
+  html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_match, _lang, code) => {
+    return `<pre style="background: #1e293b; color: #f8fafc; padding: 8px 10px; border-radius: 6px; font-size: 11px; overflow-x: auto; margin: 6px 0; font-family: monospace; border: 1px solid #334155;"><code>${code.trim()}</code></pre>`;
+  });
+
+  // 2. Inline code (`code`)
+  html = html.replace(/`([^`]+)`/g, '<code style="background: #f1f5f9; color: #0f172a; padding: 1px 4px; border-radius: 4px; font-family: monospace; font-size: 11px; border: 1px solid #e2e8f0;">$1</code>');
+
+  // 3. Bold (**text** or __text__)
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+  // 4. Italic (*text* or _text_)
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+  // 5. Headers (### Header, ## Header, # Header)
+  html = html.replace(/^### (.*$)/gm, '<div style="font-weight: 700; font-size: 12px; margin: 6px 0 2px 0; color: #1e293b;">$1</div>');
+  html = html.replace(/^## (.*$)/gm, '<div style="font-weight: 700; font-size: 12.5px; margin: 7px 0 3px 0; color: #0f172a;">$1</div>');
+  html = html.replace(/^# (.*$)/gm, '<div style="font-weight: 800; font-size: 13px; margin: 8px 0 4px 0; color: #0f172a;">$1</div>');
+
+  // 6. Bullet lists (- item or * item or • item)
+  html = html.replace(/^[\*\-\•] (.*$)/gm, '<div style="display: flex; gap: 6px; margin: 2px 0 2px 4px;"><span style="color: #64748b;">•</span><span>$1</span></div>');
+
+  // 7. Numbered lists (1. item)
+  html = html.replace(/^(\d+)\. (.*$)/gm, '<div style="display: flex; gap: 6px; margin: 2px 0 2px 4px;"><span style="color: #64748b; font-weight: 600;">$1.</span><span>$2</span></div>');
+
+  // 8. Safe links [text](url) - HTTP/HTTPS only
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline; word-break: break-all;">$1</a>');
+
+  // 9. Preserve double linebreaks as spacing and single linebreaks as <br/>
+  html = html.replace(/\n\n+/g, '<div style="height: 6px;"></div>');
+  html = html.replace(/\n/g, '<br/>');
+
+  return html;
+}
+
+/**
+ * Extracts action suggestions from conversational model output.
+ */
+export function extractActionSuggestions(text) {
+  if (!text || typeof text !== 'string') return [];
+  const suggestions = [];
+  const regex = /(?:click|open|select|tap|press|navigate to|go to)\s+(?:on\s+)?["'“]([^"'”]+)["'”]/gi;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const item = match[1].trim();
+    if (item && !suggestions.includes(item) && item.length <= 40) {
+      suggestions.push(item);
+    }
+  }
+  return suggestions.slice(0, 4);
+}
+
 const ACTION_REQUEST_PREFIX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?)+/i;
 const ACTION_VERB = /^(?:click|open|type|fill|enter|write|set|press|select|choose|scroll|hover|drag|drop|upload|attach|move|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log\s+in|buy|checkout|inspect|audit|check|go\s+to|navigate)(?:\b|\s)/i;
 
@@ -246,6 +307,7 @@ if (typeof document !== 'undefined') {
     // Root container for E2E matrix synchronization
     const appRoot = document.querySelector('.app-container') || document.body;
     let currentRunId = '';
+    let conversationHistory = [];
 
     // Elements
     const shaderCanvas = document.getElementById('shaderCanvas');
@@ -705,6 +767,16 @@ if (typeof document !== 'undefined') {
         // The gateway answers even when no model is behind it. Say so, instead of
         // presenting the offline reasoner's text as if a model had replied.
         const modelDisconnected = res.modelConnected === false;
+
+        // Record assistant turn in multi-turn history
+        conversationHistory.push({ role: 'assistant', content: res.reply });
+        if (conversationHistory.length > 20) {
+          conversationHistory = conversationHistory.slice(-20);
+        }
+
+        const formattedHtml = renderMarkdown(res.reply);
+        const actionSuggestions = extractActionSuggestions(res.reply);
+
         agentBubble.innerHTML = `
           ${maskCount > 0 || elementCount > 0 ? `
             <div class="perception-badge-row">
@@ -717,8 +789,28 @@ if (typeof document !== 'undefined') {
               ⚠️ No reasoning model connected — this reply did not come from a model.
             </div>
           ` : ''}
-          <div style="font-size: 11.5px; color: #0f172a; line-height: 1.5; white-space: pre-wrap; user-select: text;">${escapeHtml(res.reply)}</div>
+          <div style="font-size: 11.5px; color: #0f172a; line-height: 1.5; user-select: text;">${formattedHtml}</div>
+          ${actionSuggestions.length > 0 ? `
+            <div class="chat-action-chips" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;">
+              ${actionSuggestions.map(act => `
+                <button class="chat-action-chip" style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; color: #1d4ed8; font-size: 10.5px; font-weight: 600; cursor: pointer;" data-action="click ${escapeHtml(act)}">
+                  ⚡ Click "${escapeHtml(act)}"
+                </button>
+              `).join('')}
+            </div>
+          ` : ''}
         `;
+
+        if (actionSuggestions.length > 0) {
+          agentBubble.querySelectorAll('.chat-action-chip').forEach(chip => {
+            chip.addEventListener('click', (e) => {
+              e.preventDefault();
+              const actionGoal = chip.getAttribute('data-action');
+              if (actionGoal) executeGoal(actionGoal);
+            });
+          });
+        }
+
         setAgentStatus(modelDisconnected ? 'failed-safe' : 'idle');
         chatMessages.scrollTop = chatMessages.scrollHeight;
         return;
@@ -799,6 +891,15 @@ if (typeof document !== 'undefined') {
       chatMessages.scrollTop = chatMessages.scrollHeight;
       setAgentStatus('complete');
 
+      // Record action execution turn in multi-turn history
+      conversationHistory.push({
+        role: 'assistant',
+        content: `Executed ${action.kind} on ${action.targetLocalId || 'page'}. Rationale: ${action.rationale || 'Action executed and verified complete'}`
+      });
+      if (conversationHistory.length > 20) {
+        conversationHistory = conversationHistory.slice(-20);
+      }
+
       // Update Telemetry if measured
       if (res.telemetry) {
         if (meterClientLatency) meterClientLatency.textContent = `${res.telemetry.clientLatencyMs} ms`;
@@ -828,6 +929,12 @@ if (typeof document !== 'undefined') {
     async function executeGoal(goalText) {
       if (!goalText) return;
       currentGoalText = goalText;
+
+      // Record user turn in multi-turn history
+      conversationHistory.push({ role: 'user', content: goalText });
+      if (conversationHistory.length > 20) {
+        conversationHistory = conversationHistory.slice(-20);
+      }
 
       const welcomeBox = chatMessages.querySelector('.welcome-card');
       if (welcomeBox) welcomeBox.remove();
@@ -896,7 +1003,8 @@ if (typeof document !== 'undefined') {
           type: messageType,
           [payloadKey]: goalText,
           runId: currentRunId,
-          tabId: currentActiveTabId
+          tabId: currentActiveTabId,
+          history: conversationHistory.slice(-10)
         }, (res) => {
           if (settled) return;
           settled = true;

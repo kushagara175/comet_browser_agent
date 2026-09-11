@@ -207,7 +207,7 @@ export function createServer() {
                         res.end(JSON.stringify({ error: validation.errorMessage || 'Invalid chat request payload' }));
                         return;
                     }
-                    const { message, elements, sanitizedTitle, maskCount } = validation.payload;
+                    const { message, elements, sanitizedTitle, maskCount, history } = validation.payload;
                     const hasSanitizedContext = Array.isArray(elements) && elements.length > 0;
                     const systemPrompt = hasSanitizedContext
                         ? `You are PrivaPilot, a privacy-first browser AI assistant. The user is asking about the current webpage. Review the sanitized elements and answer concisely.`
@@ -224,7 +224,7 @@ export function createServer() {
                     // Single adapter for every backend. It applies a bounded inference timeout
                     // and degrades to an explanatory offline reply instead of throwing, so a
                     // missing or slow model never becomes an opaque 500 in the extension.
-                    const chatResult = await engine.chat(systemPrompt, fullUserMessage);
+                    const chatResult = await engine.chat(systemPrompt, fullUserMessage, history);
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({
                         reply: chatResult.reply,

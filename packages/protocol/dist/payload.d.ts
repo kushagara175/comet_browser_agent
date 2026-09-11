@@ -151,6 +151,13 @@ export declare function toSanitizedDisplayPayload(payload: SanitizedNetworkPaylo
     status: string;
 };
 /**
+ * A message in a multi-turn chat conversation.
+ */
+export interface ChatHistoryMessage {
+    readonly role: 'user' | 'assistant';
+    readonly content: string;
+}
+/**
  * Closed Page-Aware Chat Payload schema. Derived strictly from SanitizedContext.
  */
 export interface SanitizedChatPayload {
@@ -160,6 +167,7 @@ export interface SanitizedChatPayload {
     readonly elements: ReadonlyArray<SanitizedElement>;
     readonly sanitizedTitle: string;
     readonly maskCount: number;
+    readonly history?: ReadonlyArray<ChatHistoryMessage>;
 }
 /**
  * Contextless General Chat Payload schema. Zero browser/page state.
@@ -167,5 +175,6 @@ export interface SanitizedChatPayload {
 export interface GeneralChatPayload {
     readonly protocolVersion: '1.0';
     readonly message: string;
+    readonly history?: ReadonlyArray<ChatHistoryMessage>;
 }
 //# sourceMappingURL=payload.d.ts.map

@@ -49,6 +49,7 @@ export interface ChatResult {
 /** Azure OpenAI and Azure AI Foundry use `api-key`; other OpenAI-compatible
  * providers conventionally use an OAuth-style Bearer token. */
 export declare function buildProviderAuthHeaders(endpoint: string, apiKey?: string): Record<string, string>;
+export declare function stripThinkingTags(raw: string): string;
 export declare class VlmReasoningEngine {
     private config;
     private readonly mockFallback;
@@ -80,7 +81,10 @@ export declare class VlmReasoningEngine {
      * Sanitized conversational turn. Never throws: a backend failure degrades to an
      * explanatory offline reply rather than surfacing a 500 to the extension.
      */
-    chat(systemPrompt: string, userMessage: string): Promise<ChatResult>;
+    chat(systemPrompt: string, userMessage: string, history?: Array<{
+        role: 'user' | 'assistant';
+        content: string;
+    }>): Promise<ChatResult>;
     private buildOfflineReply;
     private chatViaOllama;
     private chatViaOpenAICompatible;

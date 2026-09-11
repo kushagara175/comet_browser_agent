@@ -11,6 +11,7 @@ import {
   SanitizedNetworkPayload,
   SanitizedChatPayload,
   GeneralChatPayload,
+  ChatHistoryMessage,
   ActionProposal,
   validateActionProposal,
   toSanitizedNetworkPayload
@@ -200,14 +201,19 @@ export class ReasoningHttpClient {
    * Transmits sanitized page-aware context projection to Chat endpoint.
    * Strictly accepts SanitizedContext only (never raw captures or URLs).
    */
-  async requestChat(sanitized: SanitizedContext, message: string): Promise<ChatReply> {
+  async requestChat(
+    sanitized: SanitizedContext,
+    message: string,
+    history?: ReadonlyArray<ChatHistoryMessage>
+  ): Promise<ChatReply> {
     const payload: SanitizedChatPayload = {
       _brand: 'SanitizedChatPayload_Verified',
       protocolVersion: '1.0',
       message,
       elements: sanitized.elements,
       sanitizedTitle: sanitized.pageState.title,
-      maskCount: sanitized.maskCount
+      maskCount: sanitized.maskCount,
+      ...(history && history.length > 0 ? { history } : {})
     };
 
     assertNoCanaryLeak(payload, 'Outgoing Chat Payload');
@@ -225,7 +231,8 @@ export class ReasoningHttpClient {
           message: payload.message,
           elements: payload.elements,
           sanitizedTitle: payload.sanitizedTitle,
-          maskCount: payload.maskCount
+          maskCount: payload.maskCount,
+          ...(payload.history ? { history: payload.history } : {})
         })
       },
       'Chat request',
@@ -243,10 +250,14 @@ export class ReasoningHttpClient {
   /**
    * Transmits contextless general query (zero page or browser state).
    */
-  async requestGeneralChat(message: string): Promise<ChatReply> {
+  async requestGeneralChat(
+    message: string,
+    history?: ReadonlyArray<ChatHistoryMessage>
+  ): Promise<ChatReply> {
     const payload: GeneralChatPayload = {
       protocolVersion: '1.0',
-      message
+      message,
+      ...(history && history.length > 0 ? { history } : {})
     };
 
     const response = await this.fetchWithTimeout(

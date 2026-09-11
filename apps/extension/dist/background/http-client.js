@@ -132,14 +132,15 @@ export class ReasoningHttpClient {
      * Transmits sanitized page-aware context projection to Chat endpoint.
      * Strictly accepts SanitizedContext only (never raw captures or URLs).
      */
-    async requestChat(sanitized, message) {
+    async requestChat(sanitized, message, history) {
         const payload = {
             _brand: 'SanitizedChatPayload_Verified',
             protocolVersion: '1.0',
             message,
             elements: sanitized.elements,
             sanitizedTitle: sanitized.pageState.title,
-            maskCount: sanitized.maskCount
+            maskCount: sanitized.maskCount,
+            ...(history && history.length > 0 ? { history } : {})
         };
         assertNoCanaryLeak(payload, 'Outgoing Chat Payload');
         const response = await this.fetchWithTimeout(`${this.serverBaseUrl}/api/v1/chat`, {
@@ -153,7 +154,8 @@ export class ReasoningHttpClient {
                 message: payload.message,
                 elements: payload.elements,
                 sanitizedTitle: payload.sanitizedTitle,
-                maskCount: payload.maskCount
+                maskCount: payload.maskCount,
+                ...(payload.history ? { history: payload.history } : {})
             })
         }, 'Chat request', CHAT_TIMEOUT_MS);
         if (!response.ok) {
@@ -165,10 +167,11 @@ export class ReasoningHttpClient {
     /**
      * Transmits contextless general query (zero page or browser state).
      */
-    async requestGeneralChat(message) {
+    async requestGeneralChat(message, history) {
         const payload = {
             protocolVersion: '1.0',
-            message
+            message,
+            ...(history && history.length > 0 ? { history } : {})
         };
         const response = await this.fetchWithTimeout(`${this.serverBaseUrl}/api/v1/chat`, {
             method: 'POST',

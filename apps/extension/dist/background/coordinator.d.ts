@@ -11,7 +11,7 @@
  * 7. Semantically Verify UI Outcome
  * 8. Repeat perception cycle up to bounded step budget or until finish/failure
  */
-import { AgentState, RawCapture, SanitizedContext, ActionProposal, RunTelemetry } from '@privapilot/protocol';
+import { AgentState, RawCapture, SanitizedContext, ActionProposal, ChatHistoryMessage, RunTelemetry } from '@privapilot/protocol';
 import { BrowserAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
@@ -152,11 +152,11 @@ export declare class RunCoordinator {
     /**
      * Performs page-aware chat strictly across the privacy boundary.
      */
-    chatWithPage(userMessage: string): Promise<ChatOutcome>;
+    chatWithPage(userMessage: string, history?: ReadonlyArray<ChatHistoryMessage>): Promise<ChatOutcome>;
     /**
      * Directly chats with the reasoning model without page context or perception overhead.
      */
-    chatWithoutPage(userMessage: string): Promise<ChatOutcome>;
+    chatWithoutPage(userMessage: string, history?: ReadonlyArray<ChatHistoryMessage>): Promise<ChatOutcome>;
     /**
      * Contextless chat turn. Reports a real connection failure instead of claiming
      * the model is ready — that claim is what made a broken model look like a

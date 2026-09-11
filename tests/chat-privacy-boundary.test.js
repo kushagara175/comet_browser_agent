@@ -137,21 +137,80 @@ test('Chat Payload Schema: Raw URL and raw DOM are absent from chat payload stru
   }
 });
 
-test('Chat Fail-Closed: Sanitization error produces zero network requests', async () => {
-  let networkCallMade = false;
+test('Chat Multi-Turn: requestChat and requestGeneralChat transmit history in wire payload', async () => {
+  const client = new ReasoningHttpClient('http://localhost:4501');
+
+  const cleanContext = {
+    _brand: 'SanitizedContext_Verified',
+    protocolVersion: '1.0',
+    runId: 'r_multi',
+    captureId: 'cap_multi',
+    goal: 'Follow-up question',
+    sanitizedScreenshotDataUrl: 'data:image/png;base64,...',
+    elements: [],
+    pageState: {
+      title: 'Portal',
+      viewport: [1280, 720]
+    },
+    maskCount: 0,
+    payloadDigestSha256: 'sha256_123',
+    timestamp: Date.now()
+  };
+
+  const history = [
+    { role: 'user', content: 'What is this page?' },
+    { role: 'assistant', content: 'This is the government portal.' }
+  ];
+
+  let capturedPayload = null;
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => {
-    networkCallMade = true;
-    return { ok: true, json: async () => ({}) };
+  globalThis.fetch = async (_url, options) => {
+    capturedPayload = JSON.parse(options.body);
+    return {
+      ok: true,
+      json: async () => ({ reply: 'You can click on services.' })
+    };
   };
 
   try {
-    // If sanitization fails (e.g. unverified mask count), the coordinator catches it and returns local fail-closed
-    // Simulating fail-closed flow
-    const failClosedMessage = 'Privacy Boundary Active: Sensitive content may be present. Page context transmission was blocked.';
-    assert.ok(failClosedMessage.includes('blocked'));
-    assert.strictEqual(networkCallMade, false, 'No network call should be made when sanitization fails');
+    // 1. Page-aware chat with history
+    await client.requestChat(cleanContext, 'Where are the services?', history);
+    assert.ok(capturedPayload !== null);
+    assert.strictEqual(capturedPayload.message, 'Where are the services?');
+    assert.deepStrictEqual(capturedPayload.history, history);
+
+    // 2. General chat with history
+    capturedPayload = null;
+    await client.requestGeneralChat('What about notifications?', history);
+    assert.ok(capturedPayload !== null);
+    assert.strictEqual(capturedPayload.message, 'What about notifications?');
+    assert.deepStrictEqual(capturedPayload.history, history);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('Chat UI: renderMarkdown and extractActionSuggestions work safely and cleanly', async () => {
+  const { renderMarkdown, extractActionSuggestions } = await import('../apps/extension/src/sidepanel/sidepanel.js');
+
+  // 1. XSS Escaping
+  const dangerous = 'Hello <script>alert(1)</script> and <img src="x" onerror="alert(2)">';
+  const renderedSafe = renderMarkdown(dangerous);
+  assert.strictEqual(renderedSafe.includes('<script>'), false);
+  assert.strictEqual(renderedSafe.includes('alert(1)'), true);
+  assert.strictEqual(renderedSafe.includes('&lt;script&gt;'), true);
+
+  // 2. Formatting (Bold, code, headers, bullets, links)
+  const mdInput = '### Overview\nHere is **important** info with `inline code`:\n* Point 1\n* Point 2\nCheck [Google](https://google.com) for details.';
+  const renderedMd = renderMarkdown(mdInput);
+  assert.ok(renderedMd.includes('<strong>important</strong>'));
+  assert.ok(renderedMd.includes('<code'));
+  assert.ok(renderedMd.includes('Point 1'));
+  assert.ok(renderedMd.includes('<a href="https://google.com" target="_blank"'));
+
+  // 3. Action suggestions extraction
+  const replyWithActions = 'You can click "Earth Observation" or navigate to "Bhuvan Store" to proceed.';
+  const actions = extractActionSuggestions(replyWithActions);
+  assert.deepStrictEqual(actions, ['Earth Observation', 'Bhuvan Store']);
+});
+

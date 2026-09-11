@@ -19144,14 +19144,15 @@ var ReasoningHttpClient = class {
    * Transmits sanitized page-aware context projection to Chat endpoint.
    * Strictly accepts SanitizedContext only (never raw captures or URLs).
    */
-  async requestChat(sanitized, message) {
+  async requestChat(sanitized, message, history) {
     const payload = {
       _brand: "SanitizedChatPayload_Verified",
       protocolVersion: "1.0",
       message,
       elements: sanitized.elements,
       sanitizedTitle: sanitized.pageState.title,
-      maskCount: sanitized.maskCount
+      maskCount: sanitized.maskCount,
+      ...history && history.length > 0 ? { history } : {}
     };
     assertNoCanaryLeak(payload, "Outgoing Chat Payload");
     const response = await this.fetchWithTimeout(
@@ -19167,7 +19168,8 @@ var ReasoningHttpClient = class {
           message: payload.message,
           elements: payload.elements,
           sanitizedTitle: payload.sanitizedTitle,
-          maskCount: payload.maskCount
+          maskCount: payload.maskCount,
+          ...payload.history ? { history: payload.history } : {}
         })
       },
       "Chat request",
@@ -19182,10 +19184,11 @@ var ReasoningHttpClient = class {
   /**
    * Transmits contextless general query (zero page or browser state).
    */
-  async requestGeneralChat(message) {
+  async requestGeneralChat(message, history) {
     const payload = {
       protocolVersion: "1.0",
-      message
+      message,
+      ...history && history.length > 0 ? { history } : {}
     };
     const response = await this.fetchWithTimeout(
       `${this.serverBaseUrl}/api/v1/chat`,
@@ -20833,15 +20836,15 @@ var RunCoordinator = class {
   /**
    * Performs page-aware chat strictly across the privacy boundary.
    */
-  async chatWithPage(userMessage) {
+  async chatWithPage(userMessage, history) {
     try {
       const PAGE_CONTEXT_PATTERN = /\b(this page|current page|screen|button|form|field|input|website|site|tab|summarize|read|click|find|where|select|scroll|submit|on screen)\b/i;
       if (!PAGE_CONTEXT_PATTERN.test(userMessage.trim())) {
-        return this.generalChat(userMessage);
+        return this.generalChat(userMessage, void 0, history);
       }
       const activeTab = await this.browser.getActiveTab(this.currentTabId);
       if (!activeTab || !activeTab.id) {
-        return this.generalChat(userMessage);
+        return this.generalChat(userMessage, void 0, history);
       }
       let domResponse = null;
       try {
@@ -20852,7 +20855,7 @@ var RunCoordinator = class {
       } catch (_) {
       }
       if (!domResponse || !domResponse.success || !domResponse.snapshot) {
-        return this.generalChat(userMessage);
+        return this.generalChat(userMessage, void 0, history);
       }
       let screenshotDataUrl = "";
       try {
@@ -20879,12 +20882,12 @@ var RunCoordinator = class {
           goal: userMessage
         });
       } catch (_) {
-        return this.generalChat(userMessage);
+        return this.generalChat(userMessage, void 0, history);
       }
       if (this.listeners.onSanitizationComplete) {
         this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
       }
-      const chatRes = await this.httpClient.requestChat(sanitized, userMessage);
+      const chatRes = await this.httpClient.requestChat(sanitized, userMessage, history);
       return {
         success: true,
         reply: chatRes.reply,
@@ -20893,23 +20896,23 @@ var RunCoordinator = class {
         modelConnected: chatRes.modelConnected !== false
       };
     } catch (err) {
-      return this.generalChat(userMessage, err);
+      return this.generalChat(userMessage, err, history);
     }
   }
   /**
    * Directly chats with the reasoning model without page context or perception overhead.
    */
-  async chatWithoutPage(userMessage) {
-    return this.generalChat(userMessage);
+  async chatWithoutPage(userMessage, history) {
+    return this.generalChat(userMessage, void 0, history);
   }
   /**
    * Contextless chat turn. Reports a real connection failure instead of claiming
    * the model is ready — that claim is what made a broken model look like a
    * working one with nothing to say.
    */
-  async generalChat(userMessage, priorError) {
+  async generalChat(userMessage, priorError, history) {
     try {
-      const genRes = await this.httpClient.requestGeneralChat(userMessage);
+      const genRes = await this.httpClient.requestGeneralChat(userMessage, history);
       return {
         success: true,
         reply: genRes.reply,
@@ -21271,10 +21274,10 @@ async function handleSidepanelRequest(message) {
     });
   }
   if (message.type === "GENERAL_CHAT") {
-    return coordinator.chatWithoutPage(message.message || "");
+    return coordinator.chatWithoutPage(message.message || "", message.history);
   }
   if (message.type === "CHAT_WITH_PAGE") {
-    return coordinator.chatWithPage(message.message || "");
+    return coordinator.chatWithPage(message.message || "", message.history);
   }
   throw new Error(`Unsupported side-panel request: ${message?.type || "unknown"}`);
 }
@@ -21321,7 +21324,7 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
     if (message.type === "GENERAL_CHAT") {
-      coordinator.chatWithoutPage(message.message || "").then((res) => {
+      coordinator.chatWithoutPage(message.message || "", message.history).then((res) => {
         sendResponse(res);
       }).catch((err) => {
         sendResponse({
@@ -21335,7 +21338,7 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
     if (message.type === "CHAT_WITH_PAGE") {
-      coordinator.chatWithPage(message.message || "").then((res) => {
+      coordinator.chatWithPage(message.message || "", message.history).then((res) => {
         sendResponse(res);
       }).catch((err) => {
         sendResponse({

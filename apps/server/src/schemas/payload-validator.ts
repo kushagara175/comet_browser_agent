@@ -30,7 +30,8 @@ const ALLOWED_CHAT_ROOT_KEYS = new Set([
   'message',
   'elements',
   'sanitizedTitle',
-  'maskCount'
+  'maskCount',
+  'history'
 ]);
 
 const ALLOWED_ELEMENT_KEYS = new Set([
@@ -627,6 +628,40 @@ export function validateSanitizedChatPayload(body: any): ValidationResult<Saniti
         return { isValid: false, errorMessage: `Duplicate element localId at index ${i}` };
       }
       seenLocalIds.add(el.localId);
+    }
+  }
+
+  // 7. History (Multi-turn conversational context)
+  if (body.history !== undefined) {
+    if (!Array.isArray(body.history)) {
+      return { isValid: false, errorMessage: 'Field "history" must be an array' };
+    }
+    if (body.history.length > 30) {
+      return { isValid: false, errorMessage: 'Field "history" exceeds maximum allowed count of 30 messages' };
+    }
+    for (let i = 0; i < body.history.length; i++) {
+      const entry = body.history[i];
+      if (!isPlainObject(entry)) {
+        return { isValid: false, errorMessage: `History entry at index ${i} must be an object` };
+      }
+      const entryKeys = Object.getOwnPropertyNames(entry);
+      for (const k of entryKeys) {
+        if (k !== 'role' && k !== 'content') {
+          return { isValid: false, errorMessage: `History entry at index ${i} contains unknown property "${k}"` };
+        }
+      }
+      if (entry.role !== 'user' && entry.role !== 'assistant') {
+        return { isValid: false, errorMessage: `History entry at index ${i} role must be "user" or "assistant"` };
+      }
+      if (typeof entry.content !== 'string') {
+        return { isValid: false, errorMessage: `History entry at index ${i} content must be a string` };
+      }
+      if (entry.content.length > 4000) {
+        return { isValid: false, errorMessage: `History entry at index ${i} content exceeds maximum length of 4000 characters` };
+      }
+      if (hasProhibitedScriptPattern(entry.content)) {
+        return { isValid: false, errorMessage: `History entry at index ${i} contains prohibited script patterns` };
+      }
     }
   }
 

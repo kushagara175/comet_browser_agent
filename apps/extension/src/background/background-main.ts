@@ -74,11 +74,11 @@ async function handleSidepanelRequest(message: any): Promise<any> {
   }
 
   if (message.type === 'GENERAL_CHAT') {
-    return coordinator.chatWithoutPage(message.message || '');
+    return coordinator.chatWithoutPage(message.message || '', message.history);
   }
 
   if (message.type === 'CHAT_WITH_PAGE') {
-    return coordinator.chatWithPage(message.message || '');
+    return coordinator.chatWithPage(message.message || '', message.history);
   }
 
   throw new Error(`Unsupported side-panel request: ${message?.type || 'unknown'}`);
@@ -134,7 +134,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (message.type === 'GENERAL_CHAT') {
-      coordinator.chatWithoutPage(message.message || '').then((res) => {
+      coordinator.chatWithoutPage(message.message || '', message.history).then((res) => {
         sendResponse(res);
       }).catch((err) => {
         sendResponse({
@@ -149,7 +149,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (message.type === 'CHAT_WITH_PAGE') {
-      coordinator.chatWithPage(message.message || '').then((res) => {
+      coordinator.chatWithPage(message.message || '', message.history).then((res) => {
         sendResponse(res);
       }).catch((err) => {
         sendResponse({

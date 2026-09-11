@@ -227,7 +227,7 @@ export function createServer(): http.Server {
             return;
           }
 
-          const { message, elements, sanitizedTitle, maskCount } = validation.payload;
+          const { message, elements, sanitizedTitle, maskCount, history } = validation.payload;
 
           const hasSanitizedContext = Array.isArray(elements) && elements.length > 0;
 
@@ -250,7 +250,7 @@ export function createServer(): http.Server {
           // Single adapter for every backend. It applies a bounded inference timeout
           // and degrades to an explanatory offline reply instead of throwing, so a
           // missing or slow model never becomes an opaque 500 in the extension.
-          const chatResult = await engine.chat(systemPrompt, fullUserMessage);
+          const chatResult = await engine.chat(systemPrompt, fullUserMessage, history as any);
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({

@@ -142,6 +142,16 @@ function isVisionModel(model: any): boolean {
   return families.some((f) => VISION_FAMILIES.has(String(f).toLowerCase()));
 }
 
+export function stripThinkingTags(raw: string): string {
+  if (!raw || typeof raw !== 'string') return '';
+  return raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+    .replace(/<think>[\s\S]*$/gi, '')
+    .replace(/<thought>[\s\S]*$/gi, '')
+    .trim();
+}
+
 export class VlmReasoningEngine {
   private config: VlmConfig;
   private readonly mockFallback: MockReasoningEngine;
@@ -374,7 +384,11 @@ export class VlmReasoningEngine {
    * Sanitized conversational turn. Never throws: a backend failure degrades to an
    * explanatory offline reply rather than surfacing a 500 to the extension.
    */
-  async chat(systemPrompt: string, userMessage: string): Promise<ChatResult> {
+  async chat(
+    systemPrompt: string,
+    userMessage: string,
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<ChatResult> {
     const status = await this.getStatus();
 
     if (status.provider === 'mock' || !status.isOnline) {
@@ -390,10 +404,10 @@ export class VlmReasoningEngine {
     try {
       const raw =
         status.provider === 'ollama'
-          ? await this.chatViaOllama(status, systemPrompt, userMessage)
-          : await this.chatViaOpenAICompatible(status, systemPrompt, userMessage);
+          ? await this.chatViaOllama(status, systemPrompt, userMessage, history)
+          : await this.chatViaOpenAICompatible(status, systemPrompt, userMessage, history);
 
-      const reply = raw.trim();
+      const reply = stripThinkingTags(raw);
       if (!reply) {
         throw new Error('Model returned an empty response');
       }
@@ -439,7 +453,26 @@ export class VlmReasoningEngine {
     );
   }
 
-  private async chatViaOllama(status: EngineStatus, systemPrompt: string, userMessage: string): Promise<string> {
+  private async chatViaOllama(
+    status: EngineStatus,
+    systemPrompt: string,
+    userMessage: string,
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<string> {
+    const messages: Array<{ role: string; content: string }> = [
+      { role: 'system', content: systemPrompt }
+    ];
+
+    if (Array.isArray(history) && history.length > 0) {
+      for (const h of history) {
+        if (h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string') {
+          messages.push({ role: h.role, content: h.content });
+        }
+      }
+    }
+
+    messages.push({ role: 'user', content: userMessage });
+
     const res = await this.fetchWithTimeout(
       `${status.endpoint.replace(/\/$/, '')}/api/chat`,
       {
@@ -447,10 +480,7 @@ export class VlmReasoningEngine {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: status.modelName,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage }
-          ],
+          messages,
           stream: false,
           options: { temperature: 0.4, num_ctx: this.numCtx }
         })
@@ -462,13 +492,14 @@ export class VlmReasoningEngine {
       throw new Error(`Ollama returned ${res.status}: ${await this.safeErrorText(res)}`);
     }
     const data: any = await res.json();
-    return data?.message?.content || '';
+    return stripThinkingTags(data?.message?.content || '');
   }
 
   private async chatViaOpenAICompatible(
     status: EngineStatus,
     systemPrompt: string,
-    userMessage: string
+    userMessage: string,
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>
   ): Promise<string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -476,12 +507,24 @@ export class VlmReasoningEngine {
     };
 
     const isOpenRouter = status.endpoint.includes('openrouter.ai');
+
+    const messages: Array<{ role: string; content: string }> = [
+      { role: 'system', content: systemPrompt }
+    ];
+
+    if (Array.isArray(history) && history.length > 0) {
+      for (const h of history) {
+        if (h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string') {
+          messages.push({ role: h.role, content: h.content });
+        }
+      }
+    }
+
+    messages.push({ role: 'user', content: userMessage });
+
     const requestBody: any = {
       model: status.modelName,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage }
-      ],
+      messages,
       temperature: 0.4,
       max_tokens: this.maxTokens
     };
@@ -507,7 +550,8 @@ export class VlmReasoningEngine {
       throw new Error(`Endpoint returned ${res.status}: ${await this.safeErrorText(res)}`);
     }
     const data: any = await res.json();
-    return data?.choices?.[0]?.message?.content || '';
+    const rawContent = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || '';
+    return stripThinkingTags(rawContent);
   }
 
   /**
@@ -763,10 +807,7 @@ export class VlmReasoningEngine {
    */
   private parseActionProposal(content: string, payload: SanitizedNetworkPayload): ActionProposal {
     // 1. Strip thinking tags: <think> ... </think> or <thought> ... </thought>
-    let cleanJson = (content || '')
-      .replace(/<think>[\s\S]*?<\/think>/gi, '')
-      .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
-      .trim();
+    let cleanJson = stripThinkingTags(content || '');
 
     // 2. Strip markdown code fences if present (```json ... ```)
     const codeBlockMatch = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);

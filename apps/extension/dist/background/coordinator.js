@@ -1758,17 +1758,17 @@ export class RunCoordinator {
     /**
      * Performs page-aware chat strictly across the privacy boundary.
      */
-    async chatWithPage(userMessage) {
+    async chatWithPage(userMessage, history) {
         try {
             // Fast-track: Conversational greetings/queries without page-context intent
             // bypass heavy DOM snapshot, full-screenshot capture, and ONNX initialization.
             const PAGE_CONTEXT_PATTERN = /\b(this page|current page|screen|button|form|field|input|website|site|tab|summarize|read|click|find|where|select|scroll|submit|on screen)\b/i;
             if (!PAGE_CONTEXT_PATTERN.test(userMessage.trim())) {
-                return this.generalChat(userMessage);
+                return this.generalChat(userMessage, undefined, history);
             }
             const activeTab = await this.browser.getActiveTab(this.currentTabId);
             if (!activeTab || !activeTab.id) {
-                return this.generalChat(userMessage);
+                return this.generalChat(userMessage, undefined, history);
             }
             let domResponse = null;
             try {
@@ -1781,7 +1781,7 @@ export class RunCoordinator {
                 // Tab content script not reachable
             }
             if (!domResponse || !domResponse.success || !domResponse.snapshot) {
-                return this.generalChat(userMessage);
+                return this.generalChat(userMessage, undefined, history);
             }
             let screenshotDataUrl = '';
             try {
@@ -1811,12 +1811,12 @@ export class RunCoordinator {
             }
             catch (_) {
                 // Sanitizer host unavailable or timed out; fallback to general chat
-                return this.generalChat(userMessage);
+                return this.generalChat(userMessage, undefined, history);
             }
             if (this.listeners.onSanitizationComplete) {
                 this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
             }
-            const chatRes = await this.httpClient.requestChat(sanitized, userMessage);
+            const chatRes = await this.httpClient.requestChat(sanitized, userMessage, history);
             return {
                 success: true,
                 reply: chatRes.reply,
@@ -1826,23 +1826,23 @@ export class RunCoordinator {
             };
         }
         catch (err) {
-            return this.generalChat(userMessage, err);
+            return this.generalChat(userMessage, err, history);
         }
     }
     /**
      * Directly chats with the reasoning model without page context or perception overhead.
      */
-    async chatWithoutPage(userMessage) {
-        return this.generalChat(userMessage);
+    async chatWithoutPage(userMessage, history) {
+        return this.generalChat(userMessage, undefined, history);
     }
     /**
      * Contextless chat turn. Reports a real connection failure instead of claiming
      * the model is ready — that claim is what made a broken model look like a
      * working one with nothing to say.
      */
-    async generalChat(userMessage, priorError) {
+    async generalChat(userMessage, priorError, history) {
         try {
-            const genRes = await this.httpClient.requestGeneralChat(userMessage);
+            const genRes = await this.httpClient.requestGeneralChat(userMessage, history);
             return {
                 success: true,
                 reply: genRes.reply,
