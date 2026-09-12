@@ -24,19 +24,17 @@
 
     <!-- VIEW 1: AI Mission Control HUD -->
     <div id="aiWorkerView" class="ai-panel hidden">
-      <!-- Top Header & Status Bar -->
+      <!-- Top Header & Status Bar (Clean Minimal Gemini Style) -->
       <div class="ai-header">
         <div class="header-left">
           <button id="backToConnectBtn" class="top-left-logo-btn" title="PrivaPilot">
-            <img src="../../assets/export.png" width="22" height="22" alt="PrivaPilot Logo" class="top-left-logo-img" />
+            <img src="../../assets/export.png" width="20" height="20" alt="PrivaPilot Logo" class="top-left-logo-img" />
           </button>
-          <div class="header-title-col">
-            <div class="brand-row">
-              <span class="brand-title">PrivaPilot</span>
-              <button id="reloadExtensionBtn" class="reload-icon-btn" title="Reload &amp; Reconnect">🔄</button>
-            </div>
-            <span id="activeTabUrl" class="active-url-text" title="Current Tab">Loading tab...</span>
+          <div class="brand-row">
+            <span class="brand-title">PrivaPilot</span>
+            <button id="reloadExtensionBtn" class="reload-icon-btn" title="Reload &amp; Reconnect">🔄</button>
           </div>
+          <span id="activeTabUrl" class="active-url-text" style="display: none;"></span>
         </div>
         <div class="header-right-badges">
           <!-- Connectivity Dot Indicator: Green = Online, Red = Offline -->
@@ -45,11 +43,12 @@
             <span id="visionProviderText" style="display: none;"></span>
           </span>
           <span id="agentStatusBadge" class="status-pill status-idle" style="display: none;"></span>
+          <button type="button" id="menuToggleBtn" class="menu-dots-btn" title="Developer Tools &amp; Inspector">⋮</button>
         </div>
       </div>
 
-      <!-- Navigation Tabs -->
-      <div class="hud-tabs">
+      <!-- Navigation Tabs (Hidden by default for ultra-clean UI; toggled via ⋮ menu) -->
+      <div id="hudTabs" class="hud-tabs hidden">
         <button id="tabChatBtn" class="hud-tab-btn active">Chat</button>
         <button id="tabInspectorBtn" class="hud-tab-btn">Inspector</button>
         <button id="tabPayloadBtn" class="hud-tab-btn">Wire Payload</button>
@@ -66,8 +65,8 @@
           </div>
           <div class="gemini-suggestion-chips">
             <button type="button" class="gemini-chip" data-prompt="What can you do?">What can you do?</button>
-            <button type="button" class="gemini-chip" data-prompt="Summarize this page">Summarize this page</button>
-            <button type="button" class="gemini-chip" data-prompt="Help me fill out this form">Help me fill out this form</button>
+            <button type="button" class="gemini-chip" data-prompt="What kinds of questions can I ask?">What kinds of questions can I ask?</button>
+            <button type="button" class="gemini-chip" data-prompt="Help me think through a problem">Help me think through a problem</button>
           </div>
         </div>
 
@@ -78,50 +77,71 @@
           <div class="chat-input-card">
             <!-- Active Tab Sharing Strip -->
             <div class="chat-tab-sharing-strip">
-              <span class="sharing-icon">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="2" y1="12" x2="22" y2="12"></line>
-                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                </svg>
-              </span>
-              <span id="sharingTabTitle" class="sharing-tab-title">Sharing &ldquo;New Tab&rdquo;</span>
+              <div class="sharing-left">
+                <span class="sharing-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <circle cx="12" cy="12" r="4"></circle>
+                    <line x1="21.17" y1="8" x2="12" y2="8"></line>
+                    <line x1="3.95" y1="6.06" x2="8.54" y2="14"></line>
+                    <line x1="10.88" y1="21.94" x2="15.46" y2="14"></line>
+                  </svg>
+                </span>
+                <span id="sharingTabTitle" class="sharing-tab-title">Sharing &ldquo;New Tab&rdquo;</span>
+              </div>
+              <button type="button" id="closeSharingBtn" class="close-sharing-btn" title="Toggle active tab context">✕</button>
             </div>
 
-            <form id="chatForm" class="chat-bar">
-              <input
-                type="text"
-                id="chatInput"
-                name="taskInput"
-                placeholder="Ask PrivaPilot on this page..."
-                autocomplete="off"
-              />
-              <div class="chat-bar-bottom">
-                <div class="chat-bar-left-tools">
-                  <button type="button" id="chatToolBtn" class="chat-tool-btn" title="Inspect &amp; Automate">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                      <line x1="12" y1="5" x2="12" y2="19"></line>
-                      <line x1="5" y1="12" x2="19" y2="12"></line>
-                    </svg>
-                  </button>
+            <!-- Inner Edgy Input Box -->
+            <div class="chat-inner-box">
+              <form id="chatForm" class="chat-bar">
+                <input
+                  type="text"
+                  id="chatInput"
+                  name="taskInput"
+                  placeholder="Type / to use skills"
+                  autocomplete="off"
+                />
+                <div class="chat-bar-bottom">
+                  <div class="chat-bar-left-tools">
+                    <button type="button" id="chatToolBtn" class="chat-tool-btn" title="Add tools &amp; skills">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                      </svg>
+                    </button>
+                    <button type="button" id="chatSlidersBtn" class="chat-tool-btn" title="Inspector &amp; Telemetry">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="4" y1="8" x2="20" y2="8"></line>
+                        <circle cx="8" cy="8" r="2.5" fill="currentColor"></circle>
+                        <line x1="4" y1="16" x2="20" y2="16"></line>
+                        <circle cx="16" cy="16" r="2.5" fill="currentColor"></circle>
+                      </svg>
+                    </button>
+                  </div>
+                  <div class="chat-bar-right-actions">
+                    <button type="button" id="modelSelectBtn" class="model-select-chip" title="Active Reasoning Model: Mistral-Large-3">
+                      <span>Mistral-Large-3</span>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </button>
+                    <button type="submit" id="sendBtn" class="send-btn mode-mic" title="Send Instruction" aria-label="Start Run">
+                      <svg class="icon-mic" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="4" y="9" width="2.5" height="6" rx="1.25"/>
+                        <rect x="9.5" y="5" width="2.5" height="14" rx="1.25"/>
+                        <rect x="15" y="8" width="2.5" height="8" rx="1.25"/>
+                        <path d="M19.5 2.5l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/>
+                      </svg>
+                      <svg class="icon-send" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="19" x2="12" y2="5"></line>
+                        <polyline points="5 12 12 5 19 12"></polyline>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-                <div class="chat-bar-right-actions">
-                  <span class="model-select-chip" title="Active Reasoning Model">
-                    <span>Mistral-Large-3</span>
-                  </span>
-                  <button type="submit" id="sendBtn" class="send-btn mode-mic" title="Send Instruction" aria-label="Start Run">
-                    <svg class="icon-mic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                      <line x1="12" y1="19" x2="12" y2="22"/>
-                    </svg>
-                    <svg class="icon-send" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M12 19V5M5 12l7-7 7 7"/>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
         </div>
       </div>

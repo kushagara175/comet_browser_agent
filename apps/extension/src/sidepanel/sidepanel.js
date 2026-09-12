@@ -471,6 +471,17 @@ if (typeof document !== 'undefined') {
           updateActiveTabUrl();
         }
       });
+      chrome.tabs.onCreated?.addListener(() => {
+        setTimeout(updateActiveTabUrl, 100);
+      });
+      chrome.tabs.onHighlighted?.addListener(() => {
+        updateActiveTabUrl();
+      });
+      if (chrome.windows) {
+        chrome.windows.onFocusChanged?.addListener(() => {
+          updateActiveTabUrl();
+        });
+      }
     }
 
     // Extension In-Panel Reload
@@ -484,6 +495,32 @@ if (typeof document !== 'undefined') {
     };
     reloadExtensionBtn?.addEventListener('click', triggerReload);
     backToConnectBtn?.addEventListener('click', triggerReload);
+
+    // Menu Toggle (⋮) & Developer HUD Tabs
+    const menuToggleBtn = document.getElementById('menuToggleBtn');
+    const hudTabs = document.getElementById('hudTabs');
+    menuToggleBtn?.addEventListener('click', () => {
+      hudTabs?.classList.toggle('hidden');
+    });
+
+    // Close / Toggle Tab Sharing Strip
+    const closeSharingBtn = document.getElementById('closeSharingBtn');
+    const chatTabSharingStrip = document.querySelector('.chat-tab-sharing-strip');
+    let isTabSharingActive = true;
+    closeSharingBtn?.addEventListener('click', () => {
+      isTabSharingActive = !isTabSharingActive;
+      if (chatTabSharingStrip) {
+        if (!isTabSharingActive) {
+          chatTabSharingStrip.style.opacity = '0.35';
+          if (sharingTabTitle) sharingTabTitle.textContent = 'Tab context paused';
+          closeSharingBtn.title = 'Resume active tab sharing';
+        } else {
+          chatTabSharingStrip.style.opacity = '1';
+          closeSharingBtn.title = 'Toggle active tab context';
+          updateActiveTabUrl();
+        }
+      }
+    });
 
     // Tab Navigation
     function switchTab(activeBtn, activePane) {
@@ -512,7 +549,22 @@ if (typeof document !== 'undefined') {
 
     // Chat Tool / Action Shortcut Button
     chatToolBtn?.addEventListener('click', () => {
+      hudTabs?.classList.remove('hidden');
       switchTab(tabInspectorBtn, tabInspectorContent);
+    });
+
+    // Chat Tuning / Sliders Button
+    const chatSlidersBtn = document.getElementById('chatSlidersBtn');
+    chatSlidersBtn?.addEventListener('click', () => {
+      hudTabs?.classList.remove('hidden');
+      switchTab(tabInspectorBtn, tabInspectorContent);
+    });
+
+    // Model Selector Chip (Quick switch to Telemetry/Model Audit)
+    const modelSelectBtn = document.getElementById('modelSelectBtn');
+    modelSelectBtn?.addEventListener('click', () => {
+      hudTabs?.classList.remove('hidden');
+      switchTab(tabAuditBtn, tabAuditContent);
     });
 
     // Sample Goals (Backward Compatibility)
