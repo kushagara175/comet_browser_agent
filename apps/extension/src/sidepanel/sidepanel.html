@@ -32,12 +32,16 @@
           </button>
           <div class="brand-row">
             <span class="brand-title">PrivaPilot</span>
-            <button id="reloadExtensionBtn" class="reload-icon-btn" title="Reload &amp; Reconnect">🔄</button>
+            <button id="reloadExtensionBtn" class="reload-icon-btn" title="Reload &amp; Reconnect">
+              <svg class="reload-icon-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+              </svg>
+            </button>
           </div>
           <span id="activeTabUrl" class="active-url-text" style="display: none;"></span>
         </div>
         <div class="header-right-badges">
-          <!-- Connectivity Dot Indicator: Green = Online, Red = Offline -->
+          <!-- Small Clean Connectivity Dot: Green = Online, Red = Offline -->
           <span id="visionProviderBadge" class="connection-indicator connected" title="Mistral-Large-3 Connected (Azure AI Foundry)">
             <span class="provider-dot"></span>
             <span id="visionProviderText" style="display: none;"></span>
@@ -63,11 +67,6 @@
             <h1 class="gemini-greeting">Hello, kushagara</h1>
             <h2 class="gemini-subheading">How can I help you today?</h2>
           </div>
-          <div class="gemini-suggestion-chips">
-            <button type="button" class="gemini-chip" data-prompt="What can you do?">What can you do?</button>
-            <button type="button" class="gemini-chip" data-prompt="What kinds of questions can I ask?">What kinds of questions can I ask?</button>
-            <button type="button" class="gemini-chip" data-prompt="Help me think through a problem">Help me think through a problem</button>
-          </div>
         </div>
 
         <div id="chatMessages" class="ai-body"></div>
@@ -89,7 +88,12 @@
                 </span>
                 <span id="sharingTabTitle" class="sharing-tab-title">Sharing &ldquo;New Tab&rdquo;</span>
               </div>
-              <button type="button" id="closeSharingBtn" class="close-sharing-btn" title="Toggle active tab context">✕</button>
+              <button type="button" id="closeSharingBtn" class="close-sharing-btn" title="Toggle active tab context">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
             </div>
 
             <!-- Inner Edgy Input Box -->
@@ -99,7 +103,7 @@
                   type="text"
                   id="chatInput"
                   name="taskInput"
-                  placeholder="Type / to use skills"
+                  placeholder="Type @ to add tabs"
                   autocomplete="off"
                 />
                 <div class="chat-bar-bottom">
@@ -111,11 +115,11 @@
                       </svg>
                     </button>
                     <button type="button" id="chatSlidersBtn" class="chat-tool-btn" title="Inspector &amp; Telemetry">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="4" y1="8" x2="20" y2="8"></line>
-                        <circle cx="8" cy="8" r="2.5" fill="currentColor"></circle>
-                        <line x1="4" y1="16" x2="20" y2="16"></line>
-                        <circle cx="16" cy="16" r="2.5" fill="currentColor"></circle>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="7" cy="8" r="3"></circle>
+                        <line x1="10" y1="8" x2="21" y2="8"></line>
+                        <line x1="3" y1="16" x2="14" y2="16"></line>
+                        <circle cx="17" cy="16" r="3"></circle>
                       </svg>
                     </button>
                   </div>
@@ -128,10 +132,10 @@
                     </button>
                     <button type="submit" id="sendBtn" class="send-btn mode-mic" title="Send Instruction" aria-label="Start Run">
                       <svg class="icon-mic" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <rect x="4" y="9" width="2.5" height="6" rx="1.25"/>
-                        <rect x="9.5" y="5" width="2.5" height="14" rx="1.25"/>
-                        <rect x="15" y="8" width="2.5" height="8" rx="1.25"/>
-                        <path d="M19.5 2.5l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/>
+                        <rect x="5" y="11" width="2.2" height="7" rx="1.1"/>
+                        <rect x="9.8" y="7" width="2.2" height="12" rx="1.1"/>
+                        <rect x="14.6" y="9.5" width="2.2" height="8.5" rx="1.1"/>
+                        <path d="M19.5 2.5l.5 1.6 1.6.5-1.6.5-.5 1.6-.5-1.6-1.6-.5 1.6-.5z"/>
                       </svg>
                       <svg class="icon-send" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="19" x2="12" y2="5"></line>

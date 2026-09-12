@@ -484,14 +484,17 @@ if (typeof document !== 'undefined') {
       }
     }
 
-    // Extension In-Panel Reload
+    // Extension In-Panel Reload with smooth spinning loader
     const reloadExtensionBtn = document.getElementById('reloadExtensionBtn');
     const triggerReload = () => {
-      if (typeof chrome !== 'undefined' && chrome.runtime?.reload) {
-        chrome.runtime.reload();
-      } else {
-        window.location.reload();
-      }
+      reloadExtensionBtn?.classList.add('spinning');
+      setTimeout(() => {
+        if (typeof chrome !== 'undefined' && chrome.runtime?.reload) {
+          chrome.runtime.reload();
+        } else {
+          window.location.reload();
+        }
+      }, 350);
     };
     reloadExtensionBtn?.addEventListener('click', triggerReload);
     backToConnectBtn?.addEventListener('click', triggerReload);
