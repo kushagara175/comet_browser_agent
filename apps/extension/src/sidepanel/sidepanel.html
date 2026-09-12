@@ -41,11 +41,6 @@
           <span id="activeTabUrl" class="active-url-text" style="display: none;"></span>
         </div>
         <div class="header-right-badges">
-          <!-- Small Clean Connectivity Dot: Green = Online, Red = Offline -->
-          <span id="visionProviderBadge" class="connection-indicator connected" title="Mistral-Large-3 Connected (Azure AI Foundry)">
-            <span class="provider-dot"></span>
-            <span id="visionProviderText" style="display: none;"></span>
-          </span>
           <span id="agentStatusBadge" class="status-pill status-idle" style="display: none;"></span>
           <button type="button" id="menuToggleBtn" class="menu-dots-btn" title="Developer Tools &amp; Inspector">⋮</button>
         </div>
@@ -124,20 +119,18 @@
                     </button>
                   </div>
                   <div class="chat-bar-right-actions">
-                    <button type="button" id="modelSelectBtn" class="model-select-chip" title="Active Reasoning Model: Mistral-Large-3">
+                    <button type="button" id="modelSelectBtn" class="model-select-chip" title="Active Reasoning Model: Mistral-Large-3 (Azure AI Foundry)">
+                      <span id="visionProviderBadge" class="connection-indicator connected" title="Mistral-Large-3 Online">
+                        <span class="provider-dot"></span>
+                        <span id="visionProviderText" style="display: none;"></span>
+                      </span>
                       <span>Mistral-Large-3</span>
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="6 9 12 15 18 9"></polyline>
                       </svg>
                     </button>
-                    <button type="submit" id="sendBtn" class="send-btn mode-mic" title="Send Instruction" aria-label="Start Run">
-                      <svg class="icon-mic" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <rect x="5" y="11" width="2.2" height="7" rx="1.1"/>
-                        <rect x="9.8" y="7" width="2.2" height="12" rx="1.1"/>
-                        <rect x="14.6" y="9.5" width="2.2" height="8.5" rx="1.1"/>
-                        <path d="M19.5 2.5l.5 1.6 1.6.5-1.6.5-.5 1.6-.5-1.6-1.6-.5 1.6-.5z"/>
-                      </svg>
-                      <svg class="icon-send" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <button type="submit" id="sendBtn" class="send-btn mode-send" title="Send Instruction" aria-label="Start Run">
+                      <svg class="icon-send" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="19" x2="12" y2="5"></line>
                         <polyline points="5 12 12 5 19 12"></polyline>
                       </svg>
