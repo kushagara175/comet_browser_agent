@@ -403,11 +403,34 @@ if (typeof document !== 'undefined') {
     });
 
     let currentActiveTabId = null;
+    const sharingTabTitle = document.getElementById('sharingTabTitle');
+    const geminiHero = document.getElementById('geminiHero');
+    const chatToolBtn = document.getElementById('chatToolBtn');
 
-    // Fetch and Track Active Tab URL and Tab ID
+    // Fetch and Track Active Tab URL, Title, and Tab ID
     function applyTab(tab) {
       if (tab) {
         currentActiveTabId = tab.id;
+
+        // Dynamic Tab Title Formatting (e.g. Sharing "Claude Build Day Travel Costs")
+        let displayTitle = (tab.title || '').trim();
+        if (!displayTitle && tab.url) {
+          try {
+            const urlObj = new URL(tab.url);
+            displayTitle = urlObj.hostname || tab.url;
+          } catch {
+            displayTitle = tab.url;
+          }
+        }
+        if (!displayTitle || displayTitle === 'about:blank' || displayTitle.startsWith('chrome://newtab')) {
+          displayTitle = 'New Tab';
+        }
+
+        if (sharingTabTitle) {
+          sharingTabTitle.innerHTML = `Sharing &ldquo;${escapeHtml(displayTitle)}&rdquo;`;
+          sharingTabTitle.title = tab.title || tab.url || displayTitle;
+        }
+
         if (tab.url && activeTabUrl) {
           try {
             const urlObj = new URL(tab.url);
@@ -476,7 +499,23 @@ if (typeof document !== 'undefined') {
     tabPayloadBtn?.addEventListener('click', () => switchTab(tabPayloadBtn, tabPayloadContent));
     tabAuditBtn?.addEventListener('click', () => switchTab(tabAuditBtn, tabAuditContent));
 
-    // Sample Goals
+    // Gemini Suggestion Chips
+    document.querySelectorAll('.gemini-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const prompt = btn.getAttribute('data-prompt') || btn.textContent?.trim();
+        if (chatInput && prompt) {
+          chatInput.value = prompt;
+          executeGoal(prompt);
+        }
+      });
+    });
+
+    // Chat Tool / Action Shortcut Button
+    chatToolBtn?.addEventListener('click', () => {
+      switchTab(tabInspectorBtn, tabInspectorContent);
+    });
+
+    // Sample Goals (Backward Compatibility)
     document.querySelectorAll('.sample-goal-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const goal = btn.getAttribute('data-goal');
@@ -965,6 +1004,7 @@ if (typeof document !== 'undefined') {
 
       const welcomeBox = chatMessages.querySelector('.welcome-card');
       if (welcomeBox) welcomeBox.remove();
+      if (geminiHero) geminiHero.classList.add('hidden');
 
       // User Bubble
       const userBubble = document.createElement('div');
