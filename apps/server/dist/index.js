@@ -216,7 +216,7 @@ export function createServer() {
                     let fullUserMessage = message;
                     if (hasSanitizedContext) {
                         const elementSummary = elements
-                            .slice(0, 30)
+                            .slice(0, 100)
                             .map(e => `• ${e.localId || 'el'}: ${e.role || 'element'} "${e.sanitizedName || 'unnamed'}"`)
                             .join('\n');
                         fullUserMessage = `Page Title: "${sanitizedTitle || 'Untitled'}" (${maskCount || 0} sensitive masks active locally)\n\nSanitized Page Elements:\n${elementSummary}\n\nUser Question: ${message}`;

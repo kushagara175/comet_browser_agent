@@ -240,7 +240,7 @@ export function createServer(): http.Server {
 
           if (hasSanitizedContext) {
             const elementSummary = (elements as any[])
-              .slice(0, 30)
+              .slice(0, 100)
               .map(e => `• ${e.localId || 'el'}: ${e.role || 'element'} "${e.sanitizedName || 'unnamed'}"`)
               .join('\n');
 

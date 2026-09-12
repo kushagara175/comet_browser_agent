@@ -13,7 +13,7 @@
     <canvas id="shaderCanvas" class="shader-bg-canvas"></canvas>
 
     <!-- VIEW 0: Loading Splash -->
-    <div id="loadingView" class="loading-wrapper">
+    <div id="loadingView" class="loading-wrapper hidden">
       <div class="loading-logo-wrap">
         <img src="../../assets/export.png" width="80" height="80" alt="PrivaPilot Logo" class="export-logo-img" />
       </div>
@@ -23,26 +23,26 @@
     </div>
 
     <!-- VIEW 1: AI Mission Control HUD -->
-    <div id="aiWorkerView" class="ai-panel hidden">
+    <div id="aiWorkerView" class="ai-panel">
       <!-- Top Header & Status Bar -->
       <div class="ai-header">
         <div class="header-left">
-          <button id="backToConnectBtn" class="top-left-logo-btn" title="PrivaPilot Reset / Reconnect">
-            <img src="../../assets/export.png" width="26" height="26" alt="PrivaPilot Logo" class="top-left-logo-img" />
+          <button id="backToConnectBtn" class="top-left-logo-btn" title="PrivaPilot">
+            <img src="../../assets/export.png" width="22" height="22" alt="PrivaPilot Logo" class="top-left-logo-img" />
           </button>
           <div class="header-title-col">
-            <div style="display: flex; align-items: center; gap: 6px;">
+            <div class="brand-row">
               <span class="brand-title">PrivaPilot</span>
-              <button id="reloadExtensionBtn" class="reload-ext-btn" title="Reload Extension from Disk" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 1px 5px; font-size: 9.5px; font-weight: 600; cursor: pointer; color: #475569; line-height: 14px;">🔄 Reload</button>
+              <button id="reloadExtensionBtn" class="reload-icon-btn" title="Reload &amp; Reconnect">🔄</button>
             </div>
             <span id="activeTabUrl" class="active-url-text" title="Current Tab">Loading tab...</span>
           </div>
         </div>
         <div class="header-right-badges">
-          <!-- Vision Execution Provider Badge -->
-          <span id="visionProviderBadge" class="provider-pill provider-not-run" title="On-Device Vision Execution Provider">
+          <!-- Connectivity Dot Indicator: Green = Online, Red = Offline -->
+          <span id="visionProviderBadge" class="connection-indicator connected" title="Mistral-Large-3 Connected (Azure AI Foundry)">
             <span class="provider-dot"></span>
-            <span id="visionProviderText">Vision: Not Run</span>
+            <span id="visionProviderText" style="display: none;"></span>
           </span>
           <!-- Agent Lifecycle Status Badge -->
           <span id="agentStatusBadge" class="status-pill status-idle">IDLE</span>
@@ -60,17 +60,9 @@
       <!-- TAB 1: Chat & Execution Stage -->
       <div id="tabChatContent" class="tab-pane active">
         <div id="chatMessages" class="ai-body">
-          <div class="welcome-card">
-            <div class="welcome-header">🛡️ On-Device Privacy Boundary Active</div>
-            <p class="welcome-desc">
-              Perception and redaction run on your device. Only sanitized, unidentifiable visual tokens reach the reasoning engine.
-            </p>
-            <div class="quick-goals-title">Sample Goals:</div>
-            <div class="sample-goals">
-              <button class="sample-goal-btn" data-goal="Log in with my credentials and submit">Fill login form &amp; submit</button>
-              <button class="sample-goal-btn" data-goal="Find the checkout button and proceed">Find checkout &amp; proceed</button>
-              <button class="sample-goal-btn" data-goal="Search for documentation on privacy architecture">Search privacy documentation</button>
-            </div>
+          <div class="privacy-status-strip">
+            <span class="privacy-shield-icon">🛡️</span>
+            <span>On-Device Privacy Active &bull; Zero Raw Data Sent</span>
           </div>
         </div>
 

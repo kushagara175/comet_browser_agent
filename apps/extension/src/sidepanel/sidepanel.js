@@ -269,7 +269,11 @@ export function mapAgentStateToStatusInfo(state) {
 /**
  * Maps vision provider name to badge text and styling.
  */
-export function mapVisionProviderToBadge(provider) {
+export function mapVisionProviderToBadge(provider, modelName) {
+  if (modelName) {
+    const cleanName = String(modelName).split(':')[0];
+    return { text: `Vision: ${cleanName} (Live)`, cssClass: 'provider-qwen-live' };
+  }
   switch (provider) {
     case 'webgpu':
       return { text: 'Vision: WebGPU', cssClass: 'provider-webgpu' };
@@ -379,23 +383,16 @@ if (typeof document !== 'undefined') {
       window.initWavesShader(shaderCanvas);
     }
 
-    // Auto transition to mission control
+    // Instant transition to mission control HUD
     if (loadingView && aiWorkerView) {
-      setTimeout(() => {
-        loadingView.classList.add('hidden');
-        aiWorkerView.classList.remove('hidden');
-        setTimeout(() => chatInput?.focus(), 80);
-      }, 1200);
+      loadingView.classList.add('hidden');
+      aiWorkerView.classList.remove('hidden');
+      setTimeout(() => chatInput?.focus(), 50);
     }
 
     // Reset button
     backToConnectBtn?.addEventListener('click', () => {
-      aiWorkerView?.classList.add('hidden');
-      loadingView?.classList.remove('hidden');
-      setTimeout(() => {
-        loadingView?.classList.add('hidden');
-        aiWorkerView?.classList.remove('hidden');
-      }, 800);
+      triggerReload();
     });
 
     let currentActiveTabId = null;
@@ -542,11 +539,15 @@ if (typeof document !== 'undefined') {
     }
 
     // Set Vision Provider
-    function setVisionProvider(provider) {
-      if (!visionProviderBadge || !visionProviderText) return;
-      const badgeInfo = mapVisionProviderToBadge(provider);
-      visionProviderBadge.className = `provider-pill ${badgeInfo.cssClass}`;
-      visionProviderText.textContent = badgeInfo.text;
+    function setVisionProvider(provider, modelName) {
+      if (!visionProviderBadge) return;
+      const badgeInfo = mapVisionProviderToBadge(provider, modelName);
+      const isOnline = provider && !['not_run', 'unavailable', 'unknown', 'degraded_masking', 'heuristic_fallback'].includes(provider);
+      visionProviderBadge.className = `connection-indicator ${isOnline ? 'connected' : 'disconnected'} ${badgeInfo.cssClass}`;
+      visionProviderBadge.title = `${badgeInfo.text} (${isOnline ? 'Connected' : 'Disconnected'})`;
+      if (visionProviderText) {
+        visionProviderText.textContent = badgeInfo.text;
+      }
     }
 
     // Add Audit Log Entry
@@ -998,7 +999,16 @@ if (typeof document !== 'undefined') {
       // read-only chat, where the model can only describe what it would do.
       const isExplicitAction = isBrowserActionRequest(goalText);
 
-      const needsPageContext = /\b(this page|current page|website|screen|tab|summari[sz]e|explain this|find on|shown here|review|inspect|read|analyze|scan|look at)\b/i.test(goalText);
+      const isRestrictedTab = Boolean(
+        activeTabUrl && (
+          activeTabUrl.textContent?.startsWith('chrome://') ||
+          activeTabUrl.title?.startsWith('chrome://') ||
+          activeTabUrl.textContent?.startsWith('chrome-extension://')
+        )
+      );
+
+      // Inspect page context by default whenever on an active tab, unless restricted
+      const needsPageContext = !isRestrictedTab && Boolean(currentActiveTabId);
 
       const messageType = isExplicitAction
         ? 'START_AGENT_RUN'
@@ -1235,11 +1245,13 @@ if (typeof document !== 'undefined') {
 
       chrome.runtime.sendMessage({ target: 'privapilot-background', type: 'GET_MODEL_STATUS' }, (status) => {
         if (chrome.runtime.lastError || !status) {
+          setVisionProvider('unavailable');
           addAuditEntry('MODEL', 'Background service worker unreachable', 'warn');
           return;
         }
 
         if (!status.reachable) {
+          setVisionProvider('unavailable');
           addAuditEntry('MODEL', status.error || 'Reasoning gateway unreachable', 'warn');
           showModelBanner(
             'Reasoning gateway offline',
@@ -1249,6 +1261,7 @@ if (typeof document !== 'undefined') {
         }
 
         if (!status.modelConnected) {
+          setVisionProvider('unavailable');
           addAuditEntry('MODEL', status.detail || 'No model backend connected', 'warn');
           showModelBanner(
             'No reasoning model connected',
@@ -1259,9 +1272,9 @@ if (typeof document !== 'undefined') {
 
         addAuditEntry('MODEL', `Connected: ${status.modelName} via ${status.provider}`, 'pass');
         if (status.visionCapable !== false) {
-          setVisionProvider(status.provider || 'qwen_live');
+          setVisionProvider(status.provider || 'qwen_live', status.modelName);
         } else {
-          setVisionProvider('text_only');
+          setVisionProvider('text_only', status.modelName);
         }
       });
     }
