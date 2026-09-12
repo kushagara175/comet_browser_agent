@@ -383,16 +383,23 @@ if (typeof document !== 'undefined') {
       window.initWavesShader(shaderCanvas);
     }
 
-    // Instant transition to mission control HUD
+    // Auto transition to mission control HUD after splash
     if (loadingView && aiWorkerView) {
-      loadingView.classList.add('hidden');
-      aiWorkerView.classList.remove('hidden');
-      setTimeout(() => chatInput?.focus(), 50);
+      setTimeout(() => {
+        loadingView.classList.add('hidden');
+        aiWorkerView.classList.remove('hidden');
+        setTimeout(() => chatInput?.focus(), 80);
+      }, 1200);
     }
 
     // Reset button
     backToConnectBtn?.addEventListener('click', () => {
-      triggerReload();
+      aiWorkerView?.classList.add('hidden');
+      loadingView?.classList.remove('hidden');
+      setTimeout(() => {
+        loadingView?.classList.add('hidden');
+        aiWorkerView?.classList.remove('hidden');
+      }, 800);
     });
 
     let currentActiveTabId = null;

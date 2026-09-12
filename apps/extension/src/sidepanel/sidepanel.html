@@ -13,7 +13,7 @@
     <canvas id="shaderCanvas" class="shader-bg-canvas"></canvas>
 
     <!-- VIEW 0: Loading Splash -->
-    <div id="loadingView" class="loading-wrapper hidden">
+    <div id="loadingView" class="loading-wrapper">
       <div class="loading-logo-wrap">
         <img src="../../assets/export.png" width="80" height="80" alt="PrivaPilot Logo" class="export-logo-img" />
       </div>
@@ -23,7 +23,7 @@
     </div>
 
     <!-- VIEW 1: AI Mission Control HUD -->
-    <div id="aiWorkerView" class="ai-panel">
+    <div id="aiWorkerView" class="ai-panel hidden">
       <!-- Top Header & Status Bar -->
       <div class="ai-header">
         <div class="header-left">
@@ -44,8 +44,7 @@
             <span class="provider-dot"></span>
             <span id="visionProviderText" style="display: none;"></span>
           </span>
-          <!-- Agent Lifecycle Status Badge -->
-          <span id="agentStatusBadge" class="status-pill status-idle">IDLE</span>
+          <span id="agentStatusBadge" class="status-pill status-idle" style="display: none;"></span>
         </div>
       </div>
 
@@ -59,12 +58,7 @@
 
       <!-- TAB 1: Chat & Execution Stage -->
       <div id="tabChatContent" class="tab-pane active">
-        <div id="chatMessages" class="ai-body">
-          <div class="privacy-status-strip">
-            <span class="privacy-shield-icon">🛡️</span>
-            <span>On-Device Privacy Active &bull; Zero Raw Data Sent</span>
-          </div>
-        </div>
+        <div id="chatMessages" class="ai-body"></div>
 
         <!-- Bottom Chat Input Bar -->
         <div class="ai-footer">
