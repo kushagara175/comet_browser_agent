@@ -255,6 +255,7 @@ export function createServer(): http.Server {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             reply: chatResult.reply,
+            reasoning: chatResult.reasoning,
             provider: chatResult.provider,
             modelName: chatResult.modelName,
             modelConnected: !chatResult.degraded,

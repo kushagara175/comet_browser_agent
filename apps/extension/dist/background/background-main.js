@@ -14743,7 +14743,9 @@ var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "userApproved",
   "pressEnter",
   "extractedData",
-  "answerText"
+  "answerText",
+  "reasoning",
+  "thought"
 ]);
 var VALID_ACTION_KINDS = /* @__PURE__ */ new Set([
   "observe",
@@ -14858,6 +14860,14 @@ function validateActionProposal(proposal, validElements) {
   }
   if (hasProhibitedScriptPattern(proposal.rationale) || hasProhibitedUrlPattern(proposal.rationale)) {
     return { isValid: false, errorMessage: "rationale contains prohibited script or URL patterns" };
+  }
+  if (proposal.reasoning !== void 0) {
+    if (typeof proposal.reasoning !== "string" || proposal.reasoning.length > 5e3) {
+      return { isValid: false, errorMessage: 'Field "reasoning" must be a string up to 5000 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.reasoning) || hasProhibitedUrlPattern(proposal.reasoning)) {
+      return { isValid: false, errorMessage: "reasoning contains prohibited script or URL patterns" };
+    }
   }
   if (proposal.expectedState !== void 0) {
     if (typeof proposal.expectedState !== "string" || proposal.expectedState.length > 500) {
@@ -20891,6 +20901,7 @@ var RunCoordinator = class {
       return {
         success: true,
         reply: chatRes.reply,
+        reasoning: chatRes.reasoning,
         maskCount: sanitized.maskCount,
         elementCount: sanitized.elements.length,
         modelConnected: chatRes.modelConnected !== false
@@ -20916,6 +20927,7 @@ var RunCoordinator = class {
       return {
         success: true,
         reply: genRes.reply,
+        reasoning: genRes.reasoning,
         maskCount: 0,
         elementCount: 0,
         modelConnected: genRes.modelConnected !== false

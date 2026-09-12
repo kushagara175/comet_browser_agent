@@ -684,6 +684,61 @@ html, body {
   max-width: 98%;
 }
 
+/* Agent Thought Process / Chain of Thought Stream Accordion */
+.thought-stream-details {
+  margin: 6px 0 8px 0;
+  border: 1px solid #e0e7ff;
+  border-left: 3px solid #6366f1;
+  background: #f8fafc;
+  border-radius: 6px;
+  font-size: 11px;
+  overflow: hidden;
+}
+
+.thought-stream-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-weight: 600;
+  color: #4338ca;
+  background: #eef2ff;
+  user-select: none;
+  outline: none;
+  font-size: 10.5px;
+}
+
+.thought-stream-summary:hover {
+  background: #e0e7ff;
+}
+
+.thought-stream-badge {
+  margin-left: auto;
+  font-size: 9px;
+  padding: 1px 5px;
+  background: #c7d2fe;
+  color: #3730a3;
+  border-radius: 8px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.thought-stream-body {
+  padding: 7px 9px;
+  color: #334155;
+  font-size: 10.5px;
+  line-height: 1.4;
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid #e0e7ff;
+  background: #ffffff;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 /* Action Rationale Card */
 .thought-card {
   background: #f8fafc;

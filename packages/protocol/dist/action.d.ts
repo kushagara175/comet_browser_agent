@@ -80,6 +80,7 @@ export interface ActionProposal {
     readonly pressEnter?: boolean;
     readonly extractedData?: string;
     readonly answerText?: string;
+    readonly reasoning?: string;
 }
 export interface ActionExecutionResult {
     readonly actionId: string;

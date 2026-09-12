@@ -45,6 +45,7 @@ export interface EngineStatus {
 
 export interface ChatResult {
   readonly reply: string;
+  readonly reasoning?: string;
   readonly provider: EngineStatus['provider'];
   readonly modelName: string;
   /** True when the reply came from the offline fallback rather than a real model. */
@@ -150,6 +151,16 @@ export function stripThinkingTags(raw: string): string {
     .replace(/<think>[\s\S]*$/gi, '')
     .replace(/<thought>[\s\S]*$/gi, '')
     .trim();
+}
+
+export function extractThinking(raw: string): string {
+  if (!raw || typeof raw !== 'string') return '';
+  const match = raw.match(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/i) ||
+                raw.match(/<thought>([\s\S]*?)<\/thought>/i);
+  if (match) {
+    return match[1].trim();
+  }
+  return '';
 }
 
 export class VlmReasoningEngine {
@@ -402,18 +413,18 @@ export class VlmReasoningEngine {
     }
 
     try {
-      const raw =
+      const outcome =
         status.provider === 'ollama'
           ? await this.chatViaOllama(status, systemPrompt, userMessage, history)
           : await this.chatViaOpenAICompatible(status, systemPrompt, userMessage, history);
 
-      const reply = stripThinkingTags(raw);
-      if (!reply) {
+      if (!outcome.reply) {
         throw new Error('Model returned an empty response');
       }
 
       return {
-        reply,
+        reply: outcome.reply,
+        reasoning: outcome.reasoning,
         provider: status.provider,
         modelName: status.modelName,
         degraded: false,
@@ -458,7 +469,7 @@ export class VlmReasoningEngine {
     systemPrompt: string,
     userMessage: string,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>
-  ): Promise<string> {
+  ): Promise<{ reply: string; reasoning?: string }> {
     const messages: Array<{ role: string; content: string }> = [
       { role: 'system', content: systemPrompt }
     ];
@@ -492,7 +503,12 @@ export class VlmReasoningEngine {
       throw new Error(`Ollama returned ${res.status}: ${await this.safeErrorText(res)}`);
     }
     const data: any = await res.json();
-    return stripThinkingTags(data?.message?.content || '');
+    const rawContent = data?.message?.content || '';
+    const extractedThinking = extractThinking(rawContent);
+    return {
+      reply: stripThinkingTags(rawContent),
+      reasoning: extractedThinking || undefined
+    };
   }
 
   private async chatViaOpenAICompatible(
@@ -500,7 +516,7 @@ export class VlmReasoningEngine {
     systemPrompt: string,
     userMessage: string,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>
-  ): Promise<string> {
+  ): Promise<{ reply: string; reasoning?: string }> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...buildProviderAuthHeaders(status.endpoint, this.config.apiKey)
@@ -551,7 +567,12 @@ export class VlmReasoningEngine {
     }
     const data: any = await res.json();
     const rawContent = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || '';
-    return stripThinkingTags(rawContent);
+    const rawReasoning = data?.choices?.[0]?.message?.reasoning || data?.choices?.[0]?.message?.reasoning_content || '';
+    const extractedThinking = extractThinking(rawContent) || (typeof rawReasoning === 'string' && rawReasoning.trim() ? rawReasoning.trim() : '');
+    return {
+      reply: stripThinkingTags(rawContent),
+      reasoning: extractedThinking || undefined
+    };
   }
 
   /**
@@ -666,9 +687,10 @@ export class VlmReasoningEngine {
 
     const data: any = await response.json();
     const content = data.message?.content || '';
+    const extractedThinking = extractThinking(content);
 
     try {
-      return this.parseActionProposal(content, payload);
+      return this.parseActionProposal(content, payload, extractedThinking);
     } catch (firstErr: any) {
       // At most ONE schema repair attempt
       console.warn(`[PrivaPilot:VLM] Attempting schema repair after validation error: ${firstErr.message}`);
@@ -691,7 +713,8 @@ export class VlmReasoningEngine {
 
       const repairData: any = await repairResponse.json();
       const repairContent = repairData.message?.content || '';
-      return this.parseActionProposal(repairContent, payload);
+      const repairThinking = extractThinking(repairContent);
+      return this.parseActionProposal(repairContent, payload, repairThinking || extractedThinking);
     }
   }
 
@@ -707,12 +730,9 @@ export class VlmReasoningEngine {
     const userPrompt = this.buildUserPrompt(payload);
 
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      ...buildProviderAuthHeaders(endpoint, this.config.apiKey)
     };
-
-    if (this.config.apiKey) {
-      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
-    }
 
     const contentArray: any[] = [
       { type: 'text', text: userPrompt }
@@ -765,14 +785,18 @@ export class VlmReasoningEngine {
     }
 
     const data: any = await response.json();
-    const content =
-      data.choices?.[0]?.message?.content ||
+    const rawReasoning =
       data.choices?.[0]?.message?.reasoning ||
       data.choices?.[0]?.message?.reasoning_content ||
       '';
+    const content =
+      data.choices?.[0]?.message?.content ||
+      rawReasoning ||
+      '';
+    const extractedThinking = extractThinking(content) || (typeof rawReasoning === 'string' && rawReasoning.trim() ? rawReasoning.trim() : '');
 
     try {
-      return this.parseActionProposal(content, payload);
+      return this.parseActionProposal(content, payload, extractedThinking);
     } catch (firstErr: any) {
       // At most ONE schema repair attempt
       console.warn(`[PrivaPilot:VLM] Attempting schema repair after validation error: ${firstErr.message}`);
@@ -793,19 +817,23 @@ export class VlmReasoningEngine {
       }
 
       const repairData: any = await repairResponse.json();
-      const repairContent =
-        repairData.choices?.[0]?.message?.content ||
+      const repairReasoning =
         repairData.choices?.[0]?.message?.reasoning ||
         repairData.choices?.[0]?.message?.reasoning_content ||
         '';
-      return this.parseActionProposal(repairContent, payload);
+      const repairContent =
+        repairData.choices?.[0]?.message?.content ||
+        repairReasoning ||
+        '';
+      const repairThinking = extractThinking(repairContent) || (typeof repairReasoning === 'string' && repairReasoning.trim() ? repairReasoning.trim() : '');
+      return this.parseActionProposal(repairContent, payload, repairThinking || extractedThinking);
     }
   }
 
   /**
    * Extracts and validates an ActionProposal from raw model output string.
    */
-  private parseActionProposal(content: string, payload: SanitizedNetworkPayload): ActionProposal {
+  private parseActionProposal(content: string, payload: SanitizedNetworkPayload, extractedThinking?: string): ActionProposal {
     // 1. Strip thinking tags: <think> ... </think> or <thought> ... </thought>
     let cleanJson = stripThinkingTags(content || '');
 
@@ -907,6 +935,11 @@ export class VlmReasoningEngine {
       }
       if (!parsed.expectedState) {
         parsed.expectedState = parsed.kind === 'finish' ? 'Goal complete' : 'UI updates after action';
+      }
+
+      const thinking = parsed.reasoning || parsed.thought || extractedThinking;
+      if (thinking) {
+        parsed.reasoning = String(thinking).slice(0, 5000);
       }
 
       if (!parsed.textToType && (parsed.text || parsed.value || parsed.input || parsed.content)) {

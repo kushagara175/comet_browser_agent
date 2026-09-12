@@ -1820,6 +1820,7 @@ export class RunCoordinator {
             return {
                 success: true,
                 reply: chatRes.reply,
+                reasoning: chatRes.reasoning,
                 maskCount: sanitized.maskCount,
                 elementCount: sanitized.elements.length,
                 modelConnected: chatRes.modelConnected !== false
@@ -1846,6 +1847,7 @@ export class RunCoordinator {
             return {
                 success: true,
                 reply: genRes.reply,
+                reasoning: genRes.reasoning,
                 maskCount: 0,
                 elementCount: 0,
                 modelConnected: genRes.modelConnected !== false

@@ -789,6 +789,15 @@ if (typeof document !== 'undefined') {
               ⚠️ No reasoning model connected — this reply did not come from a model.
             </div>
           ` : ''}
+          ${res.reasoning ? `
+            <details class="thought-stream-details" open>
+              <summary class="thought-stream-summary">
+                <span>🧠 Agent Thought Process</span>
+                <span class="thought-stream-badge">Reasoning</span>
+              </summary>
+              <div class="thought-stream-body">${renderMarkdown(res.reasoning)}</div>
+            </details>
+          ` : ''}
           <div style="font-size: 11.5px; color: #0f172a; line-height: 1.5; user-select: text;">${formattedHtml}</div>
           ${actionSuggestions.length > 0 ? `
             <div class="chat-action-chips" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;">
@@ -867,6 +876,16 @@ if (typeof document !== 'undefined') {
           <span class="perception-pill pill-shield">🛡️ ${maskCount} Masks Applied</span>
           <span class="perception-pill">🔍 ${elementCount} Interactive Elements</span>
         </div>
+
+        ${action.reasoning ? `
+          <details class="thought-stream-details" open>
+            <summary class="thought-stream-summary">
+              <span>🧠 Agent Thought Process</span>
+              <span class="thought-stream-badge">Reasoning</span>
+            </summary>
+            <div class="thought-stream-body">${renderMarkdown(action.reasoning)}</div>
+          </details>
+        ` : ''}
 
         <div class="thought-card">
           <div class="thought-header">

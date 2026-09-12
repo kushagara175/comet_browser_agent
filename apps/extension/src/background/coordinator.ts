@@ -42,6 +42,7 @@ import { AuditLogger } from './audit-logger.js';
 export interface ChatOutcome {
   readonly success: boolean;
   readonly reply: string;
+  readonly reasoning?: string;
   readonly maskCount: number;
   readonly elementCount: number;
   /** False when the gateway answered from its offline reasoner, or not at all. */
@@ -2131,6 +2132,7 @@ export class RunCoordinator {
       return {
         success: true,
         reply: chatRes.reply,
+        reasoning: chatRes.reasoning,
         maskCount: sanitized.maskCount,
         elementCount: sanitized.elements.length,
         modelConnected: chatRes.modelConnected !== false
@@ -2165,6 +2167,7 @@ export class RunCoordinator {
       return {
         success: true,
         reply: genRes.reply,
+        reasoning: genRes.reasoning,
         maskCount: 0,
         elementCount: 0,
         modelConnected: genRes.modelConnected !== false

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildProviderAuthHeaders } from '../apps/server/dist/engines/vlm-engine.js';
+import { buildProviderAuthHeaders, extractThinking, stripThinkingTags } from '../apps/server/dist/engines/vlm-engine.js';
+import { validateActionProposal } from '../packages/protocol/dist/index.js';
 
 test('VLM auth uses api-key for Azure OpenAI endpoints', () => {
   assert.deepEqual(
@@ -29,3 +30,34 @@ test('VLM auth preserves Bearer tokens for other OpenAI-compatible providers', (
 test('VLM auth omits credentials when no API key is configured', () => {
   assert.deepEqual(buildProviderAuthHeaders('https://example.openai.azure.com/openai/deployments/chat', undefined), {});
 });
+
+test('extractThinking extracts thinking tokens from <think> and <thought> tags', () => {
+  const modelOutputWithThink = '<think>I need to find the submit button and click it.</think>Click the submit button';
+  assert.equal(extractThinking(modelOutputWithThink), 'I need to find the submit button and click it.');
+  assert.equal(stripThinkingTags(modelOutputWithThink), 'Click the submit button');
+
+  const modelOutputWithThought = '<thought>Navigating to profile tab.</thought>Here is the profile.';
+  assert.equal(extractThinking(modelOutputWithThought), 'Navigating to profile tab.');
+  assert.equal(stripThinkingTags(modelOutputWithThought), 'Here is the profile.');
+
+  const plainOutput = 'Regular answer without thinking';
+  assert.equal(extractThinking(plainOutput), '');
+  assert.equal(stripThinkingTags(plainOutput), 'Regular answer without thinking');
+});
+
+test('validateActionProposal accepts valid reasoning property', () => {
+  const proposal = {
+    actionId: 'act_101',
+    kind: 'click',
+    targetLocalId: 'el_1',
+    confidence: 0.98,
+    risk: 'safe',
+    rationale: 'Clicking submit button to finalize submission',
+    reasoning: 'First I analyzed the DOM landmarks, identified el_1 as the primary submit button, and confirmed no passwords were exposed.'
+  };
+
+  const validation = validateActionProposal(proposal);
+  assert.equal(validation.isValid, true);
+  assert.equal(validation.proposal?.reasoning, proposal.reasoning);
+});
+

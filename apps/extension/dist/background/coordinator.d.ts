@@ -18,6 +18,7 @@ import { AuditLogger } from './audit-logger.js';
 export interface ChatOutcome {
     readonly success: boolean;
     readonly reply: string;
+    readonly reasoning?: string;
     readonly maskCount: number;
     readonly elementCount: number;
     /** False when the gateway answered from its offline reasoner, or not at all. */

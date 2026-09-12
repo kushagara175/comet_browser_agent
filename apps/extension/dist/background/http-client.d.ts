@@ -20,6 +20,7 @@ export interface ModelStatus {
 }
 export interface ChatReply {
     readonly reply: string;
+    readonly reasoning?: string;
     readonly modelConnected?: boolean;
     readonly provider?: string;
     readonly modelName?: string;

@@ -40,6 +40,7 @@ export interface EngineStatus {
 }
 export interface ChatResult {
     readonly reply: string;
+    readonly reasoning?: string;
     readonly provider: EngineStatus['provider'];
     readonly modelName: string;
     /** True when the reply came from the offline fallback rather than a real model. */
@@ -50,6 +51,7 @@ export interface ChatResult {
  * providers conventionally use an OAuth-style Bearer token. */
 export declare function buildProviderAuthHeaders(endpoint: string, apiKey?: string): Record<string, string>;
 export declare function stripThinkingTags(raw: string): string;
+export declare function extractThinking(raw: string): string;
 export declare class VlmReasoningEngine {
     private config;
     private readonly mockFallback;

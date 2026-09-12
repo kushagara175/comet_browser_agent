@@ -530,6 +530,7 @@ export interface ActionProposal {
   readonly pressEnter?: boolean;
   readonly extractedData?: string;
   readonly answerText?: string;
+  readonly reasoning?: string;
 }
 
 export interface ActionExecutionResult {
@@ -568,7 +569,9 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
   'userApproved',
   'pressEnter',
   'extractedData',
-  'answerText'
+  'answerText',
+  'reasoning',
+  'thought'
 ]);
 
 const VALID_ACTION_KINDS = new Set([
@@ -720,6 +723,16 @@ export function validateActionProposal(
   }
   if (hasProhibitedScriptPattern(proposal.rationale) || hasProhibitedUrlPattern(proposal.rationale)) {
     return { isValid: false, errorMessage: 'rationale contains prohibited script or URL patterns' };
+  }
+
+  // 6b. reasoning
+  if (proposal.reasoning !== undefined) {
+    if (typeof proposal.reasoning !== 'string' || proposal.reasoning.length > 5000) {
+      return { isValid: false, errorMessage: 'Field "reasoning" must be a string up to 5000 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.reasoning) || hasProhibitedUrlPattern(proposal.reasoning)) {
+      return { isValid: false, errorMessage: 'reasoning contains prohibited script or URL patterns' };
+    }
   }
 
   // 7. expectedState
