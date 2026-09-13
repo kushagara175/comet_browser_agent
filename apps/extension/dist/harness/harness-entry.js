@@ -15675,10 +15675,28 @@ as ORT format: ${n}`);
       let dataUrl;
       if (typeof imageCanvas.toDataURL === "function") {
         dataUrl = imageCanvas.toDataURL("image/png");
+        if (dataUrl && dataUrl.length > 2.5 * 1024 * 1024) {
+          try {
+            const jpegUrl = imageCanvas.toDataURL("image/jpeg", 0.88);
+            if (jpegUrl && jpegUrl.startsWith("data:image/jpeg;base64,") && jpegUrl.length < dataUrl.length) {
+              dataUrl = jpegUrl;
+            }
+          } catch (_) {
+          }
+        }
+        if (dataUrl && dataUrl.length > 3.5 * 1024 * 1024) {
+          try {
+            const compressedUrl = imageCanvas.toDataURL("image/jpeg", 0.72);
+            if (compressedUrl && compressedUrl.startsWith("data:image/jpeg;base64,") && compressedUrl.length < dataUrl.length) {
+              dataUrl = compressedUrl;
+            }
+          } catch (_) {
+          }
+        }
       } else {
         throw new Error("Canvas export unavailable: HTMLCanvasElement with toDataURL required for mask rendering");
       }
-      if (!dataUrl || !dataUrl.startsWith("data:image/png;base64,")) {
+      if (!dataUrl || !dataUrl.startsWith("data:image/png;base64,") && !dataUrl.startsWith("data:image/jpeg;base64,") && !dataUrl.startsWith("data:image/webp;base64,")) {
         throw new Error("Sanitized screenshot export failed: invalid data URL produced");
       }
       return {

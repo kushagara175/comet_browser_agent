@@ -323,11 +323,38 @@ export class MaskRenderer {
     let dataUrl: string;
     if (typeof (imageCanvas as any).toDataURL === 'function') {
       dataUrl = (imageCanvas as HTMLCanvasElement).toDataURL('image/png');
+      // On high-DPI Mac Retina displays (2x-3x) or media-rich pages (YouTube, Twitter/X),
+      // a raw uncompressed PNG can reach 3.5MB - 6MB.
+      // If the PNG data URL exceeds 2.5MB, adaptively export as JPEG (0.88 quality)
+      // to keep wire payloads lightweight (< 600KB) while preserving crystal-clear pixel fidelity
+      // for privacy masks and multimodal reasoning.
+      if (dataUrl && dataUrl.length > 2.5 * 1024 * 1024) {
+        try {
+          const jpegUrl = (imageCanvas as HTMLCanvasElement).toDataURL('image/jpeg', 0.88);
+          if (jpegUrl && jpegUrl.startsWith('data:image/jpeg;base64,') && jpegUrl.length < dataUrl.length) {
+            dataUrl = jpegUrl;
+          }
+        } catch (_) {}
+      }
+      // If still large (> 3.5MB), compress slightly further to 0.72 quality
+      if (dataUrl && dataUrl.length > 3.5 * 1024 * 1024) {
+        try {
+          const compressedUrl = (imageCanvas as HTMLCanvasElement).toDataURL('image/jpeg', 0.72);
+          if (compressedUrl && compressedUrl.startsWith('data:image/jpeg;base64,') && compressedUrl.length < dataUrl.length) {
+            dataUrl = compressedUrl;
+          }
+        } catch (_) {}
+      }
     } else {
       throw new Error('Canvas export unavailable: HTMLCanvasElement with toDataURL required for mask rendering');
     }
 
-    if (!dataUrl || !dataUrl.startsWith('data:image/png;base64,')) {
+    if (
+      !dataUrl ||
+      (!dataUrl.startsWith('data:image/png;base64,') &&
+       !dataUrl.startsWith('data:image/jpeg;base64,') &&
+       !dataUrl.startsWith('data:image/webp;base64,'))
+    ) {
       throw new Error('Sanitized screenshot export failed: invalid data URL produced');
     }
 

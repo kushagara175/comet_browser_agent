@@ -109,7 +109,7 @@ export function createServer() {
         if (req.method === 'POST' && url === '/api/v1/reason') {
             let bodyStr = '';
             let exceeded = false;
-            const MAX_REASON_BODY_BYTES = 4 * 1024 * 1024; // 4MB
+            const MAX_REASON_BODY_BYTES = 10 * 1024 * 1024; // 10MB (accommodates 4MB decoded screenshot + base64 overhead + DOM context)
             req.on('data', (chunk) => {
                 if (exceeded)
                     return;
@@ -121,7 +121,7 @@ export function createServer() {
                     // destroy resets it mid-write and it sees ECONNRESET instead of the status code.
                     // The data handler returns early while 'exceeded' is set, so memory stays bounded.
                     res.writeHead(413, { 'Content-Type': 'application/json', 'Connection': 'close' });
-                    res.end(JSON.stringify({ error: 'Payload Too Large: Request body exceeds 4MB limit' }));
+                    res.end(JSON.stringify({ error: 'Payload Too Large: Request body exceeds 10MB limit' }));
                     req.resume();
                 }
             });

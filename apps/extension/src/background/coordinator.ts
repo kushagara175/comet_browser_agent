@@ -1572,8 +1572,11 @@ export class RunCoordinator {
           goal
         });
       } catch (err: any) {
+        console.error('[PrivaPilot Coordinator] Sanitizer error:', err?.message || err);
         const diagnostic = classifySanitizerError(err);
-        const userSafeMsg = 'Sensitive content may be present in an area that cannot be inspected safely. No context was sent.';
+        const userSafeMsg = diagnostic.sanitizedDetail
+          ? `Local sanitization blocked: ${diagnostic.sanitizedDetail}`
+          : 'Sensitive content may be present in an area that cannot be inspected safely. No context was sent.';
         this.transition('blocked-local-only', userSafeMsg);
         const res: CoordinatorRunResult = {
           success: false,

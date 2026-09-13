@@ -579,49 +579,62 @@ export class WebExtensionAdapter implements BrowserAdapter {
 
     // 1. Chrome MV3 Offscreen Host Path
     if (api && api.offscreen && api.runtime && api.runtime.sendMessage) {
-      await this.ensureOffscreenDocument();
+      try {
+        await this.ensureOffscreenDocument();
 
-      // Reset 60s idle cleanup timer
-      if (this.offscreenCloseTimer) clearTimeout(this.offscreenCloseTimer);
-      this.offscreenCloseTimer = setTimeout(async () => {
-        try {
-          if (api.offscreen && typeof api.offscreen.closeDocument === 'function') {
-            await api.offscreen.closeDocument();
-          }
-        } catch (_) {}
-      }, 60000);
+        // Reset 60s idle cleanup timer
+        if (this.offscreenCloseTimer) clearTimeout(this.offscreenCloseTimer);
+        this.offscreenCloseTimer = setTimeout(async () => {
+          try {
+            if (api.offscreen && typeof api.offscreen.closeDocument === 'function') {
+              await api.offscreen.closeDocument();
+            }
+          } catch (_) {}
+        }, 60000);
 
-      const correlationId = `san_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+        const correlationId = `san_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-      // 15000ms Bounded Timeout Promise (accommodates cold-start ONNX model initialization)
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('Sanitization Host Timeout: Offscreen document did not respond within 15000ms'));
-        }, 15000);
-      });
+        // 15000ms Bounded Timeout Promise (accommodates cold-start ONNX model initialization)
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Sanitization Host Timeout: Offscreen document did not respond within 15000ms'));
+          }, 15000);
+        });
 
-      const messagePromise = new Promise<SanitizedContext>((resolve, reject) => {
-        let attempts = 0;
-        const maxAttempts = 15;
-        let settled = false;
+        const messagePromise = new Promise<SanitizedContext>((resolve, reject) => {
+          let attempts = 0;
+          const maxAttempts = 15;
+          let settled = false;
 
-        const attemptSend = () => {
-          attempts++;
+          const attemptSend = () => {
+            attempts++;
 
-          // Attempt 1-to-1 dedicated Port connection if available
-          if (typeof api.runtime.connect === 'function') {
-            try {
-              const port = api.runtime.connect({ name: 'privapilot-offscreen' });
-              let portReceivedResponse = false;
-
-              port.onMessage.addListener((response: any) => {
+            api.runtime.sendMessage(
+              {
+                target: 'privapilot-offscreen',
+                type: 'SANITIZE_CAPTURE',
+                correlationId,
+                payload: request
+              },
+              (response: any) => {
                 if (settled) return;
-                portReceivedResponse = true;
+                if (api.runtime.lastError || !response) {
+                  if (attempts < maxAttempts) {
+                    // Offscreen script is still mounting/parsing the bundle: retry shortly
+                    setTimeout(attemptSend, 200);
+                    return;
+                  }
+                  settled = true;
+                  if (api.runtime.lastError) {
+                    reject(new Error(`Offscreen Message Error: ${api.runtime.lastError.message}`));
+                  } else {
+                    reject(new Error('Offscreen document returned empty response'));
+                  }
+                  return;
+                }
                 settled = true;
-                try { port.disconnect(); } catch (_) {}
-
-                if (!response || response.correlationId !== correlationId) {
-                  reject(new Error(`Correlation ID mismatch: expected ${correlationId}, got ${response?.correlationId}`));
+                if (response.correlationId !== correlationId) {
+                  reject(new Error(`Correlation ID mismatch: expected ${correlationId}, got ${response.correlationId}`));
                   return;
                 }
                 if (!response.success || !response.sanitized) {
@@ -629,74 +642,18 @@ export class WebExtensionAdapter implements BrowserAdapter {
                   return;
                 }
                 resolve(response.sanitized);
-              });
-
-              port.onDisconnect.addListener(() => {
-                if (!portReceivedResponse && !settled) {
-                  // Port closed before responding; document may still be mounting or bundle loading
-                  if (attempts < maxAttempts) {
-                    setTimeout(attemptSend, 200);
-                  } else {
-                    settled = true;
-                    reject(new Error('Offscreen port disconnected before sanitization completed'));
-                  }
-                }
-              });
-
-              port.postMessage({
-                target: 'privapilot-offscreen',
-                type: 'SANITIZE_CAPTURE',
-                correlationId,
-                payload: request
-              });
-              return;
-            } catch (err) {
-              console.warn('[PrivaPilot SW] Port connection attempt failed, using runtime.sendMessage:', err);
-            }
-          }
-
-          // Fallback to runtime.sendMessage
-          api.runtime.sendMessage(
-            {
-              target: 'privapilot-offscreen',
-              type: 'SANITIZE_CAPTURE',
-              correlationId,
-              payload: request
-            },
-            (response: any) => {
-              if (settled) return;
-              if (api.runtime.lastError || !response) {
-                if (attempts < maxAttempts) {
-                  // Offscreen script is still mounting/parsing the bundle: retry shortly
-                  setTimeout(attemptSend, 200);
-                  return;
-                }
-                settled = true;
-                if (api.runtime.lastError) {
-                  reject(new Error(`Offscreen Message Error: ${api.runtime.lastError.message}`));
-                } else {
-                  reject(new Error('Offscreen document returned empty response'));
-                }
-                return;
               }
-              settled = true;
-              if (response.correlationId !== correlationId) {
-                reject(new Error(`Correlation ID mismatch: expected ${correlationId}, got ${response.correlationId}`));
-                return;
-              }
-              if (!response.success || !response.sanitized) {
-                reject(new Error(response.error || 'Sanitization failed in offscreen document'));
-                return;
-              }
-              resolve(response.sanitized);
-            }
-          );
-        };
+            );
+          };
 
-        attemptSend();
-      });
+          attemptSend();
+        });
 
-      return Promise.race([messagePromise, timeoutPromise]);
+        return await Promise.race([messagePromise, timeoutPromise]);
+      } catch (offscreenErr: any) {
+        console.warn('[PrivaPilot SW] Offscreen host sanitization failed, attempting direct worker fallback:', offscreenErr?.message || offscreenErr);
+        // Fall through to direct canvas host path or worker OffscreenCanvas path
+      }
     }
 
     // 2. Direct Canvas Host Path (Firefox background page / DOM-equipped environments)
@@ -708,7 +665,33 @@ export class WebExtensionAdapter implements BrowserAdapter {
       );
     }
 
-    // 3. Fail-closed if no execution host is available
+    // 3. Worker OffscreenCanvas Path (Chrome Service Worker direct execution)
+    if (typeof OffscreenCanvas !== 'undefined') {
+      try {
+        const w = request.rawCapture.metadata.screenshotWidth || 1280;
+        const h = request.rawCapture.metadata.screenshotHeight || 720;
+        const offCanvas = new OffscreenCanvas(w, h);
+        const ctx = offCanvas.getContext('2d');
+        if (ctx && request.rawCapture.rawScreenshotDataUrl) {
+          try {
+            const res = await fetch(request.rawCapture.rawScreenshotDataUrl);
+            const blob = await res.blob();
+            const bitmap = await createImageBitmap(blob);
+            ctx.drawImage(bitmap, 0, 0, w, h);
+          } catch (_) {}
+        }
+        return await SanitizerPipeline.sanitize(
+          request.rawCapture,
+          request.snapshot,
+          request.goal,
+          offCanvas
+        );
+      } catch (workerErr: any) {
+        console.error('[PrivaPilot SW] Worker OffscreenCanvas sanitization error:', workerErr);
+      }
+    }
+
+    // 4. Fail-closed if no execution host is available
     throw new Error('Sanitization Host Unavailable: No DOM or offscreen document available to render masks safely');
   }
 }
