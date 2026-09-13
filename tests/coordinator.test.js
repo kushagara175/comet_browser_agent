@@ -553,5 +553,35 @@ test('Coordinator Redirection Resilience: Action causing page navigation/port-cl
   assert.strictEqual(result.steps[0].executionResult?.success, true);
 });
 
+test('Coordinator: Preserves and propagates proposal.reasoning to listeners and result', async () => {
+  const browser = createFakeBrowserAdapter();
+  let proposedActionWithReasoning = null;
 
+  const reasoningHttpClient = {
+    async requestReasoningAction() {
+      return {
+        actionId: 'act_click_1',
+        kind: 'click',
+        targetLocalId: 'el_btn_1',
+        confidence: 0.98,
+        risk: 'safe',
+        reasoning: 'Observed interactive element el_btn_1. Chosen to satisfy user goal.',
+        rationale: 'Click target element'
+      };
+    }
+  };
 
+  const coordinator = new RunCoordinator(browser, reasoningHttpClient, undefined, { defaultMaxSteps: 1 });
+  coordinator.setListeners({
+    onActionProposed(proposal) {
+      proposedActionWithReasoning = proposal;
+    }
+  });
+
+  const result = await coordinator.startRun('Preview the details');
+
+  assert.ok(proposedActionWithReasoning);
+  assert.strictEqual(proposedActionWithReasoning.reasoning, 'Observed interactive element el_btn_1. Chosen to satisfy user goal.');
+  assert.ok(result.reasoning);
+  assert.strictEqual(result.reasoning, 'Observed interactive element el_btn_1. Chosen to satisfy user goal.');
+});

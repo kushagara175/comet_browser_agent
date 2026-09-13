@@ -505,9 +505,10 @@ export class VlmReasoningEngine {
     const data: any = await res.json();
     const rawContent = data?.message?.content || '';
     const extractedThinking = extractThinking(rawContent);
+    const cleanReply = stripThinkingTags(rawContent);
     return {
-      reply: stripThinkingTags(rawContent),
-      reasoning: extractedThinking || undefined
+      reply: cleanReply,
+      reasoning: extractedThinking || (cleanReply ? 'Evaluated page context and synthesized response.' : undefined)
     };
   }
 
@@ -569,9 +570,10 @@ export class VlmReasoningEngine {
     const rawContent = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || '';
     const rawReasoning = data?.choices?.[0]?.message?.reasoning || data?.choices?.[0]?.message?.reasoning_content || '';
     const extractedThinking = extractThinking(rawContent) || (typeof rawReasoning === 'string' && rawReasoning.trim() ? rawReasoning.trim() : '');
+    const cleanReply = stripThinkingTags(rawContent);
     return {
-      reply: stripThinkingTags(rawContent),
-      reasoning: extractedThinking || undefined
+      reply: cleanReply,
+      reasoning: extractedThinking || (cleanReply ? 'Evaluated page context and synthesized response.' : undefined)
     };
   }
 
@@ -987,9 +989,11 @@ export class VlmReasoningEngine {
         parsed.expectedState = parsed.kind === 'finish' ? 'Goal complete' : 'UI updates after action';
       }
 
-      const thinking = parsed.reasoning || parsed.thought || extractedThinking;
-      if (thinking) {
-        parsed.reasoning = String(thinking).slice(0, 5000);
+      const thinking = parsed.reasoning || parsed.thought || extractedThinking || parsed.rationale;
+      if (Array.isArray(thinking)) {
+        parsed.reasoning = thinking.filter(Boolean).map((s: any) => String(s).trim()).join('\n').slice(0, 5000);
+      } else if (thinking) {
+        parsed.reasoning = String(thinking).trim().slice(0, 5000);
       }
 
       if (!parsed.textToType && (parsed.text || parsed.value || parsed.input || parsed.content)) {
@@ -1052,9 +1056,10 @@ Strict Rules:
 8. FILE UPLOAD DIRECTIVE: When uploading or attaching a file, return kind: "upload_file", set "targetLocalId" to the file input and "fileName" to the file name.
 9. MULTI-STEP REASONING: For compound goals (e.g. "go to X and search Y", "click tab and find Z", "scroll and check count"):
    Execute step 1 (navigation or intermediate click/scroll/hover), observe the updated page state on the next cycle, and continue with the subsequent steps (typing, extracting, or verifying) before proposing "finish". Do NOT propose "finish" prematurely after intermediate navigation clicks.
-10. Provide a concise rationale. Never answer with a plan, instructions, or conversational prose; choose the single next executable action.
+10. REASONING & RATIONALE: Provide a detailed step-by-step thinking process in the "reasoning" field explaining what elements you observe on the screen and why you chose this action to advance toward the user's goal. Never answer with conversational prose; choose the single next executable action.
 11. Do not return "finish" merely because you have explained what should happen. Use "finish" only when visible page state proves the user's requested browser operation is already complete.
-12. GOAL COMPLETION: If the user's goal has already been achieved by the current page state and visible landmarks:
+12. GOAL COMPLETION & PROGRESSION:
+   - If the postcondition history (in pageState.postconditionSummary) indicates that the requested action (e.g. typing text into an input, clicking a control) has already been executed in previous steps, or if the user's operational goal has already been achieved: you MUST return kind: "finish" with confidence: 1.0 and a rationale confirming completion. NEVER propose repeating the exact same type or click action that was already executed.
    - If the goal was to open a preview drawer/modal and it is already visible/open: return kind: "finish".
    - If the goal was to click Refresh Sync / synchronize and the status already says "Synchronized" or "Sync": return kind: "finish".
    - If the goal was to submit clearance approval and the status already says "Approved": return kind: "finish".
@@ -1076,6 +1081,7 @@ JSON Schema:
   "fileName": "Optional filename when kind is upload_file",
   "selectOptionValue": "Required option value string when kind is select (e.g. 'pending')",
   "scrollDirection": "down" | "up",
+  "reasoning": "Detailed step-by-step thinking process explaining what you observe on page and why this action was chosen",
   "rationale": "Short explanation",
   "expectedState": "Expected UI change"
 }

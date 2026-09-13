@@ -99,6 +99,7 @@ export interface CoordinatorRunResult {
   readonly state: AgentState;
   readonly message?: string;
   readonly error?: string;
+  readonly reasoning?: string;
   readonly sanitized?: SanitizedContext;
   readonly proposal?: ActionProposal;
   readonly telemetry?: RunTelemetry;
@@ -200,6 +201,7 @@ export class RunCoordinator {
   private maxStaleRetries: number = 2;
   private pendingAction: ActionProposal | null = null;
   private currentSanitizedContext: SanitizedContext | null = null;
+  private lastActionProposal: ActionProposal | null = null;
   private lastRunResult: CoordinatorRunResult | null = null;
   private actionHistory: Array<{ actionId?: string; kind: string; targetLocalId?: string; textToType?: string; selectOptionValue?: string; scrollDirection?: string }> = [];
   private t0_runStart: number = 0;
@@ -243,6 +245,7 @@ export class RunCoordinator {
   private completeWithResult(res: CoordinatorRunResult): CoordinatorRunResult {
     const finalRes: CoordinatorRunResult = {
       ...res,
+      reasoning: res.reasoning || res.proposal?.reasoning || this.lastActionProposal?.reasoning || res.proposal?.rationale || this.lastActionProposal?.rationale || res.message,
       runId: res.runId || this.currentRunId || undefined
     };
     this.lastRunResult = finalRes;
@@ -1628,6 +1631,11 @@ export class RunCoordinator {
         }
         t4_reasoningReceived = Date.now();
       }
+
+      if (proposal && !proposal.reasoning && proposal.rationale) {
+        proposal = { ...proposal, reasoning: proposal.rationale };
+      }
+      this.lastActionProposal = proposal;
 
       // Step 4: Validating Action & Policy Check
       this.transition('validating-action', `Step ${step}/${maxSteps}: Validating proposed action`);

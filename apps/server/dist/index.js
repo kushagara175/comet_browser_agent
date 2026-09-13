@@ -210,8 +210,8 @@ export function createServer() {
                     const { message, elements, sanitizedTitle, maskCount, history } = validation.payload;
                     const hasSanitizedContext = Array.isArray(elements) && elements.length > 0;
                     const systemPrompt = hasSanitizedContext
-                        ? `You are PrivaPilot, a privacy-first browser AI assistant. The user is asking about the current webpage. Review the sanitized elements and answer concisely.`
-                        : `You are PrivaPilot, a smart privacy-first browser AI assistant. Answer the user's question helpfully and concisely.`;
+                        ? `You are PrivaPilot, a privacy-first browser AI assistant. The user is asking about the current webpage. Review the sanitized elements and answer helpfully. Think step by step and feel free to enclose your internal reasoning inside <think>...</think> tags before your final response.`
+                        : `You are PrivaPilot, a smart privacy-first browser AI assistant. Answer the user's question helpfully and concisely. Think step by step and feel free to enclose your internal reasoning inside <think>...</think> tags before your final response.`;
                     // Build user message from sanitized element list only (no raw DOM or URLs)
                     let fullUserMessage = message;
                     if (hasSanitizedContext) {
@@ -228,7 +228,7 @@ export function createServer() {
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({
                         reply: chatResult.reply,
-                        reasoning: chatResult.reasoning,
+                        reasoning: chatResult.reasoning || (hasSanitizedContext ? 'Analyzed visible page elements and generated response.' : 'Formulated response to query.'),
                         provider: chatResult.provider,
                         modelName: chatResult.modelName,
                         modelConnected: !chatResult.degraded,

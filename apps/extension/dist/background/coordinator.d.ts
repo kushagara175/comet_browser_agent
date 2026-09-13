@@ -74,6 +74,7 @@ export interface CoordinatorRunResult {
     readonly state: AgentState;
     readonly message?: string;
     readonly error?: string;
+    readonly reasoning?: string;
     readonly sanitized?: SanitizedContext;
     readonly proposal?: ActionProposal;
     readonly telemetry?: RunTelemetry;
@@ -111,6 +112,7 @@ export declare class RunCoordinator {
     private maxStaleRetries;
     private pendingAction;
     private currentSanitizedContext;
+    private lastActionProposal;
     private lastRunResult;
     private actionHistory;
     private t0_runStart;

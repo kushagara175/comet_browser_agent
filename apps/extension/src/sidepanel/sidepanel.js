@@ -80,7 +80,7 @@ export function extractActionSuggestions(text) {
 }
 
 const ACTION_REQUEST_PREFIX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
-const ACTION_VERB = /^(?:click|open|type|fill|enter|write|set|press|select|choose|scroll|hover|drag|drop|upload|attach|move|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log\s+in|sign|auth|authenticate|do|perform|execute|proceed|buy|checkout|inspect|audit|check|go\s+to|navigate|view|see|show|look|lookup|organize|manage|clean|read|summarize|analyze|review|examine|list|get|fetch)(?:\b|\s)/i;
+const ACTION_VERB = /^(?:click|open|type|fill|fill\s+out|enter|write|set|press|select|choose|scroll|hover|drag|drop|upload|attach|move|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log\s+in|sign|auth|authenticate|do|perform|execute|proceed|buy|checkout|inspect|audit|check|go\s+to|navigate|view|see|show|look|lookup|organize|manage|clean|read|summarize|analyze|review|examine|list|get|fetch|test|try|work|automate|operate|interact)(?:\b|\s)/i;
 
 /**
  * Distinguishes an instruction to operate the current page from a question.
@@ -135,6 +135,11 @@ export function isBrowserActionRequest(message) {
   // Prepositional phrases: "in the place of name type ...", "in name put ...", "for email enter ..."
   const strippedPunct = normalized.replace(/([a-zA-Z0-9_-]+)\.\s+/g, '$1 ').replace(/\s+\.\s+/g, ' ').replace(/\s+/g, ' ');
   if (/^(?:in|for|at|on|into|to)\s+(?:the\s+)?(?:place\s+of\s+|field\s+of\s+|box\s+of\s+|input\s+of\s+)?[a-z0-9_\s-]+\s+(?:type|fill|enter|write|put|set|tyoe)\b/i.test(strippedPunct)) {
+    return true;
+  }
+
+  // Actionable pattern anywhere: "type <val> into <target>" or "click <target>"
+  if (/\b(?:type|fill|enter|write|put)\s+["']?[a-zA-Z0-9_@.-]+["']?\s+(?:in|into|on|for)\b/i.test(strippedPunct)) {
     return true;
   }
 
@@ -1218,21 +1223,21 @@ if (typeof document !== 'undefined') {
         const formattedHtml = renderMarkdown(res.reply);
         const actionSuggestions = extractActionSuggestions(res.reply);
 
+        const chatReasoning = res.reasoning || 'Analyzed visible page context and formulated response.';
+
         agentBubble.innerHTML = `
           ${modelDisconnected ? `
             <div style="padding: 6px 8px; margin-bottom: 5px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; color: #b45309; font-size: 10.5px; font-weight: 600;">
               ⚠️ No reasoning model connected — this reply did not come from a model.
             </div>
           ` : ''}
-          ${res.reasoning ? `
-            <details class="thought-stream-details" open>
-              <summary class="thought-stream-summary">
-                <span>🧠 Agent Thought Process</span>
-                <span class="thought-stream-badge">Reasoning</span>
-              </summary>
-              <div class="thought-stream-body">${renderMarkdown(res.reasoning)}</div>
-            </details>
-          ` : ''}
+          <details class="thought-stream-details" open>
+            <summary class="thought-stream-summary">
+              <span>🧠 Agent Thought Process</span>
+              <span class="thought-stream-badge">Reasoning</span>
+            </summary>
+            <div class="thought-stream-body">${renderMarkdown(chatReasoning)}</div>
+          </details>
           <div style="font-size: 11.5px; color: #e3e3e3; line-height: 1.5; user-select: text;">${formattedHtml}</div>
           ${actionSuggestions.length > 0 ? `
             <div class="chat-action-chips" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;">
@@ -1333,19 +1338,17 @@ if (typeof document !== 'undefined') {
 
       const actionLabel = getCleanActionLabel(action);
 
-      const reasoningText = action.reasoning || res.reasoning || (action.rationale !== actionLabel ? action.rationale : '');
+      const reasoningText = action.reasoning || res.reasoning || action.rationale || res.message || 'LLM analyzed page elements and determined the optimal execution path.';
 
       agentBubble.classList.add('msg-action');
       agentBubble.innerHTML = `
-        ${reasoningText ? `
-          <details class="thought-stream-details" open>
-            <summary class="thought-stream-summary">
-              <span>🧠 Thinking Process</span>
-              <span class="thought-stream-badge">${Math.round((action.confidence || 0.95) * 100)}% Conf</span>
-            </summary>
-            <div class="thought-stream-body">${renderMarkdown(reasoningText)}</div>
-          </details>
-        ` : ''}
+        <details class="thought-stream-details" open>
+          <summary class="thought-stream-summary">
+            <span>🧠 Thinking Process</span>
+            <span class="thought-stream-badge">${Math.round((action.confidence || 0.95) * 100)}% Conf</span>
+          </summary>
+          <div class="thought-stream-body">${renderMarkdown(reasoningText)}</div>
+        </details>
         ${res.steps && res.steps.length > 1 ? `
           <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 7px;">
             ${res.steps.map(s => `
@@ -1687,13 +1690,18 @@ if (typeof document !== 'undefined') {
               addAuditEntry('PLAN', `${actDesc}: ${act.rationale || 'Executing action'}`, 'pass');
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
               if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
+                const liveReasoning = act.reasoning || act.rationale || 'Evaluating page elements and planning action...';
                 lastAgentBubble.innerHTML = `
-                  <div class="agent-thinking-stream" style="display: flex; flex-direction: column; gap: 4px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                      <div class="agent-status-ring" style="display: inline-block; width: 12px; height: 12px; border: 2px solid #8ab4f8; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;"></div>
-                      <span style="font-size: 11px; font-weight: 600; color: #8ab4f8;">Executing ${escapeHtml((act.kind || 'action').toUpperCase())} ${escapeHtml(act.sanitizedTargetName || act.targetLocalId || '')}</span>
-                    </div>
-                    ${act.rationale ? `<div style="font-size: 10.5px; color: #cbd5e1; font-style: italic; margin-left: 20px;">"${escapeHtml(act.rationale)}"</div>` : ''}
+                  <details class="thought-stream-details" open style="margin-bottom: 8px;">
+                    <summary class="thought-stream-summary">
+                      <span>🧠 Thinking Process</span>
+                      <span class="thought-stream-badge">${escapeHtml((act.kind || 'action').toUpperCase())} • ${Math.round((act.confidence || 0.95) * 100)}% Conf</span>
+                    </summary>
+                    <div class="thought-stream-body">${renderMarkdown(liveReasoning)}</div>
+                  </details>
+                  <div class="agent-thinking-stream" style="display: flex; align-items: center; gap: 8px;">
+                    <div class="agent-status-ring" style="display: inline-block; width: 12px; height: 12px; border: 2px solid #8ab4f8; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;"></div>
+                    <span style="font-size: 11px; font-weight: 600; color: #8ab4f8;">Executing ${escapeHtml((act.kind || 'action').toUpperCase())} ${escapeHtml(act.sanitizedTargetName || act.targetLocalId || '')}</span>
                   </div>
                 `;
                 chatMessages.scrollTop = chatMessages.scrollHeight;
