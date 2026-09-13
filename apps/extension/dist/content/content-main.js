@@ -876,13 +876,34 @@
       } catch {
       }
       const routeFingerprint = typeof doc.location !== "undefined" && doc.location?.pathname ? doc.location.pathname.slice(0, 50) : "/";
+      let cappedInteractiveElements = interactiveElements;
+      if (cappedInteractiveElements.length > 180) {
+        cappedInteractiveElements = [...cappedInteractiveElements].sort((a, b) => {
+          const aDialog = a.isInsideDialog ? 1 : 0;
+          const bDialog = b.isInsideDialog ? 1 : 0;
+          if (aDialog !== bDialog) return bDialog - aDialog;
+          const roleScore = (r) => {
+            if (r === "input" || r === "textarea" || r === "select") return 4;
+            if (r === "button") return 3;
+            if (r === "tab" || r === "menuitem") return 2;
+            return 1;
+          };
+          const aScore = roleScore(a.role);
+          const bScore = roleScore(b.role);
+          if (aScore !== bScore) return bScore - aScore;
+          const aInView = a.boundingBox && a.boundingBox.y >= 0 && a.boundingBox.y <= viewportHeight ? 1 : 0;
+          const bInView = b.boundingBox && b.boundingBox.y >= 0 && b.boundingBox.y <= viewportHeight ? 1 : 0;
+          if (aInView !== bInView) return bInView - aInView;
+          return (a.boundingBox?.y || 0) - (b.boundingBox?.y || 0);
+        }).slice(0, 180);
+      }
       return {
         snapshot: {
           domElements,
           textNodes,
           imageElements,
           surfaces,
-          interactiveElements,
+          interactiveElements: cappedInteractiveElements,
           pageTitle: doc.title || "Page",
           visibleDialogCount,
           dialogTitles,
