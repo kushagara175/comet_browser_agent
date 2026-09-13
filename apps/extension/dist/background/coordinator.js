@@ -127,7 +127,7 @@ export class RunCoordinator {
     completeWithResult(res) {
         const finalRes = {
             ...res,
-            reasoning: res.reasoning || res.proposal?.reasoning || this.lastActionProposal?.reasoning || res.proposal?.rationale || this.lastActionProposal?.rationale || res.message,
+            reasoning: res.reasoning || res.proposal?.reasoning || this.lastActionProposal?.reasoning || undefined,
             runId: res.runId || this.currentRunId || undefined
         };
         this.lastRunResult = finalRes;
@@ -1364,9 +1364,6 @@ export class RunCoordinator {
                     return this.completeWithResult(res);
                 }
                 t4_reasoningReceived = Date.now();
-            }
-            if (proposal && !proposal.reasoning && proposal.rationale) {
-                proposal = { ...proposal, reasoning: proposal.rationale };
             }
             this.lastActionProposal = proposal;
             // Step 4: Validating Action & Policy Check

@@ -155,8 +155,8 @@ export function stripThinkingTags(raw: string): string {
 
 export function extractThinking(raw: string): string {
   if (!raw || typeof raw !== 'string') return '';
-  const match = raw.match(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/i) ||
-                raw.match(/<thought>([\s\S]*?)<\/thought>/i);
+  const match = raw.match(/<think(?:ing)?>([\s\S]*?)(?:<\/think(?:ing)?>|$)/i) ||
+                raw.match(/<thought>([\s\S]*?)(?:<\/thought>|$)/i);
   if (match) {
     return match[1].trim();
   }
@@ -508,7 +508,7 @@ export class VlmReasoningEngine {
     const cleanReply = stripThinkingTags(rawContent);
     return {
       reply: cleanReply,
-      reasoning: extractedThinking || (cleanReply ? 'Evaluated page context and synthesized response.' : undefined)
+      reasoning: extractedThinking || undefined
     };
   }
 
@@ -573,7 +573,7 @@ export class VlmReasoningEngine {
     const cleanReply = stripThinkingTags(rawContent);
     return {
       reply: cleanReply,
-      reasoning: extractedThinking || (cleanReply ? 'Evaluated page context and synthesized response.' : undefined)
+      reasoning: extractedThinking || undefined
     };
   }
 
@@ -989,11 +989,13 @@ export class VlmReasoningEngine {
         parsed.expectedState = parsed.kind === 'finish' ? 'Goal complete' : 'UI updates after action';
       }
 
-      const thinking = parsed.reasoning || parsed.thought || extractedThinking || parsed.rationale;
+      const thinking = parsed.reasoning || parsed.thought || extractedThinking;
       if (Array.isArray(thinking)) {
         parsed.reasoning = thinking.filter(Boolean).map((s: any) => String(s).trim()).join('\n').slice(0, 5000);
-      } else if (thinking) {
+      } else if (thinking && typeof thinking === 'string' && thinking.trim().length > 0) {
         parsed.reasoning = String(thinking).trim().slice(0, 5000);
+      } else {
+        delete parsed.reasoning;
       }
 
       if (!parsed.textToType && (parsed.text || parsed.value || parsed.input || parsed.content)) {

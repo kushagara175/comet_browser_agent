@@ -228,7 +228,7 @@ export function createServer() {
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({
                         reply: chatResult.reply,
-                        reasoning: chatResult.reasoning || (hasSanitizedContext ? 'Analyzed visible page elements and generated response.' : 'Formulated response to query.'),
+                        reasoning: chatResult.reasoning || undefined,
                         provider: chatResult.provider,
                         modelName: chatResult.modelName,
                         modelConnected: !chatResult.degraded,

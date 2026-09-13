@@ -1137,6 +1137,109 @@ html, body {
 }
 
 /* Agent Thought Process / Chain of Thought Stream Accordion */
+/* Real LLM Thinking & Monologue (inspired by allel MonologueBlock) */
+@keyframes thinking-shimmer {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -150% 0;
+  }
+}
+
+.thinking-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    rgba(163, 163, 163, 0.45) 0%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(163, 163, 163, 0.45) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 2.2s ease-in-out infinite;
+  display: inline-block;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.thinking-accordion {
+  margin: 3px 0 6px 0;
+  font-size: 11.5px;
+  user-select: none;
+}
+
+.thinking-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  color: #9ca3af;
+  font-weight: 500;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  list-style: none;
+  outline: none;
+}
+
+.thinking-summary::-webkit-details-marker {
+  display: none;
+}
+
+.thinking-summary:hover {
+  color: #d1d5db;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.thinking-chevron {
+  width: 12px;
+  height: 12px;
+  color: #6b7280;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.thinking-accordion[open] > .thinking-summary .thinking-chevron {
+  transform: rotate(90deg);
+}
+
+.thinking-label {
+  color: #9ca3af;
+  font-weight: 500;
+  font-size: 11px;
+}
+
+.thinking-body {
+  padding: 4px 0 4px 16px;
+  margin-top: 2px;
+}
+
+.thinking-monologue {
+  max-height: 150px;
+  overflow-y: auto;
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+  padding-left: 9px;
+  color: #9ca3af;
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.thinking-monologue::-webkit-scrollbar {
+  width: 3px;
+}
+
+.thinking-monologue::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+}
+
 .thought-stream-details {
   margin: 6px 0 8px 0;
   border: 1px solid rgba(138, 180, 248, 0.25);

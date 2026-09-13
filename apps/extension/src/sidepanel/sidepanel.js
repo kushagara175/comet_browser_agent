@@ -1060,8 +1060,58 @@ if (typeof document !== 'undefined') {
       }
     }
 
+    // Real LLM Monologue / Thinking Extraction & Sanitization (inspired by allel)
+    function sanitizeReasoningText(raw) {
+      if (!raw || typeof raw !== 'string') return '';
+      const clean = raw
+        .replace(/<\/?think(?:ing)?>/gi, '')
+        .replace(/<\/?thought>/gi, '')
+        .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+        .replace(/```json[\s\S]*?```/gi, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      // Strict check: filter out empty or canned fallback strings
+      const FAKE_STRINGS = [
+        'analyzed visible page elements and generated response.',
+        'formulated response to query.',
+        'evaluated page context and synthesized response.',
+        'llm analyzed page elements and determined the optimal execution path.',
+        'evaluating page elements and planning action...',
+        'analyzed visible page context and formulated response.',
+        'action executed successfully'
+      ];
+      if (FAKE_STRINGS.some(fake => clean.toLowerCase() === fake || clean.toLowerCase().startsWith(fake))) {
+        return '';
+      }
+      return clean;
+    }
+
+    function renderThinkingAccordion(rawReasoning, durationSeconds, options = {}) {
+      const sanitized = sanitizeReasoningText(rawReasoning);
+      if (!sanitized) return '';
+
+      const duration = durationSeconds && durationSeconds > 0 ? durationSeconds : 2;
+      const label = options.label || `Thought for ${duration}s`;
+      const isOpen = options.open ? 'open' : '';
+
+      return `
+        <details class="thinking-accordion" ${isOpen}>
+          <summary class="thinking-summary">
+            <svg class="thinking-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+            <span class="thinking-label">${escapeHtml(label)}</span>
+          </summary>
+          <div class="thinking-body">
+            <div class="thinking-monologue">${renderMarkdown(sanitized)}</div>
+          </div>
+        </details>
+      `;
+    }
+
     // Render Action Execution Outcome in Chat
-    function renderActionResult(agentBubble, res) {
+    function renderActionResult(agentBubble, res, durationSeconds) {
       if (typeof window !== 'undefined') {
         window.__lastAgentResult = res;
       }
@@ -1223,7 +1273,8 @@ if (typeof document !== 'undefined') {
         const formattedHtml = renderMarkdown(res.reply);
         const actionSuggestions = extractActionSuggestions(res.reply);
 
-        const chatReasoning = res.reasoning || 'Analyzed visible page context and formulated response.';
+        const duration = (res?.telemetry?.serverLatencyMs ? Math.max(1, Math.round(res.telemetry.serverLatencyMs / 1000)) : null) || durationSeconds || 2;
+        const thinkingHtml = renderThinkingAccordion(res.reasoning, duration);
 
         agentBubble.innerHTML = `
           ${modelDisconnected ? `
@@ -1231,13 +1282,7 @@ if (typeof document !== 'undefined') {
               ⚠️ No reasoning model connected — this reply did not come from a model.
             </div>
           ` : ''}
-          <details class="thought-stream-details" open>
-            <summary class="thought-stream-summary">
-              <span>🧠 Agent Thought Process</span>
-              <span class="thought-stream-badge">Reasoning</span>
-            </summary>
-            <div class="thought-stream-body">${renderMarkdown(chatReasoning)}</div>
-          </details>
+          ${thinkingHtml}
           <div style="font-size: 11.5px; color: #e3e3e3; line-height: 1.5; user-select: text;">${formattedHtml}</div>
           ${actionSuggestions.length > 0 ? `
             <div class="chat-action-chips" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;">
@@ -1337,18 +1382,13 @@ if (typeof document !== 'undefined') {
       }
 
       const actionLabel = getCleanActionLabel(action);
-
-      const reasoningText = action.reasoning || res.reasoning || action.rationale || res.message || 'LLM analyzed page elements and determined the optimal execution path.';
+      const realReasoning = action.reasoning || res.reasoning;
+      const duration = (res?.telemetry?.serverLatencyMs ? Math.max(1, Math.round(res.telemetry.serverLatencyMs / 1000)) : null) || durationSeconds || 2;
+      const thinkingHtml = renderThinkingAccordion(realReasoning, duration);
 
       agentBubble.classList.add('msg-action');
       agentBubble.innerHTML = `
-        <details class="thought-stream-details" open>
-          <summary class="thought-stream-summary">
-            <span>🧠 Thinking Process</span>
-            <span class="thought-stream-badge">${Math.round((action.confidence || 0.95) * 100)}% Conf</span>
-          </summary>
-          <div class="thought-stream-body">${renderMarkdown(reasoningText)}</div>
-        </details>
+        ${thinkingHtml}
         ${res.steps && res.steps.length > 1 ? `
           <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 7px;">
             ${res.steps.map(s => `
@@ -1457,17 +1497,26 @@ if (typeof document !== 'undefined') {
       if (chatInput) chatInput.value = '';
       chatMessages.scrollTop = chatMessages.scrollHeight;
 
-      // Agent Loading Bubble
+      // Agent Loading Bubble with live thinking timer (inspired by allel)
+      const turnStartTime = Date.now();
       const agentBubble = document.createElement('div');
       agentBubble.className = 'chat-msg agent';
       agentBubble.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span class="clean-spinner" style="width: 14px; height: 14px; border-width: 2px; border-top-color: #2563eb; border-right-color: #93c5fd;"></span>
-          <em>Contacting reasoning model...</em>
+        <div class="thinking-live-header" style="display: flex; align-items: center; gap: 8px; padding: 2px 0;">
+          <span class="clean-spinner" style="width: 12px; height: 12px; border-width: 2px; border-top-color: #8ab4f8; border-right-color: rgba(138, 180, 248, 0.25);"></span>
+          <span class="thinking-shimmer-text">Thinking (1s)</span>
         </div>
       `;
       chatMessages.appendChild(agentBubble);
       chatMessages.scrollTop = chatMessages.scrollHeight;
+
+      const liveThinkingTimer = setInterval(() => {
+        const sec = Math.max(1, Math.round((Date.now() - turnStartTime) / 1000));
+        const shimmerEl = agentBubble.querySelector('.thinking-shimmer-text');
+        if (shimmerEl) {
+          shimmerEl.textContent = `Thinking (${sec}s)`;
+        }
+      }, 500);
 
       setAgentStatus('capturing');
 
@@ -1486,6 +1535,7 @@ if (typeof document !== 'undefined') {
 
       // Handle direct stop/cancel commands immediately
       if (/^(?:stop|cancel|halt|abort|quit)(?:\s+(?:it|now|all|agent|run))?$/i.test(goalText.trim())) {
+        clearInterval(liveThinkingTimer);
         if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
           chrome.runtime.sendMessage({ type: 'CANCEL_RUN', target: 'privapilot-background' });
         }
@@ -1536,6 +1586,7 @@ if (typeof document !== 'undefined') {
         const timeout = setTimeout(() => {
           if (settled) return;
           settled = true;
+          clearInterval(liveThinkingTimer);
           if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
             chrome.tabs.sendMessage(currentActiveTabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
           }
@@ -1552,7 +1603,9 @@ if (typeof document !== 'undefined') {
         }, (res) => {
           if (settled) return;
           settled = true;
+          clearInterval(liveThinkingTimer);
           clearTimeout(timeout);
+          const finalDuration = Math.max(1, Math.round((Date.now() - turnStartTime) / 1000));
           if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
             chrome.tabs.sendMessage(currentActiveTabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
           }
@@ -1561,11 +1614,12 @@ if (typeof document !== 'undefined') {
             setAgentStatus('failed-safe');
             return;
           }
-          renderActionResult(agentBubble, res);
+          renderActionResult(agentBubble, res, finalDuration);
         });
       } else {
         // Fallback for standalone / mock preview
         setTimeout(() => {
+          clearInterval(liveThinkingTimer);
           agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; color: #1d4ed8; font-size: 11px;">ℹ️ Running in standalone mode. Connect Chrome extension runtime for live browser automation.</div>`;
           setAgentStatus('idle');
         }, 300);
@@ -1690,15 +1744,22 @@ if (typeof document !== 'undefined') {
               addAuditEntry('PLAN', `${actDesc}: ${act.rationale || 'Executing action'}`, 'pass');
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
               if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
-                const liveReasoning = act.reasoning || act.rationale || 'Evaluating page elements and planning action...';
-                lastAgentBubble.innerHTML = `
-                  <details class="thought-stream-details" open style="margin-bottom: 8px;">
-                    <summary class="thought-stream-summary">
-                      <span>🧠 Thinking Process</span>
-                      <span class="thought-stream-badge">${escapeHtml((act.kind || 'action').toUpperCase())} • ${Math.round((act.confidence || 0.95) * 100)}% Conf</span>
+                const liveReasoning = sanitizeReasoningText(act.reasoning);
+                const liveThinkingHtml = liveReasoning ? `
+                  <details class="thinking-accordion" open style="margin-bottom: 6px;">
+                    <summary class="thinking-summary">
+                      <svg class="thinking-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                      </svg>
+                      <span class="thinking-shimmer-text">Thinking...</span>
                     </summary>
-                    <div class="thought-stream-body">${renderMarkdown(liveReasoning)}</div>
+                    <div class="thinking-body">
+                      <div class="thinking-monologue">${renderMarkdown(liveReasoning)}</div>
+                    </div>
                   </details>
+                ` : '';
+                lastAgentBubble.innerHTML = `
+                  ${liveThinkingHtml}
                   <div class="agent-thinking-stream" style="display: flex; align-items: center; gap: 8px;">
                     <div class="agent-status-ring" style="display: inline-block; width: 12px; height: 12px; border: 2px solid #8ab4f8; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;"></div>
                     <span style="font-size: 11px; font-weight: 600; color: #8ab4f8;">Executing ${escapeHtml((act.kind || 'action').toUpperCase())} ${escapeHtml(act.sanitizedTargetName || act.targetLocalId || '')}</span>

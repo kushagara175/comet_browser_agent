@@ -19485,7 +19485,7 @@ var RunCoordinator = class {
   completeWithResult(res) {
     const finalRes = {
       ...res,
-      reasoning: res.reasoning || res.proposal?.reasoning || this.lastActionProposal?.reasoning || res.proposal?.rationale || this.lastActionProposal?.rationale || res.message,
+      reasoning: res.reasoning || res.proposal?.reasoning || this.lastActionProposal?.reasoning || void 0,
       runId: res.runId || this.currentRunId || void 0
     };
     this.lastRunResult = finalRes;
@@ -20593,9 +20593,6 @@ var RunCoordinator = class {
           return this.completeWithResult(res2);
         }
         t4_reasoningReceived = Date.now();
-      }
-      if (proposal && !proposal.reasoning && proposal.rationale) {
-        proposal = { ...proposal, reasoning: proposal.rationale };
       }
       this.lastActionProposal = proposal;
       this.transition("validating-action", `Step ${step}/${maxSteps}: Validating proposed action`);
