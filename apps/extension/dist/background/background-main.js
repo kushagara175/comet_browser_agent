@@ -14457,15 +14457,21 @@ function resolveTaskContract(goal) {
       }
     };
   }
-  const isQuestionOrRetrieval = /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:about|how|what|the)|find\s+.*?\s+and\s+tell)/i.test(g);
+  const isQuestionOrRetrieval = /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:about|how|what|the|when|who|which|where|why|if)|find\s+.*?\s+and\s+tell|search\s+.*?\s+and\s+tell|check\s+.*?\s+and\s+tell|(?:when|who|where|why)\s+(?:was|is|are|were|organizes|coordinates|leads|founded|created|launched|started)|when\s+it\s+was|who\s+organizes)/i.test(g);
   if (isQuestionOrRetrieval) {
-    let queryTopic = "submissions";
+    let queryTopic = "information";
     if (/submi/i.test(g))
       queryTopic = "submissions";
     else if (/problem|ps\b/i.test(g))
       queryTopic = "problem statements";
     else if (g.includes("count") || g.includes("how many"))
       queryTopic = "count";
+    else if (/(?:launch|start|found|create|when)/i.test(g) && /(?:organiz|lead|head|manage|who)/i.test(g))
+      queryTopic = "launch date and organizer";
+    else if (/(?:launch|start|found|create|when)/i.test(g))
+      queryTopic = "launch date";
+    else if (/(?:organiz|lead|head|manage|who)/i.test(g))
+      queryTopic = "organizer";
     return {
       supported: true,
       goalPattern: "answer_question",
@@ -14556,7 +14562,7 @@ function resolveTaskContract(goal) {
   const hasCompoundAction = /\b(?:and\s+then|then|after\s+that|next)\s+(?:type|fill|enter|write|search|filter|find)\b/i.test(g) || /\b(?:and|then)\s+(?:type|fill|enter|write)\b/i.test(g);
   const isExplicitClickVerb = /^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+/i.test(g) && !hasCompoundAction && !/^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+(?:on\s+)?(?:the\s+)?(?:search(?:\s+bar|\s+box|\s+input|\s+field)?|input|field)\s+(?:and\s+)?(?:type|fill|enter|write)\b/i.test(g);
   if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry|chatbox|chat\b)/i.test(g)) {
-    const hasSubmitSuffix = /\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i.test(g);
+    const hasSubmitSuffix = /\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i.test(g) || /\bsearch\b/i.test(g);
     let cleanGoal = g.replace(/\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i, "").trim();
     cleanGoal = cleanGoal.replace(/^(?:can\s+you|could\s+you|please|kindly|i\s+want\s+you\s+to)\s+/i, "").replace(/\?+$/, "").trim();
     let targetPhrase2 = "search";
@@ -19752,6 +19758,7 @@ var RunCoordinator = class {
   currentMaxSteps = 10;
   currentStaleRetries = 0;
   maxStaleRetries = 2;
+  lastStaleTargetId = null;
   pendingAction = null;
   currentSanitizedContext = null;
   lastActionProposal = null;
@@ -20584,6 +20591,7 @@ var RunCoordinator = class {
     this.currentMaxSteps = Math.max(1, Math.min(options?.maxSteps ?? this.defaultMaxSteps, 20));
     this.maxStaleRetries = options?.maxStaleRetries ?? this.defaultMaxStaleRetries;
     this.currentStaleRetries = 0;
+    this.lastStaleTargetId = null;
     this.pendingAction = null;
     this.actionHistory = [];
     this.t0_runStart = Date.now();
@@ -21489,6 +21497,7 @@ var RunCoordinator = class {
         if (this.listeners.onTelemetryUpdated) {
           this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
         }
+        const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) || /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?|register|registration|apply|application|complete|fill|signup|sign\s+up|form|workflow|survey|questionnaire)\b/i.test(this.currentGoal || "");
         if (execResponse && execResponse.staleTarget) {
           if (proposal.risk !== "safe") {
             const errorMsg2 = `Stale target detected on protected action '${proposal.kind}': auto-retry is prohibited for non-safe actions`;
@@ -21561,12 +21570,11 @@ var RunCoordinator = class {
           }
         };
         this.stepsTrace.push(stepTrace);
-        const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) || /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?|register|registration|apply|application|complete|fill|signup|sign\s+up|form|workflow|survey|questionnaire)\b/i.test(this.currentGoal || "");
         if (!isSuccess) {
-          const canContinuePerception = execResponse?.success === true && proposal.risk === "safe" && step < maxSteps && isMultiStepGoal;
+          const canContinuePerception = proposal.risk === "safe" && step < maxSteps && isMultiStepGoal;
           if (canContinuePerception) {
-            console.warn(`[PrivaPilot Coordinator] Step ${step} semantic verification uncertain (${execResponse?.message || "unconfirmed"}); proceeding to next perception cycle...`);
-            this.transition("capturing", `Step ${step} executed. Re-perceiving page state (step ${step + 1}/${maxSteps})...`);
+            console.warn(`[PrivaPilot Coordinator] Step ${step} execution or verification unconfirmed (${execResponse?.message || "unconfirmed"}); proceeding to next perception cycle...`);
+            this.transition("capturing", `Step ${step}: ${execResponse?.message || "Action unconfirmed"}. Re-perceiving page state (step ${step + 1}/${maxSteps})...`);
             continue;
           }
           const errorMsg2 = execResponse?.message || "Action execution or semantic verification failed";

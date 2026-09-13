@@ -118,6 +118,7 @@ export declare class RunCoordinator {
     private currentMaxSteps;
     private currentStaleRetries;
     private maxStaleRetries;
+    private lastStaleTargetId;
     private pendingAction;
     private currentSanitizedContext;
     private lastActionProposal;

@@ -147,16 +147,22 @@ export function resolveTaskContract(goal) {
             }
         };
     }
-    // 1a. Information retrieval & question-answering goals (e.g. "how many submissions are done", "tell me how many submissions are completed", "see for ex how many submissions...")
-    const isQuestionOrRetrieval = /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:about|how|what|the)|find\s+.*?\s+and\s+tell)/i.test(g);
+    // 1a. Information retrieval & question-answering goals (e.g. "how many submissions are done", "tell me when it was first launched and who organizes it", "see for ex how many submissions...")
+    const isQuestionOrRetrieval = /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:about|how|what|the|when|who|which|where|why|if)|find\s+.*?\s+and\s+tell|search\s+.*?\s+and\s+tell|check\s+.*?\s+and\s+tell|(?:when|who|where|why)\s+(?:was|is|are|were|organizes|coordinates|leads|founded|created|launched|started)|when\s+it\s+was|who\s+organizes)/i.test(g);
     if (isQuestionOrRetrieval) {
-        let queryTopic = 'submissions';
+        let queryTopic = 'information';
         if (/submi/i.test(g))
             queryTopic = 'submissions';
         else if (/problem|ps\b/i.test(g))
             queryTopic = 'problem statements';
         else if (g.includes('count') || g.includes('how many'))
             queryTopic = 'count';
+        else if (/(?:launch|start|found|create|when)/i.test(g) && /(?:organiz|lead|head|manage|who)/i.test(g))
+            queryTopic = 'launch date and organizer';
+        else if (/(?:launch|start|found|create|when)/i.test(g))
+            queryTopic = 'launch date';
+        else if (/(?:organiz|lead|head|manage|who)/i.test(g))
+            queryTopic = 'organizer';
         return {
             supported: true,
             goalPattern: 'answer_question',
@@ -257,7 +263,8 @@ export function resolveTaskContract(goal) {
         !hasCompoundAction &&
         !/^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+(?:on\s+)?(?:the\s+)?(?:search(?:\s+bar|\s+box|\s+input|\s+field)?|input|field)\s+(?:and\s+)?(?:type|fill|enter|write)\b/i.test(g);
     if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry|chatbox|chat\b)/i.test(g)) {
-        const hasSubmitSuffix = /\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i.test(g);
+        const hasSubmitSuffix = /\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i.test(g) ||
+            /\bsearch\b/i.test(g);
         let cleanGoal = g.replace(/\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i, '').trim();
         cleanGoal = cleanGoal.replace(/^(?:can\s+you|could\s+you|please|kindly|i\s+want\s+you\s+to)\s+/i, '').replace(/\?+$/, '').trim();
         let targetPhrase = 'search';

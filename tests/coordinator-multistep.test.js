@@ -587,3 +587,103 @@ test('MultiStepCoordinator: Scenario 11 - Perception-Execution Bridge: Clarifica
   assert.ok(result.message?.includes('12 verified submissions'));
 });
 
+test('MultiStepCoordinator: Scenario 12 - Multi-step search & question answering survives transient action failure and finishes with answer', async () => {
+  const elements = [
+    {
+      localId: 'el_search_input',
+      role: 'input',
+      sanitizedName: 'Search Wikipedia',
+      coarseBounds: [0.1, 0.1, 0.3, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['type', 'click']
+    },
+    {
+      localId: 'el_hidden_suggestion',
+      role: 'button',
+      sanitizedName: 'Smart India Hackathon suggestion',
+      coarseBounds: [0.1, 0.2, 0.3, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    }
+  ];
+
+  let execStep = 0;
+  const browser = createFakeBrowserAdapter({
+    elements
+  });
+
+  const origSendMessage = browser.sendMessageToTab.bind(browser);
+  browser.sendMessageToTab = async (tabId, message) => {
+    if (message.type === 'EXECUTE_ACTION') {
+      execStep++;
+      if (execStep === 1) {
+        return {
+          success: true,
+          actionId: message.proposal.actionId,
+          semanticOutcomeVerified: true,
+          message: 'Typed Smart India Hackathon'
+        };
+      }
+      if (execStep === 2) {
+        return {
+          success: false,
+          actionId: message.proposal.actionId,
+          semanticOutcomeVerified: false,
+          staleTarget: true,
+          message: "Target element 'el_hidden_suggestion' is hidden or invisible"
+        };
+      }
+      return {
+        success: true,
+        actionId: message.proposal.actionId,
+        semanticOutcomeVerified: true,
+        message: 'Action succeeded'
+      };
+    }
+    return origSendMessage(tabId, message);
+  };
+
+  const step1Type = {
+    actionId: 'act_type_search',
+    kind: 'type',
+    targetLocalId: 'el_search_input',
+    textToType: 'Smart India Hackathon',
+    pressEnter: true,
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Type Smart India Hackathon'
+  };
+
+  const step2StaleClick = {
+    actionId: 'act_stale_click',
+    kind: 'click',
+    targetLocalId: 'el_hidden_suggestion',
+    confidence: 0.9,
+    risk: 'safe',
+    rationale: 'Click suggestion'
+  };
+
+  const step3FinishAnswer = {
+    actionId: 'act_finish_answer',
+    kind: 'finish',
+    reply: 'Smart India Hackathon was launched in 2017 and is organized by the Ministry of Education and AICTE.',
+    confidence: 1.0,
+    risk: 'safe',
+    rationale: 'Smart India Hackathon was launched in 2017 and is organized by the Ministry of Education and AICTE.'
+  };
+
+  const httpClient = createSequenceHttpClient([step1Type, step2StaleClick, step3FinishAnswer]);
+  const coordinator = new RunCoordinator(browser, httpClient);
+
+  const result = await coordinator.startRun(
+    "Go to wikipedia.org, search for 'Smart India Hackathon', and tell me when it was first launched and who organizes it",
+    { maxSteps: 5 }
+  );
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.state, 'complete');
+  assert.ok(result.message?.includes('2017'));
+  assert.ok(result.message?.includes('Ministry of Education'));
+});
+
+

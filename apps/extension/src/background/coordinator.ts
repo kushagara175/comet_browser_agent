@@ -222,6 +222,7 @@ export class RunCoordinator {
   private currentMaxSteps: number = 10;
   private currentStaleRetries: number = 0;
   private maxStaleRetries: number = 2;
+  private lastStaleTargetId: string | null = null;
   private pendingAction: ActionProposal | null = null;
   private currentSanitizedContext: SanitizedContext | null = null;
   private lastActionProposal: ActionProposal | null = null;
@@ -1289,6 +1290,7 @@ export class RunCoordinator {
     this.currentMaxSteps = Math.max(1, Math.min(options?.maxSteps ?? this.defaultMaxSteps, 20));
     this.maxStaleRetries = options?.maxStaleRetries ?? this.defaultMaxStaleRetries;
     this.currentStaleRetries = 0;
+    this.lastStaleTargetId = null;
     this.pendingAction = null;
     this.actionHistory = [];
     this.t0_runStart = Date.now();
@@ -2334,6 +2336,9 @@ export class RunCoordinator {
         this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
       }
 
+      const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) ||
+        /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?|register|registration|apply|application|complete|fill|signup|sign\s+up|form|workflow|survey|questionnaire)\b/i.test(this.currentGoal || '');
+
       // Handle Stale Target Recovery
       if (execResponse && execResponse.staleTarget) {
         if (proposal.risk !== 'safe') {
@@ -2411,21 +2416,17 @@ export class RunCoordinator {
       };
       this.stepsTrace.push(stepTrace);
 
-      const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) ||
-        /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?|register|registration|apply|application|complete|fill|signup|sign\s+up|form|workflow|survey|questionnaire)\b/i.test(this.currentGoal || '');
-
       if (!isSuccess) {
-        // If the action was physically executed successfully and risk is safe, and we have remaining steps in a multi-step task,
-        // do not abort the run on uncertain semantic verification. Proceed to next perception cycle so the VLM re-evaluates.
+        // If the action was safe and we have remaining steps in a multi-step task,
+        // do not abort the entire run! Re-perceive the page state so the reasoning engine can adapt to the updated DOM.
         const canContinuePerception =
-          execResponse?.success === true &&
           proposal.risk === 'safe' &&
           step < maxSteps &&
           isMultiStepGoal;
 
         if (canContinuePerception) {
-          console.warn(`[PrivaPilot Coordinator] Step ${step} semantic verification uncertain (${execResponse?.message || 'unconfirmed'}); proceeding to next perception cycle...`);
-          this.transition('capturing', `Step ${step} executed. Re-perceiving page state (step ${step + 1}/${maxSteps})...`);
+          console.warn(`[PrivaPilot Coordinator] Step ${step} execution or verification unconfirmed (${execResponse?.message || 'unconfirmed'}); proceeding to next perception cycle...`);
+          this.transition('capturing', `Step ${step}: ${execResponse?.message || 'Action unconfirmed'}. Re-perceiving page state (step ${step + 1}/${maxSteps})...`);
           continue;
         }
 

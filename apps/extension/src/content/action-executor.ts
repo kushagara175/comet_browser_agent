@@ -165,6 +165,7 @@ export class ActionExecutor {
         success: false,
         timestamp,
         semanticOutcomeVerified: false,
+        staleTarget: true,
         message: `Target element '${proposal.targetLocalId}' is hidden or invisible`
       };
     }
@@ -428,6 +429,14 @@ export class ActionExecutor {
             targetEl.dispatchEvent(new KeyboardEventCtor('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
             targetEl.dispatchEvent(new KeyboardEventCtor('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
             targetEl.dispatchEvent(new KeyboardEventCtor('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+            const form = (targetEl as any).form || (typeof targetEl.closest === 'function' ? targetEl.closest('form') : null);
+            if (form && typeof form.requestSubmit === 'function') {
+              try {
+                form.requestSubmit();
+              } catch (_) {
+                try { form.submit(); } catch (__) {}
+              }
+            }
           }
         }
 

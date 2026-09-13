@@ -500,6 +500,7 @@ test('ActionExecutor: Rejects hidden or invisible targets', () => {
     textToType: 'text'
   }, new Map([['el_hid', hiddenInput]]));
   assert.strictEqual(resHidden.success, false);
+  assert.strictEqual(resHidden.staleTarget, true);
   assert.ok(resHidden.message?.includes('hidden or invisible'));
 
   // 2. aria-hidden="true"
@@ -515,6 +516,7 @@ test('ActionExecutor: Rejects hidden or invisible targets', () => {
     textToType: 'text'
   }, new Map([['el_aria_hid', ariaHiddenInput]]));
   assert.strictEqual(resAriaHidden.success, false);
+  assert.strictEqual(resAriaHidden.staleTarget, true);
   assert.ok(resAriaHidden.message?.includes('hidden or invisible'));
 
   // 3. Computed style display: none
@@ -530,6 +532,7 @@ test('ActionExecutor: Rejects hidden or invisible targets', () => {
     textToType: 'text'
   }, new Map([['el_styled_hid', styledHiddenInput]]));
   assert.strictEqual(resStyled.success, false);
+  assert.strictEqual(resStyled.staleTarget, true);
   assert.ok(resStyled.message?.includes('hidden or invisible'));
 });
 
