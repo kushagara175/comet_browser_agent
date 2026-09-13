@@ -511,7 +511,7 @@ if (typeof document !== 'undefined') {
       }
     }
 
-    // Extension In-Panel Reload with exact clean-spinner loader (keeps sidepanel open)
+    // Extension In-Panel Reload: reloads entire extension runtime (background worker + sidepanel)
     const reloadExtensionBtn = document.getElementById('reloadExtensionBtn');
     const triggerReload = () => {
       reloadExtensionBtn?.classList.add('spinning');
@@ -520,12 +520,16 @@ if (typeof document !== 'undefined') {
         loadingView.classList.remove('hidden');
       }
       setTimeout(() => {
-        try {
-          const url = new URL(window.location.href);
-          url.searchParams.set('t', Date.now().toString());
-          window.location.replace(url.toString());
-        } catch (_e) {
-          window.location.reload();
+        if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.reload === 'function') {
+          chrome.runtime.reload();
+        } else {
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('t', Date.now().toString());
+            window.location.replace(url.toString());
+          } catch (_e) {
+            window.location.reload();
+          }
         }
       }, 250);
     };
