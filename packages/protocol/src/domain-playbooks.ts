@@ -1450,6 +1450,8 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
     const path = domainMatch[2] ? `/${domainMatch[2]}` : '';
     if (domain.toLowerCase() === 'isro.gov.in') {
       domain = 'www.isro.gov.in';
+    } else if (domain.toLowerCase() === 'gmail.com') {
+      return `https://mail.google.com${path || '/mail'}`;
     }
     return `https://${domain}${path}`;
   }
@@ -1504,6 +1506,7 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
   if (navDirective) {
     const target = navDirective[1].trim().toLowerCase();
     if (target === 'isro' || target.includes('isro')) return 'https://www.isro.gov.in';
+    if (target === 'gmail' || target.includes('gmail')) return 'https://mail.google.com/mail';
     if (target.includes('bhuvan')) return 'https://bhuvan.nrsc.gov.in';
     if (target.includes('mosdac')) return 'https://mosdac.gov.in';
     if (target.includes('vedas')) return 'https://vedas.sac.gov.in';

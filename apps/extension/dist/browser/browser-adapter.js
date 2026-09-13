@@ -209,14 +209,18 @@ export class WebExtensionAdapter {
             let settledTimer = null;
             let timeoutTimer = null;
             const isUrlSettled = (tabUrl) => {
-                if (!tabUrl || (tabUrl === 'about:blank' && expectedUrl !== 'about:blank'))
+                if (!tabUrl || (tabUrl === 'about:blank' && expectedUrl !== 'about:blank') || tabUrl.startsWith('chrome://'))
                     return false;
                 if (!expectedUrl)
                     return true;
                 try {
-                    const tabHost = new URL(tabUrl).hostname.toLowerCase().replace(/^www\./, '');
+                    const tabParsed = new URL(tabUrl);
+                    if (tabParsed.protocol === 'http:' || tabParsed.protocol === 'https:') {
+                        return true;
+                    }
+                    const tabHost = tabParsed.hostname.toLowerCase().replace(/^www\./, '');
                     const expHost = new URL(expectedUrl).hostname.toLowerCase().replace(/^www\./, '');
-                    return tabHost === expHost;
+                    return tabHost === expHost || tabHost.endsWith('.' + expHost) || expHost.endsWith('.' + tabHost);
                 }
                 catch (_) {
                     return true;

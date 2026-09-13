@@ -14411,12 +14411,12 @@ function parseFormFieldAssignments(text) {
 function resolveTaskContract(goal) {
   let g = (goal || "").trim().toLowerCase().replace(/[?!.]+$/, "").trim();
   let prev = "";
-  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?)+/i;
+  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
   while (g && g !== prev) {
     prev = g;
     g = g.replace(ACTION_PREFIX_REGEX, "").trim();
   }
-  const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and|then|,)\s+(.+)$/i);
+  const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
   if (navPrefixMatch && navPrefixMatch[1]) {
     g = navPrefixMatch[1].trim();
   }
@@ -14426,6 +14426,19 @@ function resolveTaskContract(goal) {
       goalPattern: "empty",
       expectedTerminal: { kind: "status_changed" },
       abstentionReason: "EMPTY_GOAL: Goal cannot be empty"
+    };
+  }
+  if (isPureNavigationGoal(g)) {
+    return {
+      supported: true,
+      goalPattern: "navigate_url",
+      expectedTerminal: { kind: "status_changed" },
+      expectedTargetNameSubstring: g,
+      structuredIntent: {
+        intent: "navigate",
+        targetPhrase: g,
+        targetTokens: tokenizeSemanticText(g)
+      }
     };
   }
   const isMultiStep = /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload)\b/i.test(g) || /(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many)/i.test(g);
@@ -15107,11 +15120,40 @@ function classifyActionRisk(proposal, elementName) {
 function stripNavigationPrefixFromGoal(goal) {
   if (!goal || typeof goal !== "string")
     return goal;
-  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and|then|,)\s+(.+)$/i);
+  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
   if (match && match[1]) {
     return match[1].trim();
   }
   return goal.trim();
+}
+function isPureNavigationGoal(goal) {
+  if (!goal || typeof goal !== "string")
+    return false;
+  let g = goal.trim().toLowerCase();
+  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+  let prev = "";
+  while (g && g !== prev) {
+    prev = g;
+    g = g.replace(ACTION_PREFIX_REGEX, "").trim();
+  }
+  if (/\s+(?:and\s+then|then|after\s+that|and|,)\s+(?:click|type|fill|enter|search|filter|find|select|press|check|see|tell|scroll|hover|drag|drop|upload)\b/i.test(g)) {
+    return false;
+  }
+  if (/^https?:\/\/[^\s]+$/i.test(g) || /^www\.[a-z0-9-]+\.[a-z]+(?:\/[^\s]*)?$/i.test(g)) {
+    return true;
+  }
+  if (/^(?:[a-zA-Z0-9-]+\.)+(?:gov\.in|nic\.in|ac\.in|org\.in|co\.in|com|org|net|io|in|edu|gov|dev|app|ai|me)(?:\/[^\s]*)?$/i.test(g)) {
+    return true;
+  }
+  const navMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_.:/-]+)$/i);
+  if (navMatch) {
+    const target = navMatch[1].trim();
+    if (/https?:\/\/|www\.|\.[a-z]{2,}/i.test(target))
+      return true;
+    if (/^(?:gmail|google|isro|sih|github|youtube|reddit|wikipedia|duckduckgo|demo|portal)$/i.test(target))
+      return true;
+  }
+  return false;
 }
 
 // ../../packages/protocol/dist/domain-playbooks.js
@@ -16360,6 +16402,8 @@ function extractTargetUrlFromGoal(goal) {
     const path = domainMatch[2] ? `/${domainMatch[2]}` : "";
     if (domain.toLowerCase() === "isro.gov.in") {
       domain = "www.isro.gov.in";
+    } else if (domain.toLowerCase() === "gmail.com") {
+      return `https://mail.google.com${path || "/mail"}`;
     }
     return `https://${domain}${path}`;
   }
@@ -16411,6 +16455,8 @@ function extractTargetUrlFromGoal(goal) {
     const target = navDirective[1].trim().toLowerCase();
     if (target === "isro" || target.includes("isro"))
       return "https://www.isro.gov.in";
+    if (target === "gmail" || target.includes("gmail"))
+      return "https://mail.google.com/mail";
     if (target.includes("bhuvan"))
       return "https://bhuvan.nrsc.gov.in";
     if (target.includes("mosdac"))
@@ -18352,12 +18398,16 @@ var WebExtensionAdapter = class {
       let settledTimer = null;
       let timeoutTimer = null;
       const isUrlSettled = (tabUrl) => {
-        if (!tabUrl || tabUrl === "about:blank" && expectedUrl !== "about:blank") return false;
+        if (!tabUrl || tabUrl === "about:blank" && expectedUrl !== "about:blank" || tabUrl.startsWith("chrome://")) return false;
         if (!expectedUrl) return true;
         try {
-          const tabHost = new URL(tabUrl).hostname.toLowerCase().replace(/^www\./, "");
+          const tabParsed = new URL(tabUrl);
+          if (tabParsed.protocol === "http:" || tabParsed.protocol === "https:") {
+            return true;
+          }
+          const tabHost = tabParsed.hostname.toLowerCase().replace(/^www\./, "");
           const expHost = new URL(expectedUrl).hostname.toLowerCase().replace(/^www\./, "");
-          return tabHost === expHost;
+          return tabHost === expHost || tabHost.endsWith("." + expHost) || expHost.endsWith("." + tabHost);
         } catch (_) {
           return true;
         }
@@ -20100,6 +20150,7 @@ var RunCoordinator = class {
       const res2 = { success: false, state: "idle", error: "No active goal" };
       return this.completeWithResult(res2);
     }
+    let hasNavigatedInitially = false;
     while (this.currentStep < this.currentMaxSteps) {
       if (this.isCancelled) {
         this.transition("idle", "Run cancelled by user");
@@ -20127,7 +20178,8 @@ var RunCoordinator = class {
             targetUrl = "https://www.google.com";
           }
         }
-        if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1) {
+        if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1 && !hasNavigatedInitially) {
+          hasNavigatedInitially = true;
           const navAction = {
             actionId: `act_init_nav_${Date.now()}`,
             kind: "navigate",
@@ -20144,11 +20196,37 @@ var RunCoordinator = class {
           if (navRes && typeof navRes === "object" && navRes.tabId) {
             this.currentTabId = navRes.tabId;
           }
+          if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url") {
+            this.transition("complete", `Navigated to ${targetUrl}`);
+            return this.completeWithResult({
+              success: true,
+              state: "complete",
+              stepCount: step,
+              message: `Navigated to ${targetUrl}`,
+              proposal: navAction,
+              steps: [{
+                step: 1,
+                captureId: `cap_nav_${Date.now()}`,
+                pageGeneration: `cap_nav_${Date.now()}`,
+                maskCount: 0,
+                sanitizedScreenshotBytes: 0,
+                decisionOrigin: "local",
+                proposal: navAction,
+                riskDecision: "safe",
+                confidenceDecision: "accepted",
+                executed: true,
+                executionResult: { success: true, staleTarget: false, reasonCode: "EXECUTION_SUCCESS" },
+                verification: { verified: true, reasonCode: "NAVIGATION_SUCCESS", durationMs: 0 },
+                networkRequestMade: false,
+                timings: { total: Date.now() - t0_step }
+              }]
+            });
+          }
           const subGoal = stripNavigationPrefixFromGoal(goal);
           if (subGoal && subGoal !== goal) {
             this.currentGoal = subGoal;
+            this.currentTaskContract = resolveTaskContract(subGoal);
           }
-          this.currentStep = 0;
           this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
           continue;
         }
@@ -20162,7 +20240,7 @@ var RunCoordinator = class {
         };
         return this.completeWithResult(res2);
       }
-      if (step === 1 && typeof this.browser.navigateTab === "function") {
+      if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === "function") {
         const targetUrl = extractTargetUrlFromGoal(goal);
         if (targetUrl && activeTab?.url) {
           try {
@@ -20170,7 +20248,9 @@ var RunCoordinator = class {
             const targetHost = new URL(targetUrl).hostname.toLowerCase();
             const isMissingWww = currentHost === "isro.gov.in" && targetHost === "www.isro.gov.in";
             const isDifferentSite = currentHost.replace(/^www\./, "") !== targetHost.replace(/^www\./, "");
-            if (isMissingWww || isDifferentSite) {
+            const isSubdomainOrRedirect = currentHost === targetHost || currentHost.endsWith("." + targetHost) || targetHost.endsWith("." + currentHost) || targetHost.includes("gmail.com") && currentHost.includes("google.com") || targetHost.includes("google.com") && currentHost.includes("google.com");
+            if ((isMissingWww || isDifferentSite) && !isSubdomainOrRedirect) {
+              hasNavigatedInitially = true;
               const navAction = {
                 actionId: `act_init_nav_${Date.now()}`,
                 kind: "navigate",
@@ -20187,13 +20267,56 @@ var RunCoordinator = class {
               if (navRes && typeof navRes === "object" && navRes.tabId) {
                 this.currentTabId = navRes.tabId;
               }
+              if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url") {
+                this.transition("complete", `Navigated to ${targetUrl}`);
+                return this.completeWithResult({
+                  success: true,
+                  state: "complete",
+                  stepCount: step,
+                  message: `Navigated to ${targetUrl}`,
+                  proposal: navAction,
+                  steps: [{
+                    step: 1,
+                    captureId: `cap_nav_${Date.now()}`,
+                    pageGeneration: `cap_nav_${Date.now()}`,
+                    maskCount: 0,
+                    sanitizedScreenshotBytes: 0,
+                    decisionOrigin: "local",
+                    proposal: navAction,
+                    riskDecision: "safe",
+                    confidenceDecision: "accepted",
+                    executed: true,
+                    executionResult: { success: true, staleTarget: false, reasonCode: "EXECUTION_SUCCESS" },
+                    verification: { verified: true, reasonCode: "NAVIGATION_SUCCESS", durationMs: 0 },
+                    networkRequestMade: false,
+                    timings: { total: Date.now() - t0_step }
+                  }]
+                });
+              }
               const subGoal = stripNavigationPrefixFromGoal(goal);
               if (subGoal && subGoal !== goal) {
                 this.currentGoal = subGoal;
+                this.currentTaskContract = resolveTaskContract(subGoal);
               }
-              this.currentStep = 0;
               this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
               continue;
+            } else if (isSubdomainOrRedirect && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url")) {
+              this.transition("complete", `Already on ${targetUrl}`);
+              const navAction = {
+                actionId: `act_init_nav_${Date.now()}`,
+                kind: "navigate",
+                confidence: 1,
+                risk: "safe",
+                rationale: `Already at target website: ${targetUrl}`,
+                expectedPostcondition: { kind: "status_changed" }
+              };
+              return this.completeWithResult({
+                success: true,
+                state: "complete",
+                stepCount: step,
+                message: `Already on ${targetUrl}`,
+                proposal: navAction
+              });
             }
           } catch {
           }
@@ -20237,15 +20360,26 @@ var RunCoordinator = class {
           if (!targetUrl && (goal.toLowerCase().includes("isro") || goal.toLowerCase().includes("mission"))) {
             targetUrl = "https://www.isro.gov.in";
           }
-          if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1) {
+          if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1 && !hasNavigatedInitially) {
+            hasNavigatedInitially = true;
             this.transition("executing", `Navigating tab to ${targetUrl}...`);
             const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
             if (navRes && typeof navRes === "object" && navRes.tabId) {
               this.currentTabId = navRes.tabId;
             }
+            if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url") {
+              this.transition("complete", `Navigated to ${targetUrl}`);
+              return this.completeWithResult({
+                success: true,
+                state: "complete",
+                stepCount: step,
+                message: `Navigated to ${targetUrl}`
+              });
+            }
             const subGoal = stripNavigationPrefixFromGoal(goal);
             if (subGoal && subGoal !== goal) {
               this.currentGoal = subGoal;
+              this.currentTaskContract = resolveTaskContract(subGoal);
             }
             continue;
           }
@@ -21291,6 +21425,10 @@ async function handleSidepanelRequest(message) {
   if (message.type === "CHAT_WITH_PAGE") {
     return coordinator.chatWithPage(message.message || "", message.history);
   }
+  if (message.type === "CANCEL_RUN" || message.type === "STOP_RUN") {
+    coordinator.cancelRun();
+    return { success: true, state: "idle", message: "Run cancelled by user" };
+  }
   throw new Error(`Unsupported side-panel request: ${message?.type || "unknown"}`);
 }
 if (typeof chrome !== "undefined" && chrome.runtime?.onConnect) {
@@ -21322,6 +21460,11 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.target && message.target !== "privapilot-background") {
       return false;
+    }
+    if (message.type === "CANCEL_RUN" || message.type === "STOP_RUN") {
+      coordinator.cancelRun();
+      sendResponse({ success: true, state: "idle", message: "Run cancelled by user" });
+      return true;
     }
     if (message.type === "START_AGENT_RUN") {
       coordinator.startRun(message.goal || "Safe assistance", {

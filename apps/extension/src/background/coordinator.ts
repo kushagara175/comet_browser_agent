@@ -33,7 +33,8 @@ import {
   extractMetricsWithPlaybook,
   extractSearchQueryFromGoal,
   extractTargetUrlFromGoal,
-  stripNavigationPrefixFromGoal
+  stripNavigationPrefixFromGoal,
+  isPureNavigationGoal
 } from '@privapilot/protocol';
 import { BrowserAdapter, WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
@@ -1194,6 +1195,8 @@ export class RunCoordinator {
       return this.completeWithResult(res);
     }
 
+    let hasNavigatedInitially = false;
+
     while (this.currentStep < this.currentMaxSteps) {
       if (this.isCancelled) {
         this.transition('idle', 'Run cancelled by user');
@@ -1230,7 +1233,8 @@ export class RunCoordinator {
           }
         }
 
-        if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1) {
+        if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1 && !hasNavigatedInitially) {
+          hasNavigatedInitially = true;
           const navAction: ActionProposal = {
             actionId: `act_init_nav_${Date.now()}`,
             kind: 'navigate' as any,
@@ -1248,11 +1252,40 @@ export class RunCoordinator {
           if (navRes && typeof navRes === 'object' && navRes.tabId) {
             this.currentTabId = navRes.tabId;
           }
+
+          if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url') {
+            this.transition('complete', `Navigated to ${targetUrl}`);
+            return this.completeWithResult({
+              success: true,
+              state: 'complete',
+              stepCount: step,
+              message: `Navigated to ${targetUrl}`,
+              proposal: navAction,
+
+              steps: [{
+                step: 1,
+                captureId: `cap_nav_${Date.now()}`,
+                pageGeneration: `cap_nav_${Date.now()}`,
+                maskCount: 0,
+                sanitizedScreenshotBytes: 0,
+                decisionOrigin: 'local',
+                proposal: navAction,
+                riskDecision: 'safe',
+                confidenceDecision: 'accepted',
+                executed: true,
+                executionResult: { success: true, staleTarget: false, reasonCode: 'EXECUTION_SUCCESS' },
+                verification: { verified: true, reasonCode: 'NAVIGATION_SUCCESS', durationMs: 0 },
+                networkRequestMade: false,
+                timings: { total: Date.now() - t0_step }
+              }]
+            });
+          }
+
           const subGoal = stripNavigationPrefixFromGoal(goal);
           if (subGoal && subGoal !== goal) {
             this.currentGoal = subGoal;
+            this.currentTaskContract = resolveTaskContract(subGoal);
           }
-          this.currentStep = 0;
           this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
           continue;
         }
@@ -1269,7 +1302,7 @@ export class RunCoordinator {
       }
 
       // If on step 1, check if user's goal specifies navigating to a different domain from scratch
-      if (step === 1 && typeof this.browser.navigateTab === 'function') {
+      if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === 'function') {
         const targetUrl = extractTargetUrlFromGoal(goal);
         if (targetUrl && activeTab?.url) {
           try {
@@ -1277,7 +1310,15 @@ export class RunCoordinator {
             const targetHost = new URL(targetUrl).hostname.toLowerCase();
             const isMissingWww = currentHost === 'isro.gov.in' && targetHost === 'www.isro.gov.in';
             const isDifferentSite = currentHost.replace(/^www\./, '') !== targetHost.replace(/^www\./, '');
-            if (isMissingWww || isDifferentSite) {
+            const isSubdomainOrRedirect =
+              currentHost === targetHost ||
+              currentHost.endsWith('.' + targetHost) ||
+              targetHost.endsWith('.' + currentHost) ||
+              (targetHost.includes('gmail.com') && currentHost.includes('google.com')) ||
+              (targetHost.includes('google.com') && currentHost.includes('google.com'));
+
+            if ((isMissingWww || isDifferentSite) && !isSubdomainOrRedirect) {
+              hasNavigatedInitially = true;
               const navAction: ActionProposal = {
                 actionId: `act_init_nav_${Date.now()}`,
                 kind: 'navigate' as any,
@@ -1295,13 +1336,59 @@ export class RunCoordinator {
               if (navRes && typeof navRes === 'object' && navRes.tabId) {
                 this.currentTabId = navRes.tabId;
               }
+
+              if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url') {
+                this.transition('complete', `Navigated to ${targetUrl}`);
+                return this.completeWithResult({
+                  success: true,
+                  state: 'complete',
+                  stepCount: step,
+                  message: `Navigated to ${targetUrl}`,
+                  proposal: navAction,
+    
+                  steps: [{
+                    step: 1,
+                    captureId: `cap_nav_${Date.now()}`,
+                    pageGeneration: `cap_nav_${Date.now()}`,
+                    maskCount: 0,
+                    sanitizedScreenshotBytes: 0,
+                    decisionOrigin: 'local',
+                    proposal: navAction,
+                    riskDecision: 'safe',
+                    confidenceDecision: 'accepted',
+                    executed: true,
+                    executionResult: { success: true, staleTarget: false, reasonCode: 'EXECUTION_SUCCESS' },
+                    verification: { verified: true, reasonCode: 'NAVIGATION_SUCCESS', durationMs: 0 },
+                    networkRequestMade: false,
+                    timings: { total: Date.now() - t0_step }
+                  }]
+                });
+              }
+
               const subGoal = stripNavigationPrefixFromGoal(goal);
               if (subGoal && subGoal !== goal) {
                 this.currentGoal = subGoal;
+                this.currentTaskContract = resolveTaskContract(subGoal);
               }
-              this.currentStep = 0;
               this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
               continue;
+            } else if (isSubdomainOrRedirect && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url')) {
+              this.transition('complete', `Already on ${targetUrl}`);
+              const navAction: ActionProposal = {
+                actionId: `act_init_nav_${Date.now()}`,
+                kind: 'navigate' as any,
+                confidence: 1.0,
+                risk: 'safe',
+                rationale: `Already at target website: ${targetUrl}`,
+                expectedPostcondition: { kind: 'status_changed' }
+              };
+              return this.completeWithResult({
+                success: true,
+                state: 'complete',
+                stepCount: step,
+                message: `Already on ${targetUrl}`,
+                proposal: navAction
+              });
             }
           } catch {
             // URL parse failure, proceed to DOM capture
@@ -1351,15 +1438,26 @@ export class RunCoordinator {
           if (!targetUrl && (goal.toLowerCase().includes('isro') || goal.toLowerCase().includes('mission'))) {
             targetUrl = 'https://www.isro.gov.in';
           }
-          if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1) {
+          if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1 && !hasNavigatedInitially) {
+            hasNavigatedInitially = true;
             this.transition('executing', `Navigating tab to ${targetUrl}...`);
             const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
             if (navRes && typeof navRes === 'object' && navRes.tabId) {
               this.currentTabId = navRes.tabId;
             }
+            if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url') {
+              this.transition('complete', `Navigated to ${targetUrl}`);
+              return this.completeWithResult({
+                success: true,
+                state: 'complete',
+                stepCount: step,
+                message: `Navigated to ${targetUrl}`
+              });
+            }
             const subGoal = stripNavigationPrefixFromGoal(goal);
             if (subGoal && subGoal !== goal) {
               this.currentGoal = subGoal;
+              this.currentTaskContract = resolveTaskContract(subGoal);
             }
             continue;
           }

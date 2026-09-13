@@ -8,7 +8,11 @@ import {
   mapVisionProviderToBadge,
   isBrowserActionRequest
 } from '../apps/extension/src/sidepanel/sidepanel.js';
-import { toSanitizedNetworkPayload } from '../packages/protocol/dist/index.js';
+import {
+  toSanitizedNetworkPayload,
+  isPureNavigationGoal,
+  stripNavigationPrefixFromGoal
+} from '../packages/protocol/dist/index.js';
 
 test('HUD Security: escapeHtml neutralizes injection-shaped strings and scripts', () => {
   const injections = [
@@ -37,7 +41,14 @@ test('HUD Routing: natural imperative requests enter the browser agent loop', ()
     'Could you please select Pending?',
     'I want you to open the preview',
     'Go ahead and press Submit',
-    'Hey PrivaPilot, please scroll down'
+    'Hey PrivaPilot, please scroll down',
+    'open gmail.com',
+    'and click in the snoozed',
+    'then click compose',
+    'now scroll down',
+    'also click submit',
+    'and then type hello',
+    'open gmail.com and click in the snoozed'
   ];
 
   for (const request of actionRequests) {
@@ -54,6 +65,30 @@ test('HUD Routing: natural imperative requests enter the browser agent loop', ()
   for (const request of chatRequests) {
     assert.equal(isBrowserActionRequest(request), false, `Expected chat routing for: ${request}`);
   }
+});
+
+test('Navigation Contract: isPureNavigationGoal differentiates pure navigation from compound directives', () => {
+  assert.equal(isPureNavigationGoal('open gmail.com'), true);
+  assert.equal(isPureNavigationGoal('go to isro.gov.in'), true);
+  assert.equal(isPureNavigationGoal('https://sih.gov.in'), true);
+  assert.equal(isPureNavigationGoal('open https://www.google.com'), true);
+  assert.equal(isPureNavigationGoal('please open youtube'), true);
+
+  // Compound goals are not pure navigation
+  assert.equal(isPureNavigationGoal('open gmail.com and click in the snoozed'), false);
+  assert.equal(isPureNavigationGoal('go to sih.gov.in and search isro'), false);
+  assert.equal(isPureNavigationGoal('open github.com then click repositories'), false);
+
+  // In-page interactions are not pure navigation
+  assert.equal(isPureNavigationGoal('and click in the snoozed'), false);
+  assert.equal(isPureNavigationGoal('navigate to SIH26003'), false);
+  assert.equal(isPureNavigationGoal('scroll down'), false);
+
+  // Subgoal extraction
+  assert.equal(stripNavigationPrefixFromGoal('open gmail.com and click in the snoozed'), 'click in the snoozed');
+  assert.equal(stripNavigationPrefixFromGoal('go to sih.gov.in and search isro'), 'search isro');
+  assert.equal(stripNavigationPrefixFromGoal('open github.com then click repositories'), 'click repositories');
+  assert.equal(stripNavigationPrefixFromGoal('open gmail.com'), 'open gmail.com');
 });
 
 test('HUD Payload: buildMinimizedWirePayload excludes internal-only and sensitive data', () => {

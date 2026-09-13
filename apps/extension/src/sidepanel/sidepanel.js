@@ -79,7 +79,7 @@ export function extractActionSuggestions(text) {
   return suggestions.slice(0, 4);
 }
 
-const ACTION_REQUEST_PREFIX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?)+/i;
+const ACTION_REQUEST_PREFIX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
 const ACTION_VERB = /^(?:click|open|type|fill|enter|write|set|press|select|choose|scroll|hover|drag|drop|upload|attach|move|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log\s+in|buy|checkout|inspect|audit|check|go\s+to|navigate)(?:\b|\s)/i;
 
 /**
@@ -1436,6 +1436,16 @@ if (typeof document !== 'undefined') {
         appRoot.setAttribute('data-run-state', 'starting');
         appRoot.removeAttribute('data-last-completed-run-id');
         appRoot.removeAttribute('data-last-result-state');
+      }
+
+      // Handle direct stop/cancel commands immediately
+      if (/^(?:stop|cancel|halt|abort|quit)(?:\s+(?:it|now|all|agent|run))?$/i.test(goalText.trim())) {
+        if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+          chrome.runtime.sendMessage({ type: 'CANCEL_RUN', target: 'privapilot-background' });
+        }
+        agentBubble.textContent = "Understood. I've stopped.";
+        setAgentStatus('idle');
+        return;
       }
 
       // Route imperative browser requests into the execution loop. This recognizes

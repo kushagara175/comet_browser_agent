@@ -1346,6 +1346,9 @@ export function extractTargetUrlFromGoal(goal) {
         if (domain.toLowerCase() === 'isro.gov.in') {
             domain = 'www.isro.gov.in';
         }
+        else if (domain.toLowerCase() === 'gmail.com') {
+            return `https://mail.google.com${path || '/mail'}`;
+        }
         return `https://${domain}${path}`;
     }
     // 4. Contextual target phrasing: "in/on/open/visit/go to [the] <name> (website|portal|site|page|org)"
@@ -1398,6 +1401,8 @@ export function extractTargetUrlFromGoal(goal) {
         const target = navDirective[1].trim().toLowerCase();
         if (target === 'isro' || target.includes('isro'))
             return 'https://www.isro.gov.in';
+        if (target === 'gmail' || target.includes('gmail'))
+            return 'https://mail.google.com/mail';
         if (target.includes('bhuvan'))
             return 'https://bhuvan.nrsc.gov.in';
         if (target.includes('mosdac'))

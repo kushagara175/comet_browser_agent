@@ -109,4 +109,9 @@ export declare function classifyActionRisk(proposal: ActionProposal, elementName
  * Strips leading navigation clauses from compound goals (e.g. "open bhuvan and explore earth observation" -> "explore earth observation")
  */
 export declare function stripNavigationPrefixFromGoal(goal: string): string;
+/**
+ * Detects if a user instruction is purely a navigation request without trailing action directives.
+ * E.g. "open gmail.com", "go to sih.gov.in", "https://isro.gov.in", "navigate to github.com"
+ */
+export declare function isPureNavigationGoal(goal: string): boolean;
 //# sourceMappingURL=action.d.ts.map

@@ -139,14 +139,14 @@ export function parseFormFieldAssignments(text: string): FormFieldAssignment[] {
 export function resolveTaskContract(goal: string): TaskContract {
   let g = (goal || '').trim().toLowerCase().replace(/[?!.]+$/, '').trim();
   let prev = '';
-  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?)+/i;
+  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
   while (g && g !== prev) {
     prev = g;
     g = g.replace(ACTION_PREFIX_REGEX, '').trim();
   }
 
   // Strip leading navigation clauses (e.g. "open bhuvan and explore earth observation" -> "explore earth observation")
-  const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and|then|,)\s+(.+)$/i);
+  const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
   if (navPrefixMatch && navPrefixMatch[1]) {
     g = navPrefixMatch[1].trim();
   }
@@ -157,6 +157,20 @@ export function resolveTaskContract(goal: string): TaskContract {
       goalPattern: 'empty',
       expectedTerminal: { kind: 'status_changed' },
       abstentionReason: 'EMPTY_GOAL: Goal cannot be empty'
+    };
+  }
+
+  if (isPureNavigationGoal(g)) {
+    return {
+      supported: true,
+      goalPattern: 'navigate_url',
+      expectedTerminal: { kind: 'status_changed' },
+      expectedTargetNameSubstring: g,
+      structuredIntent: {
+        intent: 'navigate' as any,
+        targetPhrase: g,
+        targetTokens: tokenizeSemanticText(g)
+      }
     };
   }
 
@@ -1073,9 +1087,48 @@ export function classifyActionRisk(
  */
 export function stripNavigationPrefixFromGoal(goal: string): string {
   if (!goal || typeof goal !== 'string') return goal;
-  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and|then|,)\s+(.+)$/i);
+  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
   if (match && match[1]) {
     return match[1].trim();
   }
   return goal.trim();
 }
+
+/**
+ * Detects if a user instruction is purely a navigation request without trailing action directives.
+ * E.g. "open gmail.com", "go to sih.gov.in", "https://isro.gov.in", "navigate to github.com"
+ */
+export function isPureNavigationGoal(goal: string): boolean {
+  if (!goal || typeof goal !== 'string') return false;
+  let g = goal.trim().toLowerCase();
+  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+  let prev = '';
+  while (g && g !== prev) {
+    prev = g;
+    g = g.replace(ACTION_PREFIX_REGEX, '').trim();
+  }
+
+  // If a compound action continuation follows, it is NOT pure navigation
+  if (/\s+(?:and\s+then|then|after\s+that|and|,)\s+(?:click|type|fill|enter|search|filter|find|select|press|check|see|tell|scroll|hover|drag|drop|upload)\b/i.test(g)) {
+    return false;
+  }
+
+  // Check if it is directly a URL or domain
+  if (/^https?:\/\/[^\s]+$/i.test(g) || /^www\.[a-z0-9-]+\.[a-z]+(?:\/[^\s]*)?$/i.test(g)) {
+    return true;
+  }
+  if (/^(?:[a-zA-Z0-9-]+\.)+(?:gov\.in|nic\.in|ac\.in|org\.in|co\.in|com|org|net|io|in|edu|gov|dev|app|ai|me)(?:\/[^\s]*)?$/i.test(g)) {
+    return true;
+  }
+
+  // Check pure navigation verb + target (e.g. "open gmail.com", "go to github.com", "open isro")
+  const navMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_.:/-]+)$/i);
+  if (navMatch) {
+    const target = navMatch[1].trim();
+    if (/https?:\/\/|www\.|\.[a-z]{2,}/i.test(target)) return true;
+    if (/^(?:gmail|google|isro|sih|github|youtube|reddit|wikipedia|duckduckgo|demo|portal)$/i.test(target)) return true;
+  }
+
+  return false;
+}
+

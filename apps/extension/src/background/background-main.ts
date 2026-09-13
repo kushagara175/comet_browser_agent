@@ -81,6 +81,11 @@ async function handleSidepanelRequest(message: any): Promise<any> {
     return coordinator.chatWithPage(message.message || '', message.history);
   }
 
+  if (message.type === 'CANCEL_RUN' || message.type === 'STOP_RUN') {
+    coordinator.cancelRun();
+    return { success: true, state: 'idle', message: 'Run cancelled by user' };
+  }
+
   throw new Error(`Unsupported side-panel request: ${message?.type || 'unknown'}`);
 }
 
@@ -118,6 +123,12 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
   chrome.runtime.onMessage.addListener((message: any, _sender: any, sendResponse: (res: any) => void) => {
     if (message?.target && message.target !== 'privapilot-background') {
       return false;
+    }
+
+    if (message.type === 'CANCEL_RUN' || message.type === 'STOP_RUN') {
+      coordinator.cancelRun();
+      sendResponse({ success: true, state: 'idle', message: 'Run cancelled by user' });
+      return true;
     }
 
     if (message.type === 'START_AGENT_RUN') {
