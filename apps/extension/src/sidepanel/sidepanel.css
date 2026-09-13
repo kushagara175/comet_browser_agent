@@ -1175,6 +1175,19 @@ html, body {
   letter-spacing: normal;
 }
 
+.monologue-completed-text {
+  color: #a3a3a3;
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
+  transition: color 0.15s ease;
+}
+
+.monologue-toggle-btn:hover .monologue-completed-text {
+  color: #e5e5e5;
+}
+
 /* Exact allel MonologueBlock component styles */
 .monologue-block {
   margin: 4px 0 8px 0;

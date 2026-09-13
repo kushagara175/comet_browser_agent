@@ -1103,7 +1103,7 @@ if (typeof document !== 'undefined') {
             <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
-            <span class="monologue-title thinking-shimmer-text">${escapeHtml(label)}</span>
+            <span class="monologue-title monologue-completed-text">${escapeHtml(label)}</span>
           </button>
           <div class="monologue-drawer" style="display: ${isExpanded ? 'block' : 'none'};">
             <div class="monologue-content">${renderMarkdown(sanitized)}</div>
@@ -1300,8 +1300,9 @@ if (typeof document !== 'undefined') {
         const formattedHtml = renderMarkdown(res.reply);
         const actionSuggestions = extractActionSuggestions(res.reply);
 
+        const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded';
         const duration = (res?.telemetry?.serverLatencyMs ? Math.max(1, Math.round(res.telemetry.serverLatencyMs / 1000)) : null) || durationSeconds || 2;
-        const thinkingHtml = renderThinkingAccordion(res.reasoning, duration);
+        const thinkingHtml = renderThinkingAccordion(res.reasoning, duration, { open: wasExpanded });
 
         agentBubble.innerHTML = `
           ${modelDisconnected ? `
@@ -1408,10 +1409,11 @@ if (typeof document !== 'undefined') {
         return `${kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : 'Action'} done`;
       }
 
+      const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded';
       const actionLabel = getCleanActionLabel(action);
       const realReasoning = action.reasoning || res.reasoning;
       const duration = (res?.telemetry?.serverLatencyMs ? Math.max(1, Math.round(res.telemetry.serverLatencyMs / 1000)) : null) || durationSeconds || 2;
-      const thinkingHtml = renderThinkingAccordion(realReasoning, duration);
+      const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: wasExpanded });
 
       agentBubble.classList.add('msg-action');
       agentBubble.innerHTML = `
@@ -1529,11 +1531,14 @@ if (typeof document !== 'undefined') {
       agentBubble.className = 'chat-msg agent';
       agentBubble.innerHTML = `
         <div class="monologue-block executing" data-state="collapsed">
-          <div style="display: inline-flex; align-items: center; gap: 8px; padding: 2px 0;">
+          <button type="button" class="monologue-toggle-btn" aria-expanded="false">
             <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
-            <span class="thinking-shimmer-text">Thinking (1s)</span>
+            <span class="monologue-title thinking-shimmer-text">Thinking (1s)</span>
+          </button>
+          <div class="monologue-drawer" style="display: none;">
+            <div class="monologue-content"><div class="live-thought-stream" style="color: #a3a3a3; font-style: italic;">Evaluating page context, anonymizing sensitive elements, and synthesizing actions...</div></div>
           </div>
         </div>
       `;
@@ -1775,15 +1780,17 @@ if (typeof document !== 'undefined') {
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
               if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
                 const liveReasoning = sanitizeReasoningText(act.reasoning);
+                const prevBlock = lastAgentBubble.querySelector('.monologue-block');
+                const isExpanded = prevBlock ? prevBlock.getAttribute('data-state') === 'expanded' : true;
                 const liveThinkingHtml = liveReasoning ? `
-                  <div class="monologue-block group" data-state="expanded" style="margin-bottom: 6px;">
-                    <button type="button" class="monologue-toggle-btn" aria-expanded="true">
+                  <div class="monologue-block group" data-state="${isExpanded ? 'expanded' : 'collapsed'}" style="margin-bottom: 6px;">
+                    <button type="button" class="monologue-toggle-btn" aria-expanded="${isExpanded ? 'true' : 'false'}">
                       <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="9 18 15 12 9 6"></polyline>
                       </svg>
-                      <span class="thinking-shimmer-text">Thinking...</span>
+                      <span class="monologue-title thinking-shimmer-text">Thinking...</span>
                     </button>
-                    <div class="monologue-drawer" style="display: block;">
+                    <div class="monologue-drawer" style="display: ${isExpanded ? 'block' : 'none'};">
                       <div class="monologue-content">${renderMarkdown(liveReasoning)}</div>
                     </div>
                   </div>
