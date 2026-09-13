@@ -599,14 +599,26 @@ if (typeof document !== 'undefined') {
       } catch (_e) {}
     }
 
-    let currentSessionId = '';
-    try {
-      currentSessionId = localStorage.getItem('privapilot_active_session_id') || '';
-    } catch (_e) {}
-
-    if (!currentSessionId || !chatSessions.some(s => s.id === currentSessionId)) {
-      currentSessionId = chatSessions[0].id;
+    // Ensure an initial new chat session exists so PrivaPilot opens to the clean initial hero page
+    let initialNewSession = chatSessions.find(s => s.id === 'session-new');
+    if (!initialNewSession) {
+      initialNewSession = {
+        id: 'session-new',
+        title: 'New Chat',
+        model: 'Mistral-Large-3',
+        updatedAt: Date.now(),
+        messages: []
+      };
+      chatSessions.unshift(initialNewSession);
     }
+
+    let currentSessionId = 'session-new';
+    try {
+      const storedId = localStorage.getItem('privapilot_active_session_id');
+      if (storedId && chatSessions.some(s => s.id === storedId && s.id !== 'session-new' && s.messages && s.messages.length > 0)) {
+        currentSessionId = storedId;
+      }
+    } catch (_e) {}
 
     const menuToggleBtn = document.getElementById('menuToggleBtn');
     const headerNewChatBtn = document.getElementById('headerNewChatBtn');
@@ -629,7 +641,12 @@ if (typeof document !== 'undefined') {
       if (!recentChatsList) return;
       recentChatsList.innerHTML = '';
 
-      chatSessions.slice(0, 5).forEach((session) => {
+      // Display up to 5 recent chats with conversations
+      const displaySessions = chatSessions
+        .filter(s => s.id !== 'session-new' || (s.messages && s.messages.length > 0))
+        .slice(0, 5);
+
+      displaySessions.forEach((session) => {
         const item = document.createElement('button');
         item.type = 'button';
         item.className = `recent-chat-item ${session.id === currentSessionId ? 'active' : ''}`;
