@@ -599,7 +599,7 @@ if (typeof document !== 'undefined') {
       } catch (_e) {}
     }
 
-    // Ensure an initial new chat session exists so PrivaPilot opens to the clean initial hero page
+    // Ensure an initial new chat session exists and is clean so PrivaPilot opens to the clean initial hero page
     let initialNewSession = chatSessions.find(s => s.id === 'session-new');
     if (!initialNewSession) {
       initialNewSession = {
@@ -610,14 +610,16 @@ if (typeof document !== 'undefined') {
         messages: []
       };
       chatSessions.unshift(initialNewSession);
+    } else {
+      initialNewSession.messages = [];
+      initialNewSession.title = 'New Chat';
+      initialNewSession.updatedAt = Date.now();
     }
 
+    // Always start on a fresh new session whenever the extension is opened or reloaded
     let currentSessionId = 'session-new';
     try {
-      const storedId = localStorage.getItem('privapilot_active_session_id');
-      if (storedId && chatSessions.some(s => s.id === storedId && s.id !== 'session-new' && s.messages && s.messages.length > 0)) {
-        currentSessionId = storedId;
-      }
+      localStorage.setItem('privapilot_active_session_id', 'session-new');
     } catch (_e) {}
 
     const menuToggleBtn = document.getElementById('menuToggleBtn');
@@ -713,16 +715,23 @@ if (typeof document !== 'undefined') {
     }
 
     function createNewChat() {
-      const newSession = {
-        id: 'session-' + Date.now(),
-        title: 'New Chat',
-        model: 'Mistral-Large-3',
-        updatedAt: Date.now(),
-        messages: []
-      };
-      chatSessions.unshift(newSession);
+      let newSession = chatSessions.find(s => s.id === 'session-new');
+      if (!newSession) {
+        newSession = {
+          id: 'session-new',
+          title: 'New Chat',
+          model: 'Mistral-Large-3',
+          updatedAt: Date.now(),
+          messages: []
+        };
+        chatSessions.unshift(newSession);
+      } else {
+        newSession.messages = [];
+        newSession.title = 'New Chat';
+        newSession.updatedAt = Date.now();
+      }
       saveChatSessions();
-      switchSession(newSession.id);
+      switchSession('session-new');
       chatInput?.focus();
     }
 
@@ -1356,8 +1365,12 @@ if (typeof document !== 'undefined') {
       }
 
       // Persist in active chat session
-      const activeSession = chatSessions.find(s => s.id === currentSessionId);
+      let activeSession = chatSessions.find(s => s.id === currentSessionId);
       if (activeSession) {
+        if (activeSession.id === 'session-new') {
+          activeSession.id = 'session-' + Date.now();
+          currentSessionId = activeSession.id;
+        }
         if ((!activeSession.messages || activeSession.messages.length === 0) && (activeSession.title === 'New Chat' || !activeSession.title)) {
           activeSession.title = goalText.length > 32 ? goalText.slice(0, 32) + '...' : goalText;
         }
