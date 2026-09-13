@@ -493,7 +493,13 @@ if (typeof document !== 'undefined') {
         loadingView.classList.remove('hidden');
       }
       setTimeout(() => {
-        window.location.reload();
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.set('t', Date.now().toString());
+          window.location.replace(url.toString());
+        } catch (_e) {
+          window.location.reload();
+        }
       }, 250);
     };
     reloadExtensionBtn?.addEventListener('click', triggerReload);
