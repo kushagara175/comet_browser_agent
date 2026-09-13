@@ -914,14 +914,14 @@ html, body {
   display: none !important;
 }
 
-/* Gemini Empty State Hero */
+/* Gemini Empty State Hero (Positioned Down Above Chatbox) */
 .gemini-hero {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   align-items: flex-start;
-  padding: 24px 20px 16px 20px;
-  gap: 16px;
+  padding: 16px 20px 12px 20px;
+  gap: 12px;
   user-select: none;
   animation: fadeInHero 0.3s ease-out;
   margin-top: auto;
