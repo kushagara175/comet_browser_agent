@@ -584,6 +584,7 @@ export interface ActionProposal {
   readonly extractedData?: string;
   readonly answerText?: string;
   readonly reply?: string;
+  readonly message?: string;
   readonly reasoning?: string;
 }
 
@@ -625,6 +626,7 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
   'extractedData',
   'answerText',
   'reply',
+  'message',
   'reasoning',
   'thought'
 ]);
@@ -739,7 +741,7 @@ export function validateActionProposal(
   const keys = Object.getOwnPropertyNames(proposal);
   for (const k of keys) {
     if (PROHIBITED_PROPERTY_NAMES.has(k) || !ALLOWED_ACTION_PROPOSAL_KEYS.has(k)) {
-      return { isValid: false, errorMessage: `Closed schema violation: Unknown action property` };
+      return { isValid: false, errorMessage: `Closed schema violation: Unknown action property: "${k}"` };
     }
   }
 

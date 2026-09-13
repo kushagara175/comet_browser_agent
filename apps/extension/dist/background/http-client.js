@@ -5,7 +5,7 @@
  * This client ONLY accepts `SanitizedContext`.
  * It is impossible to pass `RawCapture` to this client.
  */
-import { validateActionProposal, toSanitizedNetworkPayload } from '@privapilot/protocol';
+import { validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS, toSanitizedNetworkPayload } from '@privapilot/protocol';
 import { assertNoCanaryLeak } from '@privapilot/test-fixtures';
 export const DEFAULT_SERVER_BASE_URL = 'http://localhost:4501';
 /**
@@ -121,6 +121,15 @@ export class ReasoningHttpClient {
             throw new Error(`Reasoning Server Error (${response.status}): ${errText}`);
         }
         const actionRaw = await response.json();
+        // Zero-trust defensive boundary: strip any unexpected extra keys returned by the reasoning server
+        if (actionRaw && typeof actionRaw === 'object' && !Array.isArray(actionRaw)) {
+            for (const k of Object.keys(actionRaw)) {
+                if (!ALLOWED_ACTION_PROPOSAL_KEYS.has(k)) {
+                    console.warn(`[PrivaPilot HttpClient] Stripping unexpected key from server response: ${k}`);
+                    delete actionRaw[k];
+                }
+            }
+        }
         // 4. Zero-Trust Client-Side Validation: Never trust server output blindly
         const validation = validateActionProposal(actionRaw, sanitized.elements);
         if (!validation.isValid || !validation.proposal) {

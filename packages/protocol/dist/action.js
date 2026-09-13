@@ -501,6 +501,7 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
     'extractedData',
     'answerText',
     'reply',
+    'message',
     'reasoning',
     'thought'
 ]);
@@ -598,7 +599,7 @@ export function validateActionProposal(proposal, validElements) {
     const keys = Object.getOwnPropertyNames(proposal);
     for (const k of keys) {
         if (PROHIBITED_PROPERTY_NAMES.has(k) || !ALLOWED_ACTION_PROPOSAL_KEYS.has(k)) {
-            return { isValid: false, errorMessage: `Closed schema violation: Unknown action property` };
+            return { isValid: false, errorMessage: `Closed schema violation: Unknown action property: "${k}"` };
         }
     }
     // 2. actionId

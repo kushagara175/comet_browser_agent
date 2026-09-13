@@ -14,6 +14,7 @@ import {
   ChatHistoryMessage,
   ActionProposal,
   validateActionProposal,
+  ALLOWED_ACTION_PROPOSAL_KEYS,
   toSanitizedNetworkPayload
 } from '@privapilot/protocol';
 import { assertNoCanaryLeak } from '@privapilot/test-fixtures';
@@ -188,6 +189,16 @@ export class ReasoningHttpClient {
     }
 
     const actionRaw: any = await response.json();
+
+    // Zero-trust defensive boundary: strip any unexpected extra keys returned by the reasoning server
+    if (actionRaw && typeof actionRaw === 'object' && !Array.isArray(actionRaw)) {
+      for (const k of Object.keys(actionRaw)) {
+        if (!ALLOWED_ACTION_PROPOSAL_KEYS.has(k)) {
+          console.warn(`[PrivaPilot HttpClient] Stripping unexpected key from server response: ${k}`);
+          delete actionRaw[k];
+        }
+      }
+    }
 
     // 4. Zero-Trust Client-Side Validation: Never trust server output blindly
     const validation = validateActionProposal(actionRaw, sanitized.elements);

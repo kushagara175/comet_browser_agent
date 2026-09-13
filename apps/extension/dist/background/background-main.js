@@ -14780,6 +14780,7 @@ var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "extractedData",
   "answerText",
   "reply",
+  "message",
   "reasoning",
   "thought"
 ]);
@@ -14873,7 +14874,7 @@ function validateActionProposal(proposal, validElements) {
   const keys = Object.getOwnPropertyNames(proposal);
   for (const k2 of keys) {
     if (PROHIBITED_PROPERTY_NAMES.has(k2) || !ALLOWED_ACTION_PROPOSAL_KEYS.has(k2)) {
-      return { isValid: false, errorMessage: `Closed schema violation: Unknown action property` };
+      return { isValid: false, errorMessage: `Closed schema violation: Unknown action property: "${k2}"` };
     }
   }
   if (typeof proposal.actionId !== "string" || !ACTION_ID_REGEX.test(proposal.actionId)) {
@@ -19296,6 +19297,14 @@ var ReasoningHttpClient = class {
       throw new Error(`Reasoning Server Error (${response.status}): ${errText}`);
     }
     const actionRaw = await response.json();
+    if (actionRaw && typeof actionRaw === "object" && !Array.isArray(actionRaw)) {
+      for (const k2 of Object.keys(actionRaw)) {
+        if (!ALLOWED_ACTION_PROPOSAL_KEYS.has(k2)) {
+          console.warn(`[PrivaPilot HttpClient] Stripping unexpected key from server response: ${k2}`);
+          delete actionRaw[k2];
+        }
+      }
+    }
     const validation = validateActionProposal(actionRaw, sanitized.elements);
     if (!validation.isValid || !validation.proposal) {
       throw new Error(`Reasoning Server Response Invalid: ${validation.errorMessage || "Invalid action proposal"}`);

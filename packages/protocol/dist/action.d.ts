@@ -81,6 +81,7 @@ export interface ActionProposal {
     readonly extractedData?: string;
     readonly answerText?: string;
     readonly reply?: string;
+    readonly message?: string;
     readonly reasoning?: string;
 }
 export interface ActionExecutionResult {
