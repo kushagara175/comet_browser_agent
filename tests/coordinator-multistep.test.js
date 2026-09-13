@@ -686,4 +686,79 @@ test('MultiStepCoordinator: Scenario 12 - Multi-step search & question answering
   assert.ok(result.message?.includes('Ministry of Education'));
 });
 
+test('Coordinator Multi-Step: Scenario 13 - Starts on chrome://newtab, navigates to Wikipedia, types search with pressEnter, and finishes with retrieval answer', async () => {
+  let currentUrl = 'chrome://newtab';
+  const navigatedUrls = [];
+
+  const browser = createFakeBrowserAdapter({
+    elements: [
+      {
+        localId: 'el_wiki_search',
+        role: 'input',
+        sanitizedName: 'Search Wikipedia',
+        coarseBounds: [0.3, 0.4, 0.4, 0.05],
+        state: ['visible', 'enabled'],
+        actionCapabilities: ['type', 'click']
+      }
+    ]
+  });
+
+  browser.getActiveTab = async () => ({
+    id: 1,
+    url: currentUrl,
+    title: currentUrl === 'chrome://newtab' ? 'New Tab' : 'Wikipedia',
+    status: 'complete'
+  });
+
+  browser.navigateTab = async (tabId, url) => {
+    navigatedUrls.push(url);
+    currentUrl = url;
+    return { tabId, url };
+  };
+
+  browser.waitForTabReady = async (tabId, timeoutMs, expectedUrl) => ({
+    id: tabId,
+    url: currentUrl,
+    title: 'Wikipedia',
+    status: 'complete'
+  });
+
+  browser.ensureContentScript = async (tabId) => true;
+
+  const step1Type = {
+    actionId: 'act_type_search',
+    kind: 'type',
+    targetLocalId: 'el_wiki_search',
+    textToType: 'Smart India Hackathon',
+    pressEnter: true,
+    confidence: 0.98,
+    risk: 'safe',
+    rationale: 'Type Smart India Hackathon into Wikipedia search box and submit'
+  };
+
+  const step2FinishAnswer = {
+    actionId: 'act_finish_retrieval',
+    kind: 'finish',
+    reply: 'The Smart India Hackathon was first launched in 2017 and is organized by the Ministry of Education (Government of India) along with AICTE.',
+    confidence: 1.0,
+    risk: 'safe',
+    rationale: 'Extracted launch year (2017) and organizers (Ministry of Education, AICTE) from Wikipedia search results'
+  };
+
+  const httpClient = createSequenceHttpClient([step1Type, step2FinishAnswer]);
+  const coordinator = new RunCoordinator(browser, httpClient);
+
+  const result = await coordinator.startRun(
+    "Go to wikipedia.org, search for 'Smart India Hackathon', and tell me when it was first launched and who organizes it",
+    { maxSteps: 5 }
+  );
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.state, 'complete');
+  assert.deepStrictEqual(navigatedUrls, ['https://www.wikipedia.org']);
+  assert.ok(result.message?.includes('2017'));
+  assert.ok(result.message?.includes('Ministry of Education'));
+});
+
+
 

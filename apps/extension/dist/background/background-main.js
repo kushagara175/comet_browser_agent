@@ -15284,7 +15284,7 @@ function classifyActionRisk(proposal, elementName) {
 function stripNavigationPrefixFromGoal(goal) {
   if (!goal || typeof goal !== "string")
     return goal;
-  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
+  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s,]+|[a-zA-Z0-9_.-]+?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*)(.+)$/i);
   if (match && match[1]) {
     return match[1].trim();
   }
@@ -16572,6 +16572,8 @@ function extractTargetUrlFromGoal(goal) {
     const path = universalDomainMatch[2] ? `/${universalDomainMatch[2]}` : "";
     if (domain.toLowerCase() === "isro.gov.in") {
       domain = "www.isro.gov.in";
+    } else if (domain.toLowerCase() === "wikipedia.org") {
+      domain = "www.wikipedia.org";
     } else if (domain.toLowerCase() === "gmail.com") {
       return `https://mail.google.com${path || "/mail"}`;
     }
@@ -16626,10 +16628,14 @@ function extractTargetUrlFromGoal(goal) {
       return "http://localhost:4500";
     }
   }
-  const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_\s.-]+?)(?:\s+(?:and|then|,)|$)/i);
+  const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_.-]+)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*|$)/i);
   if (navDirective) {
     const target = navDirective[1].trim().toLowerCase();
     if (target.includes(".")) {
+      if (target === "wikipedia.org" || target.endsWith(".wikipedia.org"))
+        return "https://www.wikipedia.org";
+      if (target === "isro.gov.in")
+        return "https://www.isro.gov.in";
       return `https://${target}`;
     }
     if (target === "isro" || target.includes("isro"))
@@ -20632,7 +20638,9 @@ var RunCoordinator = class {
           let targetUrl = extractTargetUrlFromGoal(goal);
           if (!targetUrl) {
             const lowerGoal = (goal || "").toLowerCase();
-            if (lowerGoal.includes("sih") || lowerGoal.includes("hackathon") || lowerGoal.includes("problem statement") || lowerGoal.includes("spoc") || lowerGoal.includes("submission")) {
+            if (lowerGoal.includes("wikipedia") || lowerGoal.includes("wiki")) {
+              targetUrl = "https://www.wikipedia.org";
+            } else if (lowerGoal.includes("sih") || lowerGoal.includes("smart india hackathon") || lowerGoal.includes("hackathon") || lowerGoal.includes("problem statement") || lowerGoal.includes("spoc") || lowerGoal.includes("submission")) {
               targetUrl = "https://sih.gov.in";
             } else if (lowerGoal.includes("isro") || lowerGoal.includes("chandrayaan") || lowerGoal.includes("gaganyaan") || lowerGoal.includes("aditya") || lowerGoal.includes("satellite") || lowerGoal.includes("rocket") || lowerGoal.includes("launcher") || lowerGoal.includes("mission")) {
               targetUrl = "https://www.isro.gov.in";
@@ -21487,6 +21495,25 @@ var RunCoordinator = class {
                 semanticOutcomeVerified: false,
                 message: `Action execution failed: ${msg}`
               };
+            }
+          }
+        }
+        if (proposal.pressEnter || proposal.kind === "type" && proposal.pressEnter || proposal.kind === "click") {
+          await new Promise((r) => setTimeout(r, 450));
+          if (typeof this.browser.getActiveTab === "function") {
+            try {
+              const currentTab = await this.browser.getActiveTab(activeTab.id);
+              if (currentTab && (currentTab.status === "loading" || currentTab.url !== activeTab.url)) {
+                if (typeof this.browser.waitForTabReady === "function") {
+                  const settledTab = await this.browser.waitForTabReady(activeTab.id, 8e3);
+                  if (settledTab?.url) activeTab.url = settledTab.url;
+                }
+                if (typeof this.browser.ensureContentScript === "function") {
+                  await this.browser.ensureContentScript(activeTab.id);
+                }
+                await new Promise((r) => setTimeout(r, 300));
+              }
+            } catch (_) {
             }
           }
         }

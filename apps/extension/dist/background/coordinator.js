@@ -1090,7 +1090,10 @@ export class RunCoordinator {
                     let targetUrl = extractTargetUrlFromGoal(goal);
                     if (!targetUrl) {
                         const lowerGoal = (goal || '').toLowerCase();
-                        if (lowerGoal.includes('sih') || lowerGoal.includes('hackathon') || lowerGoal.includes('problem statement') || lowerGoal.includes('spoc') || lowerGoal.includes('submission')) {
+                        if (lowerGoal.includes('wikipedia') || lowerGoal.includes('wiki')) {
+                            targetUrl = 'https://www.wikipedia.org';
+                        }
+                        else if (lowerGoal.includes('sih') || lowerGoal.includes('smart india hackathon') || lowerGoal.includes('hackathon') || lowerGoal.includes('problem statement') || lowerGoal.includes('spoc') || lowerGoal.includes('submission')) {
                             targetUrl = 'https://sih.gov.in';
                         }
                         else if (lowerGoal.includes('isro') || lowerGoal.includes('chandrayaan') || lowerGoal.includes('gaganyaan') || lowerGoal.includes('aditya') || lowerGoal.includes('satellite') || lowerGoal.includes('rocket') || lowerGoal.includes('launcher') || lowerGoal.includes('mission')) {
@@ -2014,6 +2017,28 @@ export class RunCoordinator {
                                 message: `Action execution failed: ${msg}`
                             };
                         }
+                    }
+                }
+                // If the action submitted a form (pressEnter) or executed an interaction that may trigger navigation/redirection,
+                // allow the browser event loop to initiate navigation, then wait for the tab to reach 'complete' state.
+                if (proposal.pressEnter || (proposal.kind === 'type' && proposal.pressEnter) || proposal.kind === 'click') {
+                    await new Promise((r) => setTimeout(r, 450));
+                    if (typeof this.browser.getActiveTab === 'function') {
+                        try {
+                            const currentTab = await this.browser.getActiveTab(activeTab.id);
+                            if (currentTab && (currentTab.status === 'loading' || currentTab.url !== activeTab.url)) {
+                                if (typeof this.browser.waitForTabReady === 'function') {
+                                    const settledTab = await this.browser.waitForTabReady(activeTab.id, 8000);
+                                    if (settledTab?.url)
+                                        activeTab.url = settledTab.url;
+                                }
+                                if (typeof this.browser.ensureContentScript === 'function') {
+                                    await this.browser.ensureContentScript(activeTab.id);
+                                }
+                                await new Promise((r) => setTimeout(r, 300));
+                            }
+                        }
+                        catch (_) { }
                     }
                 }
                 const t6_actionExecuted = Date.now();

@@ -1696,19 +1696,28 @@ if (typeof document !== 'undefined') {
         activeTabUrl && (
           activeTabUrl.textContent?.startsWith('chrome://') ||
           activeTabUrl.title?.startsWith('chrome://') ||
-          activeTabUrl.textContent?.startsWith('chrome-extension://')
+          activeTabUrl.textContent?.startsWith('chrome-extension://') ||
+          activeTabUrl.textContent?.startsWith('devtools://') ||
+          activeTabUrl.textContent?.startsWith('about:blank')
         )
       );
 
-      // Inspect page context by default whenever on an active tab, unless restricted
-      const needsPageContext = !isRestrictedTab && Boolean(currentActiveTabId);
+      // Detect if user instruction expresses browser action, navigation, or search intent
+      const hasActionOrNavIntent =
+        isBrowserActionRequest(goalText) ||
+        /\b(?:https?:\/\/|[a-z0-9-]+\.(?:com|org|gov|in|edu|net|io|co|ai|xyz))\b/i.test(goalText) ||
+        /\b(?:open|go\s+to|visit|launch|load|search|find|browse|wikipedia|isro|sih|github|google)\b/i.test(goalText);
 
-      const messageType = needsPageContext
+      // Inspect page context by default whenever on an active tab, or initiate agent run
+      // from restricted/blank tabs when the user requests browser navigation/actions.
+      const shouldRunAgent = Boolean(currentActiveTabId) && (!isRestrictedTab || hasActionOrNavIntent);
+
+      const messageType = shouldRunAgent
         ? 'START_AGENT_RUN'
         : 'GENERAL_CHAT';
-      const payloadKey = needsPageContext ? 'goal' : 'message';
+      const payloadKey = shouldRunAgent ? 'goal' : 'message';
 
-      setAgentStatus(needsPageContext ? 'capturing' : 'reasoning');
+      setAgentStatus(shouldRunAgent ? 'capturing' : 'reasoning');
 
       // Light up the live ambient gradient border on the target page
       if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {

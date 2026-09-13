@@ -408,6 +408,24 @@ test('Domain Playbooks: extractTargetUrlFromGoal correctly extracts navigation t
   assert.equal(extractTargetUrlFromGoal('open isro and search missions'), 'https://www.isro.gov.in');
   assert.equal(extractTargetUrlFromGoal('open sih and search PS 171'), 'https://sih.gov.in');
   assert.equal(extractTargetUrlFromGoal('open wikipedia and find quantum computing'), 'https://www.wikipedia.org');
+  assert.equal(extractTargetUrlFromGoal("Go to wikipedia.org, search for 'Smart India Hackathon', and tell me when it was first launched and who organizes it"), 'https://www.wikipedia.org');
+  assert.equal(extractTargetUrlFromGoal("Go to wikipedia, search for 'Smart India Hackathon', and tell me when it was first launched and who organizes it"), 'https://www.wikipedia.org');
+});
+
+test('Domain Playbooks: stripNavigationPrefixFromGoal strips leading navigation clauses with commas or conjunctions', async () => {
+  const { stripNavigationPrefixFromGoal } = await import('../packages/protocol/dist/index.js');
+  assert.equal(
+    stripNavigationPrefixFromGoal("Go to wikipedia.org, search for 'Smart India Hackathon', and tell me when it was first launched and who organizes it"),
+    "search for 'Smart India Hackathon', and tell me when it was first launched and who organizes it"
+  );
+  assert.equal(
+    stripNavigationPrefixFromGoal("Go to wikipedia, search for 'Smart India Hackathon', and tell me when it was first launched and who organizes it"),
+    "search for 'Smart India Hackathon', and tell me when it was first launched and who organizes it"
+  );
+  assert.equal(
+    stripNavigationPrefixFromGoal("go to mosdac to check cyclone weather"),
+    "check cyclone weather"
+  );
 });
 
 test('Domain Playbooks: RunCoordinator auto-navigates from scratch on blank/restricted tab and completes goal', async () => {

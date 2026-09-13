@@ -1458,6 +1458,8 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
     const path = universalDomainMatch[2] ? `/${universalDomainMatch[2]}` : '';
     if (domain.toLowerCase() === 'isro.gov.in') {
       domain = 'www.isro.gov.in';
+    } else if (domain.toLowerCase() === 'wikipedia.org') {
+      domain = 'www.wikipedia.org';
     } else if (domain.toLowerCase() === 'gmail.com') {
       return `https://mail.google.com${path || '/mail'}`;
     }
@@ -1517,10 +1519,12 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
   }
 
   // 5. Explicit navigation verb at start of goal: "open/go to/visit <target>"
-  const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_\s.-]+?)(?:\s+(?:and|then|,)|$)/i);
+  const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_.-]+)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*|$)/i);
   if (navDirective) {
     const target = navDirective[1].trim().toLowerCase();
     if (target.includes('.')) {
+      if (target === 'wikipedia.org' || target.endsWith('.wikipedia.org')) return 'https://www.wikipedia.org';
+      if (target === 'isro.gov.in') return 'https://www.isro.gov.in';
       return `https://${target}`;
     }
     if (target === 'isro' || target.includes('isro')) return 'https://www.isro.gov.in';

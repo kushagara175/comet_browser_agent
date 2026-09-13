@@ -1320,13 +1320,47 @@
               targetEl.dispatchEvent(new KeyboardEventCtor("keypress", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
               targetEl.dispatchEvent(new KeyboardEventCtor("keyup", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
               const form = targetEl.form || (typeof targetEl.closest === "function" ? targetEl.closest("form") : null);
-              if (form && typeof form.requestSubmit === "function") {
-                try {
-                  form.requestSubmit();
-                } catch (_) {
+              if (form) {
+                const submitBtn = form.querySelector?.('button[type="submit"], input[type="submit"], button:not([type]), [role="button"]');
+                if (typeof form.requestSubmit === "function") {
+                  try {
+                    if (submitBtn) {
+                      form.requestSubmit(submitBtn);
+                    } else {
+                      form.requestSubmit();
+                    }
+                  } catch (_) {
+                    try {
+                      if (submitBtn && typeof submitBtn.click === "function") {
+                        submitBtn.click();
+                      } else {
+                        form.submit();
+                      }
+                    } catch (__) {
+                    }
+                  }
+                } else if (submitBtn && typeof submitBtn.click === "function") {
+                  try {
+                    submitBtn.click();
+                  } catch (_) {
+                    try {
+                      form.submit();
+                    } catch (__) {
+                    }
+                  }
+                } else if (typeof form.submit === "function") {
                   try {
                     form.submit();
-                  } catch (__) {
+                  } catch (_) {
+                  }
+                }
+              } else {
+                const container = targetEl.parentElement?.parentElement || targetEl.parentElement;
+                const searchBtn = container?.querySelector?.('button[aria-label*="search" i], button[title*="search" i], [role="button"][aria-label*="search" i]');
+                if (searchBtn && typeof searchBtn.click === "function") {
+                  try {
+                    searchBtn.click();
+                  } catch (_) {
                   }
                 }
               }
