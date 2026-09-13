@@ -227,18 +227,46 @@ export class SanitizerPipeline {
         if (!verification.isValid) {
             throw new Error(`Sanitization Blocked: ${verification.reason}`);
         }
+        let piiTextCount = 0;
+        let domInputCount = 0;
+        let faceCount = 0;
+        let surfaceCount = 0;
+        for (const r of visibleRegions) {
+            if (r.category === 'face' || r.detectorSource === 'face_model') {
+                faceCount++;
+            }
+            else if (r.detectorSource === 'surface_detector' || r.category === 'high_risk_surface' || r.category === 'uninspectable') {
+                surfaceCount++;
+            }
+            else if (r.detectorSource === 'dom_semantic') {
+                domInputCount++;
+            }
+            else {
+                piiTextCount++;
+            }
+        }
+        let opaqueBoxCount = 0;
+        let spatialBlurCount = 0;
+        for (const r of visibleRegions) {
+            if (r.method === 'gaussian_blur' || r.method === 'spatial_blur') {
+                spatialBlurCount++;
+            }
+            else {
+                opaqueBoxCount++;
+            }
+        }
         const redactionManifest = {
             manifestVersion: '1.0',
             totalRegions: visibleRegions.length,
             categoryCounts: {
-                piiText: visibleRegions.filter((r) => r.detectorSource === 'text_pii_regex').length,
-                domInput: visibleRegions.filter((r) => r.detectorSource === 'dom_semantic').length,
-                face: visibleRegions.filter((r) => r.category === 'face').length,
-                surface: visibleRegions.filter((r) => r.detectorSource === 'surface_detector').length
+                piiText: piiTextCount,
+                domInput: domInputCount,
+                face: faceCount,
+                surface: surfaceCount
             },
             methodCounts: {
-                opaqueBox: visibleRegions.filter((r) => r.method === 'opaque_mask').length,
-                spatialBlur: visibleRegions.filter((r) => r.method === 'gaussian_blur').length
+                opaqueBox: opaqueBoxCount,
+                spatialBlur: spatialBlurCount
             },
             placeholderConvention: '[REDACTED]',
             geometrySemantics: 'clamped_css_pixels',

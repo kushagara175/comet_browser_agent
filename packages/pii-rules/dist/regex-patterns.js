@@ -8,10 +8,12 @@ export const CANARY_SECRET = 'SECRET_CANARY_SIH26171_DO_NOT_TRANSMIT';
 const CANARY_REGEX = /\b(?:SECRET_CANARY[A-Za-z0-9_]*|CANARY_PRIVAPILOT[A-Za-z0-9_]*)\b/g;
 // Medical notes & sensitive health markers
 const MEDICAL_REGEX = /\b(?:medical note|clinical diagnosis|prescription info|patient record|doctor note)\b[^\n.,;]*/gi;
+// Social Media / Profile Handles (e.g. @kushagracretes, @username)
+const HANDLE_REGEX = /(?:^|(?<=\s|[([{"']))(@[A-Za-z0-9_]{1,30})\b/g;
 // Email: Standard RFC-compliant safe pattern
 const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
 // Indian Phone (+91-9876543210, +91 98765 43210, 09876543210, 9876543210) & International E.164
-const INDIAN_PHONE_REGEX = /(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}\b/g;
+const INDIAN_PHONE_REGEX = /(?:^|(?<!\d))(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)\b/g;
 const INTL_PHONE_REGEX = /\b\+(?:[1-9]\d{0,2})[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{1,4}[\s.-]?\d{1,9}\b/g;
 // Indian PAN (Permanent Account Number): 5 Letters, 4 Digits, 1 Letter (e.g. ABCDE1234F)
 const PAN_REGEX = /\b[A-Z]{5}[0-9]{4}[A-Z]\b/g;
@@ -53,6 +55,20 @@ export function scanTextForPII(text) {
                 startIndex: match.index,
                 endIndex: match.index + match[0].length,
                 matchedLength: match[0].length,
+                confidence: 0.95
+            });
+        }
+    }
+    // 1c. Social Media / Profile Handles (@username)
+    for (const match of text.matchAll(HANDLE_REGEX)) {
+        if (match.index !== undefined && match[1]) {
+            const handleOffset = match[0].indexOf(match[1]);
+            const handleStart = match.index + handleOffset;
+            matches.push({
+                category: 'username',
+                startIndex: handleStart,
+                endIndex: handleStart + match[1].length,
+                matchedLength: match[1].length,
                 confidence: 0.95
             });
         }

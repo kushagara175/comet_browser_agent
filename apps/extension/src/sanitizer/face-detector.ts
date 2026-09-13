@@ -90,7 +90,7 @@ export function detectFaceRegions(
         category: 'face',
         viewportBox,
         screenshotBox,
-        detectorSource: 'dom_semantic',
+        detectorSource: 'face_model',
         method: 'gaussian_blur',
         label: 'DOM_AVATAR_SIGNAL'
       });

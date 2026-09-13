@@ -75,6 +75,18 @@ export function measureTextRangeRects(doc, nodeOrContainer, startIndex, endIndex
                 });
             }
         }
+        if (resultRects.length === 0) {
+            const b = range.getBoundingClientRect();
+            const left = Math.max(0, Math.min(b.left !== undefined ? b.left : b.x, viewportWidth));
+            const top = Math.max(0, Math.min(b.top !== undefined ? b.top : b.y, viewportHeight));
+            const right = Math.max(0, Math.min((b.right !== undefined ? b.right : (b.x + b.width)), viewportWidth));
+            const bottom = Math.max(0, Math.min((b.bottom !== undefined ? b.bottom : (b.y + b.height)), viewportHeight));
+            const width = right - left;
+            const height = bottom - top;
+            if (width > 0.5 && height > 0.5 && Number.isFinite(width) && Number.isFinite(height)) {
+                resultRects.push({ x: left, y: top, width, height });
+            }
+        }
         return resultRects;
     }
     catch {
@@ -271,8 +283,20 @@ export class ElementExtractor {
                         if (parentRect.width > 0 && parentRect.height > 0) {
                             textIdx++;
                             const nodeId = `txt_${depth}_${textIdx}`;
+                            // Check if parent element represents user account identity (e.g. User-Name header on X, user-menu button on Claude/ChatGPT)
+                            const isAccountIdentity = Boolean(typeof parent.closest === 'function' &&
+                                parent.closest('[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i]'));
                             // Scan text node for PII matches
-                            const matches = scanTextForPII(content);
+                            let matches = scanTextForPII(content);
+                            if (matches.length === 0 && isAccountIdentity && trimmed.length > 1 && trimmed.length < 80) {
+                                matches = [{
+                                        category: 'username',
+                                        startIndex: 0,
+                                        endIndex: content.length,
+                                        matchedLength: content.length,
+                                        confidence: 0.95
+                                    }];
+                            }
                             let matchedRanges = undefined;
                             if (matches.length > 0) {
                                 matchedRanges = matches.map((match) => {
@@ -284,12 +308,14 @@ export class ElementExtractor {
                                         startIndex: match.startIndex,
                                         endIndex: match.endIndex,
                                         rects: offsetRects,
-                                        fallbackParentRect: {
-                                            x: Math.max(0, parentRect.x + offset.x),
-                                            y: Math.max(0, parentRect.y + offset.y),
-                                            width: Math.min(parentRect.width, viewportWidth - Math.max(0, parentRect.x + offset.x)),
-                                            height: Math.min(parentRect.height, viewportHeight - Math.max(0, parentRect.y + offset.y))
-                                        }
+                                        ...(parentRect.height <= 60 ? {
+                                            fallbackParentRect: {
+                                                x: Math.max(0, parentRect.x + offset.x),
+                                                y: Math.max(0, parentRect.y + offset.y),
+                                                width: Math.min(parentRect.width, viewportWidth - Math.max(0, parentRect.x + offset.x)),
+                                                height: Math.min(parentRect.height, viewportHeight - Math.max(0, parentRect.y + offset.y))
+                                            }
+                                        } : {})
                                     };
                                 });
                             }
@@ -299,8 +325,15 @@ export class ElementExtractor {
                                 boundingClientRect: { x: parentRect.x + offset.x, y: parentRect.y + offset.y, width: parentRect.width, height: parentRect.height },
                                 matchedRanges
                             });
-                            // Check if parent container has nested inline markup spanning across text nodes
-                            if (parent.children.length > 0 && !visitedContainers.has(parent)) {
+                            // Check if parent container has nested inline markup spanning across text nodes (only small inline wrappers, never layout blocks or cards)
+                            const isSmallInlineWrapper = parent.children.length > 0 &&
+                                !visitedContainers.has(parent) &&
+                                parentRect.height <= 50 &&
+                                parentRect.width <= 600 &&
+                                parent.tagName !== 'ARTICLE' &&
+                                parent.tagName !== 'MAIN' &&
+                                parent.tagName !== 'SECTION';
+                            if (isSmallInlineWrapper) {
                                 visitedContainers.add(parent);
                                 const containerText = parent.textContent || '';
                                 const containerMatches = scanTextForPII(containerText);
@@ -319,12 +352,14 @@ export class ElementExtractor {
                                                     startIndex: cm.startIndex,
                                                     endIndex: cm.endIndex,
                                                     rects: offsetContainerRects,
-                                                    fallbackParentRect: {
-                                                        x: Math.max(0, parentRect.x + offset.x),
-                                                        y: Math.max(0, parentRect.y + offset.y),
-                                                        width: Math.min(parentRect.width, viewportWidth - Math.max(0, parentRect.x + offset.x)),
-                                                        height: Math.min(parentRect.height, viewportHeight - Math.max(0, parentRect.y + offset.y))
-                                                    }
+                                                    ...(parentRect.height <= 40 ? {
+                                                        fallbackParentRect: {
+                                                            x: Math.max(0, parentRect.x + offset.x),
+                                                            y: Math.max(0, parentRect.y + offset.y),
+                                                            width: Math.min(parentRect.width, viewportWidth - Math.max(0, parentRect.x + offset.x)),
+                                                            height: Math.min(parentRect.height, viewportHeight - Math.max(0, parentRect.y + offset.y))
+                                                        }
+                                                    } : {})
                                                 }]
                                         });
                                     }
@@ -336,25 +371,49 @@ export class ElementExtractor {
                 }
             }
             // 3. Extract Images / Avatars for Face Detection (Only actual visual media, not layout cards)
-            const images = currentDoc.querySelectorAll('img, svg, [role="img"], .avatar, .profile-photo, .profile-pic');
+            const images = currentDoc.querySelectorAll('img, svg, [role="img"], .avatar, .profile-photo, .profile-pic, ' +
+                '[data-testid*="avatar" i], [data-testid*="UserAvatar" i], [data-testid*="user-avatar" i], ' +
+                '[data-testid*="user-menu" i], [class*="avatar" i], [class*="profile-photo" i], [class*="profile-pic" i]');
             images.forEach((img, idx) => {
                 const el = img;
                 const tagName = (el.tagName || '').toUpperCase();
                 const role = el.getAttribute?.('role') || '';
-                const isVisualMedia = tagName === 'IMG' || tagName === 'SVG' || role === 'img' || el.classList?.contains('avatar') || el.classList?.contains('profile-photo') || el.classList?.contains('profile-pic');
+                const rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0)
+                    return;
+                if (rect.width > 240 || rect.height > 240)
+                    return;
+                const classText = (el.getAttribute?.('class') ??
+                    (typeof el.className === 'string' ? el.className : '')).toLowerCase();
+                const testId = (el.getAttribute?.('data-testid') || '').toLowerCase();
+                const alt = (el.getAttribute?.('alt') || '').toLowerCase();
+                const ariaLabel = (el.getAttribute?.('aria-label') || '').toLowerCase();
+                const src = (el.getAttribute?.('src') || el.getAttribute?.('srcset') || '').toLowerCase();
+                const isAvatar = classText.includes('avatar') ||
+                    classText.includes('profile') ||
+                    testId.includes('avatar') ||
+                    testId.includes('useravatar') ||
+                    alt.includes('avatar') ||
+                    alt.includes('profile') ||
+                    ariaLabel.includes('avatar') ||
+                    ariaLabel.includes('profile') ||
+                    ariaLabel.includes('account') ||
+                    src.includes('profile_images') ||
+                    src.includes('avatar') ||
+                    src.includes('avatars.githubusercontent') ||
+                    src.includes('googleusercontent.com') ||
+                    Boolean(typeof el.closest === 'function' && el.closest('[data-testid*="UserAvatar" i], [data-testid*="avatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i]'));
+                const isVisualMedia = tagName === 'IMG' ||
+                    tagName === 'SVG' ||
+                    role === 'img' ||
+                    isAvatar;
                 if (!isVisualMedia)
                     return;
-                const rect = el.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) {
-                    const classText = (el.getAttribute?.('class') ??
-                        (typeof el.className === 'string' ? el.className : '')).toLowerCase();
-                    const isAvatar = classText.includes('avatar') || classText.includes('profile');
-                    imageElements.push({
-                        id: `img_${depth}_${idx + 1}`,
-                        isProfilePhotoOrAvatar: isAvatar,
-                        boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
-                    });
-                }
+                imageElements.push({
+                    id: `img_${depth}_${idx + 1}`,
+                    isProfilePhotoOrAvatar: isAvatar,
+                    boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
+                });
             });
             // 4. Granular High-Risk & Uninspectable Surfaces
             // 4a. Canvases (2D Canvas vs WebGL Canvas)

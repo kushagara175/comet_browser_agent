@@ -63,7 +63,7 @@ export function detectFaceRegions(images, transformer, modelFaces = []) {
                 category: 'face',
                 viewportBox,
                 screenshotBox,
-                detectorSource: 'dom_semantic',
+                detectorSource: 'face_model',
                 method: 'gaussian_blur',
                 label: 'DOM_AVATAR_SIGNAL'
             });

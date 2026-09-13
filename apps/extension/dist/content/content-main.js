@@ -134,8 +134,9 @@
   // ../../packages/pii-rules/dist/regex-patterns.js
   var CANARY_REGEX = /\b(?:SECRET_CANARY[A-Za-z0-9_]*|CANARY_PRIVAPILOT[A-Za-z0-9_]*)\b/g;
   var MEDICAL_REGEX = /\b(?:medical note|clinical diagnosis|prescription info|patient record|doctor note)\b[^\n.,;]*/gi;
+  var HANDLE_REGEX = /(?:^|(?<=\s|[([{"']))(@[A-Za-z0-9_]{1,30})\b/g;
   var EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
-  var INDIAN_PHONE_REGEX = /(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}\b/g;
+  var INDIAN_PHONE_REGEX = /(?:^|(?<!\d))(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)\b/g;
   var INTL_PHONE_REGEX = /\b\+(?:[1-9]\d{0,2})[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{1,4}[\s.-]?\d{1,9}\b/g;
   var PAN_REGEX = /\b[A-Z]{5}[0-9]{4}[A-Z]\b/g;
   var AADHAAR_REGEX = /\b[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}\b/g;
@@ -166,6 +167,19 @@
           startIndex: match.index,
           endIndex: match.index + match[0].length,
           matchedLength: match[0].length,
+          confidence: 0.95
+        });
+      }
+    }
+    for (const match of text.matchAll(HANDLE_REGEX)) {
+      if (match.index !== void 0 && match[1]) {
+        const handleOffset = match[0].indexOf(match[1]);
+        const handleStart = match.index + handleOffset;
+        matches.push({
+          category: "username",
+          startIndex: handleStart,
+          endIndex: handleStart + match[1].length,
+          matchedLength: match[1].length,
           confidence: 0.95
         });
       }
@@ -439,6 +453,18 @@
           });
         }
       }
+      if (resultRects.length === 0) {
+        const b = range.getBoundingClientRect();
+        const left = Math.max(0, Math.min(b.left !== void 0 ? b.left : b.x, viewportWidth));
+        const top = Math.max(0, Math.min(b.top !== void 0 ? b.top : b.y, viewportHeight));
+        const right = Math.max(0, Math.min(b.right !== void 0 ? b.right : b.x + b.width, viewportWidth));
+        const bottom = Math.max(0, Math.min(b.bottom !== void 0 ? b.bottom : b.y + b.height, viewportHeight));
+        const width = right - left;
+        const height = bottom - top;
+        if (width > 0.5 && height > 0.5 && Number.isFinite(width) && Number.isFinite(height)) {
+          resultRects.push({ x: left, y: top, width, height });
+        }
+      }
       return resultRects;
     } catch {
       return [];
@@ -596,7 +622,21 @@
               if (parentRect.width > 0 && parentRect.height > 0) {
                 textIdx++;
                 const nodeId = `txt_${depth}_${textIdx}`;
-                const matches = scanTextForPII(content);
+                const isAccountIdentity = Boolean(
+                  typeof parent.closest === "function" && parent.closest(
+                    '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i]'
+                  )
+                );
+                let matches = scanTextForPII(content);
+                if (matches.length === 0 && isAccountIdentity && trimmed.length > 1 && trimmed.length < 80) {
+                  matches = [{
+                    category: "username",
+                    startIndex: 0,
+                    endIndex: content.length,
+                    matchedLength: content.length,
+                    confidence: 0.95
+                  }];
+                }
                 let matchedRanges = void 0;
                 if (matches.length > 0) {
                   matchedRanges = matches.map((match) => {
@@ -607,12 +647,14 @@
                       startIndex: match.startIndex,
                       endIndex: match.endIndex,
                       rects: offsetRects,
-                      fallbackParentRect: {
-                        x: Math.max(0, parentRect.x + offset.x),
-                        y: Math.max(0, parentRect.y + offset.y),
-                        width: Math.min(parentRect.width, viewportWidth - Math.max(0, parentRect.x + offset.x)),
-                        height: Math.min(parentRect.height, viewportHeight - Math.max(0, parentRect.y + offset.y))
-                      }
+                      ...parentRect.height <= 60 ? {
+                        fallbackParentRect: {
+                          x: Math.max(0, parentRect.x + offset.x),
+                          y: Math.max(0, parentRect.y + offset.y),
+                          width: Math.min(parentRect.width, viewportWidth - Math.max(0, parentRect.x + offset.x)),
+                          height: Math.min(parentRect.height, viewportHeight - Math.max(0, parentRect.y + offset.y))
+                        }
+                      } : {}
                     };
                   });
                 }
@@ -622,7 +664,8 @@
                   boundingClientRect: { x: parentRect.x + offset.x, y: parentRect.y + offset.y, width: parentRect.width, height: parentRect.height },
                   matchedRanges
                 });
-                if (parent.children.length > 0 && !visitedContainers.has(parent)) {
+                const isSmallInlineWrapper = parent.children.length > 0 && !visitedContainers.has(parent) && parentRect.height <= 50 && parentRect.width <= 600 && parent.tagName !== "ARTICLE" && parent.tagName !== "MAIN" && parent.tagName !== "SECTION";
+                if (isSmallInlineWrapper) {
                   visitedContainers.add(parent);
                   const containerText = parent.textContent || "";
                   const containerMatches = scanTextForPII(containerText);
@@ -641,12 +684,14 @@
                           startIndex: cm.startIndex,
                           endIndex: cm.endIndex,
                           rects: offsetContainerRects,
-                          fallbackParentRect: {
-                            x: Math.max(0, parentRect.x + offset.x),
-                            y: Math.max(0, parentRect.y + offset.y),
-                            width: Math.min(parentRect.width, viewportWidth - Math.max(0, parentRect.x + offset.x)),
-                            height: Math.min(parentRect.height, viewportHeight - Math.max(0, parentRect.y + offset.y))
-                          }
+                          ...parentRect.height <= 40 ? {
+                            fallbackParentRect: {
+                              x: Math.max(0, parentRect.x + offset.x),
+                              y: Math.max(0, parentRect.y + offset.y),
+                              width: Math.min(parentRect.width, viewportWidth - Math.max(0, parentRect.x + offset.x)),
+                              height: Math.min(parentRect.height, viewportHeight - Math.max(0, parentRect.y + offset.y))
+                            }
+                          } : {}
                         }]
                       });
                     }
@@ -657,23 +702,29 @@
             textNode = textWalker.nextNode();
           }
         }
-        const images = currentDoc.querySelectorAll('img, svg, [role="img"], .avatar, .profile-photo, .profile-pic');
+        const images = currentDoc.querySelectorAll(
+          'img, svg, [role="img"], .avatar, .profile-photo, .profile-pic, [data-testid*="avatar" i], [data-testid*="UserAvatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i], [class*="avatar" i], [class*="profile-photo" i], [class*="profile-pic" i]'
+        );
         images.forEach((img, idx) => {
           const el = img;
           const tagName = (el.tagName || "").toUpperCase();
           const role = el.getAttribute?.("role") || "";
-          const isVisualMedia = tagName === "IMG" || tagName === "SVG" || role === "img" || el.classList?.contains("avatar") || el.classList?.contains("profile-photo") || el.classList?.contains("profile-pic");
-          if (!isVisualMedia) return;
           const rect = el.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) {
-            const classText = (el.getAttribute?.("class") ?? (typeof el.className === "string" ? el.className : "")).toLowerCase();
-            const isAvatar = classText.includes("avatar") || classText.includes("profile");
-            imageElements.push({
-              id: `img_${depth}_${idx + 1}`,
-              isProfilePhotoOrAvatar: isAvatar,
-              boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
-            });
-          }
+          if (rect.width <= 0 || rect.height <= 0) return;
+          if (rect.width > 240 || rect.height > 240) return;
+          const classText = (el.getAttribute?.("class") ?? (typeof el.className === "string" ? el.className : "")).toLowerCase();
+          const testId = (el.getAttribute?.("data-testid") || "").toLowerCase();
+          const alt = (el.getAttribute?.("alt") || "").toLowerCase();
+          const ariaLabel = (el.getAttribute?.("aria-label") || "").toLowerCase();
+          const src = (el.getAttribute?.("src") || el.getAttribute?.("srcset") || "").toLowerCase();
+          const isAvatar = classText.includes("avatar") || classText.includes("profile") || testId.includes("avatar") || testId.includes("useravatar") || alt.includes("avatar") || alt.includes("profile") || ariaLabel.includes("avatar") || ariaLabel.includes("profile") || ariaLabel.includes("account") || src.includes("profile_images") || src.includes("avatar") || src.includes("avatars.githubusercontent") || src.includes("googleusercontent.com") || Boolean(typeof el.closest === "function" && el.closest('[data-testid*="UserAvatar" i], [data-testid*="avatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i]'));
+          const isVisualMedia = tagName === "IMG" || tagName === "SVG" || role === "img" || isAvatar;
+          if (!isVisualMedia) return;
+          imageElements.push({
+            id: `img_${depth}_${idx + 1}`,
+            isProfilePhotoOrAvatar: isAvatar,
+            boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
+          });
         });
         const canvases = currentDoc.querySelectorAll("canvas");
         canvases.forEach((c) => {

@@ -36,7 +36,7 @@ export function createMockCanvas(
   const canvas = {
     width,
     height,
-    toDataURL: (type?: string) => `data:image/png;base64,mock_${width}x${height}`,
+    toDataURL: (type?: string) => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
     getContext: (contextId: string) => {
       if (contextId !== '2d') return null;
       return {

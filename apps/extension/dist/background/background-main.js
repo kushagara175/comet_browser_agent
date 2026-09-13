@@ -16675,8 +16675,9 @@ var SENSITIVE_AUTOCOMPLETE_VALUES = [
 var CANARY_SECRET = "SECRET_CANARY_SIH26171_DO_NOT_TRANSMIT";
 var CANARY_REGEX = /\b(?:SECRET_CANARY[A-Za-z0-9_]*|CANARY_PRIVAPILOT[A-Za-z0-9_]*)\b/g;
 var MEDICAL_REGEX = /\b(?:medical note|clinical diagnosis|prescription info|patient record|doctor note)\b[^\n.,;]*/gi;
+var HANDLE_REGEX = /(?:^|(?<=\s|[([{"']))(@[A-Za-z0-9_]{1,30})\b/g;
 var EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
-var INDIAN_PHONE_REGEX = /(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}\b/g;
+var INDIAN_PHONE_REGEX = /(?:^|(?<!\d))(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)\b/g;
 var INTL_PHONE_REGEX = /\b\+(?:[1-9]\d{0,2})[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{1,4}[\s.-]?\d{1,9}\b/g;
 var PAN_REGEX = /\b[A-Z]{5}[0-9]{4}[A-Z]\b/g;
 var AADHAAR_REGEX = /\b[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}\b/g;
@@ -16707,6 +16708,19 @@ function scanTextForPII(text) {
         startIndex: match.index,
         endIndex: match.index + match[0].length,
         matchedLength: match[0].length,
+        confidence: 0.95
+      });
+    }
+  }
+  for (const match of text.matchAll(HANDLE_REGEX)) {
+    if (match.index !== void 0 && match[1]) {
+      const handleOffset = match[0].indexOf(match[1]);
+      const handleStart = match.index + handleOffset;
+      matches.push({
+        category: "username",
+        startIndex: handleStart,
+        endIndex: handleStart + match[1].length,
+        matchedLength: match[1].length,
         confidence: 0.95
       });
     }
@@ -17152,7 +17166,7 @@ function detectFaceRegions(images, transformer, modelFaces = []) {
         category: "face",
         viewportBox,
         screenshotBox,
-        detectorSource: "dom_semantic",
+        detectorSource: "face_model",
         method: "gaussian_blur",
         label: "DOM_AVATAR_SIGNAL"
       });
@@ -18255,18 +18269,42 @@ var SanitizerPipeline = class {
     if (!verification.isValid) {
       throw new Error(`Sanitization Blocked: ${verification.reason}`);
     }
+    let piiTextCount = 0;
+    let domInputCount = 0;
+    let faceCount = 0;
+    let surfaceCount = 0;
+    for (const r of visibleRegions) {
+      if (r.category === "face" || r.detectorSource === "face_model") {
+        faceCount++;
+      } else if (r.detectorSource === "surface_detector" || r.category === "high_risk_surface" || r.category === "uninspectable") {
+        surfaceCount++;
+      } else if (r.detectorSource === "dom_semantic") {
+        domInputCount++;
+      } else {
+        piiTextCount++;
+      }
+    }
+    let opaqueBoxCount = 0;
+    let spatialBlurCount = 0;
+    for (const r of visibleRegions) {
+      if (r.method === "gaussian_blur" || r.method === "spatial_blur") {
+        spatialBlurCount++;
+      } else {
+        opaqueBoxCount++;
+      }
+    }
     const redactionManifest = {
       manifestVersion: "1.0",
       totalRegions: visibleRegions.length,
       categoryCounts: {
-        piiText: visibleRegions.filter((r) => r.detectorSource === "text_pii_regex").length,
-        domInput: visibleRegions.filter((r) => r.detectorSource === "dom_semantic").length,
-        face: visibleRegions.filter((r) => r.category === "face").length,
-        surface: visibleRegions.filter((r) => r.detectorSource === "surface_detector").length
+        piiText: piiTextCount,
+        domInput: domInputCount,
+        face: faceCount,
+        surface: surfaceCount
       },
       methodCounts: {
-        opaqueBox: visibleRegions.filter((r) => r.method === "opaque_mask").length,
-        spatialBlur: visibleRegions.filter((r) => r.method === "gaussian_blur").length
+        opaqueBox: opaqueBoxCount,
+        spatialBlur: spatialBlurCount
       },
       placeholderConvention: "[REDACTED]",
       geometrySemantics: "clamped_css_pixels",
