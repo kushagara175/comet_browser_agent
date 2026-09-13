@@ -1091,24 +1091,51 @@ if (typeof document !== 'undefined') {
       const sanitized = sanitizeReasoningText(rawReasoning);
       if (!sanitized) return '';
 
-      const duration = durationSeconds && durationSeconds > 0 ? durationSeconds : 2;
+      const words = sanitized.split(/\s+/).filter(Boolean).length;
+      const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
+      const duration = durationSeconds && durationSeconds > 0 ? durationSeconds : computedFallback;
       const label = options.label || `Thought for ${duration}s`;
-      const isOpen = options.open ? 'open' : '';
+      const isExpanded = Boolean(options.open);
 
       return `
-        <details class="thinking-accordion" ${isOpen}>
-          <summary class="thinking-summary">
-            <svg class="thinking-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <div class="monologue-block group" data-state="${isExpanded ? 'expanded' : 'collapsed'}">
+          <button type="button" class="monologue-toggle-btn" aria-expanded="${isExpanded ? 'true' : 'false'}">
+            <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
-            <span class="thinking-label">${escapeHtml(label)}</span>
-          </summary>
-          <div class="thinking-body">
-            <div class="thinking-monologue">${renderMarkdown(sanitized)}</div>
+            <span class="monologue-title thinking-shimmer-text">${escapeHtml(label)}</span>
+          </button>
+          <div class="monologue-drawer" style="display: ${isExpanded ? 'block' : 'none'};">
+            <div class="monologue-content">${renderMarkdown(sanitized)}</div>
           </div>
-        </details>
+        </div>
       `;
     }
+
+    // Delegated click handler for allel MonologueBlock expandable/collapsible toggle
+    document.addEventListener('click', (e) => {
+      const toggleBtn = e.target.closest('.monologue-toggle-btn');
+      if (!toggleBtn) return;
+      e.preventDefault();
+      const block = toggleBtn.closest('.monologue-block');
+      if (!block) return;
+      const drawer = block.querySelector('.monologue-drawer');
+      const isExpanded = block.getAttribute('data-state') === 'expanded';
+
+      if (isExpanded) {
+        block.setAttribute('data-state', 'collapsed');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        if (drawer) drawer.style.display = 'none';
+      } else {
+        block.setAttribute('data-state', 'expanded');
+        toggleBtn.setAttribute('aria-expanded', 'true');
+        if (drawer) {
+          drawer.style.display = 'block';
+          const content = drawer.querySelector('.monologue-content');
+          if (content) content.scrollTop = content.scrollHeight;
+        }
+      }
+    });
 
     // Render Action Execution Outcome in Chat
     function renderActionResult(agentBubble, res, durationSeconds) {
@@ -1497,14 +1524,17 @@ if (typeof document !== 'undefined') {
       if (chatInput) chatInput.value = '';
       chatMessages.scrollTop = chatMessages.scrollHeight;
 
-      // Agent Loading Bubble with live thinking timer (inspired by allel)
       const turnStartTime = Date.now();
       const agentBubble = document.createElement('div');
       agentBubble.className = 'chat-msg agent';
       agentBubble.innerHTML = `
-        <div class="thinking-live-header" style="display: flex; align-items: center; gap: 8px; padding: 2px 0;">
-          <span class="clean-spinner" style="width: 12px; height: 12px; border-width: 2px; border-top-color: #8ab4f8; border-right-color: rgba(138, 180, 248, 0.25);"></span>
-          <span class="thinking-shimmer-text">Thinking (1s)</span>
+        <div class="monologue-block executing" data-state="collapsed">
+          <div style="display: inline-flex; align-items: center; gap: 8px; padding: 2px 0;">
+            <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+            <span class="thinking-shimmer-text">Thinking (1s)</span>
+          </div>
         </div>
       `;
       chatMessages.appendChild(agentBubble);
@@ -1746,17 +1776,17 @@ if (typeof document !== 'undefined') {
               if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
                 const liveReasoning = sanitizeReasoningText(act.reasoning);
                 const liveThinkingHtml = liveReasoning ? `
-                  <details class="thinking-accordion" open style="margin-bottom: 6px;">
-                    <summary class="thinking-summary">
-                      <svg class="thinking-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <div class="monologue-block group" data-state="expanded" style="margin-bottom: 6px;">
+                    <button type="button" class="monologue-toggle-btn" aria-expanded="true">
+                      <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="9 18 15 12 9 6"></polyline>
                       </svg>
                       <span class="thinking-shimmer-text">Thinking...</span>
-                    </summary>
-                    <div class="thinking-body">
-                      <div class="thinking-monologue">${renderMarkdown(liveReasoning)}</div>
+                    </button>
+                    <div class="monologue-drawer" style="display: block;">
+                      <div class="monologue-content">${renderMarkdown(liveReasoning)}</div>
                     </div>
-                  </details>
+                  </div>
                 ` : '';
                 lastAgentBubble.innerHTML = `
                   ${liveThinkingHtml}

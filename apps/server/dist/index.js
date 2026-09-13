@@ -210,8 +210,8 @@ export function createServer() {
                     const { message, elements, sanitizedTitle, maskCount, history } = validation.payload;
                     const hasSanitizedContext = Array.isArray(elements) && elements.length > 0;
                     const systemPrompt = hasSanitizedContext
-                        ? `You are PrivaPilot, a privacy-first browser AI assistant. The user is asking about the current webpage. Review the sanitized elements and answer helpfully. Think step by step and feel free to enclose your internal reasoning inside <think>...</think> tags before your final response.`
-                        : `You are PrivaPilot, a smart privacy-first browser AI assistant. Answer the user's question helpfully and concisely. Think step by step and feel free to enclose your internal reasoning inside <think>...</think> tags before your final response.`;
+                        ? `You are PrivaPilot, a privacy-first browser AI assistant. The user is asking about the current webpage. Review the sanitized elements and answer helpfully. You must ALWAYS begin your output by thinking step by step inside <think>...</think> tags, analyzing the user's intent and page context. After </think>, provide your concise final response.`
+                        : `You are PrivaPilot, a smart privacy-first browser AI assistant. Answer helpfully and concisely. You must ALWAYS begin your output by thinking step by step inside <think>...</think> tags, analyzing the user's message and response plan. After </think>, provide your concise final response.`;
                     // Build user message from sanitized element list only (no raw DOM or URLs)
                     let fullUserMessage = message;
                     if (hasSanitizedContext) {
