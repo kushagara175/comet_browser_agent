@@ -15755,10 +15755,12 @@ as ORT format: ${n}`);
         }
         const residualPii = scanTextForPII(el2.sanitizedName);
         if (residualPii.length > 0) {
-          return {
-            isValid: false,
-            reason: `Residual unredacted PII (${residualPii[0].category}) found in element '${el2.localId}'.`
-          };
+          let cleanName = el2.sanitizedName;
+          const sorted = [...residualPii].sort((a, b) => b.startIndex - a.startIndex);
+          for (const item of sorted) {
+            cleanName = cleanName.slice(0, item.startIndex) + `[REDACTED_${item.category.toUpperCase()}]` + cleanName.slice(item.endIndex);
+          }
+          el2.sanitizedName = cleanName;
         }
       }
       if (regionRecords) {

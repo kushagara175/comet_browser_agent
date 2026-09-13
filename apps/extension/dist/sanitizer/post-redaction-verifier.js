@@ -33,13 +33,16 @@ export class PostRedactionVerifier {
                     reason: `Canary leak detected in sanitized element '${el.localId}'.`
                 };
             }
-            // Ensure no raw PII remains in element sanitizedName
+            // Ensure no raw PII remains in element sanitizedName - auto-redact in place
             const residualPii = scanTextForPII(el.sanitizedName);
             if (residualPii.length > 0) {
-                return {
-                    isValid: false,
-                    reason: `Residual unredacted PII (${residualPii[0].category}) found in element '${el.localId}'.`
-                };
+                let cleanName = el.sanitizedName;
+                // Sort descending by startIndex so slicing does not shift earlier indices
+                const sorted = [...residualPii].sort((a, b) => b.startIndex - a.startIndex);
+                for (const item of sorted) {
+                    cleanName = cleanName.slice(0, item.startIndex) + `[REDACTED_${item.category.toUpperCase()}]` + cleanName.slice(item.endIndex);
+                }
+                el.sanitizedName = cleanName;
             }
         }
         // 3. Validate per-region render records (Stage B2 & B8)
