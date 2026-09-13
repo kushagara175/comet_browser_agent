@@ -1720,7 +1720,7 @@ export class RunCoordinator {
         const historyText = this.actionHistory
           .map((a: any, idx: number) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || 'page'}" (${a.rationale || 'executed'})`)
           .join('; ');
-        (sanitized.pageState as any).postconditionSummary = historyText;
+        (sanitized.pageState as any).postconditionSummary = historyText.length > 480 ? historyText.slice(-480) : historyText;
       }
 
       // Step 3: Server Reasoning is the Central Intelligence, with Stage D6 local resolution for deterministic pure scrolls
