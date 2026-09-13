@@ -547,7 +547,9 @@ if (typeof document !== 'undefined') {
           },
           {
             role: 'agent',
-            text: '### Mistral-Large-3 Architecture & Pricing\n\n**Mistral-Large-3** (`mistral-large-2407`) is Mistral AI\'s flagship frontier reasoning model hosted on **Azure AI Foundry**:\n\n- **Context Window**: 128k tokens with full native multilingual and coding support.\n- **Input Pricing**: $2.00 / 1M tokens.\n- **Output Pricing**: $6.00 / 1M tokens.\n\nCompared to GPT-4o ($2.50 / $10.00), Mistral-Large-3 offers ~35% lower inference cost with parity on complex reasoning and function calling.'
+            text: '### Mistral-Large-3 Architecture & Pricing\n\n**Mistral-Large-3** (`mistral-large-2407`) is Mistral AI\'s flagship frontier reasoning model hosted on **Azure AI Foundry**:\n\n- **Context Window**: 128k tokens with full native multilingual and coding support.\n- **Input Pricing**: $2.00 / 1M tokens.\n- **Output Pricing**: $6.00 / 1M tokens.\n\nCompared to GPT-4o ($2.50 / $10.00), Mistral-Large-3 offers ~35% lower inference cost with parity on complex reasoning and function calling.',
+            reasoning: '1. The user asks for pricing and context window specifications for Mistral-Large-3 compared to GPT-4o.\n2. Mistral-Large-3 offers 128k context with competitive token rates.\n3. Formulate structured breakdown highlighting context window, input/output pricing, and key capabilities.',
+            durationSeconds: 3
           }
         ]
       },
@@ -563,7 +565,9 @@ if (typeof document !== 'undefined') {
           },
           {
             role: 'agent',
-            text: '### Claude Build Day — Travel Budget Estimate\n\nHere is the estimated travel cost breakdown for 3 engineers:\n\n- **Roundtrip Flights**: $1,350 total (~$450/person)\n- **Lodging (3 nights)**: $1,200 total (~$400/night near Moscone Center)\n- **Per Diem & Local Transit**: $600 total\n\n**Estimated Total**: **$3,150** with fail-closed receipt auditing enabled.'
+            text: '### Claude Build Day — Travel Budget Estimate\n\nHere is the estimated travel cost breakdown for 3 engineers:\n\n- **Roundtrip Flights**: $1,350 total (~$450/person)\n- **Lodging (3 nights)**: $1,200 total (~$400/night near Moscone Center)\n- **Per Diem & Local Transit**: $600 total\n\n**Estimated Total**: **$3,150** with fail-closed receipt auditing enabled.',
+            reasoning: '1. Synthesize realistic conference travel budget for 3 engineers to San Francisco.\n2. Calculate reasonable estimates for flights, hotel lodging, and per diem.\n3. Format clean markdown summary with total calculation.',
+            durationSeconds: 2
           }
         ]
       },
@@ -579,7 +583,9 @@ if (typeof document !== 'undefined') {
           },
           {
             role: 'agent',
-            text: '### Qwen Model Family Licensing & Local Inference\n\n- **License**: Apache 2.0 for 0.5B, 1.5B, 7B, 14B, 32B, and 72B variants.\n- **Commercial Use**: Fully permitted without royalty fees.\n- **Local Execution**: Seamlessly supported in **PrivaPilot** via local Ollama or WebGPU on-device fallback with 0 byte data leakage.'
+            text: '### Qwen Model Family Licensing & Local Inference\n\n- **License**: Apache 2.0 for 0.5B, 1.5B, 7B, 14B, 32B, and 72B variants.\n- **Commercial Use**: Fully permitted without royalty fees.\n- **Local Execution**: Seamlessly supported in **PrivaPilot** via local Ollama or WebGPU on-device fallback with 0 byte data leakage.',
+            reasoning: '1. User inquiry regarding Qwen open-weights license terms and local execution.\n2. Verify Apache 2.0 licensing and compatibility with Ollama and WebGPU backends.\n3. Structure concise answer highlighting commercial permissions and zero-leakage local execution.',
+            durationSeconds: 3
           }
         ]
       },
@@ -595,7 +601,9 @@ if (typeof document !== 'undefined') {
           },
           {
             role: 'agent',
-            text: '### C++ Interval Merging for Gridland Metro\n\nWe group railway tracks by row `r` using `std::unordered_map<int, vector<pair<int, int>>>`, sort overlapping intervals `[c1, c2]`, merge them in `O(N log N)`, and subtract occupied track cells from `n * m` total cells.'
+            text: '### C++ Interval Merging for Gridland Metro\n\nWe group railway tracks by row `r` using `std::unordered_map<int, vector<pair<int, int>>>`, sort overlapping intervals `[c1, c2]`, merge them in `O(N log N)`, and subtract occupied track cells from `n * m` total cells.',
+            reasoning: '1. Problem analysis: Gridland Metro requires counting unoccupied cells on an n x m grid with tracks.\n2. Tracks on the same row can overlap, requiring interval merging.\n3. Provide optimal C++ strategy using hashmap per row and sorting intervals.',
+            durationSeconds: 4
           }
         ]
       },
@@ -611,7 +619,9 @@ if (typeof document !== 'undefined') {
           },
           {
             role: 'agent',
-            text: 'Why do C++ programmers wear glasses?\n\nBecause they don\'t C# — and they forgot to call `delete` on their optical memory! 😄'
+            text: 'Why do C++ programmers wear glasses?\n\nBecause they don\'t C# — and they forgot to call `delete` on their optical memory! 😄',
+            reasoning: '1. User requested classic C++ programming humor.\n2. Select well-known pun involving C# vs C++ memory management.\n3. Deliver joke cleanly.',
+            durationSeconds: 2
           }
         ]
       }
@@ -632,7 +642,7 @@ if (typeof document !== 'undefined') {
       } catch (_e) {}
     }
 
-    // Ensure an initial new chat session exists and is clean so PrivaPilot opens to the clean initial hero page
+    // Ensure an initial new chat session exists when user clicks 'New Chat'
     let initialNewSession = chatSessions.find(s => s.id === 'session-new');
     if (!initialNewSession) {
       initialNewSession = {
@@ -643,17 +653,19 @@ if (typeof document !== 'undefined') {
         messages: []
       };
       chatSessions.unshift(initialNewSession);
-    } else {
-      initialNewSession.messages = [];
-      initialNewSession.title = 'New Chat';
-      initialNewSession.updatedAt = Date.now();
     }
 
-    // Always start on a fresh new session whenever the extension is opened or reloaded
-    let currentSessionId = 'session-new';
+    // Restore the active session from localStorage if it exists and has messages;
+    // Otherwise default to 'session-new' so the clean hero page is shown.
+    let savedActiveId = null;
     try {
-      localStorage.setItem('privapilot_active_session_id', 'session-new');
+      savedActiveId = localStorage.getItem('privapilot_active_session_id');
     } catch (_e) {}
+
+    const existingActiveSession = savedActiveId
+      ? chatSessions.find(s => s.id === savedActiveId && s.messages && s.messages.length > 0)
+      : null;
+    let currentSessionId = existingActiveSession ? existingActiveSession.id : 'session-new';
 
     const menuToggleBtn = document.getElementById('menuToggleBtn');
     const headerNewChatBtn = document.getElementById('headerNewChatBtn');
@@ -734,10 +746,25 @@ if (typeof document !== 'undefined') {
           } else {
             conversationHistory.push({ role: 'assistant', content: msg.text });
             const agentBubble = document.createElement('div');
+            const thinkingHtml = msg.reasoning
+              ? renderThinkingAccordion(msg.reasoning, msg.durationSeconds || 2)
+              : '';
+
             if (msg.isAction || msg.text?.startsWith('✓ ')) {
               const cleanText = msg.text.replace(/^✓\s*/, '');
               agentBubble.className = 'chat-msg agent msg-action';
               agentBubble.innerHTML = `
+                ${thinkingHtml}
+                ${msg.steps && msg.steps.length > 1 ? `
+                  <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 7px;">
+                    ${msg.steps.map(s => `
+                      <div style="font-size: 10.5px; color: #94a3b8; display: flex; align-items: center; gap: 6px;">
+                        <span style="background: rgba(148, 163, 184, 0.15); padding: 1px 5px; border-radius: 4px; font-weight: 600;">Step ${s.step}</span>
+                        <span>${escapeHtml(s.proposal?.rationale || s.proposal?.kind || 'Action done')}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : ''}
                 <div class="action-done-pill">
                   <svg class="action-done-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12"></polyline>
@@ -748,7 +775,8 @@ if (typeof document !== 'undefined') {
             } else {
               agentBubble.className = 'chat-msg agent';
               agentBubble.innerHTML = `
-                <div style="font-size: 11.5px; color: #e3e3e3; line-height: 1.5; user-select: text;">
+                ${thinkingHtml}
+                <div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 4px;">
                   ${renderMarkdown(msg.text)}
                 </div>
               `;
@@ -1289,20 +1317,25 @@ if (typeof document !== 'undefined') {
           conversationHistory = conversationHistory.slice(-20);
         }
 
+        const duration = (res?.telemetry?.serverLatencyMs ? Math.max(1, Math.round(res.telemetry.serverLatencyMs / 1000)) : null) || durationSeconds || 2;
+        const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded';
+        const thinkingHtml = renderThinkingAccordion(res.reasoning, duration, { open: wasExpanded });
+
         const activeSession = chatSessions.find(s => s.id === currentSessionId);
         if (activeSession) {
           if (!activeSession.messages) activeSession.messages = [];
-          activeSession.messages.push({ role: 'agent', text: res.reply });
+          activeSession.messages.push({
+            role: 'agent',
+            text: res.reply,
+            reasoning: res.reasoning,
+            durationSeconds: duration
+          });
           activeSession.updatedAt = Date.now();
           saveChatSessions();
         }
 
         const formattedHtml = renderMarkdown(res.reply);
         const actionSuggestions = extractActionSuggestions(res.reply);
-
-        const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded';
-        const duration = (res?.telemetry?.serverLatencyMs ? Math.max(1, Math.round(res.telemetry.serverLatencyMs / 1000)) : null) || durationSeconds || 2;
-        const thinkingHtml = renderThinkingAccordion(res.reasoning, duration, { open: wasExpanded });
 
         agentBubble.innerHTML = `
           ${modelDisconnected ? `
@@ -1452,7 +1485,14 @@ if (typeof document !== 'undefined') {
       const activeSession = chatSessions.find(s => s.id === currentSessionId);
       if (activeSession) {
         if (!activeSession.messages) activeSession.messages = [];
-        activeSession.messages.push({ role: 'agent', text: actionTurnText, isAction: true });
+        activeSession.messages.push({
+          role: 'agent',
+          text: actionTurnText,
+          isAction: true,
+          reasoning: realReasoning,
+          durationSeconds: duration,
+          steps: res.steps
+        });
         activeSession.updatedAt = Date.now();
         saveChatSessions();
       }
