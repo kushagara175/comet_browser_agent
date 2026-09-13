@@ -84,11 +84,26 @@ export function parseFormFieldAssignments(text) {
 export function resolveTaskContract(goal) {
     let g = (goal || '').trim().toLowerCase().replace(/[?!.]+$/, '').trim();
     let prev = '';
-    const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+    const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
     while (g && g !== prev) {
         prev = g;
         g = g.replace(ACTION_PREFIX_REGEX, '').trim();
     }
+    // Normalize colloquial contractions and typos
+    g = g
+        .replace(/\bchekinup\b/g, 'check')
+        .replace(/\bcheckin\b/g, 'check')
+        .replace(/\bcheckup\b/g, 'check')
+        .replace(/\bchecking\s+up\b/g, 'check')
+        .replace(/\bchecking\b/g, 'check')
+        .replace(/\btyoe\b/g, 'type')
+        .replace(/\btpye\b/g, 'type')
+        .replace(/\bclik\b/g, 'click')
+        .replace(/\bcilck\b/g, 'click')
+        .replace(/\bselet\b/g, 'select')
+        .replace(/\bselct\b/g, 'select')
+        .replace(/\bserach\b/g, 'search')
+        .replace(/\bserch\b/g, 'search');
     // Strip leading navigation clauses (e.g. "open bhuvan and explore earth observation" -> "explore earth observation")
     const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
     if (navPrefixMatch && navPrefixMatch[1]) {
@@ -152,7 +167,23 @@ export function resolveTaskContract(goal) {
             }
         };
     }
-    // 1b. Passive observation or immediate finish task
+    // 1b. Browser resource operations (bookmarks, tabs, history)
+    if (/\b(?:bookmarks?|tabs?|history)\b/i.test(g)) {
+        const isManage = /\b(?:open|go\s+to|manage|show|launch)\b/i.test(g);
+        return {
+            supported: true,
+            goalPattern: 'browser_resource',
+            mode: 'act',
+            isPassive: true,
+            expectedTerminal: { kind: 'status_changed' },
+            structuredIntent: {
+                intent: isManage ? 'navigate' : 'observe',
+                targetPhrase: 'bookmarks',
+                targetTokens: tokenizeSemanticText('bookmarks')
+            }
+        };
+    }
+    // 1c. Passive observation or immediate finish task
     if (/^(?:observe|check|inspect|finish|read|summarize|review|analyze|tell|what|scan|look|see)\b/i.test(g)) {
         return {
             supported: true,
@@ -914,7 +945,7 @@ export function isPureNavigationGoal(goal) {
     if (!goal || typeof goal !== 'string')
         return false;
     let g = goal.trim().toLowerCase();
-    const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+    const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
     let prev = '';
     while (g && g !== prev) {
         prev = g;

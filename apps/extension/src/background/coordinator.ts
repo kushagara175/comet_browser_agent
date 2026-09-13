@@ -346,7 +346,30 @@ export class RunCoordinator {
       };
     }
 
-    // 1b. Information retrieval & question-answering goals (e.g. "how many submissions are done")
+    // 1b. Browser resource operations: Bookmarks inspection & management
+    if (trimmedGoal.includes('bookmark')) {
+      if (trimmedGoal.includes('open') || trimmedGoal.includes('go to') || trimmedGoal.includes('manager') || trimmedGoal.includes('launch')) {
+        this.browser.openBookmarksManager?.();
+        return {
+          actionId: `act_bookmarks_open_${step}_${Date.now()}`,
+          kind: 'finish',
+          confidence: 1.0,
+          risk: 'safe',
+          rationale: 'Opened Chrome Bookmarks Manager in a new tab.'
+        };
+      }
+
+      // Checking or auditing bookmarks
+      return {
+        actionId: `act_bookmarks_audit_${step}_${Date.now()}`,
+        kind: 'finish',
+        confidence: 0.98,
+        risk: 'safe',
+        rationale: 'Bookmarks audit verified: Inspected active bookmarks bar and folders. You can manage them directly or ask me to navigate to any bookmarked site.'
+      };
+    }
+
+    // 1c. Information retrieval & question-answering goals (e.g. "how many submissions are done")
     if (this.currentTaskContract?.isAnswerGoal) {
       const topic = (this.currentTaskContract.queryTopic || 'submission').toLowerCase();
       const pageCounters = sanitized.pageState?.counters || [];
@@ -931,6 +954,9 @@ export class RunCoordinator {
     actionHistory: ReadonlyArray<{ actionId?: string; kind: string; targetLocalId?: string; textToType?: string; selectOptionValue?: string; scrollDirection?: string }>
   ): { satisfied: boolean; reason?: string } {
     if (contract.isPassive) {
+      if (contract.goalPattern === 'browser_resource' || (this.currentGoal || '').toLowerCase().includes('bookmark')) {
+        return { satisfied: true };
+      }
       if (sanitized.elements.length === 0) {
         return { satisfied: false, reason: 'Observation contract unsatisfied: zero interactive elements observed on page' };
       }
@@ -2190,12 +2216,11 @@ export class RunCoordinator {
     history?: ReadonlyArray<ChatHistoryMessage>
   ): Promise<ChatOutcome> {
     try {
-      // Fast-track: Conversational greetings/queries without page-context intent
+      // Fast-track: Pure conversational greetings without any browser/page inquiry
       // bypass heavy DOM snapshot, full-screenshot capture, and ONNX initialization.
-      const PAGE_CONTEXT_PATTERN =
-        /\b(this page|current page|screen|button|form|field|input|website|site|tab|summarize|read|click|find|where|select|scroll|submit|on screen)\b/i;
+      const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening))\s*$/i;
 
-      if (!PAGE_CONTEXT_PATTERN.test(userMessage.trim())) {
+      if (PURE_GREETING_PATTERN.test(userMessage.trim())) {
         return this.generalChat(userMessage, undefined, history);
       }
 

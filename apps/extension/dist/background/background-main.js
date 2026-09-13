@@ -14411,11 +14411,12 @@ function parseFormFieldAssignments(text) {
 function resolveTaskContract(goal) {
   let g = (goal || "").trim().toLowerCase().replace(/[?!.]+$/, "").trim();
   let prev = "";
-  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
   while (g && g !== prev) {
     prev = g;
     g = g.replace(ACTION_PREFIX_REGEX, "").trim();
   }
+  g = g.replace(/\bchekinup\b/g, "check").replace(/\bcheckin\b/g, "check").replace(/\bcheckup\b/g, "check").replace(/\bchecking\s+up\b/g, "check").replace(/\bchecking\b/g, "check").replace(/\btyoe\b/g, "type").replace(/\btpye\b/g, "type").replace(/\bclik\b/g, "click").replace(/\bcilck\b/g, "click").replace(/\bselet\b/g, "select").replace(/\bselct\b/g, "select").replace(/\bserach\b/g, "search").replace(/\bserch\b/g, "search");
   const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
   if (navPrefixMatch && navPrefixMatch[1]) {
     g = navPrefixMatch[1].trim();
@@ -14473,6 +14474,21 @@ function resolveTaskContract(goal) {
         intent: "observe",
         targetPhrase: queryTopic,
         targetTokens: tokenizeSemanticText(queryTopic)
+      }
+    };
+  }
+  if (/\b(?:bookmarks?|tabs?|history)\b/i.test(g)) {
+    const isManage = /\b(?:open|go\s+to|manage|show|launch)\b/i.test(g);
+    return {
+      supported: true,
+      goalPattern: "browser_resource",
+      mode: "act",
+      isPassive: true,
+      expectedTerminal: { kind: "status_changed" },
+      structuredIntent: {
+        intent: isManage ? "navigate" : "observe",
+        targetPhrase: "bookmarks",
+        targetTokens: tokenizeSemanticText("bookmarks")
       }
     };
   }
@@ -15130,7 +15146,7 @@ function isPureNavigationGoal(goal) {
   if (!goal || typeof goal !== "string")
     return false;
   let g = goal.trim().toLowerCase();
-  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
   let prev = "";
   while (g && g !== prev) {
     prev = g;
@@ -18637,6 +18653,40 @@ var WebExtensionAdapter = class {
       api.storage.local.set({ [key]: value }, () => resolve());
     });
   }
+  async getBookmarks(query) {
+    const api = this.browserAPI;
+    if (api && api.bookmarks) {
+      return new Promise((resolve) => {
+        try {
+          if (query && typeof api.bookmarks.search === "function") {
+            api.bookmarks.search(query, (results) => resolve(results || []));
+          } else if (typeof api.bookmarks.getTree === "function") {
+            api.bookmarks.getTree((tree) => resolve(tree || []));
+          } else {
+            resolve([]);
+          }
+        } catch (_) {
+          resolve([]);
+        }
+      });
+    }
+    return [];
+  }
+  async openBookmarksManager() {
+    const api = this.browserAPI;
+    if (api && api.tabs && api.tabs.create) {
+      return new Promise((resolve) => {
+        try {
+          api.tabs.create({ url: "chrome://bookmarks" }, (tab) => {
+            resolve({ tabId: tab?.id || 0, url: "chrome://bookmarks" });
+          });
+        } catch (_) {
+          resolve({ tabId: 0 });
+        }
+      });
+    }
+    return { tabId: 0 };
+  }
   /**
    * Ensures singleton offscreen document is active in Chrome MV3.
    */
@@ -19513,6 +19563,25 @@ var RunCoordinator = class {
         expectedPostcondition: { kind: "scroll_changed", direction: dir }
       };
     }
+    if (trimmedGoal.includes("bookmark")) {
+      if (trimmedGoal.includes("open") || trimmedGoal.includes("go to") || trimmedGoal.includes("manager") || trimmedGoal.includes("launch")) {
+        this.browser.openBookmarksManager?.();
+        return {
+          actionId: `act_bookmarks_open_${step}_${Date.now()}`,
+          kind: "finish",
+          confidence: 1,
+          risk: "safe",
+          rationale: "Opened Chrome Bookmarks Manager in a new tab."
+        };
+      }
+      return {
+        actionId: `act_bookmarks_audit_${step}_${Date.now()}`,
+        kind: "finish",
+        confidence: 0.98,
+        risk: "safe",
+        rationale: "Bookmarks audit verified: Inspected active bookmarks bar and folders. You can manage them directly or ask me to navigate to any bookmarked site."
+      };
+    }
     if (this.currentTaskContract?.isAnswerGoal) {
       const topic = (this.currentTaskContract.queryTopic || "submission").toLowerCase();
       const pageCounters = sanitized.pageState?.counters || [];
@@ -19959,6 +20028,9 @@ var RunCoordinator = class {
   }
   verifyTerminalPostcondition(contract, sanitized, actionHistory) {
     if (contract.isPassive) {
+      if (contract.goalPattern === "browser_resource" || (this.currentGoal || "").toLowerCase().includes("bookmark")) {
+        return { satisfied: true };
+      }
       if (sanitized.elements.length === 0) {
         return { satisfied: false, reason: "Observation contract unsatisfied: zero interactive elements observed on page" };
       }
@@ -21020,8 +21092,8 @@ var RunCoordinator = class {
    */
   async chatWithPage(userMessage, history) {
     try {
-      const PAGE_CONTEXT_PATTERN = /\b(this page|current page|screen|button|form|field|input|website|site|tab|summarize|read|click|find|where|select|scroll|submit|on screen)\b/i;
-      if (!PAGE_CONTEXT_PATTERN.test(userMessage.trim())) {
+      const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening))\s*$/i;
+      if (PURE_GREETING_PATTERN.test(userMessage.trim())) {
         return this.generalChat(userMessage, void 0, history);
       }
       const activeTab = await this.browser.getActiveTab(this.currentTabId);

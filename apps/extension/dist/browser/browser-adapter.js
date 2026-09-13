@@ -458,6 +458,44 @@ export class WebExtensionAdapter {
             api.storage.local.set({ [key]: value }, () => resolve());
         });
     }
+    async getBookmarks(query) {
+        const api = this.browserAPI;
+        if (api && api.bookmarks) {
+            return new Promise((resolve) => {
+                try {
+                    if (query && typeof api.bookmarks.search === 'function') {
+                        api.bookmarks.search(query, (results) => resolve(results || []));
+                    }
+                    else if (typeof api.bookmarks.getTree === 'function') {
+                        api.bookmarks.getTree((tree) => resolve(tree || []));
+                    }
+                    else {
+                        resolve([]);
+                    }
+                }
+                catch (_) {
+                    resolve([]);
+                }
+            });
+        }
+        return [];
+    }
+    async openBookmarksManager() {
+        const api = this.browserAPI;
+        if (api && api.tabs && api.tabs.create) {
+            return new Promise((resolve) => {
+                try {
+                    api.tabs.create({ url: 'chrome://bookmarks' }, (tab) => {
+                        resolve({ tabId: tab?.id || 0, url: 'chrome://bookmarks' });
+                    });
+                }
+                catch (_) {
+                    resolve({ tabId: 0 });
+                }
+            });
+        }
+        return { tabId: 0 };
+    }
     /**
      * Ensures singleton offscreen document is active in Chrome MV3.
      */

@@ -79,8 +79,8 @@ export function extractActionSuggestions(text) {
   return suggestions.slice(0, 4);
 }
 
-const ACTION_REQUEST_PREFIX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|help\s+me\s+(?:to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
-const ACTION_VERB = /^(?:click|open|type|fill|enter|write|set|press|select|choose|scroll|hover|drag|drop|upload|attach|move|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log\s+in|sign|auth|authenticate|do|perform|execute|proceed|buy|checkout|inspect|audit|check|go\s+to|navigate)(?:\b|\s)/i;
+const ACTION_REQUEST_PREFIX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+const ACTION_VERB = /^(?:click|open|type|fill|enter|write|set|press|select|choose|scroll|hover|drag|drop|upload|attach|move|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log\s+in|sign|auth|authenticate|do|perform|execute|proceed|buy|checkout|inspect|audit|check|go\s+to|navigate|view|see|show|look|lookup|organize|manage|clean|read|summarize|analyze|review|examine|list|get|fetch)(?:\b|\s)/i;
 
 /**
  * Distinguishes an instruction to operate the current page from a question.
@@ -94,6 +94,23 @@ export function isBrowserActionRequest(message) {
     previous = normalized;
     normalized = normalized.replace(ACTION_REQUEST_PREFIX, '').trim();
   }
+
+  // Normalize colloquial contractions and typos
+  normalized = normalized
+    .replace(/\bchekinup\b/g, 'check')
+    .replace(/\bcheckin\b/g, 'check')
+    .replace(/\bcheckup\b/g, 'check')
+    .replace(/\bchecking\s+up\b/g, 'check')
+    .replace(/\bchecking\b/g, 'check')
+    .replace(/\btyoe\b/g, 'type')
+    .replace(/\btpye\b/g, 'type')
+    .replace(/\bclik\b/g, 'click')
+    .replace(/\bcilck\b/g, 'click')
+    .replace(/\bselet\b/g, 'select')
+    .replace(/\bselct\b/g, 'select')
+    .replace(/\bserach\b/g, 'search')
+    .replace(/\bserch\b/g, 'search');
+
   // Information retrieval & question-answering directives per cababling.md
   if (/(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:the\s+count|the\s+number|the\s+total|the\s+status|about\s+submissions)|find\s+.*?\s+and\s+tell)/i.test(normalized)) {
     return true;
@@ -109,6 +126,11 @@ export function isBrowserActionRequest(message) {
   }
 
   if (ACTION_VERB.test(normalized)) return true;
+
+  // Browser resource management directives (bookmarks, tabs, history, downloads)
+  if (/\b(?:bookmarks?|tabs?|history|downloads?)\b/i.test(normalized)) {
+    return true;
+  }
 
   // Prepositional phrases: "in the place of name type ...", "in name put ...", "for email enter ..."
   const strippedPunct = normalized.replace(/([a-zA-Z0-9_-]+)\.\s+/g, '$1 ').replace(/\s+\.\s+/g, ' ').replace(/\s+/g, ' ');

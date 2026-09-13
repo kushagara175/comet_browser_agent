@@ -48,7 +48,9 @@ test('HUD Routing: natural imperative requests enter the browser agent loop', ()
     'now scroll down',
     'also click submit',
     'and then type hello',
-    'open gmail.com and click in the snoozed'
+    'open gmail.com and click in the snoozed',
+    'help me in chekinup my bookmarks',
+    'check my bookmarks'
   ];
 
   for (const request of actionRequests) {

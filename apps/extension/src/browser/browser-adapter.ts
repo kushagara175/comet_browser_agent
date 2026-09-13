@@ -29,6 +29,8 @@ export interface BrowserAdapter {
   getStorage<T>(key: string): Promise<T | null>;
   setStorage<T>(key: string, value: T): Promise<void>;
   runInSanitizerHost(request: SanitizationHostRequest): Promise<SanitizedContext>;
+  getBookmarks?(query?: string): Promise<any[]>;
+  openBookmarksManager?(): Promise<{ tabId: number; url?: string }>;
 }
 
 export class WebExtensionAdapter implements BrowserAdapter {
@@ -490,6 +492,42 @@ export class WebExtensionAdapter implements BrowserAdapter {
     return new Promise((resolve) => {
       api.storage.local.set({ [key]: value }, () => resolve());
     });
+  }
+
+  async getBookmarks(query?: string): Promise<any[]> {
+    const api = this.browserAPI;
+    if (api && api.bookmarks) {
+      return new Promise<any[]>((resolve) => {
+        try {
+          if (query && typeof api.bookmarks.search === 'function') {
+            api.bookmarks.search(query, (results: any[]) => resolve(results || []));
+          } else if (typeof api.bookmarks.getTree === 'function') {
+            api.bookmarks.getTree((tree: any[]) => resolve(tree || []));
+          } else {
+            resolve([]);
+          }
+        } catch (_) {
+          resolve([]);
+        }
+      });
+    }
+    return [];
+  }
+
+  async openBookmarksManager(): Promise<{ tabId: number; url?: string }> {
+    const api = this.browserAPI;
+    if (api && api.tabs && api.tabs.create) {
+      return new Promise<{ tabId: number; url?: string }>((resolve) => {
+        try {
+          api.tabs.create({ url: 'chrome://bookmarks' }, (tab: any) => {
+            resolve({ tabId: tab?.id || 0, url: 'chrome://bookmarks' });
+          });
+        } catch (_) {
+          resolve({ tabId: 0 });
+        }
+      });
+    }
+    return { tabId: 0 };
   }
 
   /**

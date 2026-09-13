@@ -39,6 +39,11 @@ export interface BrowserAdapter {
     getStorage<T>(key: string): Promise<T | null>;
     setStorage<T>(key: string, value: T): Promise<void>;
     runInSanitizerHost(request: SanitizationHostRequest): Promise<SanitizedContext>;
+    getBookmarks?(query?: string): Promise<any[]>;
+    openBookmarksManager?(): Promise<{
+        tabId: number;
+        url?: string;
+    }>;
 }
 export declare class WebExtensionAdapter implements BrowserAdapter {
     private offscreenCreationPromise;
@@ -69,6 +74,11 @@ export declare class WebExtensionAdapter implements BrowserAdapter {
     }>;
     getStorage<T>(key: string): Promise<T | null>;
     setStorage<T>(key: string, value: T): Promise<void>;
+    getBookmarks(query?: string): Promise<any[]>;
+    openBookmarksManager(): Promise<{
+        tabId: number;
+        url?: string;
+    }>;
     /**
      * Ensures singleton offscreen document is active in Chrome MV3.
      */

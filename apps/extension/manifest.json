@@ -9,7 +9,8 @@
     "storage",
     "scripting",
     "sidePanel",
-    "offscreen"
+    "offscreen",
+    "bookmarks"
   ],
   "host_permissions": [
     "<all_urls>"
