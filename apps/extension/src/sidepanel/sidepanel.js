@@ -1473,7 +1473,15 @@ if (typeof document !== 'undefined') {
           displayHtml = `⚠️ <strong>Verification Failed:</strong> ${escapeHtml(errorMsg)}`;
         }
 
-        agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">${displayHtml}</div>`;
+        const realReasoning = res?.reasoning || res?.proposal?.reasoning;
+        const duration = (res?.telemetry?.serverLatencyMs ? Math.max(1, Math.round(res.telemetry.serverLatencyMs / 1000)) : null) || durationSeconds || 2;
+        const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded';
+        const thinkingHtml = realReasoning ? renderThinkingAccordion(realReasoning, duration, { open: wasExpanded }) : '';
+
+        agentBubble.innerHTML = `
+          ${thinkingHtml}
+          <div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">${displayHtml}</div>
+        `;
         setAgentStatus(statusState);
         chatMessages.scrollTop = chatMessages.scrollHeight;
         return;
@@ -1827,6 +1835,25 @@ if (typeof document !== 'undefined') {
             setAgentStatus(message.state);
             if (message.message) {
               addAuditEntry('AGENT', message.message, 'info');
+              const liveStream = chatMessages.querySelector('.chat-msg.agent:last-child .live-thought-stream');
+              if (liveStream) {
+                if (liveStream.getAttribute('data-live-init') !== 'true') {
+                  liveStream.setAttribute('data-live-init', 'true');
+                  liveStream.innerHTML = '';
+                  liveStream.style.fontStyle = 'normal';
+                  liveStream.style.display = 'flex';
+                  liveStream.style.flexDirection = 'column';
+                  liveStream.style.gap = '5px';
+                }
+                const stepLine = document.createElement('div');
+                stepLine.style.fontSize = '11.5px';
+                stepLine.style.color = '#cbd5e1';
+                stepLine.style.lineHeight = '1.45';
+                stepLine.innerHTML = `<span style="color: #8ab4f8; margin-right: 6px; font-weight: 600;">▸</span>${escapeHtml(message.message)}`;
+                liveStream.appendChild(stepLine);
+                const drawer = liveStream.closest('.monologue-drawer');
+                if (drawer) drawer.scrollTop = drawer.scrollHeight;
+              }
             }
           }
 
@@ -1835,7 +1862,25 @@ if (typeof document !== 'undefined') {
               addAuditEntry(`STEP ${message.step}/${message.maxSteps}`, message.message, 'info');
             }
             const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
-            if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
+            const liveStream = lastAgentBubble?.querySelector('.live-thought-stream');
+            if (liveStream && message.message) {
+              if (liveStream.getAttribute('data-live-init') !== 'true') {
+                liveStream.setAttribute('data-live-init', 'true');
+                liveStream.innerHTML = '';
+                liveStream.style.fontStyle = 'normal';
+                liveStream.style.display = 'flex';
+                liveStream.style.flexDirection = 'column';
+                liveStream.style.gap = '5px';
+              }
+              const stepLine = document.createElement('div');
+              stepLine.style.fontSize = '11.5px';
+              stepLine.style.color = '#cbd5e1';
+              stepLine.style.lineHeight = '1.45';
+              stepLine.innerHTML = `<span style="color: #8ab4f8; margin-right: 6px; font-weight: 600;">▸ Step ${message.step}/${message.maxSteps}:</span>${escapeHtml(message.message)}`;
+              liveStream.appendChild(stepLine);
+              const drawer = liveStream.closest('.monologue-drawer');
+              if (drawer) drawer.scrollTop = drawer.scrollHeight;
+            } else if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card') && !lastAgentBubble.querySelector('.monologue-block')) {
               lastAgentBubble.innerHTML = `
                 <div class="agent-thinking-stream" style="display: flex; align-items: center; gap: 8px;">
                   <div class="agent-status-ring" style="display: inline-block; width: 12px; height: 12px; border: 2px solid #8ab4f8; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;"></div>
