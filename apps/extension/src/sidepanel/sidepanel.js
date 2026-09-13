@@ -1310,7 +1310,7 @@ if (typeof document !== 'undefined') {
             </div>
           ` : ''}
           ${thinkingHtml}
-          <div style="font-size: 11.5px; color: #e3e3e3; line-height: 1.5; user-select: text;">${formattedHtml}</div>
+          <div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 4px;">${formattedHtml}</div>
           ${actionSuggestions.length > 0 ? `
             <div class="chat-action-chips" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;">
               ${actionSuggestions.map(act => `
