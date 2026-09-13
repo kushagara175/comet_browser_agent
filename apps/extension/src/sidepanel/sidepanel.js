@@ -389,7 +389,7 @@ if (typeof document !== 'undefined') {
         loadingView.classList.add('hidden');
         aiWorkerView.classList.remove('hidden');
         setTimeout(() => chatInput?.focus(), 80);
-      }, 1200);
+      }, 750);
     }
 
     // Reset button
@@ -484,20 +484,19 @@ if (typeof document !== 'undefined') {
       }
     }
 
-    // Extension In-Panel Reload with smooth spinning loader
+    // Extension In-Panel Reload with exact clean-spinner loader (keeps sidepanel open)
     const reloadExtensionBtn = document.getElementById('reloadExtensionBtn');
     const triggerReload = () => {
       reloadExtensionBtn?.classList.add('spinning');
+      if (loadingView && aiWorkerView) {
+        aiWorkerView.classList.add('hidden');
+        loadingView.classList.remove('hidden');
+      }
       setTimeout(() => {
-        if (typeof chrome !== 'undefined' && chrome.runtime?.reload) {
-          chrome.runtime.reload();
-        } else {
-          window.location.reload();
-        }
-      }, 350);
+        window.location.reload();
+      }, 250);
     };
     reloadExtensionBtn?.addEventListener('click', triggerReload);
-    backToConnectBtn?.addEventListener('click', triggerReload);
 
     // ==========================================
     // RECENT CHAT SESSIONS & GEMINI MENU DROPDOWN
