@@ -1088,11 +1088,11 @@ export class RunCoordinator {
                     let targetUrl = extractTargetUrlFromGoal(goal);
                     if (!targetUrl) {
                         const lowerGoal = (goal || '').toLowerCase();
-                        if (lowerGoal.includes('isro') || lowerGoal.includes('chandrayaan') || lowerGoal.includes('gaganyaan') || lowerGoal.includes('aditya') || lowerGoal.includes('satellite') || lowerGoal.includes('rocket') || lowerGoal.includes('launcher') || lowerGoal.includes('mission')) {
-                            targetUrl = 'https://www.isro.gov.in';
-                        }
-                        else if (lowerGoal.includes('sih') || lowerGoal.includes('hackathon') || lowerGoal.includes('problem statement') || lowerGoal.includes('spoc') || lowerGoal.includes('submission')) {
+                        if (lowerGoal.includes('sih') || lowerGoal.includes('hackathon') || lowerGoal.includes('problem statement') || lowerGoal.includes('spoc') || lowerGoal.includes('submission')) {
                             targetUrl = 'https://sih.gov.in';
+                        }
+                        else if (lowerGoal.includes('isro') || lowerGoal.includes('chandrayaan') || lowerGoal.includes('gaganyaan') || lowerGoal.includes('aditya') || lowerGoal.includes('satellite') || lowerGoal.includes('rocket') || lowerGoal.includes('launcher') || lowerGoal.includes('mission')) {
+                            targetUrl = 'https://www.isro.gov.in';
                         }
                         else if (lowerGoal.includes('github') || lowerGoal.includes('repo')) {
                             targetUrl = 'https://github.com';
@@ -1165,7 +1165,9 @@ export class RunCoordinator {
                     return this.completeWithResult(res);
                 }
                 // If on step 1, check if user's goal specifies navigating to a different domain from scratch
-                if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === 'function') {
+                // Guard: Never navigate away if user is performing an on-page action on the current active tab
+                const isOnPageDirective = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|search|filter|find|type|fill|click|select|scroll|check|tell|count|how\s+many|submissions?)\b/i.test(goal);
+                if (step === 1 && !hasNavigatedInitially && !isOnPageDirective && typeof this.browser.navigateTab === 'function') {
                     const targetUrl = extractTargetUrlFromGoal(goal);
                     if (targetUrl && activeTab?.url) {
                         try {
@@ -1304,11 +1306,8 @@ export class RunCoordinator {
                         catch (_) { }
                     }
                     if (!domResponse || !domResponse.success) {
-                        // If content script is not yet attached at step 1 and goal specifies a target URL, try navigating to recover
-                        let targetUrl = extractTargetUrlFromGoal(goal);
-                        if (!targetUrl && (goal.toLowerCase().includes('isro') || goal.toLowerCase().includes('mission'))) {
-                            targetUrl = 'https://www.isro.gov.in';
-                        }
+                        const isOnPageDirective = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|search|filter|find|type|fill|click|select|scroll|check|tell|count|how\s+many|submissions?)\b/i.test(goal);
+                        let targetUrl = !isOnPageDirective ? extractTargetUrlFromGoal(goal) : undefined;
                         if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1 && !hasNavigatedInitially) {
                             hasNavigatedInitially = true;
                             this.transition('executing', `Navigating tab to ${targetUrl}...`);

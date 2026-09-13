@@ -16574,6 +16574,9 @@ function extractTargetUrlFromGoal(goal) {
   const contextMatch = g.match(/\b(?:in|on|at|open|load|visit|go\s+to|navigate\s+to)\s+(?:the\s+)?([a-zA-Z0-9_\s.-]+?)\s+(?:website|portal|site|page|org|organisation)\b/i);
   if (contextMatch) {
     const siteKeyword = contextMatch[1].trim().toLowerCase();
+    if (/^(?:this|current|the\s+current|active|the\s+active|my)\b/i.test(siteKeyword)) {
+      return void 0;
+    }
     if (siteKeyword.includes(".")) {
       return `https://${siteKeyword}`;
     }
@@ -16652,13 +16655,16 @@ function extractTargetUrlFromGoal(goal) {
     if (target.includes("demo") || target.includes("portal"))
       return "http://localhost:4500";
   }
-  const lower = g.toLowerCase();
-  for (const playbook of REGISTERED_PLAYBOOKS) {
-    for (const alias of playbook.aliases) {
-      if (alias.length >= 4) {
-        const regex = new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-        if (regex.test(lower)) {
-          return `https://${playbook.domain}`;
+  const isOnPageAction = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|search|filter|find|type|fill|enter|about|check|see|tell|count|submissions?|how\s+many|what\s+is)\b/i.test(g);
+  if (!isOnPageAction) {
+    const lower = g.toLowerCase();
+    for (const playbook of REGISTERED_PLAYBOOKS) {
+      for (const alias of playbook.aliases) {
+        if (alias.length >= 4) {
+          const regex = new RegExp(`^\\s*${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$|\\b(?:open|go\\s+to|visit|launch|load|navigate\\s+to)\\s+${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+          if (regex.test(lower)) {
+            return `https://${playbook.domain}`;
+          }
         }
       }
     }
@@ -20618,10 +20624,10 @@ var RunCoordinator = class {
           let targetUrl = extractTargetUrlFromGoal(goal);
           if (!targetUrl) {
             const lowerGoal = (goal || "").toLowerCase();
-            if (lowerGoal.includes("isro") || lowerGoal.includes("chandrayaan") || lowerGoal.includes("gaganyaan") || lowerGoal.includes("aditya") || lowerGoal.includes("satellite") || lowerGoal.includes("rocket") || lowerGoal.includes("launcher") || lowerGoal.includes("mission")) {
-              targetUrl = "https://www.isro.gov.in";
-            } else if (lowerGoal.includes("sih") || lowerGoal.includes("hackathon") || lowerGoal.includes("problem statement") || lowerGoal.includes("spoc") || lowerGoal.includes("submission")) {
+            if (lowerGoal.includes("sih") || lowerGoal.includes("hackathon") || lowerGoal.includes("problem statement") || lowerGoal.includes("spoc") || lowerGoal.includes("submission")) {
               targetUrl = "https://sih.gov.in";
+            } else if (lowerGoal.includes("isro") || lowerGoal.includes("chandrayaan") || lowerGoal.includes("gaganyaan") || lowerGoal.includes("aditya") || lowerGoal.includes("satellite") || lowerGoal.includes("rocket") || lowerGoal.includes("launcher") || lowerGoal.includes("mission")) {
+              targetUrl = "https://www.isro.gov.in";
             } else if (lowerGoal.includes("github") || lowerGoal.includes("repo")) {
               targetUrl = "https://github.com";
             } else {
@@ -20690,7 +20696,8 @@ var RunCoordinator = class {
           };
           return this.completeWithResult(res2);
         }
-        if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === "function") {
+        const isOnPageDirective = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|search|filter|find|type|fill|click|select|scroll|check|tell|count|how\s+many|submissions?)\b/i.test(goal);
+        if (step === 1 && !hasNavigatedInitially && !isOnPageDirective && typeof this.browser.navigateTab === "function") {
           const targetUrl = extractTargetUrlFromGoal(goal);
           if (targetUrl && activeTab?.url) {
             try {
@@ -20819,10 +20826,8 @@ var RunCoordinator = class {
             }
           }
           if (!domResponse || !domResponse.success) {
-            let targetUrl = extractTargetUrlFromGoal(goal);
-            if (!targetUrl && (goal.toLowerCase().includes("isro") || goal.toLowerCase().includes("mission"))) {
-              targetUrl = "https://www.isro.gov.in";
-            }
+            const isOnPageDirective2 = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|search|filter|find|type|fill|click|select|scroll|check|tell|count|how\s+many|submissions?)\b/i.test(goal);
+            let targetUrl = !isOnPageDirective2 ? extractTargetUrlFromGoal(goal) : void 0;
             if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1 && !hasNavigatedInitially) {
               hasNavigatedInitially = true;
               this.transition("executing", `Navigating tab to ${targetUrl}...`);

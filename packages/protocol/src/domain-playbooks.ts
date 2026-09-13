@@ -1468,6 +1468,10 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
   const contextMatch = g.match(/\b(?:in|on|at|open|load|visit|go\s+to|navigate\s+to)\s+(?:the\s+)?([a-zA-Z0-9_\s.-]+?)\s+(?:website|portal|site|page|org|organisation)\b/i);
   if (contextMatch) {
     const siteKeyword = contextMatch[1].trim().toLowerCase();
+    // Guard against referring to the current or active page
+    if (/^(?:this|current|the\s+current|active|the\s+active|my)\b/i.test(siteKeyword)) {
+      return undefined;
+    }
     if (siteKeyword.includes('.')) {
       return `https://${siteKeyword}`;
     }
@@ -1536,13 +1540,17 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
   }
 
   // 6. Registered Playbook matches against registered domains and distinct aliases
-  const lower = g.toLowerCase();
-  for (const playbook of REGISTERED_PLAYBOOKS) {
-    for (const alias of playbook.aliases) {
-      if (alias.length >= 4) {
-        const regex = new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-        if (regex.test(lower)) {
-          return `https://${playbook.domain}`;
+  // ONLY if the goal expresses explicit navigation intent, not an on-page search/filter/action!
+  const isOnPageAction = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|search|filter|find|type|fill|enter|about|check|see|tell|count|submissions?|how\s+many|what\s+is)\b/i.test(g);
+  if (!isOnPageAction) {
+    const lower = g.toLowerCase();
+    for (const playbook of REGISTERED_PLAYBOOKS) {
+      for (const alias of playbook.aliases) {
+        if (alias.length >= 4) {
+          const regex = new RegExp(`^\\s*${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$|\\b(?:open|go\\s+to|visit|launch|load|navigate\\s+to)\\s+${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+          if (regex.test(lower)) {
+            return `https://${playbook.domain}`;
+          }
         }
       }
     }
