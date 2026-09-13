@@ -991,7 +991,7 @@ Strict Rules:
    - If the user asks to see, find, check, count, or verify information (e.g. "how many submissions are done in problem statement 171", "what is the deadline", "who is the coordinator"):
      a) ASSUME the question refers to the current website! NEVER hallucinate third-party platforms (like LeetCode, Codeforces, YouTube, etc.).
      b) NEVER return kind: "answer" asking "which platform is this from?" or asking the user for clarification when the current website is clearly relevant.
-     c) If the requested information is ALREADY visible on the current screen: return kind: "finish" with confidence: 1.0, risk: "safe", and state the answer clearly in the "reply" and "rationale" fields.
+     c) If the requested information is ALREADY visible on the current screen (or inside an element's context/table row, such as a submissions count "8/500"): return kind: "finish" with confidence: 1.0, risk: "safe", and state the full answer clearly in the "reply" and "rationale" fields.
      d) If the requested information is NOT yet visible on the current screen (e.g., requires navigating to another page/section, clicking a tab, or searching):
         YOU MUST PROPOSE A DOM ACTION: return kind: "click" on the relevant menu link or tab (e.g. "PROBLEM STATEMENTS", "Submissions", "Explore", "Search"), or return kind: "type" into a search box to find it.
         DO NOT return kind: "answer" or kind: "finish" until you have navigated and observed the actual answer!
@@ -1046,7 +1046,9 @@ JSON Schema:
             role: e.role,
             name: e.sanitizedName,
             bounds: e.coarseBounds,
-            capabilities: e.actionCapabilities
+            capabilities: e.actionCapabilities,
+            ...(e.containerContext ? { context: e.containerContext } : {}),
+            ...(e.nearestHeading ? { heading: e.nearestHeading } : {})
         }));
         const pageState = payload.pageState || { title: 'Active Page', viewport: [1280, 800] };
         const landmarks = [];

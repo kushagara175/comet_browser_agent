@@ -141,6 +141,28 @@ export function sanitizeErrorDetail(rawMessage: string): string {
   return sanitized.trim();
 }
 
+/**
+ * Detects whether an execution error was caused by normal browser page navigation,
+ * bfcache transitions, or content script port reconnections.
+ */
+export function isDisconnectOrNavigationError(err: any): boolean {
+  if (!err) return false;
+  const msg = (typeof err === 'string' ? err : err.message || '').toLowerCase();
+  return (
+    msg.includes('message port closed') ||
+    msg.includes('message channel is closed') ||
+    msg.includes('message channel closed') ||
+    msg.includes('back/forward cache') ||
+    msg.includes('bfcache') ||
+    msg.includes('receiving end does not exist') ||
+    msg.includes('could not establish connection') ||
+    msg.includes('frame with id 0 was removed') ||
+    msg.includes('tab was closed') ||
+    msg.includes('extension context invalidated') ||
+    msg.includes('content script did not respond')
+  );
+}
+
 export function classifySanitizerError(err: any): SanitizerDiagnostic {
   const rawMsg = String(err?.message || err || '');
   const lower = rawMsg.toLowerCase();
@@ -1286,11 +1308,12 @@ export class RunCoordinator {
   }
 
   private async executeLoop(): Promise<CoordinatorRunResult> {
-    const goal = this.currentGoal;
-    if (!goal) {
-      const res: CoordinatorRunResult = { success: false, state: 'idle', error: 'No active goal' };
-      return this.completeWithResult(res);
-    }
+    try {
+      const goal = this.currentGoal;
+      if (!goal) {
+        const res: CoordinatorRunResult = { success: false, state: 'idle', error: 'No active goal' };
+        return this.completeWithResult(res);
+      }
 
     let hasNavigatedInitially = false;
 
@@ -1517,11 +1540,23 @@ export class RunCoordinator {
           captureId
         });
       } catch (err: any) {
-        // Content script might be initializing after redirect - retry with auto-injection
+        // Content script might be initializing after redirect or bfcache transition - retry with auto-injection
         if (typeof this.browser.ensureContentScript === 'function') {
           try {
             await this.browser.ensureContentScript(activeTab.id);
-            await new Promise((r) => setTimeout(r, 400));
+            await new Promise((r) => setTimeout(r, 500));
+            domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+              type: 'EXTRACT_DOM_SNAPSHOT',
+              captureId
+            });
+          } catch (_) {}
+        }
+        if (!domResponse || !domResponse.success) {
+          try {
+            await new Promise((r) => setTimeout(r, 700));
+            if (typeof this.browser.ensureContentScript === 'function') {
+              await this.browser.ensureContentScript(activeTab.id);
+            }
             domResponse = await this.browser.sendMessageToTab(activeTab.id, {
               type: 'EXTRACT_DOM_SNAPSHOT',
               captureId
@@ -2222,20 +2257,21 @@ export class RunCoordinator {
             });
             this.recordActionHistory(subProposal);
           } catch (batchErr: any) {
-            const msg = batchErr?.message || '';
-            const isNav = msg.includes('message port closed') || msg.includes('Receiving end does not exist') || msg.includes('Could not establish connection');
+            const isNav = isDisconnectOrNavigationError(batchErr);
             if (isNav) {
               if (typeof this.browser.waitForTabReady === 'function') {
-                await this.browser.waitForTabReady(activeTab.id, 8000);
+                const newTab = await this.browser.waitForTabReady(activeTab.id, 8000);
+                if (newTab?.url) activeTab.url = newTab.url;
               }
               if (typeof this.browser.ensureContentScript === 'function') {
                 await this.browser.ensureContentScript(activeTab.id);
               }
+              await new Promise((r) => setTimeout(r, 500));
               lastBatchResult = { success: true, semanticOutcomeVerified: true, message: 'Batch action caused page navigation' };
               break;
             } else {
               allBatchSucceeded = false;
-              lastBatchResult = { success: false, message: batchErr.message };
+              lastBatchResult = { success: false, message: batchErr?.message || 'Batch action failed' };
               break;
             }
           }
@@ -2259,29 +2295,32 @@ export class RunCoordinator {
             captureId: sanitized.captureId
           });
         } catch (execErr: any) {
-          // If clicking or submitting triggered page unload / navigation / redirect,
+          // If clicking or submitting triggered page unload / navigation / redirect / bfcache,
           // the content script message port closes immediately.
           const msg = execErr?.message || '';
-          const isPortClosedOrNav =
-            msg.includes('message port closed') ||
-            msg.includes('Receiving end does not exist') ||
-            msg.includes('Could not establish connection');
+          const isPortClosedOrNav = isDisconnectOrNavigationError(execErr);
 
           if (isPortClosedOrNav) {
             // Normal and expected for navigation actions: wait for redirected tab to settle
             if (typeof this.browser.waitForTabReady === 'function') {
-              await this.browser.waitForTabReady(activeTab.id, 8000);
+              const newTab = await this.browser.waitForTabReady(activeTab.id, 8000);
+              if (newTab?.url) activeTab.url = newTab.url;
             }
             if (typeof this.browser.ensureContentScript === 'function') {
               await this.browser.ensureContentScript(activeTab.id);
             }
+            await new Promise((r) => setTimeout(r, 500));
             execResponse = {
               success: true,
               semanticOutcomeVerified: true,
               message: `Action executed and caused page navigation/redirect`
             };
           } else {
-            throw execErr;
+            execResponse = {
+              success: false,
+              semanticOutcomeVerified: false,
+              message: `Action execution failed: ${msg}`
+            };
           }
         }
       }
@@ -2479,7 +2518,19 @@ export class RunCoordinator {
       stepCount: this.currentStep,
       sanitized: this.currentSanitizedContext || undefined
     };
-    return this.completeWithResult(res);
+      return this.completeWithResult(res);
+    } catch (loopErr: any) {
+      const errorMsg = loopErr?.message || 'Execution loop encountered an error';
+      console.error('[PrivaPilot Coordinator] Uncaught loop error:', loopErr);
+      this.transition('failed-safe', errorMsg);
+      return this.completeWithResult({
+        success: false,
+        state: 'failed-safe',
+        error: errorMsg,
+        stepCount: this.currentStep,
+        steps: this.stepsTrace
+      });
+    }
   }
 
   /**
@@ -2654,11 +2705,36 @@ export class RunCoordinator {
 
     this.transition('executing', `Executing approved action '${action.kind}' on ${action.targetLocalId || 'page'}`);
 
-    const execResponse = await this.browser.sendMessageToTab(activeTab.id, {
-      type: 'EXECUTE_ACTION',
-      proposal: { ...action, userApproved: true },
-      captureId: sanitized.captureId
-    });
+    let execResponse: any;
+    try {
+      execResponse = await this.browser.sendMessageToTab(activeTab.id, {
+        type: 'EXECUTE_ACTION',
+        proposal: { ...action, userApproved: true },
+        captureId: sanitized.captureId
+      });
+    } catch (execErr: any) {
+      if (isDisconnectOrNavigationError(execErr)) {
+        if (typeof this.browser.waitForTabReady === 'function') {
+          const newTab = await this.browser.waitForTabReady(activeTab.id, 8000);
+          if (newTab?.url) activeTab.url = newTab.url;
+        }
+        if (typeof this.browser.ensureContentScript === 'function') {
+          await this.browser.ensureContentScript(activeTab.id);
+        }
+        await new Promise((r) => setTimeout(r, 500));
+        execResponse = {
+          success: true,
+          semanticOutcomeVerified: true,
+          message: 'Approved action caused page navigation'
+        };
+      } else {
+        execResponse = {
+          success: false,
+          semanticOutcomeVerified: false,
+          message: `Approved action failed: ${execErr?.message || 'unknown'}`
+        };
+      }
+    }
 
     if (execResponse && execResponse.staleTarget) {
       const errorMsg = 'Protected action aborted: target element mutated or detached after approval. Fresh confirmation required.';

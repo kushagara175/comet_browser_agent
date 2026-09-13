@@ -79,7 +79,7 @@ export function extractActionSuggestions(text) {
   return suggestions.slice(0, 4);
 }
 
-const ACTION_REQUEST_PREFIX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+const ACTION_REQUEST_PREFIX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+)?(?:want|wnat|need|would\s+like)\s+(?:you\s+)?to\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
 const ACTION_VERB = /^(?:click|open|type|fill|fill\s+out|enter|write|set|press|select|choose|scroll|hover|drag|drop|upload|attach|move|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log\s+in|sign|auth|authenticate|do|perform|execute|proceed|buy|checkout|inspect|audit|check|go\s+to|navigate|view|see|show|look|lookup|organize|manage|clean|read|summarize|analyze|review|examine|list|get|fetch|test|try|work|automate|operate|interact)(?:\b|\s)/i;
 
 /**
@@ -109,7 +109,17 @@ export function isBrowserActionRequest(message) {
     .replace(/\bselet\b/g, 'select')
     .replace(/\bselct\b/g, 'select')
     .replace(/\bserach\b/g, 'search')
-    .replace(/\bserch\b/g, 'search');
+    .replace(/\bserch\b/g, 'search')
+    .replace(/\bwnat\b/g, 'want')
+    .replace(/\bhoe\b/g, 'how')
+    .replace(/\bae\b/g, 'are')
+    .replace(/\bdon\b/g, 'done')
+    .replace(/\binthe\b/g, 'in the')
+    .replace(/\bprobelm\b/g, 'problem')
+    .replace(/\bststement\b/g, 'statement')
+    .replace(/\bprbek\b/g, 'problem')
+    .replace(/\btermiankti\b/g, 'termination')
+    .replace(/\bseahc\b/g, 'search');
 
   // Information retrieval & question-answering directives per cababling.md
   if (/(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:the\s+count|the\s+number|the\s+total|the\s+status|about\s+submissions)|find\s+.*?\s+and\s+tell)/i.test(normalized)) {

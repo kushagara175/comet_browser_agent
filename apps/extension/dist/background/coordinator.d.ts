@@ -95,6 +95,11 @@ export interface SanitizerDiagnostic {
     readonly sanitizedDetail: string;
 }
 export declare function sanitizeErrorDetail(rawMessage: string): string;
+/**
+ * Detects whether an execution error was caused by normal browser page navigation,
+ * bfcache transitions, or content script port reconnections.
+ */
+export declare function isDisconnectOrNavigationError(err: any): boolean;
 export declare function classifySanitizerError(err: any): SanitizerDiagnostic;
 export declare function isRestrictedBrowserUrl(urlStr?: string): {
     isRestricted: boolean;

@@ -19687,6 +19687,11 @@ function sanitizeErrorDetail(rawMessage) {
   }
   return sanitized.trim();
 }
+function isDisconnectOrNavigationError(err) {
+  if (!err) return false;
+  const msg = (typeof err === "string" ? err : err.message || "").toLowerCase();
+  return msg.includes("message port closed") || msg.includes("message channel is closed") || msg.includes("message channel closed") || msg.includes("back/forward cache") || msg.includes("bfcache") || msg.includes("receiving end does not exist") || msg.includes("could not establish connection") || msg.includes("frame with id 0 was removed") || msg.includes("tab was closed") || msg.includes("extension context invalidated") || msg.includes("content script did not respond");
+}
 function classifySanitizerError(err) {
   const rawMsg = String(err?.message || err || "");
   const lower = rawMsg.toLowerCase();
@@ -20589,123 +20594,237 @@ var RunCoordinator = class {
     return this.executeLoop();
   }
   async executeLoop() {
-    const goal = this.currentGoal;
-    if (!goal) {
-      const res2 = { success: false, state: "idle", error: "No active goal" };
-      return this.completeWithResult(res2);
-    }
-    let hasNavigatedInitially = false;
-    while (this.currentStep < this.currentMaxSteps) {
-      if (this.isCancelled) {
-        this.transition("idle", "Run cancelled by user");
-        const res2 = { success: false, state: "idle", message: "Run cancelled by user" };
+    try {
+      const goal = this.currentGoal;
+      if (!goal) {
+        const res2 = { success: false, state: "idle", error: "No active goal" };
         return this.completeWithResult(res2);
       }
-      this.currentStep++;
-      const step = this.currentStep;
-      const maxSteps = this.currentMaxSteps;
-      const t0_step = Date.now();
-      this.transition("capturing", `Step ${step}/${maxSteps}: Capturing active tab DOM & screenshot`);
-      let activeTab = await this.browser.getActiveTab(this.currentTabId);
-      const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
-      if (restrictedCheck.isRestricted) {
-        let targetUrl = extractTargetUrlFromGoal(goal);
-        if (!targetUrl) {
-          const lowerGoal = (goal || "").toLowerCase();
-          if (lowerGoal.includes("isro") || lowerGoal.includes("chandrayaan") || lowerGoal.includes("gaganyaan") || lowerGoal.includes("aditya") || lowerGoal.includes("satellite") || lowerGoal.includes("rocket") || lowerGoal.includes("launcher") || lowerGoal.includes("mission")) {
-            targetUrl = "https://www.isro.gov.in";
-          } else if (lowerGoal.includes("sih") || lowerGoal.includes("hackathon") || lowerGoal.includes("problem statement") || lowerGoal.includes("spoc") || lowerGoal.includes("submission")) {
-            targetUrl = "https://sih.gov.in";
-          } else if (lowerGoal.includes("github") || lowerGoal.includes("repo")) {
-            targetUrl = "https://github.com";
-          } else {
-            targetUrl = "https://www.google.com";
-          }
+      let hasNavigatedInitially = false;
+      while (this.currentStep < this.currentMaxSteps) {
+        if (this.isCancelled) {
+          this.transition("idle", "Run cancelled by user");
+          const res2 = { success: false, state: "idle", message: "Run cancelled by user" };
+          return this.completeWithResult(res2);
         }
-        if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1 && !hasNavigatedInitially) {
-          hasNavigatedInitially = true;
-          const navAction = {
-            actionId: `act_init_nav_${Date.now()}`,
-            kind: "navigate",
-            confidence: 1,
-            risk: "safe",
-            rationale: `Direct navigation from blank tab to target website: ${targetUrl}`,
-            expectedPostcondition: { kind: "status_changed" }
-          };
-          this.actionHistory.push(navAction);
-          this.listeners.onActionProposed?.(navAction, this.currentRunId);
-          this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
-          this.transition("executing", `Navigating from blank tab to ${targetUrl}...`);
-          const navRes = await this.browser.navigateTab(activeTab?.id || 0, targetUrl);
-          if (navRes && typeof navRes === "object" && navRes.tabId) {
-            this.currentTabId = navRes.tabId;
+        this.currentStep++;
+        const step = this.currentStep;
+        const maxSteps = this.currentMaxSteps;
+        const t0_step = Date.now();
+        this.transition("capturing", `Step ${step}/${maxSteps}: Capturing active tab DOM & screenshot`);
+        let activeTab = await this.browser.getActiveTab(this.currentTabId);
+        const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
+        if (restrictedCheck.isRestricted) {
+          let targetUrl = extractTargetUrlFromGoal(goal);
+          if (!targetUrl) {
+            const lowerGoal = (goal || "").toLowerCase();
+            if (lowerGoal.includes("isro") || lowerGoal.includes("chandrayaan") || lowerGoal.includes("gaganyaan") || lowerGoal.includes("aditya") || lowerGoal.includes("satellite") || lowerGoal.includes("rocket") || lowerGoal.includes("launcher") || lowerGoal.includes("mission")) {
+              targetUrl = "https://www.isro.gov.in";
+            } else if (lowerGoal.includes("sih") || lowerGoal.includes("hackathon") || lowerGoal.includes("problem statement") || lowerGoal.includes("spoc") || lowerGoal.includes("submission")) {
+              targetUrl = "https://sih.gov.in";
+            } else if (lowerGoal.includes("github") || lowerGoal.includes("repo")) {
+              targetUrl = "https://github.com";
+            } else {
+              targetUrl = "https://www.google.com";
+            }
           }
-          if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url") {
-            this.transition("complete", `Navigated to ${targetUrl}`);
-            return this.completeWithResult({
-              success: true,
-              state: "complete",
-              stepCount: step,
-              message: `Navigated to ${targetUrl}`,
-              proposal: navAction,
-              steps: [{
-                step: 1,
-                captureId: `cap_nav_${Date.now()}`,
-                pageGeneration: `cap_nav_${Date.now()}`,
-                maskCount: 0,
-                sanitizedScreenshotBytes: 0,
-                decisionOrigin: "local",
+          if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1 && !hasNavigatedInitially) {
+            hasNavigatedInitially = true;
+            const navAction = {
+              actionId: `act_init_nav_${Date.now()}`,
+              kind: "navigate",
+              confidence: 1,
+              risk: "safe",
+              rationale: `Direct navigation from blank tab to target website: ${targetUrl}`,
+              expectedPostcondition: { kind: "status_changed" }
+            };
+            this.actionHistory.push(navAction);
+            this.listeners.onActionProposed?.(navAction, this.currentRunId);
+            this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
+            this.transition("executing", `Navigating from blank tab to ${targetUrl}...`);
+            const navRes = await this.browser.navigateTab(activeTab?.id || 0, targetUrl);
+            if (navRes && typeof navRes === "object" && navRes.tabId) {
+              this.currentTabId = navRes.tabId;
+            }
+            if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url") {
+              this.transition("complete", `Navigated to ${targetUrl}`);
+              return this.completeWithResult({
+                success: true,
+                state: "complete",
+                stepCount: step,
+                message: `Navigated to ${targetUrl}`,
                 proposal: navAction,
-                riskDecision: "safe",
-                confidenceDecision: "accepted",
-                executed: true,
-                executionResult: { success: true, staleTarget: false, reasonCode: "EXECUTION_SUCCESS" },
-                verification: { verified: true, reasonCode: "NAVIGATION_SUCCESS", durationMs: 0 },
-                networkRequestMade: false,
-                timings: { total: Date.now() - t0_step }
-              }]
-            });
+                steps: [{
+                  step: 1,
+                  captureId: `cap_nav_${Date.now()}`,
+                  pageGeneration: `cap_nav_${Date.now()}`,
+                  maskCount: 0,
+                  sanitizedScreenshotBytes: 0,
+                  decisionOrigin: "local",
+                  proposal: navAction,
+                  riskDecision: "safe",
+                  confidenceDecision: "accepted",
+                  executed: true,
+                  executionResult: { success: true, staleTarget: false, reasonCode: "EXECUTION_SUCCESS" },
+                  verification: { verified: true, reasonCode: "NAVIGATION_SUCCESS", durationMs: 0 },
+                  networkRequestMade: false,
+                  timings: { total: Date.now() - t0_step }
+                }]
+              });
+            }
+            const subGoal = stripNavigationPrefixFromGoal(goal);
+            if (subGoal && subGoal !== goal) {
+              this.currentGoal = subGoal;
+              this.currentTaskContract = resolveTaskContract(subGoal);
+            }
+            this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
+            continue;
           }
-          const subGoal = stripNavigationPrefixFromGoal(goal);
-          if (subGoal && subGoal !== goal) {
-            this.currentGoal = subGoal;
-            this.currentTaskContract = resolveTaskContract(subGoal);
-          }
-          this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
-          continue;
+          const errorMsg2 = `Capture blocked: ${restrictedCheck.reason}`;
+          this.transition("blocked-local-only", errorMsg2);
+          const res2 = {
+            success: false,
+            state: "blocked-local-only",
+            error: errorMsg2,
+            stepCount: step
+          };
+          return this.completeWithResult(res2);
         }
-        const errorMsg2 = `Capture blocked: ${restrictedCheck.reason}`;
-        this.transition("blocked-local-only", errorMsg2);
-        const res2 = {
-          success: false,
-          state: "blocked-local-only",
-          error: errorMsg2,
-          stepCount: step
-        };
-        return this.completeWithResult(res2);
-      }
-      if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === "function") {
-        const targetUrl = extractTargetUrlFromGoal(goal);
-        if (targetUrl && activeTab?.url) {
-          try {
-            const currentHost = new URL(activeTab.url).hostname.toLowerCase();
-            const targetHost = new URL(targetUrl).hostname.toLowerCase();
-            const isMissingWww = currentHost === "isro.gov.in" && targetHost === "www.isro.gov.in";
-            const isDifferentSite = currentHost.replace(/^www\./, "") !== targetHost.replace(/^www\./, "");
-            const isSubdomainOrRedirect = currentHost === targetHost || currentHost.endsWith("." + targetHost) || targetHost.endsWith("." + currentHost) || targetHost.includes("gmail.com") && currentHost.includes("google.com") || targetHost.includes("google.com") && currentHost.includes("google.com");
-            if ((isMissingWww || isDifferentSite) && !isSubdomainOrRedirect) {
+        if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === "function") {
+          const targetUrl = extractTargetUrlFromGoal(goal);
+          if (targetUrl && activeTab?.url) {
+            try {
+              const currentHost = new URL(activeTab.url).hostname.toLowerCase();
+              const targetHost = new URL(targetUrl).hostname.toLowerCase();
+              const isMissingWww = currentHost === "isro.gov.in" && targetHost === "www.isro.gov.in";
+              const isDifferentSite = currentHost.replace(/^www\./, "") !== targetHost.replace(/^www\./, "");
+              const isSubdomainOrRedirect = currentHost === targetHost || currentHost.endsWith("." + targetHost) || targetHost.endsWith("." + currentHost) || targetHost.includes("gmail.com") && currentHost.includes("google.com") || targetHost.includes("google.com") && currentHost.includes("google.com");
+              if ((isMissingWww || isDifferentSite) && !isSubdomainOrRedirect) {
+                hasNavigatedInitially = true;
+                const navAction = {
+                  actionId: `act_init_nav_${Date.now()}`,
+                  kind: "navigate",
+                  confidence: 1,
+                  risk: "safe",
+                  rationale: `Navigation to target website: ${targetUrl}`,
+                  expectedPostcondition: { kind: "status_changed" }
+                };
+                this.actionHistory.push(navAction);
+                this.listeners.onActionProposed?.(navAction, this.currentRunId);
+                this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
+                this.transition("executing", `Navigating tab to ${targetUrl}...`);
+                const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
+                if (navRes && typeof navRes === "object" && navRes.tabId) {
+                  this.currentTabId = navRes.tabId;
+                }
+                if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url") {
+                  this.transition("complete", `Navigated to ${targetUrl}`);
+                  return this.completeWithResult({
+                    success: true,
+                    state: "complete",
+                    stepCount: step,
+                    message: `Navigated to ${targetUrl}`,
+                    proposal: navAction,
+                    steps: [{
+                      step: 1,
+                      captureId: `cap_nav_${Date.now()}`,
+                      pageGeneration: `cap_nav_${Date.now()}`,
+                      maskCount: 0,
+                      sanitizedScreenshotBytes: 0,
+                      decisionOrigin: "local",
+                      proposal: navAction,
+                      riskDecision: "safe",
+                      confidenceDecision: "accepted",
+                      executed: true,
+                      executionResult: { success: true, staleTarget: false, reasonCode: "EXECUTION_SUCCESS" },
+                      verification: { verified: true, reasonCode: "NAVIGATION_SUCCESS", durationMs: 0 },
+                      networkRequestMade: false,
+                      timings: { total: Date.now() - t0_step }
+                    }]
+                  });
+                }
+                const subGoal = stripNavigationPrefixFromGoal(goal);
+                if (subGoal && subGoal !== goal) {
+                  this.currentGoal = subGoal;
+                  this.currentTaskContract = resolveTaskContract(subGoal);
+                }
+                this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
+                continue;
+              } else if (isSubdomainOrRedirect && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url")) {
+                this.transition("complete", `Already on ${targetUrl}`);
+                const navAction = {
+                  actionId: `act_init_nav_${Date.now()}`,
+                  kind: "navigate",
+                  confidence: 1,
+                  risk: "safe",
+                  rationale: `Already at target website: ${targetUrl}`,
+                  expectedPostcondition: { kind: "status_changed" }
+                };
+                return this.completeWithResult({
+                  success: true,
+                  state: "complete",
+                  stepCount: step,
+                  message: `Already on ${targetUrl}`,
+                  proposal: navAction
+                });
+              }
+            } catch {
+            }
+          }
+        }
+        if (activeTab && activeTab.id && typeof this.browser.waitForTabReady === "function") {
+          const readyTab = await this.browser.waitForTabReady(activeTab.id, 6e3, activeTab.url);
+          if (readyTab && readyTab.url) {
+            activeTab = {
+              id: readyTab.id,
+              url: readyTab.url,
+              title: readyTab.title || activeTab.title,
+              windowId: readyTab.windowId || activeTab.windowId
+            };
+          }
+        }
+        if (activeTab && activeTab.id && typeof this.browser.ensureContentScript === "function") {
+          await this.browser.ensureContentScript(activeTab.id);
+        }
+        const captureId = `cap_${Date.now()}_${step}`;
+        let domResponse;
+        try {
+          domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+            type: "EXTRACT_DOM_SNAPSHOT",
+            captureId
+          });
+        } catch (err) {
+          if (typeof this.browser.ensureContentScript === "function") {
+            try {
+              await this.browser.ensureContentScript(activeTab.id);
+              await new Promise((r) => setTimeout(r, 500));
+              domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+                type: "EXTRACT_DOM_SNAPSHOT",
+                captureId
+              });
+            } catch (_) {
+            }
+          }
+          if (!domResponse || !domResponse.success) {
+            try {
+              await new Promise((r) => setTimeout(r, 700));
+              if (typeof this.browser.ensureContentScript === "function") {
+                await this.browser.ensureContentScript(activeTab.id);
+              }
+              domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+                type: "EXTRACT_DOM_SNAPSHOT",
+                captureId
+              });
+            } catch (_) {
+            }
+          }
+          if (!domResponse || !domResponse.success) {
+            let targetUrl = extractTargetUrlFromGoal(goal);
+            if (!targetUrl && (goal.toLowerCase().includes("isro") || goal.toLowerCase().includes("mission"))) {
+              targetUrl = "https://www.isro.gov.in";
+            }
+            if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1 && !hasNavigatedInitially) {
               hasNavigatedInitially = true;
-              const navAction = {
-                actionId: `act_init_nav_${Date.now()}`,
-                kind: "navigate",
-                confidence: 1,
-                risk: "safe",
-                rationale: `Navigation to target website: ${targetUrl}`,
-                expectedPostcondition: { kind: "status_changed" }
-              };
-              this.actionHistory.push(navAction);
-              this.listeners.onActionProposed?.(navAction, this.currentRunId);
-              this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
               this.transition("executing", `Navigating tab to ${targetUrl}...`);
               const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
               if (navRes && typeof navRes === "object" && navRes.tabId) {
@@ -20717,24 +20836,7 @@ var RunCoordinator = class {
                   success: true,
                   state: "complete",
                   stepCount: step,
-                  message: `Navigated to ${targetUrl}`,
-                  proposal: navAction,
-                  steps: [{
-                    step: 1,
-                    captureId: `cap_nav_${Date.now()}`,
-                    pageGeneration: `cap_nav_${Date.now()}`,
-                    maskCount: 0,
-                    sanitizedScreenshotBytes: 0,
-                    decisionOrigin: "local",
-                    proposal: navAction,
-                    riskDecision: "safe",
-                    confidenceDecision: "accepted",
-                    executed: true,
-                    executionResult: { success: true, staleTarget: false, reasonCode: "EXECUTION_SUCCESS" },
-                    verification: { verified: true, reasonCode: "NAVIGATION_SUCCESS", durationMs: 0 },
-                    networkRequestMade: false,
-                    timings: { total: Date.now() - t0_step }
-                  }]
+                  message: `Navigated to ${targetUrl}`
                 });
               }
               const subGoal = stripNavigationPrefixFromGoal(goal);
@@ -20742,92 +20844,34 @@ var RunCoordinator = class {
                 this.currentGoal = subGoal;
                 this.currentTaskContract = resolveTaskContract(subGoal);
               }
-              this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
               continue;
-            } else if (isSubdomainOrRedirect && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url")) {
-              this.transition("complete", `Already on ${targetUrl}`);
-              const navAction = {
-                actionId: `act_init_nav_${Date.now()}`,
-                kind: "navigate",
-                confidence: 1,
-                risk: "safe",
-                rationale: `Already at target website: ${targetUrl}`,
-                expectedPostcondition: { kind: "status_changed" }
-              };
-              return this.completeWithResult({
-                success: true,
-                state: "complete",
-                stepCount: step,
-                message: `Already on ${targetUrl}`,
-                proposal: navAction
-              });
             }
-          } catch {
-          }
-        }
-      }
-      if (activeTab && activeTab.id && typeof this.browser.waitForTabReady === "function") {
-        const readyTab = await this.browser.waitForTabReady(activeTab.id, 6e3, activeTab.url);
-        if (readyTab && readyTab.url) {
-          activeTab = {
-            id: readyTab.id,
-            url: readyTab.url,
-            title: readyTab.title || activeTab.title,
-            windowId: readyTab.windowId || activeTab.windowId
-          };
-        }
-      }
-      if (activeTab && activeTab.id && typeof this.browser.ensureContentScript === "function") {
-        await this.browser.ensureContentScript(activeTab.id);
-      }
-      const captureId = `cap_${Date.now()}_${step}`;
-      let domResponse;
-      try {
-        domResponse = await this.browser.sendMessageToTab(activeTab.id, {
-          type: "EXTRACT_DOM_SNAPSHOT",
-          captureId
-        });
-      } catch (err) {
-        if (typeof this.browser.ensureContentScript === "function") {
-          try {
-            await this.browser.ensureContentScript(activeTab.id);
-            await new Promise((r) => setTimeout(r, 400));
-            domResponse = await this.browser.sendMessageToTab(activeTab.id, {
-              type: "EXTRACT_DOM_SNAPSHOT",
-              captureId
-            });
-          } catch (_) {
+            const errorMsg2 = "Could not connect to webpage. Please reload the target tab (Cmd+R / F5) so the extension content script attaches.";
+            this.transition("failed-safe", errorMsg2);
+            const res2 = {
+              success: false,
+              state: "failed-safe",
+              error: errorMsg2,
+              stepCount: step
+            };
+            return this.completeWithResult(res2);
           }
         }
         if (!domResponse || !domResponse.success) {
-          let targetUrl = extractTargetUrlFromGoal(goal);
-          if (!targetUrl && (goal.toLowerCase().includes("isro") || goal.toLowerCase().includes("mission"))) {
-            targetUrl = "https://www.isro.gov.in";
-          }
-          if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1 && !hasNavigatedInitially) {
-            hasNavigatedInitially = true;
-            this.transition("executing", `Navigating tab to ${targetUrl}...`);
-            const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
-            if (navRes && typeof navRes === "object" && navRes.tabId) {
-              this.currentTabId = navRes.tabId;
-            }
-            if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url") {
-              this.transition("complete", `Navigated to ${targetUrl}`);
-              return this.completeWithResult({
-                success: true,
-                state: "complete",
-                stepCount: step,
-                message: `Navigated to ${targetUrl}`
+          if (typeof this.browser.ensureContentScript === "function") {
+            try {
+              await this.browser.ensureContentScript(activeTab.id);
+              await new Promise((r) => setTimeout(r, 400));
+              domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+                type: "EXTRACT_DOM_SNAPSHOT",
+                captureId
               });
+            } catch (_) {
             }
-            const subGoal = stripNavigationPrefixFromGoal(goal);
-            if (subGoal && subGoal !== goal) {
-              this.currentGoal = subGoal;
-              this.currentTaskContract = resolveTaskContract(subGoal);
-            }
-            continue;
           }
-          const errorMsg2 = "Could not connect to webpage. Please reload the target tab (Cmd+R / F5) so the extension content script attaches.";
+        }
+        if (!domResponse || !domResponse.success) {
+          const errorMsg2 = "Could not extract page elements from webpage. Please reload the target tab (Cmd+R / F5) so PrivaPilot can connect and perceive the page.";
           this.transition("failed-safe", errorMsg2);
           const res2 = {
             success: false,
@@ -20837,280 +20881,189 @@ var RunCoordinator = class {
           };
           return this.completeWithResult(res2);
         }
-      }
-      if (!domResponse || !domResponse.success) {
-        if (typeof this.browser.ensureContentScript === "function") {
-          try {
-            await this.browser.ensureContentScript(activeTab.id);
-            await new Promise((r) => setTimeout(r, 400));
-            domResponse = await this.browser.sendMessageToTab(activeTab.id, {
-              type: "EXTRACT_DOM_SNAPSHOT",
-              captureId
-            });
-          } catch (_) {
-          }
-        }
-      }
-      if (!domResponse || !domResponse.success) {
-        const errorMsg2 = "Could not extract page elements from webpage. Please reload the target tab (Cmd+R / F5) so PrivaPilot can connect and perceive the page.";
-        this.transition("failed-safe", errorMsg2);
-        const res2 = {
-          success: false,
-          state: "failed-safe",
-          error: errorMsg2,
-          stepCount: step
-        };
-        return this.completeWithResult(res2);
-      }
-      let screenshotDataUrl;
-      try {
-        screenshotDataUrl = await this.browser.captureVisibleTab(activeTab?.windowId);
-      } catch (err) {
-        console.warn(`[Coordinator] Screenshot capture warning: ${err?.message || "restricted view"}. Proceeding with resilient DOM snapshot fallback.`);
-        screenshotDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-      }
-      if (!screenshotDataUrl) {
-        screenshotDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-      }
-      const t1_captureComplete = Date.now();
-      const rawCapture = {
-        _brand: "RawCapture_InternalOnly",
-        captureId,
-        timestamp: Date.now(),
-        rawScreenshotDataUrl: screenshotDataUrl,
-        rawDomSummary: domResponse.snapshot,
-        metadata: domResponse.viewport
-      };
-      this.transition("detecting-sensitive-content", `Step ${step}/${maxSteps}: Scanning for sensitive data`);
-      const t2_detectionComplete = Date.now();
-      this.transition("sanitizing", `Step ${step}/${maxSteps}: Rendering opaque privacy masks`);
-      let sanitized;
-      try {
-        sanitized = await this.browser.runInSanitizerHost({
-          rawCapture,
-          snapshot: domResponse.snapshot,
-          goal
-        });
-      } catch (err) {
-        console.warn("[PrivaPilot Coordinator] Sanitizer warning:", err?.message || err, "- evaluating resilient recovery.");
-        const isSensitiveGoal = /\b(?:sensitive|secret|credential|password|cvv|pin|aadhaar|ssn|token|taint|confidential)\b/i.test(goal);
-        const isActionDirective = isSensitiveGoal || /\b(?:click|type|select|press|submit|navigate|go\s+to|open|fill|scroll)\b/i.test(goal);
-        if (!isActionDirective) {
-          this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Synthesizing answer with reasoning model`);
-          const chatRes = await this.httpClient.requestGeneralChat(goal, this.actionHistory);
-          const answerAction = {
-            actionId: `act_reply_${Date.now()}`,
-            kind: "answer",
-            confidence: 0.98,
-            risk: "safe",
-            rationale: chatRes.reply,
-            message: chatRes.reply,
-            reply: chatRes.reply,
-            reasoning: chatRes.reasoning || "Synthesized answer directly using reasoning model.",
-            expectedPostcondition: { kind: "status_changed" }
-          };
-          this.transition("complete", "Responded to user request");
-          return this.completeWithResult({
-            success: true,
-            state: "complete",
-            reply: chatRes.reply,
-            message: chatRes.reply,
-            reasoning: chatRes.reasoning,
-            proposal: answerAction,
-            stepCount: step,
-            steps: [{
-              step: 1,
-              captureId: rawCapture.captureId,
-              pageGeneration: rawCapture.captureId,
-              maskCount: 0,
-              sanitizedScreenshotBytes: 0,
-              decisionOrigin: "server",
-              proposal: answerAction,
-              riskDecision: "safe",
-              confidenceDecision: "accepted",
-              executed: true,
-              executionResult: { success: true, staleTarget: false, reasonCode: "EXECUTION_SUCCESS" },
-              verification: { verified: true, reasonCode: "VERIFIED_SUCCESS", durationMs: 0 },
-              networkRequestMade: true,
-              timings: { total: Date.now() - t0_step }
-            }]
-          });
-        }
-        console.error("[PrivaPilot Coordinator] Sanitizer error:", err?.message || err);
-        const diagnostic = classifySanitizerError(err);
-        const userSafeMsg = diagnostic.sanitizedDetail ? `Local sanitization blocked: ${diagnostic.sanitizedDetail}` : "Sensitive content may be present in an area that cannot be inspected safely. No context was sent.";
-        this.transition("blocked-local-only", userSafeMsg);
-        const res2 = {
-          success: false,
-          state: "blocked-local-only",
-          error: userSafeMsg,
-          diagnostic,
-          stepCount: step
-        };
-        return this.completeWithResult(res2);
-      }
-      const t3_sanitizationValidated = Date.now();
-      this.currentSanitizedContext = sanitized;
-      if (this.listeners.onSanitizationComplete) {
-        this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
-      }
-      if (this.actionHistory.length > 0 && sanitized.pageState) {
-        const historyText = this.actionHistory.map((a, idx) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || "page"}" (${a.rationale || "executed"})`).join("; ");
-        sanitized.pageState.postconditionSummary = historyText.length > 480 ? historyText.slice(-480) : historyText;
-      }
-      const isPureScrollDirective = Boolean(this.currentTaskContract?.expectedTerminal.kind === "scroll_changed") && !Boolean(this.currentTaskContract?.isMultiStep) && !/\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?)\b/i.test(this.currentGoal || "");
-      let proposal;
-      let decisionOrigin = "server";
-      let networkRequestMade = true;
-      let t4_reasoningReceived = Date.now();
-      const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
-      if (localScrollProposal) {
-        proposal = localScrollProposal;
-        decisionOrigin = "local";
-        networkRequestMade = false;
-        t4_reasoningReceived = Date.now();
-        this.transition("validating-action", `Step ${step}/${maxSteps}: Locally resolved safe action (${proposal.kind})`);
-      } else {
-        this.transition("sending-sanitized-context", `Step ${step}/${maxSteps}: Transmitting sanitized context`);
-        this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Awaiting reasoning action`);
+        let screenshotDataUrl;
         try {
-          proposal = await this.httpClient.requestReasoningAction(sanitized);
+          screenshotDataUrl = await this.browser.captureVisibleTab(activeTab?.windowId);
         } catch (err) {
-          const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
-          if (localProposal) {
-            proposal = localProposal;
-            decisionOrigin = "local";
-            networkRequestMade = false;
-          } else {
-            const errorMsg2 = `Reasoning server error: ${err.message || "Request failed"}`;
-            this.transition("failed-safe", errorMsg2);
-            const res2 = {
-              success: false,
-              state: "failed-safe",
-              error: errorMsg2,
-              sanitized,
-              stepCount: step
-            };
-            return this.completeWithResult(res2);
-          }
+          console.warn(`[Coordinator] Screenshot capture warning: ${err?.message || "restricted view"}. Proceeding with resilient DOM snapshot fallback.`);
+          screenshotDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
         }
-        t4_reasoningReceived = Date.now();
-      }
-      this.lastActionProposal = proposal;
-      this.transition("validating-action", `Step ${step}/${maxSteps}: Validating proposed action`);
-      const t5_actionValidated = Date.now();
-      const actionValidation = validateActionProposal(proposal, sanitized.elements);
-      if (!actionValidation.isValid || !actionValidation.proposal) {
-        const errorMsg2 = `Action rejected: ${actionValidation.errorMessage || "Invalid action proposal schema"}`;
-        this.transition("failed-safe", errorMsg2);
-        const res2 = {
-          success: false,
-          state: "failed-safe",
-          error: errorMsg2,
-          sanitized,
-          proposal,
-          stepCount: step
+        if (!screenshotDataUrl) {
+          screenshotDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+        }
+        const t1_captureComplete = Date.now();
+        const rawCapture = {
+          _brand: "RawCapture_InternalOnly",
+          captureId,
+          timestamp: Date.now(),
+          rawScreenshotDataUrl: screenshotDataUrl,
+          rawDomSummary: domResponse.snapshot,
+          metadata: domResponse.viewport
         };
-        return this.completeWithResult(res2);
-      }
-      if (proposal.confidence < 0.25 && proposal.kind !== "finish" && proposal.kind !== "wait") {
-        const errorMsg2 = `Action rejected: Proposal confidence (${proposal.confidence}) is below safe execution threshold (0.25)`;
-        this.transition("failed-safe", errorMsg2);
-        const stepTrace2 = {
-          step,
-          captureId: sanitized.captureId,
-          pageGeneration: sanitized.captureId,
-          maskCount: sanitized.maskCount,
-          sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
-          decisionOrigin,
-          proposal,
-          riskDecision: "safe",
-          confidenceDecision: "rejected_low_confidence",
-          executed: false,
-          networkRequestMade,
-          timings: { total: Date.now() - t0_step }
-        };
-        this.stepsTrace.push(stepTrace2);
-        const res2 = {
-          success: false,
-          state: "failed-safe",
-          error: errorMsg2,
-          sanitized,
-          proposal,
-          stepCount: step,
-          steps: this.stepsTrace
-        };
-        return this.completeWithResult(res2);
-      }
-      let targetElement = proposal.targetLocalId ? sanitized.elements.find((e) => e.localId === proposal.targetLocalId) : void 0;
-      if (proposal.targetLocalId && !targetElement) {
-        const errorMsg2 = `Action rejected: Model proposed non-existent target ID "${proposal.targetLocalId}".`;
-        this.transition("failed-safe", errorMsg2);
-        const stepTrace2 = {
-          step,
-          captureId: sanitized.captureId,
-          pageGeneration: sanitized.captureId,
-          maskCount: sanitized.maskCount,
-          sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
-          decisionOrigin,
-          proposal,
-          riskDecision: "blocked",
-          confidenceDecision: "invalid_target_id",
-          executed: false,
-          networkRequestMade,
-          timings: { total: Date.now() - t0_step }
-        };
-        this.stepsTrace.push(stepTrace2);
-        return this.completeWithResult({
-          success: false,
-          state: "failed-safe",
-          error: errorMsg2,
-          sanitized,
-          proposal,
-          stepCount: step,
-          steps: this.stepsTrace
-        });
-      }
-      const classifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
-      let riskLevel = proposal.risk === "blocked" || classifiedRisk === "blocked" ? "blocked" : proposal.risk === "protected" || classifiedRisk === "protected" ? "protected" : "safe";
-      if (riskLevel === "blocked") {
-        const errorMsg2 = `Action blocked by client safety policy: ${proposal.rationale}`;
-        this.transition("failed-safe", errorMsg2);
-        const stepTrace2 = {
-          step,
-          captureId: sanitized.captureId,
-          pageGeneration: sanitized.captureId,
-          maskCount: sanitized.maskCount,
-          sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
-          decisionOrigin,
-          proposal,
-          riskDecision: "blocked",
-          confidenceDecision: "blocked_policy",
-          executed: false,
-          networkRequestMade,
-          timings: { total: Date.now() - t0_step }
-        };
-        this.stepsTrace.push(stepTrace2);
-        const res2 = {
-          success: false,
-          state: "failed-safe",
-          error: errorMsg2,
-          sanitized,
-          proposal,
-          stepCount: step,
-          steps: this.stepsTrace
-        };
-        return this.completeWithResult(res2);
-      }
-      const structuredIntent = this.currentTaskContract?.structuredIntent;
-      if (decisionOrigin !== "local" && structuredIntent && structuredIntent.targetPhrase && structuredIntent.intent === proposal.kind && targetElement) {
-        const grounding = groundTargetCandidates(
-          sanitized.elements,
-          structuredIntent,
-          Boolean(sanitized.pageState?.visibleDialogCount && sanitized.pageState.visibleDialogCount > 0)
-        );
-        if (grounding.status === "no_match" && this.currentTaskContract?.goalPattern === "click_control") {
-          const errorMsg2 = `Action rejected: Requested target "${structuredIntent.targetPhrase}" is not present on the current page.`;
+        this.transition("detecting-sensitive-content", `Step ${step}/${maxSteps}: Scanning for sensitive data`);
+        const t2_detectionComplete = Date.now();
+        this.transition("sanitizing", `Step ${step}/${maxSteps}: Rendering opaque privacy masks`);
+        let sanitized;
+        try {
+          sanitized = await this.browser.runInSanitizerHost({
+            rawCapture,
+            snapshot: domResponse.snapshot,
+            goal
+          });
+        } catch (err) {
+          console.warn("[PrivaPilot Coordinator] Sanitizer warning:", err?.message || err, "- evaluating resilient recovery.");
+          const isSensitiveGoal = /\b(?:sensitive|secret|credential|password|cvv|pin|aadhaar|ssn|token|taint|confidential)\b/i.test(goal);
+          const isActionDirective = isSensitiveGoal || /\b(?:click|type|select|press|submit|navigate|go\s+to|open|fill|scroll)\b/i.test(goal);
+          if (!isActionDirective) {
+            this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Synthesizing answer with reasoning model`);
+            const chatRes = await this.httpClient.requestGeneralChat(goal, this.actionHistory);
+            const answerAction = {
+              actionId: `act_reply_${Date.now()}`,
+              kind: "answer",
+              confidence: 0.98,
+              risk: "safe",
+              rationale: chatRes.reply,
+              message: chatRes.reply,
+              reply: chatRes.reply,
+              reasoning: chatRes.reasoning || "Synthesized answer directly using reasoning model.",
+              expectedPostcondition: { kind: "status_changed" }
+            };
+            this.transition("complete", "Responded to user request");
+            return this.completeWithResult({
+              success: true,
+              state: "complete",
+              reply: chatRes.reply,
+              message: chatRes.reply,
+              reasoning: chatRes.reasoning,
+              proposal: answerAction,
+              stepCount: step,
+              steps: [{
+                step: 1,
+                captureId: rawCapture.captureId,
+                pageGeneration: rawCapture.captureId,
+                maskCount: 0,
+                sanitizedScreenshotBytes: 0,
+                decisionOrigin: "server",
+                proposal: answerAction,
+                riskDecision: "safe",
+                confidenceDecision: "accepted",
+                executed: true,
+                executionResult: { success: true, staleTarget: false, reasonCode: "EXECUTION_SUCCESS" },
+                verification: { verified: true, reasonCode: "VERIFIED_SUCCESS", durationMs: 0 },
+                networkRequestMade: true,
+                timings: { total: Date.now() - t0_step }
+              }]
+            });
+          }
+          console.error("[PrivaPilot Coordinator] Sanitizer error:", err?.message || err);
+          const diagnostic = classifySanitizerError(err);
+          const userSafeMsg = diagnostic.sanitizedDetail ? `Local sanitization blocked: ${diagnostic.sanitizedDetail}` : "Sensitive content may be present in an area that cannot be inspected safely. No context was sent.";
+          this.transition("blocked-local-only", userSafeMsg);
+          const res2 = {
+            success: false,
+            state: "blocked-local-only",
+            error: userSafeMsg,
+            diagnostic,
+            stepCount: step
+          };
+          return this.completeWithResult(res2);
+        }
+        const t3_sanitizationValidated = Date.now();
+        this.currentSanitizedContext = sanitized;
+        if (this.listeners.onSanitizationComplete) {
+          this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
+        }
+        if (this.actionHistory.length > 0 && sanitized.pageState) {
+          const historyText = this.actionHistory.map((a, idx) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || "page"}" (${a.rationale || "executed"})`).join("; ");
+          sanitized.pageState.postconditionSummary = historyText.length > 480 ? historyText.slice(-480) : historyText;
+        }
+        const isPureScrollDirective = Boolean(this.currentTaskContract?.expectedTerminal.kind === "scroll_changed") && !Boolean(this.currentTaskContract?.isMultiStep) && !/\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?)\b/i.test(this.currentGoal || "");
+        let proposal;
+        let decisionOrigin = "server";
+        let networkRequestMade = true;
+        let t4_reasoningReceived = Date.now();
+        const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
+        if (localScrollProposal) {
+          proposal = localScrollProposal;
+          decisionOrigin = "local";
+          networkRequestMade = false;
+          t4_reasoningReceived = Date.now();
+          this.transition("validating-action", `Step ${step}/${maxSteps}: Locally resolved safe action (${proposal.kind})`);
+        } else {
+          this.transition("sending-sanitized-context", `Step ${step}/${maxSteps}: Transmitting sanitized context`);
+          this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Awaiting reasoning action`);
+          try {
+            proposal = await this.httpClient.requestReasoningAction(sanitized);
+          } catch (err) {
+            const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
+            if (localProposal) {
+              proposal = localProposal;
+              decisionOrigin = "local";
+              networkRequestMade = false;
+            } else {
+              const errorMsg2 = `Reasoning server error: ${err.message || "Request failed"}`;
+              this.transition("failed-safe", errorMsg2);
+              const res2 = {
+                success: false,
+                state: "failed-safe",
+                error: errorMsg2,
+                sanitized,
+                stepCount: step
+              };
+              return this.completeWithResult(res2);
+            }
+          }
+          t4_reasoningReceived = Date.now();
+        }
+        this.lastActionProposal = proposal;
+        this.transition("validating-action", `Step ${step}/${maxSteps}: Validating proposed action`);
+        const t5_actionValidated = Date.now();
+        const actionValidation = validateActionProposal(proposal, sanitized.elements);
+        if (!actionValidation.isValid || !actionValidation.proposal) {
+          const errorMsg2 = `Action rejected: ${actionValidation.errorMessage || "Invalid action proposal schema"}`;
+          this.transition("failed-safe", errorMsg2);
+          const res2 = {
+            success: false,
+            state: "failed-safe",
+            error: errorMsg2,
+            sanitized,
+            proposal,
+            stepCount: step
+          };
+          return this.completeWithResult(res2);
+        }
+        if (proposal.confidence < 0.25 && proposal.kind !== "finish" && proposal.kind !== "wait") {
+          const errorMsg2 = `Action rejected: Proposal confidence (${proposal.confidence}) is below safe execution threshold (0.25)`;
+          this.transition("failed-safe", errorMsg2);
+          const stepTrace2 = {
+            step,
+            captureId: sanitized.captureId,
+            pageGeneration: sanitized.captureId,
+            maskCount: sanitized.maskCount,
+            sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+            decisionOrigin,
+            proposal,
+            riskDecision: "safe",
+            confidenceDecision: "rejected_low_confidence",
+            executed: false,
+            networkRequestMade,
+            timings: { total: Date.now() - t0_step }
+          };
+          this.stepsTrace.push(stepTrace2);
+          const res2 = {
+            success: false,
+            state: "failed-safe",
+            error: errorMsg2,
+            sanitized,
+            proposal,
+            stepCount: step,
+            steps: this.stepsTrace
+          };
+          return this.completeWithResult(res2);
+        }
+        let targetElement = proposal.targetLocalId ? sanitized.elements.find((e) => e.localId === proposal.targetLocalId) : void 0;
+        if (proposal.targetLocalId && !targetElement) {
+          const errorMsg2 = `Action rejected: Model proposed non-existent target ID "${proposal.targetLocalId}".`;
           this.transition("failed-safe", errorMsg2);
           const stepTrace2 = {
             step,
@@ -21121,7 +21074,7 @@ var RunCoordinator = class {
             decisionOrigin,
             proposal,
             riskDecision: "blocked",
-            confidenceDecision: "missing_target",
+            confidenceDecision: "invalid_target_id",
             executed: false,
             networkRequestMade,
             timings: { total: Date.now() - t0_step }
@@ -21137,147 +21090,12 @@ var RunCoordinator = class {
             steps: this.stepsTrace
           });
         }
-        if (grounding.status === "ambiguous_match") {
-          proposal = {
-            ...proposal,
-            risk: "protected",
-            rationale: grounding.ambiguityReason || `Ambiguous candidate: multiple controls matching "${structuredIntent.targetPhrase}". User confirmation required.`
-          };
-          riskLevel = "protected";
-        }
-        if (grounding.bestCandidate && proposal.targetLocalId !== grounding.bestCandidate.element.localId) {
-          const proposedEval = scoreCandidate(targetElement, structuredIntent, Boolean(sanitized.pageState?.visibleDialogCount));
-          if (proposedEval.isDisqualified || grounding.bestCandidate.score >= 50 && grounding.bestCandidate.score - proposedEval.score >= 35) {
-            console.warn(`[PrivaPilot:Grounding] Re-grounding model proposal (${proposal.targetLocalId}: "${targetElement.sanitizedName}", score ${proposedEval.score}) to semantically superior candidate (${grounding.bestCandidate.element.localId}: "${grounding.bestCandidate.element.sanitizedName}", score ${grounding.bestCandidate.score})`);
-            proposal = {
-              ...proposal,
-              targetLocalId: grounding.bestCandidate.element.localId,
-              rationale: `${grounding.bestCandidate.rationale} [semantically grounded]`
-            };
-            targetElement = grounding.bestCandidate.element;
-            const updatedClassifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
-            if (updatedClassifiedRisk === "protected" || proposal.risk === "protected") {
-              riskLevel = "protected";
-            }
-          }
-        }
-      }
-      if (targetElement && proposal.kind === "click") {
-        const duplicates = sanitized.elements.filter(
-          (e) => e.localId !== targetElement.localId && e.role === targetElement.role && e.sanitizedName.toLowerCase() === targetElement.sanitizedName.toLowerCase()
-        );
-        if (duplicates.length > 0 && !structuredIntent?.contextPhrase) {
-          proposal = {
-            ...proposal,
-            risk: "protected",
-            rationale: `Ambiguous candidate: multiple controls with name "${targetElement.sanitizedName}" present on page. User confirmation required.`
-          };
-          riskLevel = "protected";
-        }
-      }
-      if (riskLevel === "protected") {
-        this.pendingAction = proposal;
-        const msg = `Protected action requires user consent: ${proposal.rationale}`;
-        this.transition("awaiting-user-confirmation", msg);
-        if (this.listeners.onActionConfirmedRequired) {
-          this.listeners.onActionConfirmedRequired(proposal, this.currentRunId);
-        }
-        const stepTrace2 = {
-          step,
-          captureId: sanitized.captureId,
-          pageGeneration: sanitized.captureId,
-          maskCount: sanitized.maskCount,
-          sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
-          decisionOrigin,
-          proposal,
-          riskDecision: "protected",
-          confidenceDecision: "requires_confirmation",
-          executed: false,
-          networkRequestMade,
-          timings: { total: Date.now() - t0_step }
-        };
-        this.stepsTrace.push(stepTrace2);
-        const res2 = {
-          success: false,
-          state: "awaiting-user-confirmation",
-          message: msg,
-          sanitized,
-          proposal,
-          stepCount: step,
-          steps: this.stepsTrace
-        };
-        return this.completeWithResult(res2);
-      }
-      if (this.listeners.onActionProposed) {
-        this.listeners.onActionProposed(proposal, this.currentRunId);
-      }
-      if (proposal.kind === "request_user_input") {
-        const promptText = proposal.userInputPrompt || proposal.rationale || "Please provide the information required by the form.";
-        this.transition("awaiting-user-input", promptText);
-        if (this.listeners.onUserInputRequired) {
-          this.listeners.onUserInputRequired({
-            kind: "text_input",
-            prompt: promptText,
-            targetLocalId: proposal.targetLocalId,
-            inputKey: proposal.inputKey,
-            runId: this.currentRunId
-          });
-        }
-        const stepTrace2 = {
-          step,
-          captureId: sanitized.captureId,
-          pageGeneration: sanitized.captureId,
-          maskCount: sanitized.maskCount,
-          sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
-          decisionOrigin,
-          proposal,
-          riskDecision: "safe",
-          confidenceDecision: "requires_user_input",
-          executed: false,
-          networkRequestMade,
-          timings: { total: Date.now() - t0_step }
-        };
-        this.stepsTrace.push(stepTrace2);
-        const res2 = {
-          success: true,
-          state: "awaiting-user-input",
-          message: promptText,
-          sanitized,
-          proposal,
-          stepCount: step,
-          steps: this.stepsTrace
-        };
-        return this.completeWithResult(res2);
-      }
-      if (proposal.kind === "answer" && step < maxSteps) {
-        const answerText = proposal.reply || proposal.rationale || "";
-        const isClarificationQuestion = /\b(?:which\s+(?:platform|website|site|problem)|could\s+you\s+clarify|please\s+clarify|where\s+is\s+this|what\s+site)\b/i.test(answerText) || answerText.trim().endsWith("?") && this.currentTaskContract?.isAnswerGoal && this.actionHistory.length === 0;
-        if (isClarificationQuestion) {
-          const topic = this.currentTaskContract?.queryTopic || "";
-          const navCandidate = sanitized.elements.find(
-            (e) => (e.role === "link" || e.role === "button" || e.role === "tab") && (/problem\s*statement|submission|statement/i.test(e.sanitizedName) || topic && e.sanitizedName.toLowerCase().includes(topic.toLowerCase()))
-          );
-          if (navCandidate) {
-            console.log(`[Coordinator] Model proposed clarification query instead of navigation; advancing to navigation target: ${navCandidate.sanitizedName} (${navCandidate.localId})`);
-            proposal = {
-              actionId: `act_nav_${Date.now()}`,
-              kind: "click",
-              targetLocalId: navCandidate.localId,
-              confidence: 0.96,
-              risk: "safe",
-              rationale: `Navigating to "${navCandidate.sanitizedName}" to locate the requested data.`
-            };
-            riskLevel = "safe";
-          }
-        }
-      }
-      if (proposal.kind === "finish" || proposal.kind === "answer") {
-        const terminalCheck = this.currentTaskContract ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory) : { satisfied: true, reason: "Goal completed" };
-        const isAnswerOrConversational = proposal.kind === "answer" || Boolean(proposal.reply) || this.currentTaskContract?.isAnswerGoal || this.currentTaskContract?.goalPattern === "conversational_query";
-        if (proposal.kind === "finish" && !terminalCheck.satisfied && !isAnswerOrConversational) {
-          const errorMsg2 = `Task rejected: Model proposed "finish" before required action postconditions were established or verified: ${terminalCheck.reason}`;
+        const classifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
+        let riskLevel = proposal.risk === "blocked" || classifiedRisk === "blocked" ? "blocked" : proposal.risk === "protected" || classifiedRisk === "protected" ? "protected" : "safe";
+        if (riskLevel === "blocked") {
+          const errorMsg2 = `Action blocked by client safety policy: ${proposal.rationale}`;
           this.transition("failed-safe", errorMsg2);
-          const stepTrace3 = {
+          const stepTrace2 = {
             step,
             captureId: sanitized.captureId,
             pageGeneration: sanitized.captureId,
@@ -21285,19 +21103,14 @@ var RunCoordinator = class {
             sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
             decisionOrigin,
             proposal,
-            riskDecision: riskLevel,
-            confidenceDecision: "rejected_false_finish",
+            riskDecision: "blocked",
+            confidenceDecision: "blocked_policy",
             executed: false,
-            verification: {
-              verified: false,
-              reasonCode: "FALSE_FINISH_NO_POSTCONDITION",
-              durationMs: 0
-            },
             networkRequestMade,
             timings: { total: Date.now() - t0_step }
           };
-          this.stepsTrace.push(stepTrace3);
-          const res3 = {
+          this.stepsTrace.push(stepTrace2);
+          const res2 = {
             success: false,
             state: "failed-safe",
             error: errorMsg2,
@@ -21306,16 +21119,410 @@ var RunCoordinator = class {
             stepCount: step,
             steps: this.stepsTrace
           };
-          return this.completeWithResult(res3);
+          return this.completeWithResult(res2);
         }
-        const tFin = Date.now();
-        const telemetry2 = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, tFin, tFin, step);
+        const structuredIntent = this.currentTaskContract?.structuredIntent;
+        if (decisionOrigin !== "local" && structuredIntent && structuredIntent.targetPhrase && structuredIntent.intent === proposal.kind && targetElement) {
+          const grounding = groundTargetCandidates(
+            sanitized.elements,
+            structuredIntent,
+            Boolean(sanitized.pageState?.visibleDialogCount && sanitized.pageState.visibleDialogCount > 0)
+          );
+          if (grounding.status === "no_match" && this.currentTaskContract?.goalPattern === "click_control") {
+            const errorMsg2 = `Action rejected: Requested target "${structuredIntent.targetPhrase}" is not present on the current page.`;
+            this.transition("failed-safe", errorMsg2);
+            const stepTrace2 = {
+              step,
+              captureId: sanitized.captureId,
+              pageGeneration: sanitized.captureId,
+              maskCount: sanitized.maskCount,
+              sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+              decisionOrigin,
+              proposal,
+              riskDecision: "blocked",
+              confidenceDecision: "missing_target",
+              executed: false,
+              networkRequestMade,
+              timings: { total: Date.now() - t0_step }
+            };
+            this.stepsTrace.push(stepTrace2);
+            return this.completeWithResult({
+              success: false,
+              state: "failed-safe",
+              error: errorMsg2,
+              sanitized,
+              proposal,
+              stepCount: step,
+              steps: this.stepsTrace
+            });
+          }
+          if (grounding.status === "ambiguous_match") {
+            proposal = {
+              ...proposal,
+              risk: "protected",
+              rationale: grounding.ambiguityReason || `Ambiguous candidate: multiple controls matching "${structuredIntent.targetPhrase}". User confirmation required.`
+            };
+            riskLevel = "protected";
+          }
+          if (grounding.bestCandidate && proposal.targetLocalId !== grounding.bestCandidate.element.localId) {
+            const proposedEval = scoreCandidate(targetElement, structuredIntent, Boolean(sanitized.pageState?.visibleDialogCount));
+            if (proposedEval.isDisqualified || grounding.bestCandidate.score >= 50 && grounding.bestCandidate.score - proposedEval.score >= 35) {
+              console.warn(`[PrivaPilot:Grounding] Re-grounding model proposal (${proposal.targetLocalId}: "${targetElement.sanitizedName}", score ${proposedEval.score}) to semantically superior candidate (${grounding.bestCandidate.element.localId}: "${grounding.bestCandidate.element.sanitizedName}", score ${grounding.bestCandidate.score})`);
+              proposal = {
+                ...proposal,
+                targetLocalId: grounding.bestCandidate.element.localId,
+                rationale: `${grounding.bestCandidate.rationale} [semantically grounded]`
+              };
+              targetElement = grounding.bestCandidate.element;
+              const updatedClassifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
+              if (updatedClassifiedRisk === "protected" || proposal.risk === "protected") {
+                riskLevel = "protected";
+              }
+            }
+          }
+        }
+        if (targetElement && proposal.kind === "click") {
+          const duplicates = sanitized.elements.filter(
+            (e) => e.localId !== targetElement.localId && e.role === targetElement.role && e.sanitizedName.toLowerCase() === targetElement.sanitizedName.toLowerCase()
+          );
+          if (duplicates.length > 0 && !structuredIntent?.contextPhrase) {
+            proposal = {
+              ...proposal,
+              risk: "protected",
+              rationale: `Ambiguous candidate: multiple controls with name "${targetElement.sanitizedName}" present on page. User confirmation required.`
+            };
+            riskLevel = "protected";
+          }
+        }
+        if (riskLevel === "protected") {
+          this.pendingAction = proposal;
+          const msg = `Protected action requires user consent: ${proposal.rationale}`;
+          this.transition("awaiting-user-confirmation", msg);
+          if (this.listeners.onActionConfirmedRequired) {
+            this.listeners.onActionConfirmedRequired(proposal, this.currentRunId);
+          }
+          const stepTrace2 = {
+            step,
+            captureId: sanitized.captureId,
+            pageGeneration: sanitized.captureId,
+            maskCount: sanitized.maskCount,
+            sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+            decisionOrigin,
+            proposal,
+            riskDecision: "protected",
+            confidenceDecision: "requires_confirmation",
+            executed: false,
+            networkRequestMade,
+            timings: { total: Date.now() - t0_step }
+          };
+          this.stepsTrace.push(stepTrace2);
+          const res2 = {
+            success: false,
+            state: "awaiting-user-confirmation",
+            message: msg,
+            sanitized,
+            proposal,
+            stepCount: step,
+            steps: this.stepsTrace
+          };
+          return this.completeWithResult(res2);
+        }
+        if (this.listeners.onActionProposed) {
+          this.listeners.onActionProposed(proposal, this.currentRunId);
+        }
+        if (proposal.kind === "request_user_input") {
+          const promptText = proposal.userInputPrompt || proposal.rationale || "Please provide the information required by the form.";
+          this.transition("awaiting-user-input", promptText);
+          if (this.listeners.onUserInputRequired) {
+            this.listeners.onUserInputRequired({
+              kind: "text_input",
+              prompt: promptText,
+              targetLocalId: proposal.targetLocalId,
+              inputKey: proposal.inputKey,
+              runId: this.currentRunId
+            });
+          }
+          const stepTrace2 = {
+            step,
+            captureId: sanitized.captureId,
+            pageGeneration: sanitized.captureId,
+            maskCount: sanitized.maskCount,
+            sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+            decisionOrigin,
+            proposal,
+            riskDecision: "safe",
+            confidenceDecision: "requires_user_input",
+            executed: false,
+            networkRequestMade,
+            timings: { total: Date.now() - t0_step }
+          };
+          this.stepsTrace.push(stepTrace2);
+          const res2 = {
+            success: true,
+            state: "awaiting-user-input",
+            message: promptText,
+            sanitized,
+            proposal,
+            stepCount: step,
+            steps: this.stepsTrace
+          };
+          return this.completeWithResult(res2);
+        }
+        if (proposal.kind === "answer" && step < maxSteps) {
+          const answerText = proposal.reply || proposal.rationale || "";
+          const isClarificationQuestion = /\b(?:which\s+(?:platform|website|site|problem)|could\s+you\s+clarify|please\s+clarify|where\s+is\s+this|what\s+site)\b/i.test(answerText) || answerText.trim().endsWith("?") && this.currentTaskContract?.isAnswerGoal && this.actionHistory.length === 0;
+          if (isClarificationQuestion) {
+            const topic = this.currentTaskContract?.queryTopic || "";
+            const navCandidate = sanitized.elements.find(
+              (e) => (e.role === "link" || e.role === "button" || e.role === "tab") && (/problem\s*statement|submission|statement/i.test(e.sanitizedName) || topic && e.sanitizedName.toLowerCase().includes(topic.toLowerCase()))
+            );
+            if (navCandidate) {
+              console.log(`[Coordinator] Model proposed clarification query instead of navigation; advancing to navigation target: ${navCandidate.sanitizedName} (${navCandidate.localId})`);
+              proposal = {
+                actionId: `act_nav_${Date.now()}`,
+                kind: "click",
+                targetLocalId: navCandidate.localId,
+                confidence: 0.96,
+                risk: "safe",
+                rationale: `Navigating to "${navCandidate.sanitizedName}" to locate the requested data.`
+              };
+              riskLevel = "safe";
+            }
+          }
+        }
+        if (proposal.kind === "finish" || proposal.kind === "answer") {
+          const terminalCheck = this.currentTaskContract ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory) : { satisfied: true, reason: "Goal completed" };
+          const isAnswerOrConversational = proposal.kind === "answer" || Boolean(proposal.reply) || this.currentTaskContract?.isAnswerGoal || this.currentTaskContract?.goalPattern === "conversational_query";
+          if (proposal.kind === "finish" && !terminalCheck.satisfied && !isAnswerOrConversational) {
+            const errorMsg2 = `Task rejected: Model proposed "finish" before required action postconditions were established or verified: ${terminalCheck.reason}`;
+            this.transition("failed-safe", errorMsg2);
+            const stepTrace3 = {
+              step,
+              captureId: sanitized.captureId,
+              pageGeneration: sanitized.captureId,
+              maskCount: sanitized.maskCount,
+              sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+              decisionOrigin,
+              proposal,
+              riskDecision: riskLevel,
+              confidenceDecision: "rejected_false_finish",
+              executed: false,
+              verification: {
+                verified: false,
+                reasonCode: "FALSE_FINISH_NO_POSTCONDITION",
+                durationMs: 0
+              },
+              networkRequestMade,
+              timings: { total: Date.now() - t0_step }
+            };
+            this.stepsTrace.push(stepTrace3);
+            const res3 = {
+              success: false,
+              state: "failed-safe",
+              error: errorMsg2,
+              sanitized,
+              proposal,
+              stepCount: step,
+              steps: this.stepsTrace
+            };
+            return this.completeWithResult(res3);
+          }
+          const tFin = Date.now();
+          const telemetry2 = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, tFin, tFin, step);
+          if (this.listeners.onTelemetryUpdated) {
+            this.listeners.onTelemetryUpdated(telemetry2, this.currentRunId);
+          }
+          const completionMsg = proposal.reply || proposal.rationale;
+          this.transition("complete", `Task completed: ${completionMsg}`);
+          const stepTrace2 = {
+            step,
+            captureId: sanitized.captureId,
+            pageGeneration: sanitized.captureId,
+            maskCount: sanitized.maskCount,
+            sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+            decisionOrigin,
+            proposal,
+            riskDecision: riskLevel,
+            confidenceDecision: "accepted",
+            executed: false,
+            verification: {
+              verified: true,
+              reasonCode: "GOAL_POSTCONDITION_VERIFIED",
+              durationMs: 0
+            },
+            networkRequestMade,
+            timings: { total: tFin - t0_step }
+          };
+          this.stepsTrace.push(stepTrace2);
+          const res2 = {
+            success: true,
+            state: "complete",
+            message: proposal.reply || proposal.rationale,
+            sanitized,
+            proposal,
+            telemetry: telemetry2,
+            stepCount: step,
+            steps: this.stepsTrace
+          };
+          return this.completeWithResult(res2);
+        }
+        const isDuplicate = this.isRepeatedAction(proposal);
+        if (isDuplicate) {
+          const errorMsg2 = "Repeated action loop detected: identical action proposed consecutively without progress";
+          this.transition("failed-safe", errorMsg2);
+          const res2 = {
+            success: false,
+            state: "failed-safe",
+            error: errorMsg2,
+            sanitized,
+            proposal,
+            stepCount: step,
+            steps: this.stepsTrace
+          };
+          return this.completeWithResult(res2);
+        }
+        this.transition("executing", `Step ${step}/${maxSteps}: Executing '${proposal.kind}' on ${proposal.targetLocalId || "page"}`);
+        if (proposal.kind === "wait") {
+          await new Promise((r) => setTimeout(r, 600));
+        }
+        if (proposal.kind === "type" && !proposal.pressEnter && this.currentTaskContract?.structuredIntent?.pressEnter) {
+          proposal = { ...proposal, pressEnter: true };
+        }
+        let execResponse;
+        if (proposal.kind === "batch" && proposal.batchActions && proposal.batchActions.length > 0) {
+          this.transition("executing", `Step ${step}/${maxSteps}: Executing batch (${proposal.batchActions.length} actions)`);
+          let allBatchSucceeded = true;
+          let lastBatchResult = null;
+          for (let i = 0; i < proposal.batchActions.length; i++) {
+            const sub = proposal.batchActions[i];
+            const subProposal = {
+              actionId: sub.actionId || `act_sub_${i + 1}_${Date.now()}`,
+              kind: sub.kind,
+              targetLocalId: sub.targetLocalId,
+              destinationLocalId: sub.destinationLocalId,
+              textToType: sub.textToType,
+              selectOptionValue: sub.selectOptionValue,
+              scrollDirection: sub.scrollDirection,
+              pressEnter: sub.pressEnter,
+              fileName: sub.fileName,
+              confidence: proposal.confidence,
+              risk: "safe",
+              rationale: sub.rationale || proposal.rationale
+            };
+            try {
+              lastBatchResult = await this.browser.sendMessageToTab(activeTab.id, {
+                type: "EXECUTE_ACTION",
+                proposal: subProposal,
+                captureId: sanitized.captureId
+              });
+              this.recordActionHistory(subProposal);
+            } catch (batchErr) {
+              const isNav = isDisconnectOrNavigationError(batchErr);
+              if (isNav) {
+                if (typeof this.browser.waitForTabReady === "function") {
+                  const newTab = await this.browser.waitForTabReady(activeTab.id, 8e3);
+                  if (newTab?.url) activeTab.url = newTab.url;
+                }
+                if (typeof this.browser.ensureContentScript === "function") {
+                  await this.browser.ensureContentScript(activeTab.id);
+                }
+                await new Promise((r) => setTimeout(r, 500));
+                lastBatchResult = { success: true, semanticOutcomeVerified: true, message: "Batch action caused page navigation" };
+                break;
+              } else {
+                allBatchSucceeded = false;
+                lastBatchResult = { success: false, message: batchErr?.message || "Batch action failed" };
+                break;
+              }
+            }
+            if (!lastBatchResult?.success) {
+              allBatchSucceeded = false;
+              break;
+            }
+            if (i < proposal.batchActions.length - 1) {
+              await new Promise((r) => setTimeout(r, 250));
+            }
+          }
+          execResponse = lastBatchResult || { success: allBatchSucceeded, semanticOutcomeVerified: allBatchSucceeded };
+        } else {
+          try {
+            execResponse = await this.browser.sendMessageToTab(activeTab.id, {
+              type: "EXECUTE_ACTION",
+              proposal,
+              captureId: sanitized.captureId
+            });
+          } catch (execErr) {
+            const msg = execErr?.message || "";
+            const isPortClosedOrNav = isDisconnectOrNavigationError(execErr);
+            if (isPortClosedOrNav) {
+              if (typeof this.browser.waitForTabReady === "function") {
+                const newTab = await this.browser.waitForTabReady(activeTab.id, 8e3);
+                if (newTab?.url) activeTab.url = newTab.url;
+              }
+              if (typeof this.browser.ensureContentScript === "function") {
+                await this.browser.ensureContentScript(activeTab.id);
+              }
+              await new Promise((r) => setTimeout(r, 500));
+              execResponse = {
+                success: true,
+                semanticOutcomeVerified: true,
+                message: `Action executed and caused page navigation/redirect`
+              };
+            } else {
+              execResponse = {
+                success: false,
+                semanticOutcomeVerified: false,
+                message: `Action execution failed: ${msg}`
+              };
+            }
+          }
+        }
+        const t6_actionExecuted = Date.now();
+        this.transition("verifying", `Step ${step}/${maxSteps}: Verifying semantic outcome`);
+        const t7_stateVerified = Date.now();
+        const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
         if (this.listeners.onTelemetryUpdated) {
-          this.listeners.onTelemetryUpdated(telemetry2, this.currentRunId);
+          this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
         }
-        const completionMsg = proposal.reply || proposal.rationale;
-        this.transition("complete", `Task completed: ${completionMsg}`);
-        const stepTrace2 = {
+        if (execResponse && execResponse.staleTarget) {
+          if (proposal.risk !== "safe") {
+            const errorMsg2 = `Stale target detected on protected action '${proposal.kind}': auto-retry is prohibited for non-safe actions`;
+            this.transition("failed-safe", errorMsg2);
+            const res2 = {
+              success: false,
+              state: "failed-safe",
+              error: errorMsg2,
+              sanitized,
+              proposal,
+              telemetry,
+              stepCount: step,
+              steps: this.stepsTrace
+            };
+            return this.completeWithResult(res2);
+          }
+          if (this.currentStaleRetries < this.maxStaleRetries) {
+            this.currentStaleRetries++;
+            this.transition("capturing", `Stale target detected. Re-perceiving page (retry ${this.currentStaleRetries}/${this.maxStaleRetries})...`);
+            continue;
+          } else {
+            const errorMsg2 = `Stale target: target element '${proposal.targetLocalId}' remained stale after ${this.maxStaleRetries} retry attempts`;
+            this.transition("failed-safe", errorMsg2);
+            const res2 = {
+              success: false,
+              state: "failed-safe",
+              error: errorMsg2,
+              sanitized,
+              proposal,
+              telemetry,
+              stepCount: step,
+              steps: this.stepsTrace
+            };
+            return this.completeWithResult(res2);
+          }
+        }
+        this.recordActionHistory(proposal);
+        const isSuccess = Boolean(execResponse && execResponse.success && execResponse.semanticOutcomeVerified);
+        const stepTrace = {
           step,
           captureId: sanitized.captureId,
           pageGeneration: sanitized.captureId,
@@ -21325,143 +21532,40 @@ var RunCoordinator = class {
           proposal,
           riskDecision: riskLevel,
           confidenceDecision: "accepted",
-          executed: false,
+          executed: true,
+          executionResult: {
+            success: execResponse?.success ?? false,
+            staleTarget: execResponse?.staleTarget ?? false,
+            reasonCode: execResponse?.error ? "EXECUTION_FAILED" : "EXECUTION_SUCCESS"
+          },
           verification: {
-            verified: true,
-            reasonCode: "GOAL_POSTCONDITION_VERIFIED",
-            durationMs: 0
+            verified: execResponse?.verification?.verified ?? Boolean(execResponse?.semanticOutcomeVerified),
+            reasonCode: execResponse?.verification?.reasonCode || (isSuccess ? "SEMANTIC_VERIFICATION_SUCCESS" : "SEMANTIC_VERIFICATION_FAILED"),
+            matchedCondition: execResponse?.verification?.matchedCondition,
+            durationMs: execResponse?.verification?.durationMs || 0
           },
           networkRequestMade,
-          timings: { total: tFin - t0_step }
+          timings: {
+            tCapture: t1_captureComplete - t0_step,
+            tDetection: t2_detectionComplete - t1_captureComplete,
+            tSanitization: t3_sanitizationValidated - t2_detectionComplete,
+            tReasoning: t4_reasoningReceived - t3_sanitizationValidated,
+            tExecution: t6_actionExecuted - t5_actionValidated,
+            tVerification: t7_stateVerified - t6_actionExecuted,
+            total: Date.now() - t0_step
+          }
         };
-        this.stepsTrace.push(stepTrace2);
-        const res2 = {
-          success: true,
-          state: "complete",
-          message: proposal.reply || proposal.rationale,
-          sanitized,
-          proposal,
-          telemetry: telemetry2,
-          stepCount: step,
-          steps: this.stepsTrace
-        };
-        return this.completeWithResult(res2);
-      }
-      const isDuplicate = this.isRepeatedAction(proposal);
-      if (isDuplicate) {
-        const errorMsg2 = "Repeated action loop detected: identical action proposed consecutively without progress";
-        this.transition("failed-safe", errorMsg2);
-        const res2 = {
-          success: false,
-          state: "failed-safe",
-          error: errorMsg2,
-          sanitized,
-          proposal,
-          stepCount: step,
-          steps: this.stepsTrace
-        };
-        return this.completeWithResult(res2);
-      }
-      this.transition("executing", `Step ${step}/${maxSteps}: Executing '${proposal.kind}' on ${proposal.targetLocalId || "page"}`);
-      if (proposal.kind === "wait") {
-        await new Promise((r) => setTimeout(r, 600));
-      }
-      if (proposal.kind === "type" && !proposal.pressEnter && this.currentTaskContract?.structuredIntent?.pressEnter) {
-        proposal = { ...proposal, pressEnter: true };
-      }
-      let execResponse;
-      if (proposal.kind === "batch" && proposal.batchActions && proposal.batchActions.length > 0) {
-        this.transition("executing", `Step ${step}/${maxSteps}: Executing batch (${proposal.batchActions.length} actions)`);
-        let allBatchSucceeded = true;
-        let lastBatchResult = null;
-        for (let i = 0; i < proposal.batchActions.length; i++) {
-          const sub = proposal.batchActions[i];
-          const subProposal = {
-            actionId: sub.actionId || `act_sub_${i + 1}_${Date.now()}`,
-            kind: sub.kind,
-            targetLocalId: sub.targetLocalId,
-            destinationLocalId: sub.destinationLocalId,
-            textToType: sub.textToType,
-            selectOptionValue: sub.selectOptionValue,
-            scrollDirection: sub.scrollDirection,
-            pressEnter: sub.pressEnter,
-            fileName: sub.fileName,
-            confidence: proposal.confidence,
-            risk: "safe",
-            rationale: sub.rationale || proposal.rationale
-          };
-          try {
-            lastBatchResult = await this.browser.sendMessageToTab(activeTab.id, {
-              type: "EXECUTE_ACTION",
-              proposal: subProposal,
-              captureId: sanitized.captureId
-            });
-            this.recordActionHistory(subProposal);
-          } catch (batchErr) {
-            const msg = batchErr?.message || "";
-            const isNav = msg.includes("message port closed") || msg.includes("Receiving end does not exist") || msg.includes("Could not establish connection");
-            if (isNav) {
-              if (typeof this.browser.waitForTabReady === "function") {
-                await this.browser.waitForTabReady(activeTab.id, 8e3);
-              }
-              if (typeof this.browser.ensureContentScript === "function") {
-                await this.browser.ensureContentScript(activeTab.id);
-              }
-              lastBatchResult = { success: true, semanticOutcomeVerified: true, message: "Batch action caused page navigation" };
-              break;
-            } else {
-              allBatchSucceeded = false;
-              lastBatchResult = { success: false, message: batchErr.message };
-              break;
-            }
+        this.stepsTrace.push(stepTrace);
+        const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) || /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?|register|registration|apply|application|complete|fill|signup|sign\s+up|form|workflow|survey|questionnaire)\b/i.test(this.currentGoal || "");
+        if (!isSuccess) {
+          const canContinuePerception = execResponse?.success === true && proposal.risk === "safe" && step < maxSteps && isMultiStepGoal;
+          if (canContinuePerception) {
+            console.warn(`[PrivaPilot Coordinator] Step ${step} semantic verification uncertain (${execResponse?.message || "unconfirmed"}); proceeding to next perception cycle...`);
+            this.transition("capturing", `Step ${step} executed. Re-perceiving page state (step ${step + 1}/${maxSteps})...`);
+            continue;
           }
-          if (!lastBatchResult?.success) {
-            allBatchSucceeded = false;
-            break;
-          }
-          if (i < proposal.batchActions.length - 1) {
-            await new Promise((r) => setTimeout(r, 250));
-          }
-        }
-        execResponse = lastBatchResult || { success: allBatchSucceeded, semanticOutcomeVerified: allBatchSucceeded };
-      } else {
-        try {
-          execResponse = await this.browser.sendMessageToTab(activeTab.id, {
-            type: "EXECUTE_ACTION",
-            proposal,
-            captureId: sanitized.captureId
-          });
-        } catch (execErr) {
-          const msg = execErr?.message || "";
-          const isPortClosedOrNav = msg.includes("message port closed") || msg.includes("Receiving end does not exist") || msg.includes("Could not establish connection");
-          if (isPortClosedOrNav) {
-            if (typeof this.browser.waitForTabReady === "function") {
-              await this.browser.waitForTabReady(activeTab.id, 8e3);
-            }
-            if (typeof this.browser.ensureContentScript === "function") {
-              await this.browser.ensureContentScript(activeTab.id);
-            }
-            execResponse = {
-              success: true,
-              semanticOutcomeVerified: true,
-              message: `Action executed and caused page navigation/redirect`
-            };
-          } else {
-            throw execErr;
-          }
-        }
-      }
-      const t6_actionExecuted = Date.now();
-      this.transition("verifying", `Step ${step}/${maxSteps}: Verifying semantic outcome`);
-      const t7_stateVerified = Date.now();
-      const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
-      if (this.listeners.onTelemetryUpdated) {
-        this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
-      }
-      if (execResponse && execResponse.staleTarget) {
-        if (proposal.risk !== "safe") {
-          const errorMsg2 = `Stale target detected on protected action '${proposal.kind}': auto-retry is prohibited for non-safe actions`;
-          this.transition("failed-safe", errorMsg2);
+          const errorMsg2 = execResponse?.message || "Action execution or semantic verification failed";
+          this.transition("failed-safe", `Execution failed: ${errorMsg2}`);
           const res2 = {
             success: false,
             state: "failed-safe",
@@ -21474,117 +21578,17 @@ var RunCoordinator = class {
           };
           return this.completeWithResult(res2);
         }
-        if (this.currentStaleRetries < this.maxStaleRetries) {
-          this.currentStaleRetries++;
-          this.transition("capturing", `Stale target detected. Re-perceiving page (retry ${this.currentStaleRetries}/${this.maxStaleRetries})...`);
-          continue;
-        } else {
-          const errorMsg2 = `Stale target: target element '${proposal.targetLocalId}' remained stale after ${this.maxStaleRetries} retry attempts`;
-          this.transition("failed-safe", errorMsg2);
-          const res2 = {
-            success: false,
-            state: "failed-safe",
-            error: errorMsg2,
-            sanitized,
-            proposal,
-            telemetry,
-            stepCount: step,
-            steps: this.stepsTrace
-          };
-          return this.completeWithResult(res2);
-        }
-      }
-      this.recordActionHistory(proposal);
-      const isSuccess = Boolean(execResponse && execResponse.success && execResponse.semanticOutcomeVerified);
-      const stepTrace = {
-        step,
-        captureId: sanitized.captureId,
-        pageGeneration: sanitized.captureId,
-        maskCount: sanitized.maskCount,
-        sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
-        decisionOrigin,
-        proposal,
-        riskDecision: riskLevel,
-        confidenceDecision: "accepted",
-        executed: true,
-        executionResult: {
-          success: execResponse?.success ?? false,
-          staleTarget: execResponse?.staleTarget ?? false,
-          reasonCode: execResponse?.error ? "EXECUTION_FAILED" : "EXECUTION_SUCCESS"
-        },
-        verification: {
-          verified: execResponse?.verification?.verified ?? Boolean(execResponse?.semanticOutcomeVerified),
-          reasonCode: execResponse?.verification?.reasonCode || (isSuccess ? "SEMANTIC_VERIFICATION_SUCCESS" : "SEMANTIC_VERIFICATION_FAILED"),
-          matchedCondition: execResponse?.verification?.matchedCondition,
-          durationMs: execResponse?.verification?.durationMs || 0
-        },
-        networkRequestMade,
-        timings: {
-          tCapture: t1_captureComplete - t0_step,
-          tDetection: t2_detectionComplete - t1_captureComplete,
-          tSanitization: t3_sanitizationValidated - t2_detectionComplete,
-          tReasoning: t4_reasoningReceived - t3_sanitizationValidated,
-          tExecution: t6_actionExecuted - t5_actionValidated,
-          tVerification: t7_stateVerified - t6_actionExecuted,
-          total: Date.now() - t0_step
-        }
-      };
-      this.stepsTrace.push(stepTrace);
-      const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) || /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?|register|registration|apply|application|complete|fill|signup|sign\s+up|form|workflow|survey|questionnaire)\b/i.test(this.currentGoal || "");
-      if (!isSuccess) {
-        const canContinuePerception = execResponse?.success === true && proposal.risk === "safe" && step < maxSteps && isMultiStepGoal;
-        if (canContinuePerception) {
-          console.warn(`[PrivaPilot Coordinator] Step ${step} semantic verification uncertain (${execResponse?.message || "unconfirmed"}); proceeding to next perception cycle...`);
-          this.transition("capturing", `Step ${step} executed. Re-perceiving page state (step ${step + 1}/${maxSteps})...`);
-          continue;
-        }
-        const errorMsg2 = execResponse?.message || "Action execution or semantic verification failed";
-        this.transition("failed-safe", `Execution failed: ${errorMsg2}`);
-        const res2 = {
-          success: false,
-          state: "failed-safe",
-          error: errorMsg2,
-          sanitized,
-          proposal,
-          telemetry,
-          stepCount: step,
-          steps: this.stepsTrace
-        };
-        return this.completeWithResult(res2);
-      }
-      if (!isMultiStepGoal && this.currentTaskContract?.expectedTerminal.kind === "scroll_changed" && proposal.kind === "scroll") {
-        const tFin = Date.now();
-        const telemetry2 = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
-        if (this.listeners.onTelemetryUpdated) {
-          this.listeners.onTelemetryUpdated(telemetry2, this.currentRunId);
-        }
-        this.transition("complete", `Scroll ${proposal.scrollDirection || "down"} executed and verified: navigation complete`);
-        const res2 = {
-          success: true,
-          state: "complete",
-          message: `Scroll ${proposal.scrollDirection || "down"} executed and verified`,
-          sanitized,
-          proposal,
-          telemetry: telemetry2,
-          stepCount: step,
-          steps: this.stepsTrace
-        };
-        return this.completeWithResult(res2);
-      }
-      if (!isMultiStepGoal && this.currentTaskContract?.goalPattern === "click_control" && proposal.kind === "click" && this.currentTaskContract?.structuredIntent?.targetPhrase && !/\b(repeatedly|again|multiple|times|until|loop)\b/i.test(this.currentGoal || "")) {
-        const matchesTarget = targetElement && scoreCandidate(targetElement, this.currentTaskContract.structuredIntent, false).score >= 50;
-        if (matchesTarget) {
+        if (!isMultiStepGoal && this.currentTaskContract?.expectedTerminal.kind === "scroll_changed" && proposal.kind === "scroll") {
           const tFin = Date.now();
           const telemetry2 = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
           if (this.listeners.onTelemetryUpdated) {
             this.listeners.onTelemetryUpdated(telemetry2, this.currentRunId);
           }
-          const targetName = targetElement?.sanitizedName || proposal.targetLocalId || "control";
-          this.transition("complete", `Clicked "${targetName}" successfully: directive complete`);
+          this.transition("complete", `Scroll ${proposal.scrollDirection || "down"} executed and verified: navigation complete`);
           const res2 = {
             success: true,
             state: "complete",
-            message: `Clicked "${targetName}" successfully`,
+            message: `Scroll ${proposal.scrollDirection || "down"} executed and verified`,
             sanitized,
             proposal,
             telemetry: telemetry2,
@@ -21593,22 +21597,56 @@ var RunCoordinator = class {
           };
           return this.completeWithResult(res2);
         }
+        if (!isMultiStepGoal && this.currentTaskContract?.goalPattern === "click_control" && proposal.kind === "click" && this.currentTaskContract?.structuredIntent?.targetPhrase && !/\b(repeatedly|again|multiple|times|until|loop)\b/i.test(this.currentGoal || "")) {
+          const matchesTarget = targetElement && scoreCandidate(targetElement, this.currentTaskContract.structuredIntent, false).score >= 50;
+          if (matchesTarget) {
+            const tFin = Date.now();
+            const telemetry2 = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
+            if (this.listeners.onTelemetryUpdated) {
+              this.listeners.onTelemetryUpdated(telemetry2, this.currentRunId);
+            }
+            const targetName = targetElement?.sanitizedName || proposal.targetLocalId || "control";
+            this.transition("complete", `Clicked "${targetName}" successfully: directive complete`);
+            const res2 = {
+              success: true,
+              state: "complete",
+              message: `Clicked "${targetName}" successfully`,
+              sanitized,
+              proposal,
+              telemetry: telemetry2,
+              stepCount: step,
+              steps: this.stepsTrace
+            };
+            return this.completeWithResult(res2);
+          }
+        }
+        this.currentStaleRetries = 0;
+        if (this.listeners.onStepProgress) {
+          this.listeners.onStepProgress(step, maxSteps, proposal.rationale, this.currentRunId);
+        }
       }
-      this.currentStaleRetries = 0;
-      if (this.listeners.onStepProgress) {
-        this.listeners.onStepProgress(step, maxSteps, proposal.rationale, this.currentRunId);
-      }
+      const errorMsg = `Step budget exhausted (${this.currentMaxSteps} steps) without completing goal`;
+      this.transition("failed-safe", errorMsg);
+      const res = {
+        success: false,
+        state: "failed-safe",
+        error: errorMsg,
+        stepCount: this.currentStep,
+        sanitized: this.currentSanitizedContext || void 0
+      };
+      return this.completeWithResult(res);
+    } catch (loopErr) {
+      const errorMsg = loopErr?.message || "Execution loop encountered an error";
+      console.error("[PrivaPilot Coordinator] Uncaught loop error:", loopErr);
+      this.transition("failed-safe", errorMsg);
+      return this.completeWithResult({
+        success: false,
+        state: "failed-safe",
+        error: errorMsg,
+        stepCount: this.currentStep,
+        steps: this.stepsTrace
+      });
     }
-    const errorMsg = `Step budget exhausted (${this.currentMaxSteps} steps) without completing goal`;
-    this.transition("failed-safe", errorMsg);
-    const res = {
-      success: false,
-      state: "failed-safe",
-      error: errorMsg,
-      stepCount: this.currentStep,
-      sanitized: this.currentSanitizedContext || void 0
-    };
-    return this.completeWithResult(res);
   }
   /**
    * Reports whether the reasoning gateway and a model backend are reachable.
@@ -21750,11 +21788,36 @@ ${detail}`,
     const activeTab = await this.browser.getActiveTab(this.currentTabId);
     const t0 = Date.now();
     this.transition("executing", `Executing approved action '${action.kind}' on ${action.targetLocalId || "page"}`);
-    const execResponse = await this.browser.sendMessageToTab(activeTab.id, {
-      type: "EXECUTE_ACTION",
-      proposal: { ...action, userApproved: true },
-      captureId: sanitized.captureId
-    });
+    let execResponse;
+    try {
+      execResponse = await this.browser.sendMessageToTab(activeTab.id, {
+        type: "EXECUTE_ACTION",
+        proposal: { ...action, userApproved: true },
+        captureId: sanitized.captureId
+      });
+    } catch (execErr) {
+      if (isDisconnectOrNavigationError(execErr)) {
+        if (typeof this.browser.waitForTabReady === "function") {
+          const newTab = await this.browser.waitForTabReady(activeTab.id, 8e3);
+          if (newTab?.url) activeTab.url = newTab.url;
+        }
+        if (typeof this.browser.ensureContentScript === "function") {
+          await this.browser.ensureContentScript(activeTab.id);
+        }
+        await new Promise((r) => setTimeout(r, 500));
+        execResponse = {
+          success: true,
+          semanticOutcomeVerified: true,
+          message: "Approved action caused page navigation"
+        };
+      } else {
+        execResponse = {
+          success: false,
+          semanticOutcomeVerified: false,
+          message: `Approved action failed: ${execErr?.message || "unknown"}`
+        };
+      }
+    }
     if (execResponse && execResponse.staleTarget) {
       const errorMsg = "Protected action aborted: target element mutated or detached after approval. Fresh confirmation required.";
       this.transition("failed-safe", errorMsg);
