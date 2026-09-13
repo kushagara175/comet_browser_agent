@@ -867,7 +867,21 @@ export class VlmReasoningEngine {
         } catch (_) {}
       }
       if (!parsed) {
-        throw new Error('Model output could not be parsed as JSON');
+        // If content was conversational prose/greeting rather than JSON, gracefully wrap as kind: 'answer'
+        const rawText = stripThinkingTags(content || '').trim();
+        if (rawText) {
+          parsed = {
+            actionId: `act_reply_${Date.now()}`,
+            kind: 'answer',
+            confidence: 1.0,
+            risk: 'safe',
+            rationale: rawText.slice(0, 990),
+            reply: rawText,
+            reasoning: extractedThinking || undefined
+          };
+        } else {
+          throw new Error('Model output could not be parsed as JSON');
+        }
       }
     }
 
@@ -888,6 +902,9 @@ export class VlmReasoningEngine {
       if (!parsed.kind) {
         if (parsed.status === 'completed' || parsed.status === 'finished' || parsed.action === 'finish') {
           parsed.kind = 'finish';
+        } else if (parsed.reply || parsed.answer || parsed.message) {
+          parsed.kind = 'answer';
+          if (!parsed.rationale) parsed.rationale = String(parsed.reply || parsed.answer || parsed.message).slice(0, 990);
         } else if (parsed.textToType || parsed.text || parsed.input) {
           parsed.kind = 'type';
         } else if (parsed.targetLocalId || parsed.target || parsed.elementId || parsed.element) {
@@ -895,6 +912,10 @@ export class VlmReasoningEngine {
         } else {
           parsed.kind = 'finish';
         }
+      }
+
+      if (parsed.kind === 'answer' && !parsed.rationale) {
+        parsed.rationale = String(parsed.reply || parsed.answerText || 'Answer formulated').slice(0, 990);
       }
 
       if (!parsed.targetLocalId && (parsed.target || parsed.elementId || parsed.id || parsed.targetId || parsed.element || parsed.elementName)) {
@@ -1044,13 +1065,13 @@ export class VlmReasoningEngine {
 
   private buildSystemPrompt(): string {
     return `
-You are PrivaPilot's Centralized Reasoning Agent for browser automation.
+You are PrivaPilot's Centralized Reasoning Agent for browser automation and conversational assistance.
 You receive a sanitized screenshot (with all sensitive PII intentionally blacked out or blurred) and a compact list of interactive elements with local IDs (e.g. "el_1", "el_2").
 
 Strict Rules:
-1. Return ONLY schema-valid JSON for one single next action.
+1. Return ONLY schema-valid JSON for one single next action or answer.
 2. Target elements using "targetLocalId" ONLY for interaction actions ("click", "type", "select", "hover", "drag_and_drop", "upload_file"). NEVER invent CSS selectors, XPath, or JavaScript.
-3. Classify risk as "safe" (read/navigate/preview/filter/hover/drag/upload/finish) or "protected" (submit/delete/pay/sign).
+3. Classify risk as "safe" (read/navigate/preview/filter/hover/drag/upload/finish/answer) or "protected" (submit/delete/pay/sign).
 4. SEARCH / FILTER / INPUT DIRECTIVE: When the user's goal asks to search, filter, type, fill, enter, write, or set text in a search box or text input (role: "input" or "textarea"), you MUST return kind: "type", target that input's local ID, and set "textToType" to the exact requested text. Do NOT propose "click", "observe", "wait", or a prose plan when the intention is to enter text or filter.
 5. SELECT DIRECTIVE: When selecting an option from a dropdown (role: "select"), you MUST return kind: "select", target that select's local ID, and provide "selectOptionValue" with the desired option value.
 6. HOVER DIRECTIVE: When hovering or inspecting flyouts/dropdown menus, return kind: "hover", and target that element's local ID.
@@ -1058,7 +1079,7 @@ Strict Rules:
 8. FILE UPLOAD DIRECTIVE: When uploading or attaching a file, return kind: "upload_file", set "targetLocalId" to the file input and "fileName" to the file name.
 9. MULTI-STEP REASONING: For compound goals (e.g. "go to X and search Y", "click tab and find Z", "scroll and check count"):
    Execute step 1 (navigation or intermediate click/scroll/hover), observe the updated page state on the next cycle, and continue with the subsequent steps (typing, extracting, or verifying) before proposing "finish". Do NOT propose "finish" prematurely after intermediate navigation clicks.
-10. REASONING & RATIONALE: Provide a detailed step-by-step thinking process in the "reasoning" field explaining what elements you observe on the screen and why you chose this action to advance toward the user's goal. Never answer with conversational prose; choose the single next executable action.
+10. REASONING & RATIONALE: Provide a detailed step-by-step thinking process in the "reasoning" field (or inside <think>...</think> tags) explaining what elements you observe on the screen and why you chose this action or reply to advance toward the user's goal.
 11. Do not return "finish" merely because you have explained what should happen. Use "finish" only when visible page state proves the user's requested browser operation is already complete.
 12. GOAL COMPLETION & PROGRESSION:
    - If the postcondition history (in pageState.postconditionSummary) indicates that the requested action (e.g. typing text into an input, clicking a control) has already been executed in previous steps, or if the user's operational goal has already been achieved: you MUST return kind: "finish" with confidence: 1.0 and a rationale confirming completion. NEVER propose repeating the exact same type or click action that was already executed.
@@ -1067,15 +1088,15 @@ Strict Rules:
    - If the goal was to submit clearance approval and the status already says "Approved": return kind: "finish".
    - If the goal was to filter for a query and the search box already has the query text and table is filtered: return kind: "finish".
    You MUST return kind: "finish" with risk: "safe", confidence: 1.0, and a rationale explaining that the goal has been satisfied. Never re-trigger, repeat, or double-click an action that has already succeeded.
-13. INFORMATION RETRIEVAL / QUESTION ANSWERING: When the user asks for information (e.g. "how many submissions are done", "tell me how many...", "find problem statement..."):
-   - If the current page displays the answer in counters, text, or summaries: return kind: "finish" with a concise rationale stating the answer and evidence.
-   - If the target section/tab (e.g. "Submissions", "Problem Statements") must be opened: return kind: "click" on that tab or link's local ID.
+13. CONVERSATIONAL QUERIES, GREETINGS & INFORMATION RETRIEVAL:
+   - If the user is greeting you ("hi", "hello", "hey"), asking general questions, asking for explanations, or asking about the page without needing an immediate DOM interaction: return kind: "answer" with risk: "safe", confidence: 1.0, and your response in the "reply" or "rationale" field.
+   - If the user asks for on-page info (e.g. "how many submissions are done"): if visible, return kind: "finish" with rationale containing the answer; if on another tab/section, return kind: "click" on that tab or link's local ID to navigate first.
 
 JSON Schema:
 {
   "actionId": "act_1",
   "kind": "click" | "type" | "select" | "scroll" | "hover" | "drag_and_drop" | "upload_file" | "wait" | "finish" | "extract" | "answer",
-  "targetLocalId": "el_1",
+  "targetLocalId": "el_1 (Required for click/type/select/hover/drag/upload)",
   "destinationLocalId": "Optional el_2 when kind is drag_and_drop",
   "confidence": 0.95,
   "risk": "safe" | "protected",
@@ -1083,8 +1104,9 @@ JSON Schema:
   "fileName": "Optional filename when kind is upload_file",
   "selectOptionValue": "Required option value string when kind is select (e.g. 'pending')",
   "scrollDirection": "down" | "up",
-  "reasoning": "Detailed step-by-step thinking process explaining what you observe on page and why this action was chosen",
-  "rationale": "Short explanation",
+  "reasoning": "Detailed step-by-step thinking process explaining what you observe on page and why this action or answer was chosen",
+  "rationale": "Short explanation or summary of action/answer",
+  "reply": "Optional conversational response text when kind is answer or finish",
   "expectedState": "Expected UI change"
 }
 `.trim();

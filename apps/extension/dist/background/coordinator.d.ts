@@ -73,6 +73,7 @@ export interface CoordinatorRunResult {
     readonly success: boolean;
     readonly state: AgentState;
     readonly message?: string;
+    readonly reply?: string;
     readonly error?: string;
     readonly reasoning?: string;
     readonly sanitized?: SanitizedContext;

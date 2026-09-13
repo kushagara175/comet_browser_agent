@@ -98,6 +98,7 @@ export interface CoordinatorRunResult {
   readonly success: boolean;
   readonly state: AgentState;
   readonly message?: string;
+  readonly reply?: string;
   readonly error?: string;
   readonly reasoning?: string;
   readonly sanitized?: SanitizedContext;
@@ -245,6 +246,7 @@ export class RunCoordinator {
   private completeWithResult(res: CoordinatorRunResult): CoordinatorRunResult {
     const finalRes: CoordinatorRunResult = {
       ...res,
+      reply: res.reply || res.proposal?.reply || (res.proposal?.kind === 'answer' ? (res.proposal.rationale || res.message) : undefined),
       reasoning: res.reasoning || res.proposal?.reasoning || this.lastActionProposal?.reasoning || undefined,
       runId: res.runId || this.currentRunId || undefined
     };
@@ -1175,8 +1177,8 @@ export class RunCoordinator {
       }).catch(() => {});
     }
 
-    if (!this.currentTaskContract.supported) {
-      const errorMsg = this.currentTaskContract.abstentionReason || 'Task abstained: Goal is outside closed supported task contracts';
+    if (!this.currentTaskContract.supported && this.currentTaskContract.goalPattern === 'empty') {
+      const errorMsg = this.currentTaskContract.abstentionReason || 'Empty goal: Please provide an instruction';
       this.transition('failed-safe', errorMsg);
       const res: CoordinatorRunResult = {
         runId: this.currentRunId,
@@ -1598,15 +1600,20 @@ export class RunCoordinator {
         (sanitized.pageState as any).postconditionSummary = historyText;
       }
 
-      // Step 3: Local Safe Action Router (Stage D6) vs Server Reasoning
-      const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
+      // Step 3: Server Reasoning is the Central Intelligence, with Stage D6 local resolution for deterministic pure scrolls
+      const isPureScrollDirective = Boolean(this.currentTaskContract?.expectedTerminal.kind === 'scroll_changed') &&
+        !Boolean(this.currentTaskContract?.isMultiStep) &&
+        !/\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?)\b/i.test(this.currentGoal || '');
+
       let proposal: ActionProposal;
       let decisionOrigin: 'local' | 'server' = 'server';
       let networkRequestMade = true;
       let t4_reasoningReceived = Date.now();
 
-      if (localProposal) {
-        proposal = localProposal;
+      const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
+
+      if (localScrollProposal) {
+        proposal = localScrollProposal;
         decisionOrigin = 'local';
         networkRequestMade = false;
         t4_reasoningReceived = Date.now();
@@ -1618,16 +1625,24 @@ export class RunCoordinator {
         try {
           proposal = await this.httpClient.requestReasoningAction(sanitized);
         } catch (err: any) {
-          const errorMsg = `Reasoning server error: ${err.message || 'Request failed'}`;
-          this.transition('failed-safe', errorMsg);
-          const res: CoordinatorRunResult = {
-            success: false,
-            state: 'failed-safe',
-            error: errorMsg,
-            sanitized,
-            stepCount: step
-          };
-          return this.completeWithResult(res);
+          // Fallback to local offline router only if the server is unreachable
+          const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
+          if (localProposal) {
+            proposal = localProposal;
+            decisionOrigin = 'local';
+            networkRequestMade = false;
+          } else {
+            const errorMsg = `Reasoning server error: ${err.message || 'Request failed'}`;
+            this.transition('failed-safe', errorMsg);
+            const res: CoordinatorRunResult = {
+              success: false,
+              state: 'failed-safe',
+              error: errorMsg,
+              sanitized,
+              stepCount: step
+            };
+            return this.completeWithResult(res);
+          }
         }
         t4_reasoningReceived = Date.now();
       }
@@ -1884,12 +1899,17 @@ export class RunCoordinator {
         this.listeners.onActionProposed(proposal, this.currentRunId);
       }
 
-      if (proposal.kind === 'finish') {
+      if (proposal.kind === 'finish' || proposal.kind === 'answer') {
         const terminalCheck = this.currentTaskContract
           ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory)
-          : { satisfied: false, reason: 'No task contract active' };
+          : { satisfied: true, reason: 'Goal completed' };
 
-        if (!terminalCheck.satisfied) {
+        const isAnswerOrConversational = proposal.kind === 'answer' ||
+          Boolean(proposal.reply) ||
+          this.currentTaskContract?.isAnswerGoal ||
+          this.currentTaskContract?.goalPattern === 'conversational_query';
+
+        if (proposal.kind === 'finish' && !terminalCheck.satisfied && !isAnswerOrConversational) {
           const errorMsg = `Task rejected: Model proposed "finish" before required action postconditions were established or verified: ${terminalCheck.reason}`;
           this.transition('failed-safe', errorMsg);
           const stepTrace: E2EStepTrace = {
@@ -1929,7 +1949,8 @@ export class RunCoordinator {
         if (this.listeners.onTelemetryUpdated) {
           this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
         }
-        this.transition('complete', `Task completed: ${proposal.rationale}`);
+        const completionMsg = proposal.reply || proposal.rationale;
+        this.transition('complete', `Task completed: ${completionMsg}`);
         const stepTrace: E2EStepTrace = {
           step,
           captureId: sanitized.captureId,
@@ -1954,7 +1975,7 @@ export class RunCoordinator {
         const res: CoordinatorRunResult = {
           success: true,
           state: 'complete',
-          message: proposal.rationale,
+          message: proposal.reply || proposal.rationale,
           sanitized,
           proposal,
           telemetry,

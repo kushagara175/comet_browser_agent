@@ -1303,39 +1303,87 @@ if (typeof document !== 'undefined') {
         return;
       }
 
-      // 0. Conversational Model Reply (from Chat Endpoint / Local Model)
-      if (res && res.reply) {
-        const maskCount = res.maskCount ?? 0;
-        const elementCount = res.elementCount ?? 0;
+      function getCleanActionLabel(act) {
+        if (!act) return 'Action completed';
+        const kind = (act.kind || '').toLowerCase();
+        if (kind === 'scroll') {
+          const dir = act.direction || (act.scrollDeltaY && act.scrollDeltaY < 0 ? 'up' : 'down');
+          return `Scrolled ${dir}`;
+        }
+        if (kind === 'click') {
+          const target = act.elementText || act.targetName || act.targetLocalId || 'page';
+          return `Clicked ${target.length > 28 ? target.slice(0, 28) + '…' : target}`;
+        }
+        if (kind === 'type') {
+          const text = act.textToType || act.value || '';
+          return text ? `Typed "${text.length > 24 ? text.slice(0, 24) + '…' : text}"` : 'Typed input';
+        }
+        if (kind === 'navigate') {
+          return 'Navigated page';
+        }
+        if (kind === 'key' || kind === 'press') {
+          return `Pressed ${act.key || 'key'}`;
+        }
+        if (kind === 'finish' || kind === 'done') {
+          return 'Completed';
+        }
+        if (kind === 'answer') {
+          return 'Answered';
+        }
+        if (res?.message && res.message.length < 36 && !res.message.toLowerCase().includes('proposal') && !res.message.toLowerCase().includes('verified complete')) {
+          return res.message;
+        }
+        return `${kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : 'Action'} done`;
+      }
+
+      // 0. Conversational Model Reply (from Chat Endpoint / Local Model / Agent Answer)
+      const modelReply = res.reply || res.proposal?.reply || (res.proposal?.kind === 'answer' ? (res.proposal?.rationale || res.message) : null);
+      if (res && modelReply) {
+        const maskCount = res.maskCount ?? res.sanitized?.maskCount ?? 0;
+        const elementCount = res.elementCount ?? res.sanitized?.elementCount ?? (res.sanitized?.elements ? res.sanitized.elements.length : 0);
         // The gateway answers even when no model is behind it. Say so, instead of
         // presenting the offline reasoner's text as if a model had replied.
         const modelDisconnected = res.modelConnected === false;
 
         // Record assistant turn in multi-turn history
-        conversationHistory.push({ role: 'assistant', content: res.reply });
+        conversationHistory.push({ role: 'assistant', content: modelReply });
         if (conversationHistory.length > 20) {
           conversationHistory = conversationHistory.slice(-20);
         }
 
+        const realReasoning = res.reasoning || res.proposal?.reasoning;
         const duration = (res?.telemetry?.serverLatencyMs ? Math.max(1, Math.round(res.telemetry.serverLatencyMs / 1000)) : null) || durationSeconds || 2;
         const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded';
-        const thinkingHtml = renderThinkingAccordion(res.reasoning, duration, { open: wasExpanded });
+        const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: wasExpanded });
 
         const activeSession = chatSessions.find(s => s.id === currentSessionId);
         if (activeSession) {
           if (!activeSession.messages) activeSession.messages = [];
           activeSession.messages.push({
             role: 'agent',
-            text: res.reply,
-            reasoning: res.reasoning,
-            durationSeconds: duration
+            text: modelReply,
+            reasoning: realReasoning,
+            durationSeconds: duration,
+            steps: res.steps
           });
           activeSession.updatedAt = Date.now();
           saveChatSessions();
         }
 
-        const formattedHtml = renderMarkdown(res.reply);
-        const actionSuggestions = extractActionSuggestions(res.reply);
+        const formattedHtml = renderMarkdown(modelReply);
+        const actionSuggestions = extractActionSuggestions(modelReply);
+
+        const executedSteps = res.steps ? res.steps.filter(s => s.executed) : [];
+        const stepsHtml = executedSteps.length > 0 ? `
+          <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 7px;">
+            ${executedSteps.map(s => `
+              <div style="font-size: 10.5px; color: #94a3b8; display: flex; align-items: center; gap: 6px;">
+                <span style="background: rgba(148, 163, 184, 0.15); padding: 1px 5px; border-radius: 4px; font-weight: 600;">Step ${s.step}</span>
+                <span>${escapeHtml(getCleanActionLabel(s.proposal))}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : '';
 
         agentBubble.innerHTML = `
           ${modelDisconnected ? `
@@ -1344,6 +1392,7 @@ if (typeof document !== 'undefined') {
             </div>
           ` : ''}
           ${thinkingHtml}
+          ${stepsHtml}
           <div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 4px;">${formattedHtml}</div>
           ${actionSuggestions.length > 0 ? `
             <div class="chat-action-chips" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;">
@@ -1364,6 +1413,28 @@ if (typeof document !== 'undefined') {
               if (actionGoal) executeGoal(actionGoal);
             });
           });
+        }
+
+        if (res.telemetry) {
+          if (meterClientLatency) meterClientLatency.textContent = `${res.telemetry.clientLatencyMs} ms`;
+          if (meterServerLatency) meterServerLatency.textContent = `${res.telemetry.serverLatencyMs} ms`;
+          if (meterActionLatency) meterActionLatency.textContent = `${res.telemetry.totalLatencyMs - res.telemetry.clientLatencyMs - res.telemetry.serverLatencyMs} ms`;
+          if (meterTotalLatency) meterTotalLatency.textContent = `${res.telemetry.totalLatencyMs} ms`;
+          addAuditEntry('PERF', `Measured round-trip: ${res.telemetry.totalLatencyMs}ms (Client: ${res.telemetry.clientLatencyMs}ms, Server: ${res.telemetry.serverLatencyMs}ms)`, 'pass');
+        }
+
+        const sanitized = res.sanitized || lastSanitizedContext;
+        if (sanitized) {
+          lastSanitizedContext = sanitized;
+          cachedSanitizedScreenshot = sanitized.sanitizedScreenshotDataUrl || '';
+          if (inspectorSanitizedImage && cachedSanitizedScreenshot) {
+            inspectorSanitizedImage.src = cachedSanitizedScreenshot;
+          }
+          if (statElementsCount) statElementsCount.textContent = String(elementCount);
+          if (statMasksCount) statMasksCount.textContent = String(maskCount);
+          renderMaskBreakdown(sanitized.elements || [], maskCount);
+          updatePayloadDisplay(sanitized, currentGoalText);
+          addAuditEntry('MASK', `Rendered ${maskCount} opaque privacy masks locally`, 'mask');
         }
 
         setAgentStatus(modelDisconnected ? 'failed-safe' : 'idle');
@@ -1411,36 +1482,6 @@ if (typeof document !== 'undefined') {
       // 4. Verified Complete (Clean Minimal Tick Mark Action Pill)
       const action = res.proposal || { kind: 'click', rationale: res.message || 'Action executed successfully', confidence: 0.95, risk: 'safe' };
       const sanitized = res.sanitized || lastSanitizedContext;
-
-      function getCleanActionLabel(act) {
-        if (!act) return 'Action completed';
-        const kind = (act.kind || '').toLowerCase();
-        if (kind === 'scroll') {
-          const dir = act.direction || (act.scrollDeltaY && act.scrollDeltaY < 0 ? 'up' : 'down');
-          return `Scrolled ${dir}`;
-        }
-        if (kind === 'click') {
-          const target = act.elementText || act.targetName || act.targetLocalId || 'page';
-          return `Clicked ${target.length > 28 ? target.slice(0, 28) + '…' : target}`;
-        }
-        if (kind === 'type') {
-          const text = act.textToType || act.value || '';
-          return text ? `Typed "${text.length > 24 ? text.slice(0, 24) + '…' : text}"` : 'Typed input';
-        }
-        if (kind === 'navigate') {
-          return 'Navigated page';
-        }
-        if (kind === 'key' || kind === 'press') {
-          return `Pressed ${act.key || 'key'}`;
-        }
-        if (kind === 'finish' || kind === 'done') {
-          return 'Completed';
-        }
-        if (res?.message && res.message.length < 36 && !res.message.toLowerCase().includes('proposal') && !res.message.toLowerCase().includes('verified complete')) {
-          return res.message;
-        }
-        return `${kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : 'Action'} done`;
-      }
 
       const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded';
       const actionLabel = getCleanActionLabel(action);
@@ -1622,11 +1663,9 @@ if (typeof document !== 'undefined') {
         return;
       }
 
-      // Route imperative browser requests into the execution loop. This recognizes
-      // polite natural phrasing such as "can you fill..." instead of sending it to
-      // read-only chat, where the model can only describe what it would do.
-      const isExplicitAction = isBrowserActionRequest(goalText);
-
+      // Route all natural requests on an active page into the unified perception loop
+      // (START_AGENT_RUN). The local privacy layer sanitizes the page, and the central
+      // reasoning model decides whether to return an action tool or a conversational answer.
       const isRestrictedTab = Boolean(
         activeTabUrl && (
           activeTabUrl.textContent?.startsWith('chrome://') ||
@@ -1638,21 +1677,19 @@ if (typeof document !== 'undefined') {
       // Inspect page context by default whenever on an active tab, unless restricted
       const needsPageContext = !isRestrictedTab && Boolean(currentActiveTabId);
 
-      const messageType = isExplicitAction
+      const messageType = needsPageContext
         ? 'START_AGENT_RUN'
-        : needsPageContext
-          ? 'CHAT_WITH_PAGE'
-          : 'GENERAL_CHAT';
-      const payloadKey = isExplicitAction ? 'goal' : 'message';
+        : 'GENERAL_CHAT';
+      const payloadKey = needsPageContext ? 'goal' : 'message';
 
-      setAgentStatus(isExplicitAction || needsPageContext ? 'capturing' : 'reasoning');
+      setAgentStatus(needsPageContext ? 'capturing' : 'reasoning');
 
       // Light up the live ambient gradient border on the target page
       if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
         chrome.tabs.sendMessage(currentActiveTabId, {
           type: 'SET_ACTIVE_BORDER',
           active: true,
-          label: isExplicitAction ? 'PrivaPilot Agent Active' : 'PrivaPilot Inspecting Page'
+          label: 'PrivaPilot Active'
         }).catch?.(() => {});
       }
 

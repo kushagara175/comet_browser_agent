@@ -132,13 +132,19 @@ export function resolveTaskContract(goal) {
     }
     const isMultiStep = /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload)\b/i.test(g) ||
         (/(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many)/i.test(g));
-    // Explicit out-of-domain rejection
+    // Explicit conversational / out-of-domain query handling - pass to LLM as answer goal
     if (/(?:poem|story|recipe|joke|capital of|calculate|solve math|2\+2|weather|song|quantum)/i.test(g)) {
         return {
-            supported: false,
-            goalPattern: 'out_of_domain',
-            expectedTerminal: { kind: 'status_changed' },
-            abstentionReason: 'UNSUPPORTED_TASK_GOAL: Goal is outside closed supported browser task contracts; abstaining safely.'
+            supported: true,
+            goalPattern: 'conversational_query',
+            mode: 'answer',
+            isAnswerGoal: true,
+            expectedTerminal: { kind: 'answer_supported' },
+            structuredIntent: {
+                intent: 'observe',
+                targetPhrase: g,
+                targetTokens: tokenizeSemanticText(g)
+            }
         };
     }
     // 1a. Information retrieval & question-answering goals (e.g. "how many submissions are done", "tell me how many submissions are completed", "see for ex how many submissions...")
@@ -494,6 +500,7 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
     'pressEnter',
     'extractedData',
     'answerText',
+    'reply',
     'reasoning',
     'thought'
 ]);
@@ -631,6 +638,15 @@ export function validateActionProposal(proposal, validElements) {
         }
         if (hasProhibitedScriptPattern(proposal.reasoning) || hasProhibitedUrlPattern(proposal.reasoning)) {
             return { isValid: false, errorMessage: 'reasoning contains prohibited script or URL patterns' };
+        }
+    }
+    // 6c. reply
+    if (proposal.reply !== undefined) {
+        if (typeof proposal.reply !== 'string' || proposal.reply.length > 5000) {
+            return { isValid: false, errorMessage: 'Field "reply" must be a string up to 5000 characters' };
+        }
+        if (hasProhibitedScriptPattern(proposal.reply) || hasProhibitedUrlPattern(proposal.reply)) {
+            return { isValid: false, errorMessage: 'reply contains prohibited script or URL patterns' };
         }
     }
     // 7. expectedState

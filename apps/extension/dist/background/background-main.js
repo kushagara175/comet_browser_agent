@@ -14445,10 +14445,16 @@ function resolveTaskContract(goal) {
   const isMultiStep = /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload)\b/i.test(g) || /(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many)/i.test(g);
   if (/(?:poem|story|recipe|joke|capital of|calculate|solve math|2\+2|weather|song|quantum)/i.test(g)) {
     return {
-      supported: false,
-      goalPattern: "out_of_domain",
-      expectedTerminal: { kind: "status_changed" },
-      abstentionReason: "UNSUPPORTED_TASK_GOAL: Goal is outside closed supported browser task contracts; abstaining safely."
+      supported: true,
+      goalPattern: "conversational_query",
+      mode: "answer",
+      isAnswerGoal: true,
+      expectedTerminal: { kind: "answer_supported" },
+      structuredIntent: {
+        intent: "observe",
+        targetPhrase: g,
+        targetTokens: tokenizeSemanticText(g)
+      }
     };
   }
   const isQuestionOrRetrieval = /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:about|how|what|the)|find\s+.*?\s+and\s+tell)/i.test(g);
@@ -14773,6 +14779,7 @@ var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "pressEnter",
   "extractedData",
   "answerText",
+  "reply",
   "reasoning",
   "thought"
 ]);
@@ -14896,6 +14903,14 @@ function validateActionProposal(proposal, validElements) {
     }
     if (hasProhibitedScriptPattern(proposal.reasoning) || hasProhibitedUrlPattern(proposal.reasoning)) {
       return { isValid: false, errorMessage: "reasoning contains prohibited script or URL patterns" };
+    }
+  }
+  if (proposal.reply !== void 0) {
+    if (typeof proposal.reply !== "string" || proposal.reply.length > 5e3) {
+      return { isValid: false, errorMessage: 'Field "reply" must be a string up to 5000 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.reply) || hasProhibitedUrlPattern(proposal.reply)) {
+      return { isValid: false, errorMessage: "reply contains prohibited script or URL patterns" };
     }
   }
   if (proposal.expectedState !== void 0) {
@@ -19485,6 +19500,7 @@ var RunCoordinator = class {
   completeWithResult(res) {
     const finalRes = {
       ...res,
+      reply: res.reply || res.proposal?.reply || (res.proposal?.kind === "answer" ? res.proposal.rationale || res.message : void 0),
       reasoning: res.reasoning || res.proposal?.reasoning || this.lastActionProposal?.reasoning || void 0,
       runId: res.runId || this.currentRunId || void 0
     };
@@ -20196,8 +20212,8 @@ var RunCoordinator = class {
       }).catch(() => {
       });
     }
-    if (!this.currentTaskContract.supported) {
-      const errorMsg = this.currentTaskContract.abstentionReason || "Task abstained: Goal is outside closed supported task contracts";
+    if (!this.currentTaskContract.supported && this.currentTaskContract.goalPattern === "empty") {
+      const errorMsg = this.currentTaskContract.abstentionReason || "Empty goal: Please provide an instruction";
       this.transition("failed-safe", errorMsg);
       const res = {
         runId: this.currentRunId,
@@ -20564,13 +20580,14 @@ var RunCoordinator = class {
         const historyText = this.actionHistory.map((a, idx) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || "page"}" (${a.rationale || "executed"})`).join("; ");
         sanitized.pageState.postconditionSummary = historyText;
       }
-      const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
+      const isPureScrollDirective = Boolean(this.currentTaskContract?.expectedTerminal.kind === "scroll_changed") && !Boolean(this.currentTaskContract?.isMultiStep) && !/\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?)\b/i.test(this.currentGoal || "");
       let proposal;
       let decisionOrigin = "server";
       let networkRequestMade = true;
       let t4_reasoningReceived = Date.now();
-      if (localProposal) {
-        proposal = localProposal;
+      const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
+      if (localScrollProposal) {
+        proposal = localScrollProposal;
         decisionOrigin = "local";
         networkRequestMade = false;
         t4_reasoningReceived = Date.now();
@@ -20581,16 +20598,23 @@ var RunCoordinator = class {
         try {
           proposal = await this.httpClient.requestReasoningAction(sanitized);
         } catch (err) {
-          const errorMsg2 = `Reasoning server error: ${err.message || "Request failed"}`;
-          this.transition("failed-safe", errorMsg2);
-          const res2 = {
-            success: false,
-            state: "failed-safe",
-            error: errorMsg2,
-            sanitized,
-            stepCount: step
-          };
-          return this.completeWithResult(res2);
+          const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
+          if (localProposal) {
+            proposal = localProposal;
+            decisionOrigin = "local";
+            networkRequestMade = false;
+          } else {
+            const errorMsg2 = `Reasoning server error: ${err.message || "Request failed"}`;
+            this.transition("failed-safe", errorMsg2);
+            const res2 = {
+              success: false,
+              state: "failed-safe",
+              error: errorMsg2,
+              sanitized,
+              stepCount: step
+            };
+            return this.completeWithResult(res2);
+          }
         }
         t4_reasoningReceived = Date.now();
       }
@@ -20809,9 +20833,10 @@ var RunCoordinator = class {
       if (this.listeners.onActionProposed) {
         this.listeners.onActionProposed(proposal, this.currentRunId);
       }
-      if (proposal.kind === "finish") {
-        const terminalCheck = this.currentTaskContract ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory) : { satisfied: false, reason: "No task contract active" };
-        if (!terminalCheck.satisfied) {
+      if (proposal.kind === "finish" || proposal.kind === "answer") {
+        const terminalCheck = this.currentTaskContract ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory) : { satisfied: true, reason: "Goal completed" };
+        const isAnswerOrConversational = proposal.kind === "answer" || Boolean(proposal.reply) || this.currentTaskContract?.isAnswerGoal || this.currentTaskContract?.goalPattern === "conversational_query";
+        if (proposal.kind === "finish" && !terminalCheck.satisfied && !isAnswerOrConversational) {
           const errorMsg2 = `Task rejected: Model proposed "finish" before required action postconditions were established or verified: ${terminalCheck.reason}`;
           this.transition("failed-safe", errorMsg2);
           const stepTrace3 = {
@@ -20850,7 +20875,8 @@ var RunCoordinator = class {
         if (this.listeners.onTelemetryUpdated) {
           this.listeners.onTelemetryUpdated(telemetry2, this.currentRunId);
         }
-        this.transition("complete", `Task completed: ${proposal.rationale}`);
+        const completionMsg = proposal.reply || proposal.rationale;
+        this.transition("complete", `Task completed: ${completionMsg}`);
         const stepTrace2 = {
           step,
           captureId: sanitized.captureId,
@@ -20874,7 +20900,7 @@ var RunCoordinator = class {
         const res2 = {
           success: true,
           state: "complete",
-          message: proposal.rationale,
+          message: proposal.reply || proposal.rationale,
           sanitized,
           proposal,
           telemetry: telemetry2,
