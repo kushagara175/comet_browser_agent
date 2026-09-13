@@ -2489,6 +2489,11 @@
       if (message?.type !== "EXTRACT_DOM_SNAPSHOT" && message?.type !== "EXECUTE_ACTION" && message?.type !== "CLEAR_OVERLAYS" && message?.type !== "FILL_FORM_FIELDS" && message?.type !== "UPLOAD_FILE" && message?.type !== "SET_ACTIVE_BORDER") {
         return false;
       }
+      if (typeof window !== "undefined" && window.top && window !== window.top) {
+        if (message?.type === "EXTRACT_DOM_SNAPSHOT" || message?.type === "EXECUTE_ACTION" || message?.type === "FILL_FORM_FIELDS") {
+          return false;
+        }
+      }
       handleMessage(message).then(sendResponse).catch((err) => {
         sendResponse({ success: false, error: err.message });
       });

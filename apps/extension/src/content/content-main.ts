@@ -76,6 +76,18 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return false;
     }
 
+    // Only the top-level window must extract the page DOM and manage global overlays!
+    // Subframes/iframes (e.g. YouTube embeds, tracking iframes) must never hijack page perception.
+    if (typeof window !== 'undefined' && window.top && window !== window.top) {
+      if (
+        message?.type === 'EXTRACT_DOM_SNAPSHOT' ||
+        message?.type === 'EXECUTE_ACTION' ||
+        message?.type === 'FILL_FORM_FIELDS'
+      ) {
+        return false;
+      }
+    }
+
     handleMessage(message).then(sendResponse).catch((err) => {
       sendResponse({ success: false, error: err.message });
     });

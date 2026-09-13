@@ -136,7 +136,7 @@ export class WebExtensionAdapter {
                 const timer = setTimeout(() => {
                     reject(new Error('Content script did not respond within 7000ms'));
                 }, 7000);
-                api.tabs.sendMessage(tabId, message, (response) => {
+                api.tabs.sendMessage(tabId, message, { frameId: 0 }, (response) => {
                     clearTimeout(timer);
                     if (api.runtime.lastError) {
                         reject(new Error(api.runtime.lastError.message));
@@ -173,7 +173,7 @@ export class WebExtensionAdapter {
         try {
             const ping = await new Promise((resolve) => {
                 const timer = setTimeout(() => resolve(false), 600);
-                api.tabs.sendMessage(tabId, { type: 'CLEAR_OVERLAYS' }, (res) => {
+                api.tabs.sendMessage(tabId, { type: 'CLEAR_OVERLAYS' }, { frameId: 0 }, (res) => {
                     clearTimeout(timer);
                     if (api.runtime.lastError || !res)
                         resolve(false);
@@ -185,11 +185,11 @@ export class WebExtensionAdapter {
                 return true;
         }
         catch (_) { }
-        // Inject content script programmatically
+        // Inject content script programmatically into top-level document
         if (api.scripting && typeof api.scripting.executeScript === 'function') {
             try {
                 await api.scripting.executeScript({
-                    target: { tabId },
+                    target: { tabId, allFrames: false },
                     files: ['dist/content/content-main.js']
                 });
                 await new Promise((r) => setTimeout(r, 250));

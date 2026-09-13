@@ -1572,36 +1572,20 @@ export class RunCoordinator {
       }
 
       if (!domResponse || !domResponse.success) {
-        const isActionDirective = /\b(?:click|type|select|press|submit|navigate|go\s+to|open|fill|scroll)\b/i.test(goal);
-        if (!isActionDirective) {
-          console.warn('[PrivaPilot Coordinator] DOM snapshot unavailable, answering query with reasoning model directly.');
-          this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Synthesizing answer with reasoning model`);
-          const chatRes = await this.httpClient.requestGeneralChat(goal);
-          const answerAction: ActionProposal = {
-            actionId: `act_reply_${Date.now()}`,
-            kind: 'answer' as any,
-            confidence: 0.98,
-            risk: 'safe',
-            rationale: chatRes.reply,
-            message: chatRes.reply,
-            reply: chatRes.reply,
-            reasoning: chatRes.reasoning || 'Synthesized answer directly using reasoning model.',
-            expectedPostcondition: { kind: 'status_changed' }
-          };
-          this.transition('complete', 'Responded to user request');
-          return this.completeWithResult({
-            success: true,
-            state: 'complete',
-            reply: chatRes.reply,
-            message: chatRes.reply,
-            reasoning: chatRes.reasoning,
-            proposal: answerAction,
-            stepCount: step,
-            steps: []
-          });
+        if (typeof this.browser.ensureContentScript === 'function') {
+          try {
+            await this.browser.ensureContentScript(activeTab.id);
+            await new Promise((r) => setTimeout(r, 400));
+            domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+              type: 'EXTRACT_DOM_SNAPSHOT',
+              captureId
+            });
+          } catch (_) {}
         }
+      }
 
-        const errorMsg = 'Failed to extract DOM snapshot from content script. Please reload the tab.';
+      if (!domResponse || !domResponse.success) {
+        const errorMsg = 'Could not extract page elements from webpage. Please reload the target tab (Cmd+R / F5) so PrivaPilot can connect and perceive the page.';
         this.transition('failed-safe', errorMsg);
         const res: CoordinatorRunResult = {
           success: false,
