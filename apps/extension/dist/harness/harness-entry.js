@@ -15516,7 +15516,7 @@ as ORT format: ${n}`);
   }
 
   // src/sanitizer/mask-renderer.ts
-  var MaskRenderer = class {
+  var MaskRenderer = class _MaskRenderer {
     /**
      * Applies irreversible privacy masks and real face blurs directly onto the screenshot canvas.
      *
@@ -15527,7 +15527,7 @@ as ORT format: ${n}`);
      * 4. 100% opaque deep-slate blackouts for credentials, PII, payment data, and uninspectable surfaces.
      * 5. Per-region forensic audit records.
      */
-    static renderMasks(imageCanvas, regions) {
+    static renderMasks(imageCanvas, regions, interactiveElements, viewport) {
       const ctx = imageCanvas.getContext("2d");
       if (!ctx) {
         throw new Error("Canvas 2D context unavailable for sanitization rendering");
@@ -15744,6 +15744,14 @@ as ORT format: ${n}`);
           });
         }
       }
+      if (interactiveElements && interactiveElements.length > 0) {
+        _MaskRenderer.renderSetOfMarks(
+          imageCanvas,
+          interactiveElements,
+          viewport?.width || 1280,
+          viewport?.height || 800
+        );
+      }
       let dataUrl;
       if (typeof imageCanvas.toDataURL === "function") {
         dataUrl = imageCanvas.toDataURL("image/png");
@@ -15776,6 +15784,62 @@ as ORT format: ${n}`);
         renderedMaskCount: maskCount,
         regionRecords
       };
+    }
+    /**
+     * Set-of-Marks (SOM) visual labeling overlay renderer.
+     * Places clear, high-contrast badges (e.g. "1", "2") corresponding to "el_1", "el_2"
+     * on the sanitized screenshot canvas.
+     */
+    static renderSetOfMarks(imageCanvas, elements, viewportWidth = 1280, viewportHeight = 800) {
+      if (!elements || elements.length === 0) return;
+      const ctx = imageCanvas.getContext("2d");
+      if (!ctx) return;
+      const canvasWidth = imageCanvas.width || 1280;
+      const canvasHeight = imageCanvas.height || 720;
+      const scaleX = canvasWidth / (viewportWidth || 1280);
+      const scaleY = canvasHeight / (viewportHeight || 800);
+      ctx.save();
+      const candidates = elements.slice(0, 60);
+      for (const el2 of candidates) {
+        const localId = el2.localId || "";
+        const numMatch = localId.match(/(\d+)$/);
+        const label = numMatch ? numMatch[1] : localId.replace(/^el_/, "");
+        if (!label) continue;
+        let x = 0;
+        let y = 0;
+        if (el2.boundingBox && el2.boundingBox.width > 0 && el2.boundingBox.height > 0) {
+          x = Math.round(el2.boundingBox.x * scaleX);
+          y = Math.round(el2.boundingBox.y * scaleY);
+        } else if (Array.isArray(el2.coarseBounds) && el2.coarseBounds.length === 4) {
+          x = Math.round(el2.coarseBounds[0] * canvasWidth);
+          y = Math.round(el2.coarseBounds[1] * canvasHeight);
+        } else {
+          continue;
+        }
+        x = Math.max(0, Math.min(canvasWidth - 32, x));
+        y = Math.max(0, Math.min(canvasHeight - 16, y));
+        ctx.font = "bold 10px sans-serif";
+        const textWidth = Math.max(10, ctx.measureText ? ctx.measureText(label).width : 10);
+        const badgeWidth = textWidth + 6;
+        const badgeHeight = 13;
+        const badgeY = y >= badgeHeight ? y - 1 : y + 1;
+        const badgeX = Math.min(x, canvasWidth - badgeWidth - 2);
+        ctx.fillStyle = "#0284c7";
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1;
+        if (typeof ctx.roundRect === "function") {
+          ctx.beginPath();
+          ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 3);
+          ctx.fill();
+          ctx.stroke();
+        } else {
+          ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight);
+          ctx.strokeRect(badgeX, badgeY, badgeWidth, badgeHeight);
+        }
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(label, badgeX + 3, badgeY + 10);
+      }
+      ctx.restore();
     }
   };
 
@@ -16230,7 +16294,12 @@ as ORT format: ${n}`);
           }
         }
         workingCanvas = imageCanvas;
-        const renderResult = MaskRenderer.renderMasks(imageCanvas, visibleRegions);
+        const renderResult = MaskRenderer.renderMasks(
+          imageCanvas,
+          visibleRegions,
+          snapshot.interactiveElements,
+          { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight }
+        );
         sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
         renderedCount = renderResult.renderedMaskCount;
         regionRecords = renderResult.regionRecords;
@@ -16261,7 +16330,12 @@ as ORT format: ${n}`);
         } catch (_) {
         }
         workingCanvas = canvas;
-        const renderResult = MaskRenderer.renderMasks(canvas, visibleRegions);
+        const renderResult = MaskRenderer.renderMasks(
+          canvas,
+          visibleRegions,
+          snapshot.interactiveElements,
+          { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight }
+        );
         sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
         renderedCount = renderResult.renderedMaskCount;
         regionRecords = renderResult.regionRecords;

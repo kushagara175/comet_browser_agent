@@ -730,6 +730,47 @@ export class VlmReasoningEngine {
             if (parsed.exploration && typeof parsed.exploration === 'object' && !parsed.kind) {
                 parsed = { ...parsed.exploration, ...parsed };
             }
+            // If model returned an array of actions or batch
+            if (Array.isArray(parsed.actions) && !parsed.batchActions) {
+                parsed.batchActions = parsed.actions;
+            }
+            if (Array.isArray(parsed.batchActions) && parsed.batchActions.length > 0) {
+                parsed.kind = 'batch';
+                parsed.batchActions = parsed.batchActions.map((sub, idx) => {
+                    let s = typeof sub === 'object' && sub !== null ? { ...sub } : { kind: 'click' };
+                    if (!s.actionId)
+                        s.actionId = `act_sub_${idx + 1}_${Date.now()}`;
+                    if (!s.kind) {
+                        if (s.textToType || s.text || s.input)
+                            s.kind = 'type';
+                        else
+                            s.kind = 'click';
+                    }
+                    if (!s.targetLocalId && (s.target || s.elementId || s.element || s.id)) {
+                        s.targetLocalId = String(s.target || s.elementId || s.element || s.id);
+                    }
+                    if (s.text && !s.textToType)
+                        s.textToType = String(s.text);
+                    if (s.value && !s.textToType && s.kind === 'type')
+                        s.textToType = String(s.value);
+                    if (s.targetLocalId && !payload.elements.some((e) => e.localId === s.targetLocalId)) {
+                        const rawTarget = s.targetLocalId.trim().toLowerCase();
+                        const found = payload.elements.find((e) => e.localId.toLowerCase() === rawTarget || e.sanitizedName.toLowerCase().includes(rawTarget));
+                        if (found)
+                            s.targetLocalId = found.localId;
+                    }
+                    return s;
+                });
+            }
+            // Handle interactive slot-filling normalization
+            if (parsed.kind === 'ask_user' || parsed.kind === 'slot_fill') {
+                parsed.kind = 'request_user_input';
+            }
+            if (parsed.kind === 'request_user_input') {
+                if (!parsed.userInputPrompt && (parsed.prompt || parsed.question || parsed.message)) {
+                    parsed.userInputPrompt = String(parsed.prompt || parsed.question || parsed.message).slice(0, 500);
+                }
+            }
             // If kind is missing, infer kind from fields
             if (!parsed.kind) {
                 if (parsed.status === 'completed' || parsed.status === 'finished' || parsed.action === 'finish') {
@@ -911,12 +952,31 @@ Strict Rules:
 13. CONVERSATIONAL QUERIES, GREETINGS & INFORMATION RETRIEVAL:
    - If the user is greeting you ("hi", "hello", "hey"), asking general questions, asking for explanations, or asking about the page without needing an immediate DOM interaction: return kind: "answer" with risk: "safe", confidence: 1.0, and your response in the "reply" or "rationale" field.
    - If the user asks for on-page info (e.g. "how many submissions are done"): if visible, return kind: "finish" with rationale containing the answer; if on another tab/section, return kind: "click" on that tab or link's local ID to navigate first.
+14. SET-OF-MARKS (SOM) VISUAL GROUNDING:
+   - The sanitized screenshot includes high-contrast visual numbered mark badges (e.g. [1], [2], [3]) drawn directly on interactive controls.
+   - The badge number corresponds directly to the numeric suffix of targetLocalId (badge 1 is el_1, badge 2 is el_2, etc.). Use these visual marks to accurately locate controls on the visual viewport.
+15. MULTI-ACTION BATCH DIRECTIVE (HIGHLY RECOMMENDED FOR MULTI-STEP FORMS):
+   - When a form requires filling multiple fields and/or clicking a button (e.g. Type into el_1, Type into el_3, then Click el_2 to advance), return kind: "batch" with a list of atomic actions in "batchActions":
+     {
+       "actionId": "act_batch_1",
+       "kind": "batch",
+       "batchActions": [
+         { "actionId": "act_1", "kind": "type", "targetLocalId": "el_1", "textToType": "Alice" },
+         { "actionId": "act_2", "kind": "click", "targetLocalId": "el_2" }
+       ],
+       "confidence": 0.95,
+       "risk": "safe",
+       "rationale": "Fill input and proceed to next step"
+     }
+16. INTERACTIVE SLOT-FILLING DIRECTIVE (FOR MISSING USER DATA):
+   - If a multi-step form requires user information that was NOT provided in the user's prompt (such as a GitHub URL, email address, custom field, or password), do NOT guess, hallucinate, or fail.
+   - Return kind: "request_user_input", set "targetLocalId" to the input field, and provide "userInputPrompt" explaining clearly what data is required. The user will be prompted locally in the sidepanel and execution will smoothly resume.
 
 JSON Schema:
 {
   "actionId": "act_1",
-  "kind": "click" | "type" | "select" | "scroll" | "hover" | "drag_and_drop" | "upload_file" | "wait" | "finish" | "extract" | "answer",
-  "targetLocalId": "el_1 (Required for click/type/select/hover/drag/upload)",
+  "kind": "click" | "type" | "select" | "scroll" | "hover" | "drag_and_drop" | "upload_file" | "wait" | "batch" | "request_user_input" | "finish" | "extract" | "answer",
+  "targetLocalId": "el_1 (Required for click/type/select/hover/drag/upload/request_user_input)",
   "destinationLocalId": "Optional el_2 when kind is drag_and_drop",
   "confidence": 0.95,
   "risk": "safe" | "protected",
@@ -924,6 +984,11 @@ JSON Schema:
   "fileName": "Optional filename when kind is upload_file",
   "selectOptionValue": "Required option value string when kind is select (e.g. 'pending')",
   "scrollDirection": "down" | "up",
+  "userInputPrompt": "Optional prompt text when kind is request_user_input asking user for missing information",
+  "batchActions": [
+    { "actionId": "act_sub_1", "kind": "type", "targetLocalId": "el_1", "textToType": "..." },
+    { "actionId": "act_sub_2", "kind": "click", "targetLocalId": "el_2" }
+  ],
   "reasoning": "Detailed step-by-step thinking process explaining what you observe on page and why this action or answer was chosen",
   "rationale": "Short explanation or summary of action/answer",
   "reply": "Optional conversational response text when kind is answer or finish",

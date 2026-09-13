@@ -431,6 +431,14 @@ export class ActionExecutor {
           }
         }
 
+        // Stagehand pattern: Dispatch synthetic blur event for modern SPAs to trigger field validation
+        const FocusEventCtor = win?.FocusEvent || (typeof FocusEvent !== 'undefined' ? FocusEvent : null);
+        if (FocusEventCtor) {
+          try {
+            targetEl.dispatchEvent(new FocusEventCtor('blur', { bubbles: false, cancelable: false, composed: true }));
+          } catch (_) {}
+        }
+
         return {
           actionId: proposal.actionId,
           success: true,

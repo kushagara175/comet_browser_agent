@@ -251,3 +251,110 @@ test('Action Schema Validation - Validates hover, drag_and_drop, upload_file, an
   };
   assert.strictEqual(validateActionProposal(invalidTab).isValid, false);
 });
+
+test('Protocol: Multi-Action Batch and Interactive Slot-Filling schema validation', async () => {
+  const { validateActionProposal, classifyActionRisk } = await import('../packages/protocol/dist/index.js');
+
+  const contextElements = [
+    { localId: 'el_1', role: 'input', sanitizedName: 'First Name', coarseBounds: [0, 0, 0.2, 0.05], state: ['visible', 'enabled'], actionCapabilities: ['type'] },
+    { localId: 'el_2', role: 'button', sanitizedName: 'Next Step', coarseBounds: [0, 0.1, 0.2, 0.05], state: ['visible', 'enabled'], actionCapabilities: ['click'] },
+    { localId: 'el_3', role: 'input', sanitizedName: 'Email Address', coarseBounds: [0, 0.2, 0.2, 0.05], state: ['visible', 'enabled'], actionCapabilities: ['type'] },
+    { localId: 'el_pay', role: 'button', sanitizedName: 'Submit Payment', coarseBounds: [0, 0.3, 0.2, 0.05], state: ['visible', 'enabled'], actionCapabilities: ['click'] }
+  ];
+
+  // 1. Valid Batch Action
+  const validBatch = {
+    actionId: 'act_batch_1',
+    kind: 'batch',
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Fill name and click Next',
+    batchActions: [
+      { actionId: 'act_sub_1', kind: 'type', targetLocalId: 'el_1', textToType: 'Kushagra' },
+      { actionId: 'act_sub_2', kind: 'click', targetLocalId: 'el_2' }
+    ]
+  };
+  const batchRes = validateActionProposal(validBatch, contextElements);
+  assert.strictEqual(batchRes.isValid, true, 'Valid batch proposal must pass validation');
+  assert.strictEqual(classifyActionRisk(validBatch), 'safe');
+
+  // 2. Batch with Unknown Sub-action Property (Closed Schema)
+  const invalidPropBatch = {
+    actionId: 'act_batch_2',
+    kind: 'batch',
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Batch with unknown key',
+    batchActions: [
+      { actionId: 'act_sub_1', kind: 'click', targetLocalId: 'el_2', unknownProp: 'injected' }
+    ]
+  };
+  assert.strictEqual(validateActionProposal(invalidPropBatch, contextElements).isValid, false);
+
+  // 3. Batch with Target Missing from Context Elements
+  const missingTargetBatch = {
+    actionId: 'act_batch_3',
+    kind: 'batch',
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Batch with missing target',
+    batchActions: [
+      { actionId: 'act_sub_1', kind: 'click', targetLocalId: 'el_nonexistent' }
+    ]
+  };
+  assert.strictEqual(validateActionProposal(missingTargetBatch, contextElements).isValid, false);
+
+  // 4. Batch Risk Classification: Escalates to Protected if sub-action is protected
+  const protectedBatch = {
+    actionId: 'act_batch_4',
+    kind: 'batch',
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Fill and submit payment',
+    batchActions: [
+      { actionId: 'act_sub_1', kind: 'type', targetLocalId: 'el_1', textToType: 'User' },
+      { actionId: 'act_sub_2', kind: 'click', targetLocalId: 'el_pay', rationale: 'Submit payment' }
+    ]
+  };
+  assert.strictEqual(classifyActionRisk(protectedBatch), 'protected');
+
+  // 5. Batch Risk Classification: Escalates to Blocked if sub-action targets password/token
+  const blockedBatch = {
+    actionId: 'act_batch_5',
+    kind: 'batch',
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Attempt password fill in batch',
+    batchActions: [
+      { actionId: 'act_sub_1', kind: 'type', targetLocalId: 'password_field', textToType: 'Secret123' }
+    ]
+  };
+  assert.strictEqual(classifyActionRisk(blockedBatch), 'blocked');
+
+  // 6. Valid Interactive Slot-Filling (request_user_input)
+  const validSlotFill = {
+    actionId: 'act_slot_1',
+    kind: 'request_user_input',
+    targetLocalId: 'el_3',
+    confidence: 1.0,
+    risk: 'safe',
+    rationale: 'Please provide your GitHub URL',
+    userInputPrompt: 'Please enter your GitHub profile URL to proceed with registration.',
+    inputKey: 'github_profile'
+  };
+  const slotRes = validateActionProposal(validSlotFill, contextElements);
+  assert.strictEqual(slotRes.isValid, true);
+  assert.strictEqual(classifyActionRisk(validSlotFill), 'safe');
+
+  // 7. Slot-Filling with Prohibited Script Injection
+  const scriptSlotFill = {
+    actionId: 'act_slot_2',
+    kind: 'request_user_input',
+    targetLocalId: 'el_3',
+    confidence: 1.0,
+    risk: 'safe',
+    rationale: 'XSS attempt',
+    userInputPrompt: '<script>alert("hack")</script>'
+  };
+  assert.strictEqual(validateActionProposal(scriptSlotFill, contextElements).isValid, false);
+});

@@ -12,6 +12,7 @@ export type AgentState =
   | 'awaiting-reasoning'
   | 'validating-action'
   | 'awaiting-user-confirmation'
+  | 'awaiting-user-input'
   | 'executing'
   | 'verifying'
   | 'complete'

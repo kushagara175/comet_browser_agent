@@ -36,6 +36,15 @@ export declare class MaskRenderer {
      * 4. 100% opaque deep-slate blackouts for credentials, PII, payment data, and uninspectable surfaces.
      * 5. Per-region forensic audit records.
      */
-    static renderMasks(imageCanvas: HTMLCanvasElement | OffscreenCanvas, regions: ReadonlyArray<SensitiveRegion>): RenderResult;
+    static renderMasks(imageCanvas: HTMLCanvasElement | OffscreenCanvas, regions: ReadonlyArray<SensitiveRegion>, interactiveElements?: ReadonlyArray<any>, viewport?: {
+        width: number;
+        height: number;
+    }): RenderResult;
+    /**
+     * Set-of-Marks (SOM) visual labeling overlay renderer.
+     * Places clear, high-contrast badges (e.g. "1", "2") corresponding to "el_1", "el_2"
+     * on the sanitized screenshot canvas.
+     */
+    static renderSetOfMarks(imageCanvas: HTMLCanvasElement | OffscreenCanvas, elements: ReadonlyArray<any>, viewportWidth?: number, viewportHeight?: number): void;
 }
 //# sourceMappingURL=mask-renderer.d.ts.map

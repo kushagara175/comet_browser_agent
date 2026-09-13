@@ -1,6 +1,6 @@
 import { SanitizedElement } from './payload.js';
 import { StructuredTaskIntent, FormFieldAssignment } from './grounding.js';
-export type ActionKind = 'observe' | 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'extract' | 'answer' | 'request_user_confirmation' | 'finish' | 'blocked';
+export type ActionKind = 'observe' | 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'extract' | 'answer' | 'request_user_confirmation' | 'request_user_input' | 'batch' | 'finish' | 'blocked';
 export type RiskLevel = 'safe' | 'protected' | 'blocked';
 export type ExpectedPostcondition = {
     readonly kind: 'dialog_visible';
@@ -59,6 +59,18 @@ export declare function parseFormFieldAssignments(text: string): FormFieldAssign
  * binding expected semantic terminal postconditions to the run.
  */
 export declare function resolveTaskContract(goal: string): TaskContract;
+export interface AtomicActionProposal {
+    readonly actionId: string;
+    readonly kind: 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'observe' | 'extract' | 'answer';
+    readonly targetLocalId?: string;
+    readonly destinationLocalId?: string;
+    readonly textToType?: string;
+    readonly selectOptionValue?: string;
+    readonly scrollDirection?: 'up' | 'down' | 'top' | 'bottom';
+    readonly pressEnter?: boolean;
+    readonly fileName?: string;
+    readonly rationale?: string;
+}
 export interface ActionProposal {
     readonly actionId: string;
     readonly kind: ActionKind;
@@ -83,6 +95,9 @@ export interface ActionProposal {
     readonly reply?: string;
     readonly message?: string;
     readonly reasoning?: string;
+    readonly batchActions?: ReadonlyArray<AtomicActionProposal>;
+    readonly userInputPrompt?: string;
+    readonly inputKey?: string;
 }
 export interface ActionExecutionResult {
     readonly actionId: string;

@@ -1255,9 +1255,13 @@ if (typeof document !== 'undefined') {
               type: 'SUBMIT_USER_INPUT',
               inputs: { username: userVal, password: passVal, customText: customVal },
               runId: currentRunId,
-              tabId: currentActiveTabId
+              tabId: currentActiveTabId,
+              targetLocalId: req.targetLocalId,
+              resumeLoop: true
             }, (submitRes) => {
-              renderActionResult(agentBubble, submitRes);
+              if (submitRes) {
+                renderActionResult(agentBubble, submitRes);
+              }
             });
           }
         });
@@ -1980,13 +1984,16 @@ if (typeof document !== 'undefined') {
           }
 
           if (message.type === 'COORDINATOR_USER_INPUT_REQUIRED') {
-            const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
-            if (lastAgentBubble) {
-              renderActionResult(lastAgentBubble, {
-                state: 'awaiting-user-confirmation',
-                inputRequest: message.request
-              });
+            let lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
+            if (!lastAgentBubble) {
+              lastAgentBubble = appendMessage('agent', '');
             }
+            renderActionResult(lastAgentBubble, {
+              state: 'awaiting-user-confirmation',
+              inputRequest: message.request
+            });
+            setAgentStatus('awaiting-user-confirmation');
+            addAuditEntry('INPUT', `Input requested: ${message.request?.prompt || 'field fill'}`, 'info');
           }
 
           if (message.type === 'COORDINATOR_TELEMETRY_UPDATED') {

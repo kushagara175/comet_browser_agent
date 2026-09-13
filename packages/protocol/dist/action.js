@@ -503,7 +503,10 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
     'reply',
     'message',
     'reasoning',
-    'thought'
+    'thought',
+    'batchActions',
+    'userInputPrompt',
+    'inputKey'
 ]);
 const VALID_ACTION_KINDS = new Set([
     'observe',
@@ -518,6 +521,8 @@ const VALID_ACTION_KINDS = new Set([
     'extract',
     'answer',
     'request_user_confirmation',
+    'request_user_input',
+    'batch',
     'finish',
     'blocked'
 ]);
@@ -810,6 +815,112 @@ export function validateActionProposal(proposal, validElements) {
     if (proposal.pressEnter !== undefined && typeof proposal.pressEnter !== 'boolean') {
         return { isValid: false, errorMessage: 'Field "pressEnter" must be a boolean' };
     }
+    // 9c. userInputPrompt & inputKey validation (Interactive slot-filling)
+    if (proposal.userInputPrompt !== undefined) {
+        if (typeof proposal.userInputPrompt !== 'string' || proposal.userInputPrompt.length > 500) {
+            return { isValid: false, errorMessage: 'Field "userInputPrompt" must be a string up to 500 characters' };
+        }
+        if (hasProhibitedScriptPattern(proposal.userInputPrompt) || hasProhibitedUrlPattern(proposal.userInputPrompt)) {
+            return { isValid: false, errorMessage: 'userInputPrompt contains prohibited script or URL patterns' };
+        }
+    }
+    if (proposal.inputKey !== undefined) {
+        if (typeof proposal.inputKey !== 'string' || proposal.inputKey.length > 100 || !/^[a-zA-Z0-9_-]+$/.test(proposal.inputKey)) {
+            return { isValid: false, errorMessage: 'Field "inputKey" must be a valid identifier up to 100 characters' };
+        }
+    }
+    // 9d. batch & batchActions validation (Multi-action planning)
+    if (kind === 'batch') {
+        if (!Array.isArray(proposal.batchActions) || proposal.batchActions.length === 0) {
+            return { isValid: false, errorMessage: 'Action kind "batch" requires a non-empty "batchActions" array' };
+        }
+    }
+    if (proposal.batchActions !== undefined) {
+        if (!Array.isArray(proposal.batchActions)) {
+            return { isValid: false, errorMessage: 'Field "batchActions" must be an array' };
+        }
+        if (proposal.batchActions.length === 0 || proposal.batchActions.length > 10) {
+            return { isValid: false, errorMessage: 'Field "batchActions" must contain between 1 and 10 actions' };
+        }
+        const ALLOWED_ATOMIC_ACTION_KEYS = new Set([
+            'actionId',
+            'kind',
+            'targetLocalId',
+            'destinationLocalId',
+            'textToType',
+            'selectOptionValue',
+            'scrollDirection',
+            'pressEnter',
+            'fileName',
+            'rationale'
+        ]);
+        const VALID_ATOMIC_KINDS = new Set([
+            'click',
+            'hover',
+            'type',
+            'select',
+            'drag_and_drop',
+            'upload_file',
+            'scroll',
+            'wait',
+            'observe',
+            'extract',
+            'answer'
+        ]);
+        for (let i = 0; i < proposal.batchActions.length; i++) {
+            const sub = proposal.batchActions[i];
+            if (!isPlainObject(sub)) {
+                return { isValid: false, errorMessage: `batchActions[${i}] must be a JSON object` };
+            }
+            for (const k of Object.getOwnPropertyNames(sub)) {
+                if (PROHIBITED_PROPERTY_NAMES.has(k) || !ALLOWED_ATOMIC_ACTION_KEYS.has(k)) {
+                    return { isValid: false, errorMessage: `Closed schema violation: Unknown property "${k}" in batchActions[${i}]` };
+                }
+            }
+            if (typeof sub.actionId !== 'string' || !ACTION_ID_REGEX.test(sub.actionId)) {
+                return { isValid: false, errorMessage: `Invalid actionId in batchActions[${i}]` };
+            }
+            if (typeof sub.kind !== 'string' || !VALID_ATOMIC_KINDS.has(sub.kind)) {
+                return { isValid: false, errorMessage: `Invalid kind "${sub.kind}" in batchActions[${i}]` };
+            }
+            if (sub.targetLocalId !== undefined) {
+                if (typeof sub.targetLocalId !== 'string' || !LOCAL_ID_REGEX.test(sub.targetLocalId) || hasProhibitedSelectorPattern(sub.targetLocalId)) {
+                    return { isValid: false, errorMessage: `Invalid targetLocalId in batchActions[${i}]` };
+                }
+            }
+            if (['click', 'hover', 'type', 'select', 'upload_file'].includes(sub.kind) && !sub.targetLocalId) {
+                return { isValid: false, errorMessage: `batchActions[${i}] kind "${sub.kind}" requires targetLocalId` };
+            }
+            if (sub.kind === 'type') {
+                if (typeof sub.textToType !== 'string' || sub.textToType.length === 0 || sub.textToType.length > 500) {
+                    return { isValid: false, errorMessage: `batchActions[${i}] type action requires textToType (1-500 chars)` };
+                }
+                if (hasProhibitedScriptPattern(sub.textToType)) {
+                    return { isValid: false, errorMessage: `batchActions[${i}] textToType contains prohibited script patterns` };
+                }
+            }
+            if (sub.kind === 'select') {
+                if (typeof sub.selectOptionValue !== 'string' || sub.selectOptionValue.length === 0 || sub.selectOptionValue.length > 200) {
+                    return { isValid: false, errorMessage: `batchActions[${i}] select action requires selectOptionValue` };
+                }
+                if (hasProhibitedScriptPattern(sub.selectOptionValue)) {
+                    return { isValid: false, errorMessage: `batchActions[${i}] selectOptionValue contains prohibited script patterns` };
+                }
+            }
+            if (sub.scrollDirection !== undefined && !VALID_SCROLL_DIRECTIONS.has(sub.scrollDirection)) {
+                return { isValid: false, errorMessage: `Invalid scrollDirection in batchActions[${i}]` };
+            }
+            if (sub.rationale !== undefined && (typeof sub.rationale !== 'string' || sub.rationale.length > 500)) {
+                return { isValid: false, errorMessage: `Invalid rationale in batchActions[${i}]` };
+            }
+            if (validElements && sub.targetLocalId) {
+                const found = validElements.find((e) => e.localId === sub.targetLocalId);
+                if (!found) {
+                    return { isValid: false, errorMessage: `batchActions[${i}] target element "${sub.targetLocalId}" not found in context` };
+                }
+            }
+        }
+    }
     // 10. Context & Capability Validation against Sanitized Elements (if supplied)
     if (validElements) {
         if (proposal.targetLocalId) {
@@ -902,6 +1013,41 @@ export function classifyActionRisk(proposal, elementName) {
     // Explicitly user-approved actions (prompt authorized or modal confirmed)
     if (proposal.userApproved) {
         return 'safe';
+    }
+    // Request user input is safe (local dialog prompt)
+    if (kind === 'request_user_input') {
+        return 'safe';
+    }
+    // Batch action risk: evaluated against all sub-actions
+    if (kind === 'batch' && proposal.batchActions && proposal.batchActions.length > 0) {
+        let hasProtected = false;
+        for (const sub of proposal.batchActions) {
+            const subTarget = (sub.targetLocalId || '').toLowerCase();
+            const subRationale = (sub.rationale || '').toLowerCase();
+            if (subTarget.includes('password') ||
+                subTarget.includes('otp') ||
+                subTarget.includes('captcha') ||
+                subTarget.includes('cvv') ||
+                subTarget.includes('pin') ||
+                (sub.kind === 'type' && (subTarget.includes('payment') ||
+                    subTarget.includes('card') ||
+                    subTarget.includes('token') ||
+                    subTarget.includes('secret')))) {
+                return 'blocked';
+            }
+            if (sub.kind === 'upload_file' ||
+                subTarget.includes('submit') ||
+                subTarget.includes('send') ||
+                subTarget.includes('publish') ||
+                subTarget.includes('delete') ||
+                subTarget.includes('pay') ||
+                subRationale.includes('submit') ||
+                subRationale.includes('delete') ||
+                subRationale.includes('pay')) {
+                hasProtected = true;
+            }
+        }
+        return hasProtected ? 'protected' : 'safe';
     }
     // Upload file is protected by default unless explicitly user approved
     if (kind === 'upload_file') {

@@ -14782,7 +14782,10 @@ var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "reply",
   "message",
   "reasoning",
-  "thought"
+  "thought",
+  "batchActions",
+  "userInputPrompt",
+  "inputKey"
 ]);
 var VALID_ACTION_KINDS = /* @__PURE__ */ new Set([
   "observe",
@@ -14797,6 +14800,8 @@ var VALID_ACTION_KINDS = /* @__PURE__ */ new Set([
   "extract",
   "answer",
   "request_user_confirmation",
+  "request_user_input",
+  "batch",
   "finish",
   "blocked"
 ]);
@@ -15059,6 +15064,110 @@ function validateActionProposal(proposal, validElements) {
   if (proposal.pressEnter !== void 0 && typeof proposal.pressEnter !== "boolean") {
     return { isValid: false, errorMessage: 'Field "pressEnter" must be a boolean' };
   }
+  if (proposal.userInputPrompt !== void 0) {
+    if (typeof proposal.userInputPrompt !== "string" || proposal.userInputPrompt.length > 500) {
+      return { isValid: false, errorMessage: 'Field "userInputPrompt" must be a string up to 500 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.userInputPrompt) || hasProhibitedUrlPattern(proposal.userInputPrompt)) {
+      return { isValid: false, errorMessage: "userInputPrompt contains prohibited script or URL patterns" };
+    }
+  }
+  if (proposal.inputKey !== void 0) {
+    if (typeof proposal.inputKey !== "string" || proposal.inputKey.length > 100 || !/^[a-zA-Z0-9_-]+$/.test(proposal.inputKey)) {
+      return { isValid: false, errorMessage: 'Field "inputKey" must be a valid identifier up to 100 characters' };
+    }
+  }
+  if (kind === "batch") {
+    if (!Array.isArray(proposal.batchActions) || proposal.batchActions.length === 0) {
+      return { isValid: false, errorMessage: 'Action kind "batch" requires a non-empty "batchActions" array' };
+    }
+  }
+  if (proposal.batchActions !== void 0) {
+    if (!Array.isArray(proposal.batchActions)) {
+      return { isValid: false, errorMessage: 'Field "batchActions" must be an array' };
+    }
+    if (proposal.batchActions.length === 0 || proposal.batchActions.length > 10) {
+      return { isValid: false, errorMessage: 'Field "batchActions" must contain between 1 and 10 actions' };
+    }
+    const ALLOWED_ATOMIC_ACTION_KEYS = /* @__PURE__ */ new Set([
+      "actionId",
+      "kind",
+      "targetLocalId",
+      "destinationLocalId",
+      "textToType",
+      "selectOptionValue",
+      "scrollDirection",
+      "pressEnter",
+      "fileName",
+      "rationale"
+    ]);
+    const VALID_ATOMIC_KINDS = /* @__PURE__ */ new Set([
+      "click",
+      "hover",
+      "type",
+      "select",
+      "drag_and_drop",
+      "upload_file",
+      "scroll",
+      "wait",
+      "observe",
+      "extract",
+      "answer"
+    ]);
+    for (let i = 0; i < proposal.batchActions.length; i++) {
+      const sub = proposal.batchActions[i];
+      if (!isPlainObject(sub)) {
+        return { isValid: false, errorMessage: `batchActions[${i}] must be a JSON object` };
+      }
+      for (const k2 of Object.getOwnPropertyNames(sub)) {
+        if (PROHIBITED_PROPERTY_NAMES.has(k2) || !ALLOWED_ATOMIC_ACTION_KEYS.has(k2)) {
+          return { isValid: false, errorMessage: `Closed schema violation: Unknown property "${k2}" in batchActions[${i}]` };
+        }
+      }
+      if (typeof sub.actionId !== "string" || !ACTION_ID_REGEX.test(sub.actionId)) {
+        return { isValid: false, errorMessage: `Invalid actionId in batchActions[${i}]` };
+      }
+      if (typeof sub.kind !== "string" || !VALID_ATOMIC_KINDS.has(sub.kind)) {
+        return { isValid: false, errorMessage: `Invalid kind "${sub.kind}" in batchActions[${i}]` };
+      }
+      if (sub.targetLocalId !== void 0) {
+        if (typeof sub.targetLocalId !== "string" || !LOCAL_ID_REGEX.test(sub.targetLocalId) || hasProhibitedSelectorPattern(sub.targetLocalId)) {
+          return { isValid: false, errorMessage: `Invalid targetLocalId in batchActions[${i}]` };
+        }
+      }
+      if (["click", "hover", "type", "select", "upload_file"].includes(sub.kind) && !sub.targetLocalId) {
+        return { isValid: false, errorMessage: `batchActions[${i}] kind "${sub.kind}" requires targetLocalId` };
+      }
+      if (sub.kind === "type") {
+        if (typeof sub.textToType !== "string" || sub.textToType.length === 0 || sub.textToType.length > 500) {
+          return { isValid: false, errorMessage: `batchActions[${i}] type action requires textToType (1-500 chars)` };
+        }
+        if (hasProhibitedScriptPattern(sub.textToType)) {
+          return { isValid: false, errorMessage: `batchActions[${i}] textToType contains prohibited script patterns` };
+        }
+      }
+      if (sub.kind === "select") {
+        if (typeof sub.selectOptionValue !== "string" || sub.selectOptionValue.length === 0 || sub.selectOptionValue.length > 200) {
+          return { isValid: false, errorMessage: `batchActions[${i}] select action requires selectOptionValue` };
+        }
+        if (hasProhibitedScriptPattern(sub.selectOptionValue)) {
+          return { isValid: false, errorMessage: `batchActions[${i}] selectOptionValue contains prohibited script patterns` };
+        }
+      }
+      if (sub.scrollDirection !== void 0 && !VALID_SCROLL_DIRECTIONS.has(sub.scrollDirection)) {
+        return { isValid: false, errorMessage: `Invalid scrollDirection in batchActions[${i}]` };
+      }
+      if (sub.rationale !== void 0 && (typeof sub.rationale !== "string" || sub.rationale.length > 500)) {
+        return { isValid: false, errorMessage: `Invalid rationale in batchActions[${i}]` };
+      }
+      if (validElements && sub.targetLocalId) {
+        const found = validElements.find((e) => e.localId === sub.targetLocalId);
+        if (!found) {
+          return { isValid: false, errorMessage: `batchActions[${i}] target element "${sub.targetLocalId}" not found in context` };
+        }
+      }
+    }
+  }
   if (validElements) {
     if (proposal.targetLocalId) {
       const targetElement = validElements.find((e) => e.localId === proposal.targetLocalId);
@@ -15131,6 +15240,23 @@ function classifyActionRisk(proposal, elementName) {
   }
   if (proposal.userApproved) {
     return "safe";
+  }
+  if (kind === "request_user_input") {
+    return "safe";
+  }
+  if (kind === "batch" && proposal.batchActions && proposal.batchActions.length > 0) {
+    let hasProtected = false;
+    for (const sub of proposal.batchActions) {
+      const subTarget = (sub.targetLocalId || "").toLowerCase();
+      const subRationale = (sub.rationale || "").toLowerCase();
+      if (subTarget.includes("password") || subTarget.includes("otp") || subTarget.includes("captcha") || subTarget.includes("cvv") || subTarget.includes("pin") || sub.kind === "type" && (subTarget.includes("payment") || subTarget.includes("card") || subTarget.includes("token") || subTarget.includes("secret"))) {
+        return "blocked";
+      }
+      if (sub.kind === "upload_file" || subTarget.includes("submit") || subTarget.includes("send") || subTarget.includes("publish") || subTarget.includes("delete") || subTarget.includes("pay") || subRationale.includes("submit") || subRationale.includes("delete") || subRationale.includes("pay")) {
+        hasProtected = true;
+      }
+    }
+    return hasProtected ? "protected" : "safe";
   }
   if (kind === "upload_file") {
     return "protected";
@@ -17422,7 +17548,7 @@ function verifyCanvasRedaction(sanitizedCanvas, rawCanvas, regions, regionRecord
 }
 
 // src/sanitizer/mask-renderer.ts
-var MaskRenderer = class {
+var MaskRenderer = class _MaskRenderer {
   /**
    * Applies irreversible privacy masks and real face blurs directly onto the screenshot canvas.
    *
@@ -17433,7 +17559,7 @@ var MaskRenderer = class {
    * 4. 100% opaque deep-slate blackouts for credentials, PII, payment data, and uninspectable surfaces.
    * 5. Per-region forensic audit records.
    */
-  static renderMasks(imageCanvas, regions) {
+  static renderMasks(imageCanvas, regions, interactiveElements, viewport) {
     const ctx = imageCanvas.getContext("2d");
     if (!ctx) {
       throw new Error("Canvas 2D context unavailable for sanitization rendering");
@@ -17650,6 +17776,14 @@ var MaskRenderer = class {
         });
       }
     }
+    if (interactiveElements && interactiveElements.length > 0) {
+      _MaskRenderer.renderSetOfMarks(
+        imageCanvas,
+        interactiveElements,
+        viewport?.width || 1280,
+        viewport?.height || 800
+      );
+    }
     let dataUrl;
     if (typeof imageCanvas.toDataURL === "function") {
       dataUrl = imageCanvas.toDataURL("image/png");
@@ -17682,6 +17816,62 @@ var MaskRenderer = class {
       renderedMaskCount: maskCount,
       regionRecords
     };
+  }
+  /**
+   * Set-of-Marks (SOM) visual labeling overlay renderer.
+   * Places clear, high-contrast badges (e.g. "1", "2") corresponding to "el_1", "el_2"
+   * on the sanitized screenshot canvas.
+   */
+  static renderSetOfMarks(imageCanvas, elements, viewportWidth = 1280, viewportHeight = 800) {
+    if (!elements || elements.length === 0) return;
+    const ctx = imageCanvas.getContext("2d");
+    if (!ctx) return;
+    const canvasWidth = imageCanvas.width || 1280;
+    const canvasHeight = imageCanvas.height || 720;
+    const scaleX = canvasWidth / (viewportWidth || 1280);
+    const scaleY = canvasHeight / (viewportHeight || 800);
+    ctx.save();
+    const candidates = elements.slice(0, 60);
+    for (const el2 of candidates) {
+      const localId = el2.localId || "";
+      const numMatch = localId.match(/(\d+)$/);
+      const label = numMatch ? numMatch[1] : localId.replace(/^el_/, "");
+      if (!label) continue;
+      let x = 0;
+      let y = 0;
+      if (el2.boundingBox && el2.boundingBox.width > 0 && el2.boundingBox.height > 0) {
+        x = Math.round(el2.boundingBox.x * scaleX);
+        y = Math.round(el2.boundingBox.y * scaleY);
+      } else if (Array.isArray(el2.coarseBounds) && el2.coarseBounds.length === 4) {
+        x = Math.round(el2.coarseBounds[0] * canvasWidth);
+        y = Math.round(el2.coarseBounds[1] * canvasHeight);
+      } else {
+        continue;
+      }
+      x = Math.max(0, Math.min(canvasWidth - 32, x));
+      y = Math.max(0, Math.min(canvasHeight - 16, y));
+      ctx.font = "bold 10px sans-serif";
+      const textWidth = Math.max(10, ctx.measureText ? ctx.measureText(label).width : 10);
+      const badgeWidth = textWidth + 6;
+      const badgeHeight = 13;
+      const badgeY = y >= badgeHeight ? y - 1 : y + 1;
+      const badgeX = Math.min(x, canvasWidth - badgeWidth - 2);
+      ctx.fillStyle = "#0284c7";
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1;
+      if (typeof ctx.roundRect === "function") {
+        ctx.beginPath();
+        ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 3);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight);
+        ctx.strokeRect(badgeX, badgeY, badgeWidth, badgeHeight);
+      }
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(label, badgeX + 3, badgeY + 10);
+    }
+    ctx.restore();
   }
 };
 
@@ -18136,7 +18326,12 @@ var SanitizerPipeline = class {
         }
       }
       workingCanvas = imageCanvas;
-      const renderResult = MaskRenderer.renderMasks(imageCanvas, visibleRegions);
+      const renderResult = MaskRenderer.renderMasks(
+        imageCanvas,
+        visibleRegions,
+        snapshot.interactiveElements,
+        { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight }
+      );
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
       regionRecords = renderResult.regionRecords;
@@ -18167,7 +18362,12 @@ var SanitizerPipeline = class {
       } catch (_) {
       }
       workingCanvas = canvas;
-      const renderResult = MaskRenderer.renderMasks(canvas, visibleRegions);
+      const renderResult = MaskRenderer.renderMasks(
+        canvas,
+        visibleRegions,
+        snapshot.interactiveElements,
+        { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight }
+      );
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
       regionRecords = renderResult.regionRecords;
@@ -19619,7 +19819,7 @@ var RunCoordinator = class {
     }
   }
   isRepeatedAction(proposal) {
-    if (proposal.kind === "finish" || proposal.kind === "wait") return false;
+    if (proposal.kind === "finish" || proposal.kind === "wait" || proposal.kind === "batch" || proposal.kind === "request_user_input") return false;
     if (this.actionHistory.length >= 2) {
       const last1 = this.actionHistory[this.actionHistory.length - 1];
       const last2 = this.actionHistory[this.actionHistory.length - 2];
@@ -20769,7 +20969,7 @@ var RunCoordinator = class {
       }
       if (this.actionHistory.length > 0 && sanitized.pageState) {
         const historyText = this.actionHistory.map((a, idx) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || "page"}" (${a.rationale || "executed"})`).join("; ");
-        sanitized.pageState.postconditionSummary = historyText;
+        sanitized.pageState.postconditionSummary = historyText.length > 480 ? historyText.slice(-480) : historyText;
       }
       const isPureScrollDirective = Boolean(this.currentTaskContract?.expectedTerminal.kind === "scroll_changed") && !Boolean(this.currentTaskContract?.isMultiStep) && !/\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?)\b/i.test(this.currentGoal || "");
       let proposal;
@@ -21024,6 +21224,44 @@ var RunCoordinator = class {
       if (this.listeners.onActionProposed) {
         this.listeners.onActionProposed(proposal, this.currentRunId);
       }
+      if (proposal.kind === "request_user_input") {
+        const promptText = proposal.userInputPrompt || proposal.rationale || "Please provide the information required by the form.";
+        this.transition("awaiting-user-input", promptText);
+        if (this.listeners.onUserInputRequired) {
+          this.listeners.onUserInputRequired({
+            kind: "text_input",
+            prompt: promptText,
+            targetLocalId: proposal.targetLocalId,
+            inputKey: proposal.inputKey,
+            runId: this.currentRunId
+          });
+        }
+        const stepTrace2 = {
+          step,
+          captureId: sanitized.captureId,
+          pageGeneration: sanitized.captureId,
+          maskCount: sanitized.maskCount,
+          sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+          decisionOrigin,
+          proposal,
+          riskDecision: "safe",
+          confidenceDecision: "requires_user_input",
+          executed: false,
+          networkRequestMade,
+          timings: { total: Date.now() - t0_step }
+        };
+        this.stepsTrace.push(stepTrace2);
+        const res2 = {
+          success: true,
+          state: "awaiting-user-input",
+          message: promptText,
+          sanitized,
+          proposal,
+          stepCount: step,
+          steps: this.stepsTrace
+        };
+        return this.completeWithResult(res2);
+      }
       if (proposal.kind === "finish" || proposal.kind === "answer") {
         const terminalCheck = this.currentTaskContract ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory) : { satisfied: true, reason: "Goal completed" };
         const isAnswerOrConversational = proposal.kind === "answer" || Boolean(proposal.reply) || this.currentTaskContract?.isAnswerGoal || this.currentTaskContract?.goalPattern === "conversational_query";
@@ -21123,29 +21361,85 @@ var RunCoordinator = class {
         proposal = { ...proposal, pressEnter: true };
       }
       let execResponse;
-      try {
-        execResponse = await this.browser.sendMessageToTab(activeTab.id, {
-          type: "EXECUTE_ACTION",
-          proposal,
-          captureId: sanitized.captureId
-        });
-      } catch (execErr) {
-        const msg = execErr?.message || "";
-        const isPortClosedOrNav = msg.includes("message port closed") || msg.includes("Receiving end does not exist") || msg.includes("Could not establish connection");
-        if (isPortClosedOrNav) {
-          if (typeof this.browser.waitForTabReady === "function") {
-            await this.browser.waitForTabReady(activeTab.id, 8e3);
-          }
-          if (typeof this.browser.ensureContentScript === "function") {
-            await this.browser.ensureContentScript(activeTab.id);
-          }
-          execResponse = {
-            success: true,
-            semanticOutcomeVerified: true,
-            message: `Action executed and caused page navigation/redirect`
+      if (proposal.kind === "batch" && proposal.batchActions && proposal.batchActions.length > 0) {
+        this.transition("executing", `Step ${step}/${maxSteps}: Executing batch (${proposal.batchActions.length} actions)`);
+        let allBatchSucceeded = true;
+        let lastBatchResult = null;
+        for (let i = 0; i < proposal.batchActions.length; i++) {
+          const sub = proposal.batchActions[i];
+          const subProposal = {
+            actionId: sub.actionId || `act_sub_${i + 1}_${Date.now()}`,
+            kind: sub.kind,
+            targetLocalId: sub.targetLocalId,
+            destinationLocalId: sub.destinationLocalId,
+            textToType: sub.textToType,
+            selectOptionValue: sub.selectOptionValue,
+            scrollDirection: sub.scrollDirection,
+            pressEnter: sub.pressEnter,
+            fileName: sub.fileName,
+            confidence: proposal.confidence,
+            risk: "safe",
+            rationale: sub.rationale || proposal.rationale
           };
-        } else {
-          throw execErr;
+          try {
+            lastBatchResult = await this.browser.sendMessageToTab(activeTab.id, {
+              type: "EXECUTE_ACTION",
+              proposal: subProposal,
+              captureId: sanitized.captureId
+            });
+            this.recordActionHistory(subProposal);
+          } catch (batchErr) {
+            const msg = batchErr?.message || "";
+            const isNav = msg.includes("message port closed") || msg.includes("Receiving end does not exist") || msg.includes("Could not establish connection");
+            if (isNav) {
+              if (typeof this.browser.waitForTabReady === "function") {
+                await this.browser.waitForTabReady(activeTab.id, 8e3);
+              }
+              if (typeof this.browser.ensureContentScript === "function") {
+                await this.browser.ensureContentScript(activeTab.id);
+              }
+              lastBatchResult = { success: true, semanticOutcomeVerified: true, message: "Batch action caused page navigation" };
+              break;
+            } else {
+              allBatchSucceeded = false;
+              lastBatchResult = { success: false, message: batchErr.message };
+              break;
+            }
+          }
+          if (!lastBatchResult?.success) {
+            allBatchSucceeded = false;
+            break;
+          }
+          if (i < proposal.batchActions.length - 1) {
+            await new Promise((r) => setTimeout(r, 250));
+          }
+        }
+        execResponse = lastBatchResult || { success: allBatchSucceeded, semanticOutcomeVerified: allBatchSucceeded };
+      } else {
+        try {
+          execResponse = await this.browser.sendMessageToTab(activeTab.id, {
+            type: "EXECUTE_ACTION",
+            proposal,
+            captureId: sanitized.captureId
+          });
+        } catch (execErr) {
+          const msg = execErr?.message || "";
+          const isPortClosedOrNav = msg.includes("message port closed") || msg.includes("Receiving end does not exist") || msg.includes("Could not establish connection");
+          if (isPortClosedOrNav) {
+            if (typeof this.browser.waitForTabReady === "function") {
+              await this.browser.waitForTabReady(activeTab.id, 8e3);
+            }
+            if (typeof this.browser.ensureContentScript === "function") {
+              await this.browser.ensureContentScript(activeTab.id);
+            }
+            execResponse = {
+              success: true,
+              semanticOutcomeVerified: true,
+              message: `Action executed and caused page navigation/redirect`
+            };
+          } else {
+            throw execErr;
+          }
         }
       }
       const t6_actionExecuted = Date.now();
@@ -21542,7 +21836,7 @@ ${detail}`,
    * Safely fills user-provided credentials or text into the active tab's form inputs locally
    * without transmitting raw credentials across the network.
    */
-  async submitUserInput(inputs, targetTabId) {
+  async submitUserInput(inputs, targetTabId, options) {
     const tabToUse = targetTabId || this.currentTabId;
     const activeTab = await this.browser.getActiveTab(tabToUse);
     if (activeTab?.id) {
@@ -21633,7 +21927,7 @@ ${detail}`,
       }
     }
     if (inputs.customText && !inputs.username && !inputs.password) {
-      const targetInput = elements.find((e) => e.role === "input" || e.role === "textbox");
+      const targetInput = (options?.targetLocalId ? elements.find((e) => e.localId === options.targetLocalId) : null) || elements.find((e) => e.role === "input" || e.role === "textbox");
       if (targetInput) {
         await this.browser.sendMessageToTab(activeTab.id, {
           type: "EXECUTE_ACTION",
@@ -21659,7 +21953,12 @@ ${detail}`,
           username: inputs.username,
           password: inputs.password
         });
-        if (directRes && directRes.userFilled || directRes?.passFilled) {
+        if (directRes && (directRes.userFilled || directRes?.passFilled)) {
+          if (options?.resumeLoop === true && this.currentGoal && this.currentStep < this.currentMaxSteps) {
+            this.currentStaleRetries = 0;
+            this.transition("capturing", `Resuming execution after user input (step ${this.currentStep + 1}/${this.currentMaxSteps})...`);
+            return this.executeLoop();
+          }
           this.transition("complete", "Credentials securely filled locally");
           return this.completeWithResult({
             success: true,
@@ -21673,6 +21972,11 @@ ${detail}`,
       const errorMsg = "No matching input fields found on the page to fill";
       this.transition("failed-safe", errorMsg);
       return this.completeWithResult({ success: false, state: "failed-safe", error: errorMsg });
+    }
+    if (options?.resumeLoop === true && this.currentGoal && this.currentStep < this.currentMaxSteps) {
+      this.currentStaleRetries = 0;
+      this.transition("capturing", `Resuming execution after user input (step ${this.currentStep + 1}/${this.currentMaxSteps})...`);
+      return this.executeLoop();
     }
     this.transition("complete", `Successfully filled ${filledCount} field(s) locally`);
     return this.completeWithResult({
@@ -21760,6 +22064,13 @@ async function handleSidepanelRequest(message) {
   }
   if (message.type === "CHAT_WITH_PAGE") {
     return coordinator.chatWithPage(message.message || "", message.history);
+  }
+  if (message.type === "SUBMIT_USER_INPUT") {
+    return coordinator.submitUserInput(
+      message.inputs || {},
+      message.tabId,
+      { resumeLoop: message.resumeLoop ?? true, targetLocalId: message.targetLocalId }
+    );
   }
   if (message.type === "CANCEL_RUN" || message.type === "STOP_RUN") {
     coordinator.cancelRun();
@@ -21869,7 +22180,11 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
     if (message.type === "SUBMIT_USER_INPUT") {
-      coordinator.submitUserInput(message.inputs || {}, message.tabId).then((result) => {
+      coordinator.submitUserInput(
+        message.inputs || {},
+        message.tabId,
+        { resumeLoop: message.resumeLoop ?? true, targetLocalId: message.targetLocalId }
+      ).then((result) => {
         sendResponse(result);
       }).catch((err) => {
         sendResponse({ success: false, state: "failed-safe", error: err.message });

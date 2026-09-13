@@ -47,7 +47,9 @@ export class MaskRenderer {
    */
   static renderMasks(
     imageCanvas: HTMLCanvasElement | OffscreenCanvas,
-    regions: ReadonlyArray<SensitiveRegion>
+    regions: ReadonlyArray<SensitiveRegion>,
+    interactiveElements?: ReadonlyArray<any>,
+    viewport?: { width: number; height: number }
   ): RenderResult {
     const ctx = imageCanvas.getContext('2d') as (CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D);
     if (!ctx) {
@@ -319,6 +321,18 @@ export class MaskRenderer {
       }
     }
 
+    // --- PASS 3: Set-of-Marks (SOM) Visual Labeling Overlay ---
+    // Draws compact, high-contrast numeric badge markers matching element localIds
+    // giving multimodal vision models unambiguous visual grounding.
+    if (interactiveElements && interactiveElements.length > 0) {
+      MaskRenderer.renderSetOfMarks(
+        imageCanvas,
+        interactiveElements,
+        viewport?.width || 1280,
+        viewport?.height || 800
+      );
+    }
+
     // Export to Data URL (fail closed if canvas export fails)
     let dataUrl: string;
     if (typeof (imageCanvas as any).toDataURL === 'function') {
@@ -363,5 +377,81 @@ export class MaskRenderer {
       renderedMaskCount: maskCount,
       regionRecords
     };
+  }
+
+  /**
+   * Set-of-Marks (SOM) visual labeling overlay renderer.
+   * Places clear, high-contrast badges (e.g. "1", "2") corresponding to "el_1", "el_2"
+   * on the sanitized screenshot canvas.
+   */
+  static renderSetOfMarks(
+    imageCanvas: HTMLCanvasElement | OffscreenCanvas,
+    elements: ReadonlyArray<any>,
+    viewportWidth = 1280,
+    viewportHeight = 800
+  ): void {
+    if (!elements || elements.length === 0) return;
+    const ctx = imageCanvas.getContext('2d') as (CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D);
+    if (!ctx) return;
+
+    const canvasWidth = imageCanvas.width || 1280;
+    const canvasHeight = imageCanvas.height || 720;
+    const scaleX = canvasWidth / (viewportWidth || 1280);
+    const scaleY = canvasHeight / (viewportHeight || 800);
+
+    ctx.save();
+    // Cap at 60 interactive elements to maintain visual clarity
+    const candidates = elements.slice(0, 60);
+
+    for (const el of candidates) {
+      const localId = el.localId || '';
+      const numMatch = localId.match(/(\d+)$/);
+      const label = numMatch ? numMatch[1] : localId.replace(/^el_/, '');
+      if (!label) continue;
+
+      let x = 0;
+      let y = 0;
+
+      if (el.boundingBox && el.boundingBox.width > 0 && el.boundingBox.height > 0) {
+        x = Math.round(el.boundingBox.x * scaleX);
+        y = Math.round(el.boundingBox.y * scaleY);
+      } else if (Array.isArray(el.coarseBounds) && el.coarseBounds.length === 4) {
+        x = Math.round(el.coarseBounds[0] * canvasWidth);
+        y = Math.round(el.coarseBounds[1] * canvasHeight);
+      } else {
+        continue;
+      }
+
+      x = Math.max(0, Math.min(canvasWidth - 32, x));
+      y = Math.max(0, Math.min(canvasHeight - 16, y));
+
+      ctx.font = 'bold 10px sans-serif';
+      const textWidth = Math.max(10, ctx.measureText ? ctx.measureText(label).width : 10);
+      const badgeWidth = textWidth + 6;
+      const badgeHeight = 13;
+
+      const badgeY = y >= badgeHeight ? y - 1 : y + 1;
+      const badgeX = Math.min(x, canvasWidth - badgeWidth - 2);
+
+      // Distinct cyan-slate pill
+      ctx.fillStyle = '#0284c7'; // Sky 600
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+
+      if (typeof (ctx as any).roundRect === 'function') {
+        ctx.beginPath();
+        (ctx as any).roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 3);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight);
+        ctx.strokeRect(badgeX, badgeY, badgeWidth, badgeHeight);
+      }
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(label, badgeX + 3, badgeY + 10);
+    }
+
+    ctx.restore();
   }
 }

@@ -81,6 +81,14 @@ async function handleSidepanelRequest(message: any): Promise<any> {
     return coordinator.chatWithPage(message.message || '', message.history);
   }
 
+  if (message.type === 'SUBMIT_USER_INPUT') {
+    return coordinator.submitUserInput(
+      message.inputs || {},
+      message.tabId,
+      { resumeLoop: message.resumeLoop ?? true, targetLocalId: message.targetLocalId }
+    );
+  }
+
   if (message.type === 'CANCEL_RUN' || message.type === 'STOP_RUN') {
     coordinator.cancelRun();
     return { success: true, state: 'idle', message: 'Run cancelled by user' };
@@ -205,7 +213,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (message.type === 'SUBMIT_USER_INPUT') {
-      coordinator.submitUserInput(message.inputs || {}, message.tabId).then((result) => {
+      coordinator.submitUserInput(
+        message.inputs || {},
+        message.tabId,
+        { resumeLoop: message.resumeLoop ?? true, targetLocalId: message.targetLocalId }
+      ).then((result) => {
         sendResponse(result);
       }).catch((err) => {
         sendResponse({ success: false, state: 'failed-safe', error: err.message });

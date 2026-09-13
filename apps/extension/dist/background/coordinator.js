@@ -170,7 +170,7 @@ export class RunCoordinator {
         }
     }
     isRepeatedAction(proposal) {
-        if (proposal.kind === 'finish' || proposal.kind === 'wait')
+        if (proposal.kind === 'finish' || proposal.kind === 'wait' || proposal.kind === 'batch' || proposal.kind === 'request_user_input')
             return false;
         if (this.actionHistory.length >= 2) {
             const last1 = this.actionHistory[this.actionHistory.length - 1];
@@ -1451,7 +1451,7 @@ export class RunCoordinator {
                 const historyText = this.actionHistory
                     .map((a, idx) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || 'page'}" (${a.rationale || 'executed'})`)
                     .join('; ');
-                sanitized.pageState.postconditionSummary = historyText;
+                sanitized.pageState.postconditionSummary = historyText.length > 480 ? historyText.slice(-480) : historyText;
             }
             // Step 3: Server Reasoning is the Central Intelligence, with Stage D6 local resolution for deterministic pure scrolls
             const isPureScrollDirective = Boolean(this.currentTaskContract?.expectedTerminal.kind === 'scroll_changed') &&
@@ -1727,6 +1727,45 @@ export class RunCoordinator {
             if (this.listeners.onActionProposed) {
                 this.listeners.onActionProposed(proposal, this.currentRunId);
             }
+            // Interactive Slot-Filling (Skyvern Pattern): pause execution, prompt user in sidepanel without killing session
+            if (proposal.kind === 'request_user_input') {
+                const promptText = proposal.userInputPrompt || proposal.rationale || 'Please provide the information required by the form.';
+                this.transition('awaiting-user-input', promptText);
+                if (this.listeners.onUserInputRequired) {
+                    this.listeners.onUserInputRequired({
+                        kind: 'text_input',
+                        prompt: promptText,
+                        targetLocalId: proposal.targetLocalId,
+                        inputKey: proposal.inputKey,
+                        runId: this.currentRunId
+                    });
+                }
+                const stepTrace = {
+                    step,
+                    captureId: sanitized.captureId,
+                    pageGeneration: sanitized.captureId,
+                    maskCount: sanitized.maskCount,
+                    sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+                    decisionOrigin,
+                    proposal,
+                    riskDecision: 'safe',
+                    confidenceDecision: 'requires_user_input',
+                    executed: false,
+                    networkRequestMade,
+                    timings: { total: Date.now() - t0_step }
+                };
+                this.stepsTrace.push(stepTrace);
+                const res = {
+                    success: true,
+                    state: 'awaiting-user-input',
+                    message: promptText,
+                    sanitized,
+                    proposal,
+                    stepCount: step,
+                    steps: this.stepsTrace
+                };
+                return this.completeWithResult(res);
+            }
             if (proposal.kind === 'finish' || proposal.kind === 'answer') {
                 const terminalCheck = this.currentTaskContract
                     ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory)
@@ -1833,36 +1872,95 @@ export class RunCoordinator {
                 proposal = { ...proposal, pressEnter: true };
             }
             let execResponse;
-            try {
-                execResponse = await this.browser.sendMessageToTab(activeTab.id, {
-                    type: 'EXECUTE_ACTION',
-                    proposal,
-                    captureId: sanitized.captureId
-                });
-            }
-            catch (execErr) {
-                // If clicking or submitting triggered page unload / navigation / redirect,
-                // the content script message port closes immediately.
-                const msg = execErr?.message || '';
-                const isPortClosedOrNav = msg.includes('message port closed') ||
-                    msg.includes('Receiving end does not exist') ||
-                    msg.includes('Could not establish connection');
-                if (isPortClosedOrNav) {
-                    // Normal and expected for navigation actions: wait for redirected tab to settle
-                    if (typeof this.browser.waitForTabReady === 'function') {
-                        await this.browser.waitForTabReady(activeTab.id, 8000);
-                    }
-                    if (typeof this.browser.ensureContentScript === 'function') {
-                        await this.browser.ensureContentScript(activeTab.id);
-                    }
-                    execResponse = {
-                        success: true,
-                        semanticOutcomeVerified: true,
-                        message: `Action executed and caused page navigation/redirect`
+            if (proposal.kind === 'batch' && proposal.batchActions && proposal.batchActions.length > 0) {
+                this.transition('executing', `Step ${step}/${maxSteps}: Executing batch (${proposal.batchActions.length} actions)`);
+                let allBatchSucceeded = true;
+                let lastBatchResult = null;
+                for (let i = 0; i < proposal.batchActions.length; i++) {
+                    const sub = proposal.batchActions[i];
+                    const subProposal = {
+                        actionId: sub.actionId || `act_sub_${i + 1}_${Date.now()}`,
+                        kind: sub.kind,
+                        targetLocalId: sub.targetLocalId,
+                        destinationLocalId: sub.destinationLocalId,
+                        textToType: sub.textToType,
+                        selectOptionValue: sub.selectOptionValue,
+                        scrollDirection: sub.scrollDirection,
+                        pressEnter: sub.pressEnter,
+                        fileName: sub.fileName,
+                        confidence: proposal.confidence,
+                        risk: 'safe',
+                        rationale: sub.rationale || proposal.rationale
                     };
+                    try {
+                        lastBatchResult = await this.browser.sendMessageToTab(activeTab.id, {
+                            type: 'EXECUTE_ACTION',
+                            proposal: subProposal,
+                            captureId: sanitized.captureId
+                        });
+                        this.recordActionHistory(subProposal);
+                    }
+                    catch (batchErr) {
+                        const msg = batchErr?.message || '';
+                        const isNav = msg.includes('message port closed') || msg.includes('Receiving end does not exist') || msg.includes('Could not establish connection');
+                        if (isNav) {
+                            if (typeof this.browser.waitForTabReady === 'function') {
+                                await this.browser.waitForTabReady(activeTab.id, 8000);
+                            }
+                            if (typeof this.browser.ensureContentScript === 'function') {
+                                await this.browser.ensureContentScript(activeTab.id);
+                            }
+                            lastBatchResult = { success: true, semanticOutcomeVerified: true, message: 'Batch action caused page navigation' };
+                            break;
+                        }
+                        else {
+                            allBatchSucceeded = false;
+                            lastBatchResult = { success: false, message: batchErr.message };
+                            break;
+                        }
+                    }
+                    if (!lastBatchResult?.success) {
+                        allBatchSucceeded = false;
+                        break;
+                    }
+                    if (i < proposal.batchActions.length - 1) {
+                        await new Promise((r) => setTimeout(r, 250));
+                    }
                 }
-                else {
-                    throw execErr;
+                execResponse = lastBatchResult || { success: allBatchSucceeded, semanticOutcomeVerified: allBatchSucceeded };
+            }
+            else {
+                try {
+                    execResponse = await this.browser.sendMessageToTab(activeTab.id, {
+                        type: 'EXECUTE_ACTION',
+                        proposal,
+                        captureId: sanitized.captureId
+                    });
+                }
+                catch (execErr) {
+                    // If clicking or submitting triggered page unload / navigation / redirect,
+                    // the content script message port closes immediately.
+                    const msg = execErr?.message || '';
+                    const isPortClosedOrNav = msg.includes('message port closed') ||
+                        msg.includes('Receiving end does not exist') ||
+                        msg.includes('Could not establish connection');
+                    if (isPortClosedOrNav) {
+                        // Normal and expected for navigation actions: wait for redirected tab to settle
+                        if (typeof this.browser.waitForTabReady === 'function') {
+                            await this.browser.waitForTabReady(activeTab.id, 8000);
+                        }
+                        if (typeof this.browser.ensureContentScript === 'function') {
+                            await this.browser.ensureContentScript(activeTab.id);
+                        }
+                        execResponse = {
+                            success: true,
+                            semanticOutcomeVerified: true,
+                            message: `Action executed and caused page navigation/redirect`
+                        };
+                    }
+                    else {
+                        throw execErr;
+                    }
                 }
             }
             const t6_actionExecuted = Date.now();
@@ -2283,7 +2381,7 @@ export class RunCoordinator {
      * Safely fills user-provided credentials or text into the active tab's form inputs locally
      * without transmitting raw credentials across the network.
      */
-    async submitUserInput(inputs, targetTabId) {
+    async submitUserInput(inputs, targetTabId, options) {
         const tabToUse = targetTabId || this.currentTabId;
         const activeTab = await this.browser.getActiveTab(tabToUse);
         if (activeTab?.id) {
@@ -2393,7 +2491,8 @@ export class RunCoordinator {
         }
         // C. Fill custom text if provided
         if (inputs.customText && !inputs.username && !inputs.password) {
-            const targetInput = elements.find((e) => e.role === 'input' || e.role === 'textbox');
+            const targetInput = (options?.targetLocalId ? elements.find((e) => e.localId === options.targetLocalId) : null) ||
+                elements.find((e) => e.role === 'input' || e.role === 'textbox');
             if (targetInput) {
                 await this.browser.sendMessageToTab(activeTab.id, {
                     type: 'EXECUTE_ACTION',
@@ -2420,7 +2519,12 @@ export class RunCoordinator {
                     username: inputs.username,
                     password: inputs.password
                 });
-                if (directRes && directRes.userFilled || directRes?.passFilled) {
+                if (directRes && (directRes.userFilled || directRes?.passFilled)) {
+                    if (options?.resumeLoop === true && this.currentGoal && this.currentStep < this.currentMaxSteps) {
+                        this.currentStaleRetries = 0;
+                        this.transition('capturing', `Resuming execution after user input (step ${this.currentStep + 1}/${this.currentMaxSteps})...`);
+                        return this.executeLoop();
+                    }
                     this.transition('complete', 'Credentials securely filled locally');
                     return this.completeWithResult({
                         success: true,
@@ -2434,6 +2538,12 @@ export class RunCoordinator {
             const errorMsg = 'No matching input fields found on the page to fill';
             this.transition('failed-safe', errorMsg);
             return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg });
+        }
+        // Interactive Slot-Filling Resume: Continue the multi-step perception loop smoothly
+        if (options?.resumeLoop === true && this.currentGoal && this.currentStep < this.currentMaxSteps) {
+            this.currentStaleRetries = 0;
+            this.transition('capturing', `Resuming execution after user input (step ${this.currentStep + 1}/${this.currentMaxSteps})...`);
+            return this.executeLoop();
         }
         this.transition('complete', `Successfully filled ${filledCount} field(s) locally`);
         return this.completeWithResult({

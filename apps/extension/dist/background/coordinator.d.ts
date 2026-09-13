@@ -38,6 +38,8 @@ export interface CoordinatorListeners {
     onUserInputRequired?(request: {
         kind: 'credentials' | 'text_input';
         prompt: string;
+        targetLocalId?: string;
+        inputKey?: string;
         runId?: string;
     }): void;
     onTelemetryUpdated?(telemetry: RunTelemetry, runId?: string): void;
@@ -186,7 +188,10 @@ export declare class RunCoordinator {
         username?: string;
         password?: string;
         customText?: string;
-    }, targetTabId?: number): Promise<CoordinatorRunResult>;
+    }, targetTabId?: number, options?: {
+        resumeLoop?: boolean;
+        targetLocalId?: string;
+    }): Promise<CoordinatorRunResult>;
     setServerUrl(url: string): void;
 }
 //# sourceMappingURL=coordinator.d.ts.map
