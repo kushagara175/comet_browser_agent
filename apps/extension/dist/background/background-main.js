@@ -21227,7 +21227,14 @@ var RunCoordinator = class {
         }
       };
       this.stepsTrace.push(stepTrace);
+      const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) || /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?|register|registration|apply|application|complete|fill|signup|sign\s+up|form|workflow|survey|questionnaire)\b/i.test(this.currentGoal || "");
       if (!isSuccess) {
+        const canContinuePerception = execResponse?.success === true && proposal.risk === "safe" && step < maxSteps && isMultiStepGoal;
+        if (canContinuePerception) {
+          console.warn(`[PrivaPilot Coordinator] Step ${step} semantic verification uncertain (${execResponse?.message || "unconfirmed"}); proceeding to next perception cycle...`);
+          this.transition("capturing", `Step ${step} executed. Re-perceiving page state (step ${step + 1}/${maxSteps})...`);
+          continue;
+        }
         const errorMsg2 = execResponse?.message || "Action execution or semantic verification failed";
         this.transition("failed-safe", `Execution failed: ${errorMsg2}`);
         const res2 = {
@@ -21242,7 +21249,6 @@ var RunCoordinator = class {
         };
         return this.completeWithResult(res2);
       }
-      const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) || /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?)\b/i.test(this.currentGoal || "");
       if (!isMultiStepGoal && this.currentTaskContract?.expectedTerminal.kind === "scroll_changed" && proposal.kind === "scroll") {
         const tFin = Date.now();
         const telemetry2 = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);

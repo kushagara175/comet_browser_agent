@@ -1946,7 +1946,20 @@ export class RunCoordinator {
                 }
             };
             this.stepsTrace.push(stepTrace);
+            const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) ||
+                /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?|register|registration|apply|application|complete|fill|signup|sign\s+up|form|workflow|survey|questionnaire)\b/i.test(this.currentGoal || '');
             if (!isSuccess) {
+                // If the action was physically executed successfully and risk is safe, and we have remaining steps in a multi-step task,
+                // do not abort the run on uncertain semantic verification. Proceed to next perception cycle so the VLM re-evaluates.
+                const canContinuePerception = execResponse?.success === true &&
+                    proposal.risk === 'safe' &&
+                    step < maxSteps &&
+                    isMultiStepGoal;
+                if (canContinuePerception) {
+                    console.warn(`[PrivaPilot Coordinator] Step ${step} semantic verification uncertain (${execResponse?.message || 'unconfirmed'}); proceeding to next perception cycle...`);
+                    this.transition('capturing', `Step ${step} executed. Re-perceiving page state (step ${step + 1}/${maxSteps})...`);
+                    continue;
+                }
                 const errorMsg = execResponse?.message || 'Action execution or semantic verification failed';
                 this.transition('failed-safe', `Execution failed: ${errorMsg}`);
                 const res = {
@@ -1963,8 +1976,6 @@ export class RunCoordinator {
             }
             // Deterministic early completion: if the executed action satisfies the task contract
             // (e.g. one-step scroll navigation directive), complete immediately without redundant perception cycles
-            const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) ||
-                /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?)\b/i.test(this.currentGoal || '');
             if (!isMultiStepGoal && this.currentTaskContract?.expectedTerminal.kind === 'scroll_changed' && proposal.kind === 'scroll') {
                 const tFin = Date.now();
                 const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);

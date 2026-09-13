@@ -2117,14 +2117,14 @@
           if (mutationOccurred) {
             const exp = (proposal.expectedState || "").toLowerCase();
             const expectsSpecificModalOrValue = exp.includes("drawer") || exp.includes("preview") || exp.includes("modal") || exp.includes("dialog") || proposal.expectedPostcondition?.kind === "dialog_visible" || proposal.expectedPostcondition?.kind === "value_present" || proposal.expectedPostcondition?.kind === "select_changed";
-            if (proposal.kind === "click" && !expectsSpecificModalOrValue && (!proposal.expectedPostcondition || !proposal.expectedPostcondition.kind || proposal.expectedPostcondition.kind === "status_changed" || proposal.expectedPostcondition.kind === "url_changed")) {
+            if ((proposal.kind === "click" || proposal.kind === "type" || proposal.kind === "select") && !expectsSpecificModalOrValue) {
               resolve({
                 verified: true,
                 reasonCode: "TARGET_STATE_MUTATION_VERIFIED",
-                message: "Semantic state verified: DOM mutation observed after click action",
+                message: `Semantic state verified: DOM mutation observed after ${proposal.kind} action`,
                 details: {
                   durationMs: Date.now() - startTime,
-                  matchedCondition: "dom_mutation_after_click",
+                  matchedCondition: `dom_mutation_after_${proposal.kind}`,
                   corroboratedByImageDiff: options?.imageDiffCorroborated
                 }
               });

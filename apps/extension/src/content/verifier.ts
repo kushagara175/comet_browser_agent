@@ -753,20 +753,16 @@ export class SemanticStateVerifier {
             proposal.expectedPostcondition?.kind === 'select_changed';
 
           if (
-            proposal.kind === 'click' &&
-            !expectsSpecificModalOrValue &&
-            (!proposal.expectedPostcondition ||
-              !proposal.expectedPostcondition.kind ||
-              proposal.expectedPostcondition.kind === 'status_changed' ||
-              proposal.expectedPostcondition.kind === 'url_changed')
+            (proposal.kind === 'click' || proposal.kind === 'type' || proposal.kind === 'select') &&
+            !expectsSpecificModalOrValue
           ) {
             resolve({
               verified: true,
               reasonCode: 'TARGET_STATE_MUTATION_VERIFIED',
-              message: 'Semantic state verified: DOM mutation observed after click action',
+              message: `Semantic state verified: DOM mutation observed after ${proposal.kind} action`,
               details: {
                 durationMs: Date.now() - startTime,
-                matchedCondition: 'dom_mutation_after_click',
+                matchedCondition: `dom_mutation_after_${proposal.kind}`,
                 corroboratedByImageDiff: options?.imageDiffCorroborated
               }
             });
