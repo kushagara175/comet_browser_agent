@@ -1561,6 +1561,14 @@ export class RunCoordinator {
         this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
       }
 
+      // Attach previous step history to page state so LLM has multi-step context
+      if (this.actionHistory.length > 0 && sanitized.pageState) {
+        const historyText = this.actionHistory
+          .map((a: any, idx: number) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || 'page'}" (${a.rationale || 'executed'})`)
+          .join('; ');
+        (sanitized.pageState as any).postconditionSummary = historyText;
+      }
+
       // Step 3: Local Safe Action Router (Stage D6) vs Server Reasoning
       const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
       let proposal: ActionProposal;

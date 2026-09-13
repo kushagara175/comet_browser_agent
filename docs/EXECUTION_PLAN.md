@@ -2,8 +2,7 @@
 
 **SIH26171 · ISRO / Department of Space · Deadline 20 September 2026, 23:59 IST**
 Written 2 September 2026, revised the same day after a line-by-line re-read of the
-problem statement. Supersedes
-[`archive/EXECUTION_PLAN_2026-08-31.md`](archive/EXECUTION_PLAN_2026-08-31.md).
+problem statement. Supersedes earlier drafts.
 
 This document is **strategy**: what we are betting on, what actually decides the
 outcome, and how the two of us split it. The task board is

@@ -1424,7 +1424,15 @@ export function extractSearchQueryFromGoal(goal: string): string {
  */
 export function extractTargetUrlFromGoal(goal: string): string | undefined {
   if (!goal || typeof goal !== 'string') return undefined;
-  const g = goal.trim();
+  let g = goal.trim();
+
+  // Strip polite/conversational wrapper prefixes
+  const CONVERSATIONAL_PREFIX = /^(?:(?:please|kindly|hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+  let prevG = '';
+  while (g && g !== prevG) {
+    prevG = g;
+    g = g.replace(CONVERSATIONAL_PREFIX, '').trim();
+  }
 
   // 1. Explicit http/https URL in goal
   const urlMatch = g.match(/https?:\/\/[^\s"'<>]+/i);
@@ -1443,11 +1451,11 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
     return `http://${localhostMatch[1]}`;
   }
 
-  // 3. Direct domain pattern (e.g. sih.gov.in, isro.gov.in, github.com)
-  const domainMatch = g.match(/\b((?:[a-zA-Z0-9-]+\.)+(?:gov\.in|nic\.in|ac\.in|org\.in|co\.in|com|org|net|io|in|edu|gov|dev|app|ai|me))(?:\/([^\s"'<>]*))?\b/i);
-  if (domainMatch) {
-    let domain = domainMatch[1];
-    const path = domainMatch[2] ? `/${domainMatch[2]}` : '';
+  // 3. Universal domain pattern: any valid hostname with 2+ char TLD (e.g. allel.co, sih.gov.in, github.com, example.xyz)
+  const universalDomainMatch = g.match(/(?:^|[\s"'(])((?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,24})(?:\/([^\s"'<>]*))?/i);
+  if (universalDomainMatch) {
+    let domain = universalDomainMatch[1];
+    const path = universalDomainMatch[2] ? `/${universalDomainMatch[2]}` : '';
     if (domain.toLowerCase() === 'isro.gov.in') {
       domain = 'www.isro.gov.in';
     } else if (domain.toLowerCase() === 'gmail.com') {
@@ -1457,9 +1465,12 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
   }
 
   // 4. Contextual target phrasing: "in/on/open/visit/go to [the] <name> (website|portal|site|page|org)"
-  const contextMatch = g.match(/\b(?:in|on|at|open|load|visit|go\s+to|navigate\s+to)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+(?:website|portal|site|page|org|organisation)\b/i);
+  const contextMatch = g.match(/\b(?:in|on|at|open|load|visit|go\s+to|navigate\s+to)\s+(?:the\s+)?([a-zA-Z0-9_\s.-]+?)\s+(?:website|portal|site|page|org|organisation)\b/i);
   if (contextMatch) {
     const siteKeyword = contextMatch[1].trim().toLowerCase();
+    if (siteKeyword.includes('.')) {
+      return `https://${siteKeyword}`;
+    }
     if (siteKeyword.includes('isro') || siteKeyword.includes('space')) {
       return 'https://www.isro.gov.in';
     }
@@ -1502,9 +1513,12 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
   }
 
   // 5. Explicit navigation verb at start of goal: "open/go to/visit <target>"
-  const navDirective = g.match(/^(?:please\s+|kindly\s+)?(?:open|go\s+to|visit|launch|load)\s+([a-zA-Z0-9_\s.-]+?)(?:\s+(?:and|then|,)|$)/i);
+  const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_\s.-]+?)(?:\s+(?:and|then|,)|$)/i);
   if (navDirective) {
     const target = navDirective[1].trim().toLowerCase();
+    if (target.includes('.')) {
+      return `https://${target}`;
+    }
     if (target === 'isro' || target.includes('isro')) return 'https://www.isro.gov.in';
     if (target === 'gmail' || target.includes('gmail')) return 'https://mail.google.com/mail';
     if (target.includes('bhuvan')) return 'https://bhuvan.nrsc.gov.in';

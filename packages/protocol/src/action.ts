@@ -139,7 +139,7 @@ export function parseFormFieldAssignments(text: string): FormFieldAssignment[] {
 export function resolveTaskContract(goal: string): TaskContract {
   let g = (goal || '').trim().toLowerCase().replace(/[?!.]+$/, '').trim();
   let prev = '';
-  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
   while (g && g !== prev) {
     prev = g;
     g = g.replace(ACTION_PREFIX_REGEX, '').trim();
@@ -1117,7 +1117,7 @@ export function isPureNavigationGoal(goal: string): boolean {
   if (/^https?:\/\/[^\s]+$/i.test(g) || /^www\.[a-z0-9-]+\.[a-z]+(?:\/[^\s]*)?$/i.test(g)) {
     return true;
   }
-  if (/^(?:[a-zA-Z0-9-]+\.)+(?:gov\.in|nic\.in|ac\.in|org\.in|co\.in|com|org|net|io|in|edu|gov|dev|app|ai|me)(?:\/[^\s]*)?$/i.test(g)) {
+  if (/^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,24}(?:\/[^\s]*)?$/i.test(g)) {
     return true;
   }
 

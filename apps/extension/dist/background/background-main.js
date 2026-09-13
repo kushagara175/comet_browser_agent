@@ -14411,7 +14411,7 @@ function parseFormFieldAssignments(text) {
 function resolveTaskContract(goal) {
   let g = (goal || "").trim().toLowerCase().replace(/[?!.]+$/, "").trim();
   let prev = "";
-  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
   while (g && g !== prev) {
     prev = g;
     g = g.replace(ACTION_PREFIX_REGEX, "").trim();
@@ -15142,7 +15142,7 @@ function isPureNavigationGoal(goal) {
   if (/^https?:\/\/[^\s]+$/i.test(g) || /^www\.[a-z0-9-]+\.[a-z]+(?:\/[^\s]*)?$/i.test(g)) {
     return true;
   }
-  if (/^(?:[a-zA-Z0-9-]+\.)+(?:gov\.in|nic\.in|ac\.in|org\.in|co\.in|com|org|net|io|in|edu|gov|dev|app|ai|me)(?:\/[^\s]*)?$/i.test(g)) {
+  if (/^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,24}(?:\/[^\s]*)?$/i.test(g)) {
     return true;
   }
   const navMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_.:/-]+)$/i);
@@ -16382,7 +16382,13 @@ function extractSearchQueryFromGoal(goal) {
 function extractTargetUrlFromGoal(goal) {
   if (!goal || typeof goal !== "string")
     return void 0;
-  const g = goal.trim();
+  let g = goal.trim();
+  const CONVERSATIONAL_PREFIX = /^(?:(?:please|kindly|hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+  let prevG = "";
+  while (g && g !== prevG) {
+    prevG = g;
+    g = g.replace(CONVERSATIONAL_PREFIX, "").trim();
+  }
   const urlMatch = g.match(/https?:\/\/[^\s"'<>]+/i);
   if (urlMatch) {
     let u = urlMatch[0];
@@ -16396,10 +16402,10 @@ function extractTargetUrlFromGoal(goal) {
   if (localhostMatch) {
     return `http://${localhostMatch[1]}`;
   }
-  const domainMatch = g.match(/\b((?:[a-zA-Z0-9-]+\.)+(?:gov\.in|nic\.in|ac\.in|org\.in|co\.in|com|org|net|io|in|edu|gov|dev|app|ai|me))(?:\/([^\s"'<>]*))?\b/i);
-  if (domainMatch) {
-    let domain = domainMatch[1];
-    const path = domainMatch[2] ? `/${domainMatch[2]}` : "";
+  const universalDomainMatch = g.match(/(?:^|[\s"'(])((?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,24})(?:\/([^\s"'<>]*))?/i);
+  if (universalDomainMatch) {
+    let domain = universalDomainMatch[1];
+    const path = universalDomainMatch[2] ? `/${universalDomainMatch[2]}` : "";
     if (domain.toLowerCase() === "isro.gov.in") {
       domain = "www.isro.gov.in";
     } else if (domain.toLowerCase() === "gmail.com") {
@@ -16407,9 +16413,12 @@ function extractTargetUrlFromGoal(goal) {
     }
     return `https://${domain}${path}`;
   }
-  const contextMatch = g.match(/\b(?:in|on|at|open|load|visit|go\s+to|navigate\s+to)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+(?:website|portal|site|page|org|organisation)\b/i);
+  const contextMatch = g.match(/\b(?:in|on|at|open|load|visit|go\s+to|navigate\s+to)\s+(?:the\s+)?([a-zA-Z0-9_\s.-]+?)\s+(?:website|portal|site|page|org|organisation)\b/i);
   if (contextMatch) {
     const siteKeyword = contextMatch[1].trim().toLowerCase();
+    if (siteKeyword.includes(".")) {
+      return `https://${siteKeyword}`;
+    }
     if (siteKeyword.includes("isro") || siteKeyword.includes("space")) {
       return "https://www.isro.gov.in";
     }
@@ -16450,9 +16459,12 @@ function extractTargetUrlFromGoal(goal) {
       return "http://localhost:4500";
     }
   }
-  const navDirective = g.match(/^(?:please\s+|kindly\s+)?(?:open|go\s+to|visit|launch|load)\s+([a-zA-Z0-9_\s.-]+?)(?:\s+(?:and|then|,)|$)/i);
+  const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_\s.-]+?)(?:\s+(?:and|then|,)|$)/i);
   if (navDirective) {
     const target = navDirective[1].trim().toLowerCase();
+    if (target.includes(".")) {
+      return `https://${target}`;
+    }
     if (target === "isro" || target.includes("isro"))
       return "https://www.isro.gov.in";
     if (target === "gmail" || target.includes("gmail"))
@@ -20473,6 +20485,10 @@ var RunCoordinator = class {
       this.currentSanitizedContext = sanitized;
       if (this.listeners.onSanitizationComplete) {
         this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
+      }
+      if (this.actionHistory.length > 0 && sanitized.pageState) {
+        const historyText = this.actionHistory.map((a, idx) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || "page"}" (${a.rationale || "executed"})`).join("; ");
+        sanitized.pageState.postconditionSummary = historyText;
       }
       const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
       let proposal;

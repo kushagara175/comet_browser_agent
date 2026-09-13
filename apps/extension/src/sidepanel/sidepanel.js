@@ -79,8 +79,8 @@ export function extractActionSuggestions(text) {
   return suggestions.slice(0, 4);
 }
 
-const ACTION_REQUEST_PREFIX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
-const ACTION_VERB = /^(?:click|open|type|fill|enter|write|set|press|select|choose|scroll|hover|drag|drop|upload|attach|move|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log\s+in|buy|checkout|inspect|audit|check|go\s+to|navigate)(?:\b|\s)/i;
+const ACTION_REQUEST_PREFIX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+|(?:i\s+(?:want|need)\s+you\s+to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|help\s+me\s+(?:to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+const ACTION_VERB = /^(?:click|open|type|fill|enter|write|set|press|select|choose|scroll|hover|drag|drop|upload|attach|move|submit|approve|deny|dismiss|close|accept|filter|find|search|login|log\s+in|sign|auth|authenticate|do|perform|execute|proceed|buy|checkout|inspect|audit|check|go\s+to|navigate)(?:\b|\s)/i;
 
 /**
  * Distinguishes an instruction to operate the current page from a question.
@@ -103,8 +103,8 @@ export function isBrowserActionRequest(message) {
   if (/^(?:tell\s+me\s+how|how\s+(?:do|can|to)|what\s+(?:would|is|are)|why\s+|explain\b)/i.test(normalized)) {
     return false;
   }
-  // Direct URL or domain navigation directives (e.g. "https://www.isro.gov.in/ ...", "www.isro.gov.in", "sih.gov.in")
-  if (/^https?:\/\//i.test(normalized) || /^www\.[a-z0-9-]+\.[a-z]+/i.test(normalized) || /^(?:[a-zA-Z0-9-]+\.)+(?:gov\.in|nic\.in|ac\.in|org\.in|co\.in|com|org|net|io|in|edu|gov|dev|app|ai|me)\b/i.test(normalized)) {
+  // Direct URL or universal domain navigation directives (e.g. "https://...", "www.isro.gov.in", "allel.co", "sih.gov.in")
+  if (/^https?:\/\//i.test(normalized) || /^www\.[a-z0-9-]+\.[a-z]+/i.test(normalized) || /^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,24}(?:\/[^\s]*)?$/i.test(normalized)) {
     return true;
   }
 
@@ -1311,8 +1311,29 @@ if (typeof document !== 'undefined') {
 
       const actionLabel = getCleanActionLabel(action);
 
+      const reasoningText = action.reasoning || res.reasoning || (action.rationale !== actionLabel ? action.rationale : '');
+
       agentBubble.classList.add('msg-action');
       agentBubble.innerHTML = `
+        ${reasoningText ? `
+          <details class="thought-stream-details" open>
+            <summary class="thought-stream-summary">
+              <span>🧠 Thinking Process</span>
+              <span class="thought-stream-badge">${Math.round((action.confidence || 0.95) * 100)}% Conf</span>
+            </summary>
+            <div class="thought-stream-body">${renderMarkdown(reasoningText)}</div>
+          </details>
+        ` : ''}
+        ${res.steps && res.steps.length > 1 ? `
+          <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 7px;">
+            ${res.steps.map(s => `
+              <div style="font-size: 10.5px; color: #94a3b8; display: flex; align-items: center; gap: 6px;">
+                <span style="background: rgba(148, 163, 184, 0.15); padding: 1px 5px; border-radius: 4px; font-weight: 600;">Step ${s.step}</span>
+                <span>${escapeHtml(getCleanActionLabel(s.proposal))}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
         <div class="action-done-pill">
           <svg class="action-done-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="20 6 9 17 4 12"></polyline>
@@ -1622,6 +1643,19 @@ if (typeof document !== 'undefined') {
             if (message.message) {
               addAuditEntry(`STEP ${message.step}/${message.maxSteps}`, message.message, 'info');
             }
+            const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
+            if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
+              lastAgentBubble.innerHTML = `
+                <div class="agent-thinking-stream" style="display: flex; align-items: center; gap: 8px;">
+                  <div class="agent-status-ring" style="display: inline-block; width: 12px; height: 12px; border: 2px solid #8ab4f8; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;"></div>
+                  <div>
+                    <span style="font-size: 11px; font-weight: 600; color: #8ab4f8;">Step ${message.step}/${message.maxSteps}</span>
+                    <span style="font-size: 11px; color: #94a3b8; margin-left: 4px;">${escapeHtml(message.message || 'Thinking...')}</span>
+                  </div>
+                </div>
+              `;
+              chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
           }
 
           if (message.type === 'COORDINATOR_ACTION_PROPOSED') {
@@ -1629,6 +1663,19 @@ if (typeof document !== 'undefined') {
             if (act) {
               const actDesc = `${act.kind ? act.kind.toUpperCase() : 'ACT'} ${act.sanitizedTargetName || act.targetLocalId || ''}`.trim();
               addAuditEntry('PLAN', `${actDesc}: ${act.rationale || 'Executing action'}`, 'pass');
+              const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
+              if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
+                lastAgentBubble.innerHTML = `
+                  <div class="agent-thinking-stream" style="display: flex; flex-direction: column; gap: 4px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <div class="agent-status-ring" style="display: inline-block; width: 12px; height: 12px; border: 2px solid #8ab4f8; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;"></div>
+                      <span style="font-size: 11px; font-weight: 600; color: #8ab4f8;">Executing ${escapeHtml((act.kind || 'action').toUpperCase())} ${escapeHtml(act.sanitizedTargetName || act.targetLocalId || '')}</span>
+                    </div>
+                    ${act.rationale ? `<div style="font-size: 10.5px; color: #cbd5e1; font-style: italic; margin-left: 20px;">"${escapeHtml(act.rationale)}"</div>` : ''}
+                  </div>
+                `;
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+              }
             }
           }
 

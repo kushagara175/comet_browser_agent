@@ -15,6 +15,7 @@ disagree, the one higher in this list wins.
 
 | Document | What it is |
 | :--- | :--- |
+| **[OUR_DIFFERENTIATORS_AND_PILLARS.md](OUR_DIFFERENTIATORS_AND_PILLARS.md)** | **The 14 core technical differentiators and pillars from team design notes.** Proof over promises: benchmarks, privacy moat, uncertainty-aware actions, framework-agnostic API, multi-tab scalability. |
 | **[EXECUTION_PLAN.md](EXECUTION_PLAN.md)** | Strategy: where we stand, what actually decides selection, the four things we can prove that competitors cannot, the demo, and the risk register. **Start here to understand the bet.** |
 | **[PHASES.md](PHASES.md)** | The task board — phases R0–R8 ordered by which problem-statement clause each satisfies, every one with an exit gate. **Start here to decide what to do next.** |
 | **[AGENT_RULES.md](AGENT_RULES.md)** | Binding rules for every coding session: privacy boundary, fail-closed policy, data classes, action safety, evidence-and-honesty rules, reuse table, definition of done. **Read before writing code.** |
@@ -41,14 +42,6 @@ disagree, the one higher in this list wins.
 | Path | What it is |
 | :--- | :--- |
 | [benchmark-results/](benchmark-results/) | Output of `npm run benchmark`. Every stored result carries the command and commit that produced it. Two harnesses write here: `npm run benchmark` (Node, detector-level) and `npm run benchmark:browser` (real Chrome). Prefer the browser report; see AUDIT_LOCAL_VS_DEFERRED for what each can and cannot measure. |
-
-## Archive — superseded, do not build from
-
-| Path | Why it was superseded |
-| :--- | :--- |
-| [archive/PROJECT_PLAN_V2.md](archive/PROJECT_PLAN_V2.md) | Its problem-statement content is now `00_PROBLEM_STATEMENT.md`; its plan content is now `EXECUTION_PLAN.md`. |
-| [archive/claude_plan.md](archive/claude_plan.md) | Earlier plan, superseded by `EXECUTION_PLAN.md`. |
-| [archive/08_SPRINT_ROADMAP_4WEEKS.md](archive/08_SPRINT_ROADMAP_4WEEKS.md) | Its timeline began 23 Aug 2026 and has elapsed; replaced by the re-baselined phases in `EXECUTION_PLAN.md`. |
 
 ---
 

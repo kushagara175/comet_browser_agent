@@ -17,7 +17,7 @@
  *   is picked up on the next request instead of being stuck on "mock".
  */
 
-import { SanitizedNetworkPayload, ActionProposal, validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS } from '@privapilot/protocol';
+import { SanitizedNetworkPayload, ActionProposal, validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS, groundTargetCandidates, tokenizeSemanticText } from '@privapilot/protocol';
 import { MockReasoningEngine } from './mock-engine.js';
 
 export interface VlmConfig {
@@ -899,16 +899,66 @@ export class VlmReasoningEngine {
         parsed.targetLocalId = String(parsed.target || parsed.elementId || parsed.id || parsed.targetId || parsed.element || parsed.elementName);
       }
 
-      // If targetLocalId does not match an element ID directly, try resolving it by element name
+      // If targetLocalId does not match an element ID directly, resolve via semantic grounding
       if (parsed.targetLocalId && !payload.elements.some((e) => e.localId === parsed.targetLocalId)) {
-        const lowTarget = parsed.targetLocalId.toLowerCase();
-        const found = payload.elements.find(
+        const rawTarget = parsed.targetLocalId.trim();
+        const lowTarget = rawTarget.toLowerCase();
+
+        // 1. Direct case-insensitive or substring match on localId or sanitizedName
+        let found = payload.elements.find(
           (e) =>
             e.localId.toLowerCase() === lowTarget ||
             e.sanitizedName.toLowerCase() === lowTarget ||
             e.sanitizedName.toLowerCase().includes(lowTarget) ||
             lowTarget.includes(e.sanitizedName.toLowerCase())
         );
+
+        // 2. Token overlap match
+        if (!found) {
+          const targetTokens = lowTarget.split(/[\s_-]+/).filter((t: string) => t.length > 2);
+          if (targetTokens.length > 0) {
+            let maxOverlap = 0;
+            for (const el of payload.elements) {
+              const elName = (el.sanitizedName || '').toLowerCase();
+              const overlap = targetTokens.filter((t: string) => elName.includes(t)).length;
+              if (overlap > maxOverlap) {
+                maxOverlap = overlap;
+                found = el;
+              }
+            }
+          }
+        }
+
+        // 3. Structured intent grounding
+        if (!found) {
+          const intent = {
+            intent: (parsed.kind === 'type' ? 'type' : 'click') as any,
+            targetPhrase: rawTarget,
+            targetTokens: tokenizeSemanticText(rawTarget)
+          };
+          const groundRes = groundTargetCandidates(payload.elements, intent);
+          if (groundRes.bestCandidate) {
+            found = groundRes.bestCandidate.element;
+          } else if (groundRes.candidates.length > 0) {
+            found = groundRes.candidates[0].element;
+          }
+        }
+
+        // 4. Fallback for interactive actions: ground against user's overall goal
+        if (!found && parsed.kind !== 'finish' && parsed.kind !== 'wait') {
+          const goalIntent = {
+            intent: (parsed.kind === 'type' ? 'type' : 'click') as any,
+            targetPhrase: payload.goal || '',
+            targetTokens: tokenizeSemanticText(payload.goal || '')
+          };
+          const goalGroundRes = groundTargetCandidates(payload.elements, goalIntent);
+          if (goalGroundRes.bestCandidate) {
+            found = goalGroundRes.bestCandidate.element;
+          } else if (goalGroundRes.candidates.length > 0) {
+            found = goalGroundRes.candidates[0].element;
+          }
+        }
+
         if (found) {
           parsed.targetLocalId = found.localId;
         }
