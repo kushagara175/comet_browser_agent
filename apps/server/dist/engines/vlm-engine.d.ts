@@ -52,6 +52,7 @@ export interface ChatResult {
 export declare function buildProviderAuthHeaders(endpoint: string, apiKey?: string): Record<string, string>;
 export declare function stripThinkingTags(raw: string): string;
 export declare function extractThinking(raw: string): string;
+export declare function sanitizeProhibitedText(text: string): string;
 export declare class VlmReasoningEngine {
     private config;
     private readonly mockFallback;

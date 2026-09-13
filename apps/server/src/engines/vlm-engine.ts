@@ -163,6 +163,24 @@ export function extractThinking(raw: string): string {
   return '';
 }
 
+export function sanitizeProhibitedText(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .replace(/https?:\/\//gi, 'https //')
+    .replace(/ftp:\/\//gi, 'ftp //')
+    .replace(/file:\/\//gi, 'file //')
+    .replace(/wss?:\/\//gi, 'ws //')
+    .replace(/blob:/gi, 'blob ')
+    .replace(/data:/gi, 'data ')
+    .replace(/<script\b/gi, '[script')
+    .replace(/javascript:/gi, 'javascript ')
+    .replace(/vbscript:/gi, 'vbscript ')
+    .replace(/data:text\/html/gi, 'data text/html')
+    .replace(/\bon\w+\s*=/gi, 'evt=')
+    .replace(/\beval\s*\(/gi, 'eval ')
+    .replace(/\bexpression\s*\(/gi, 'expression ');
+}
+
 export class VlmReasoningEngine {
   private config: VlmConfig;
   private readonly mockFallback: MockReasoningEngine;
@@ -1088,6 +1106,26 @@ export class VlmReasoningEngine {
       }
       if (parsed.expectedState === '') {
         delete parsed.expectedState;
+      }
+
+      if (parsed.rationale) {
+        parsed.rationale = sanitizeProhibitedText(parsed.rationale).slice(0, 500);
+      }
+      if (parsed.reasoning) {
+        parsed.reasoning = sanitizeProhibitedText(parsed.reasoning).slice(0, 5000);
+      }
+      if (parsed.reply) {
+        parsed.reply = sanitizeProhibitedText(parsed.reply).slice(0, 5000);
+      }
+      if (parsed.userInputPrompt) {
+        parsed.userInputPrompt = sanitizeProhibitedText(parsed.userInputPrompt).slice(0, 500);
+      }
+      if (Array.isArray(parsed.batchActions)) {
+        for (const act of parsed.batchActions) {
+          if (act.rationale) {
+            act.rationale = sanitizeProhibitedText(act.rationale).slice(0, 500);
+          }
+        }
       }
     }
 

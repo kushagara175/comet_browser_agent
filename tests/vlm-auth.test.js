@@ -61,3 +61,23 @@ test('validateActionProposal accepts valid reasoning property', () => {
   assert.equal(validation.proposal?.reasoning, proposal.reasoning);
 });
 
+test('sanitizeProhibitedText replaces prohibited URL and script patterns safely', async () => {
+  const { sanitizeProhibitedText } = await import('../apps/server/dist/engines/vlm-engine.js');
+  const dirtyRationale = 'The user wants to navigate to https://typeform.com/to/xyz with <script>alert(1)</script> and javascript:void(0)';
+  const clean = sanitizeProhibitedText(dirtyRationale);
+  assert.equal(clean.includes('https://'), false);
+  assert.equal(clean.includes('<script'), false);
+  assert.equal(clean.includes('javascript:'), false);
+
+  // When used in a proposal, validateActionProposal should succeed
+  const proposal = {
+    actionId: 'act_safe_1',
+    kind: 'finish',
+    confidence: 1.0,
+    risk: 'safe',
+    rationale: clean
+  };
+  const validation = validateActionProposal(proposal);
+  assert.equal(validation.isValid, true);
+});
+
