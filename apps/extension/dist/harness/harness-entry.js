@@ -14947,6 +14947,7 @@ as ORT format: ${n}`);
       } catch {
       }
       const routeFingerprint = typeof doc.location !== "undefined" && doc.location?.pathname ? doc.location.pathname.slice(0, 50) : "/";
+      const domain = typeof doc.location !== "undefined" && doc.location?.hostname ? doc.location.hostname.slice(0, 100) : void 0;
       let cappedInteractiveElements = interactiveElements;
       if (cappedInteractiveElements.length > 180) {
         cappedInteractiveElements = [...cappedInteractiveElements].sort((a, b) => {
@@ -14975,13 +14976,14 @@ as ORT format: ${n}`);
           imageElements,
           surfaces,
           interactiveElements: cappedInteractiveElements,
-          pageTitle: doc.title || "Page",
+          pageTitle: doc.title ? doc.title.slice(0, 150) : "Page",
           visibleDialogCount,
           dialogTitles,
           statusSummaries,
           counters: counters.slice(0, 20),
           contentSummaries: contentSummaries.slice(0, 15),
-          routeFingerprint
+          routeFingerprint,
+          domain
         },
         elementMap: this.elementMap
       };
@@ -16214,6 +16216,7 @@ as ORT format: ${n}`);
         ...Array.isArray(payload.pageState?.statusSummaries) ? { statusSummaries: payload.pageState.statusSummaries.map(String) } : {},
         ...payload.pageState?.routeFingerprint ? { routeFingerprint: String(payload.pageState.routeFingerprint) } : {},
         ...payload.pageState?.postconditionSummary ? { postconditionSummary: String(payload.pageState.postconditionSummary) } : {},
+        ...payload.pageState?.domain ? { domain: String(payload.pageState.domain) } : {},
         ...Array.isArray(payload.pageState?.counters) ? { counters: payload.pageState.counters.map((c) => ({ label: String(c.label || ""), value: String(c.value || "") })) } : {},
         ...Array.isArray(payload.pageState?.contentSummaries) ? { contentSummaries: payload.pageState.contentSummaries.map(String) } : {}
       },
@@ -16493,7 +16496,8 @@ as ORT format: ${n}`);
         ...snapshot.routeFingerprint ? { routeFingerprint: snapshot.routeFingerprint } : {},
         ...snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {},
         ...snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map((c) => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {},
-        ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {}
+        ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {},
+        ...snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {}
       };
       const safeCanonicalData = {
         captureId: rawCapture.captureId,

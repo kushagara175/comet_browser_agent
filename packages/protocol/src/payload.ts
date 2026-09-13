@@ -103,6 +103,7 @@ export interface SanitizedPageState {
   readonly postconditionSummary?: string;
   readonly counters?: ReadonlyArray<{ readonly label: string; readonly value: string }>;
   readonly contentSummaries?: ReadonlyArray<string>;
+  readonly domain?: string;
 }
 
 export interface RedactionManifest {

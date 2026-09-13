@@ -15616,6 +15616,7 @@ as ORT format: ${n}`);
         ...Array.isArray(payload.pageState?.statusSummaries) ? { statusSummaries: payload.pageState.statusSummaries.map(String) } : {},
         ...payload.pageState?.routeFingerprint ? { routeFingerprint: String(payload.pageState.routeFingerprint) } : {},
         ...payload.pageState?.postconditionSummary ? { postconditionSummary: String(payload.pageState.postconditionSummary) } : {},
+        ...payload.pageState?.domain ? { domain: String(payload.pageState.domain) } : {},
         ...Array.isArray(payload.pageState?.counters) ? { counters: payload.pageState.counters.map((c) => ({ label: String(c.label || ""), value: String(c.value || "") })) } : {},
         ...Array.isArray(payload.pageState?.contentSummaries) ? { contentSummaries: payload.pageState.contentSummaries.map(String) } : {}
       },
@@ -15895,7 +15896,8 @@ as ORT format: ${n}`);
         ...snapshot.routeFingerprint ? { routeFingerprint: snapshot.routeFingerprint } : {},
         ...snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {},
         ...snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map((c) => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {},
-        ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {}
+        ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {},
+        ...snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {}
       };
       const safeCanonicalData = {
         captureId: rawCapture.captureId,

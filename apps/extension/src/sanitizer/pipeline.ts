@@ -49,6 +49,7 @@ export interface LocalDomSnapshot {
   readonly postconditionSummary?: string;
   readonly counters?: ReadonlyArray<{ readonly label: string; readonly value: string }>;
   readonly contentSummaries?: ReadonlyArray<string>;
+  readonly domain?: string;
 }
 
 export class SanitizerPipeline {
@@ -360,7 +361,8 @@ export class SanitizerPipeline {
       ...(snapshot.routeFingerprint ? { routeFingerprint: snapshot.routeFingerprint } : {}),
       ...(snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {}),
       ...(snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map(c => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {}),
-      ...(snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map(s => sanitizeElementName(s)) } : {})
+      ...(snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map(s => sanitizeElementName(s)) } : {}),
+      ...(snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {})
     };
 
     const safeCanonicalData = {

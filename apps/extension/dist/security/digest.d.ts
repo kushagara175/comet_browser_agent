@@ -30,6 +30,7 @@ export interface SafePayloadDigestFields {
         statusSummaries?: ReadonlyArray<string> | string[];
         routeFingerprint?: string;
         postconditionSummary?: string;
+        domain?: string;
     };
     elements: ReadonlyArray<{
         localId: string;

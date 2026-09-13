@@ -544,3 +544,46 @@ test('MultiStepCoordinator: Scenario 10 - Invalid server action rejected and loo
   assert.ok(result.error?.includes('Action rejected'));
 });
 
+test('MultiStepCoordinator: Scenario 11 - Perception-Execution Bridge: Clarification query auto-advances to navigation target', async () => {
+  const elements = [
+    {
+      localId: 'el_ps_link',
+      role: 'link',
+      sanitizedName: 'Problem Statements',
+      coarseBounds: [0.1, 0.1, 0.2, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    }
+  ];
+
+  const browser = createFakeBrowserAdapter({ elements });
+
+  const step1ClarificationProposal = {
+    actionId: 'act_clarify',
+    kind: 'answer',
+    reply: 'Which platform is problem 171 from? For example, is it from Codeforces or LeetCode?',
+    confidence: 0.9,
+    risk: 'safe',
+    rationale: 'Asking clarification question'
+  };
+
+  const step2FinishProposal = {
+    actionId: 'act_finish',
+    kind: 'finish',
+    reply: 'Problem statement 171 has 12 verified submissions.',
+    confidence: 1.0,
+    risk: 'safe',
+    rationale: 'Problem statement 171 has 12 verified submissions.'
+  };
+
+  const httpClient = createSequenceHttpClient([step1ClarificationProposal, step2FinishProposal]);
+  const coordinator = new RunCoordinator(browser, httpClient);
+
+  const result = await coordinator.startRun('see how many submissions are done in problem statement 171', { maxSteps: 3 });
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.state, 'complete');
+  assert.ok(httpClient.callCount >= 2, 'Reasoning engine must be called again after navigating to Problem Statements');
+  assert.ok(result.message?.includes('12 verified submissions'));
+});
+

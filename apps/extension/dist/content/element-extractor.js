@@ -649,6 +649,9 @@ export class ElementExtractor {
         const routeFingerprint = typeof doc.location !== 'undefined' && doc.location?.pathname
             ? doc.location.pathname.slice(0, 50)
             : '/';
+        const domain = typeof doc.location !== 'undefined' && doc.location?.hostname
+            ? doc.location.hostname.slice(0, 100)
+            : undefined;
         // Bound interactive controls to at most 180 elements (strictly below closed schema 200 limit)
         let cappedInteractiveElements = interactiveElements;
         if (cappedInteractiveElements.length > 180) {
@@ -684,13 +687,14 @@ export class ElementExtractor {
                 imageElements,
                 surfaces,
                 interactiveElements: cappedInteractiveElements,
-                pageTitle: doc.title || 'Page',
+                pageTitle: doc.title ? doc.title.slice(0, 150) : 'Page',
                 visibleDialogCount,
                 dialogTitles,
                 statusSummaries,
                 counters: counters.slice(0, 20),
                 contentSummaries: contentSummaries.slice(0, 15),
-                routeFingerprint
+                routeFingerprint,
+                domain
             },
             elementMap: this.elementMap
         };

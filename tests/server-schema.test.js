@@ -562,4 +562,29 @@ test('Chat Payload Validator - Validates Multi-Turn Conversation History strictl
   assert.ok(badRoleRes.errorMessage?.includes('role must be "user" or "assistant"'));
 });
 
+test('validateSanitizedPayload accepts valid domain and rejects unsafe domain', () => {
+  const validDomainPayload = createValidPayload({
+    pageState: {
+      title: 'Smart India Hackathon',
+      viewport: [1280, 800],
+      domain: 'sih.gov.in',
+      routeFingerprint: '/'
+    }
+  });
+  const validRes = validateSanitizedPayload(validDomainPayload);
+  assert.strictEqual(validRes.isValid, true);
+  assert.strictEqual(validRes.payload?.pageState?.domain, 'sih.gov.in');
+
+  const scriptDomainPayload = createValidPayload({
+    pageState: {
+      title: 'Smart India Hackathon',
+      viewport: [1280, 800],
+      domain: 'sih.gov.in<script>alert(1)</script>'
+    }
+  });
+  const scriptRes = validateSanitizedPayload(scriptDomainPayload);
+  assert.strictEqual(scriptRes.isValid, false);
+  assert.ok(scriptRes.errorMessage?.includes('pageState.domain'));
+});
+
 

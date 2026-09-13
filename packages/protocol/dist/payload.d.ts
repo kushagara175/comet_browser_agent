@@ -69,6 +69,7 @@ export interface SanitizedPageState {
         readonly value: string;
     }>;
     readonly contentSummaries?: ReadonlyArray<string>;
+    readonly domain?: string;
 }
 export interface RedactionManifest {
     readonly manifestVersion: '1.0';

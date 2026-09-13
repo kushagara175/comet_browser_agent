@@ -41,6 +41,7 @@ export interface LocalDomSnapshot {
         readonly value: string;
     }>;
     readonly contentSummaries?: ReadonlyArray<string>;
+    readonly domain?: string;
 }
 export declare class SanitizerPipeline {
     /**

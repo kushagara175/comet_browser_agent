@@ -1163,9 +1163,16 @@ Strict Rules:
    - If the goal was to submit clearance approval and the status already says "Approved": return kind: "finish".
    - If the goal was to filter for a query and the search box already has the query text and table is filtered: return kind: "finish".
    You MUST return kind: "finish" with risk: "safe", confidence: 1.0, and a rationale explaining that the goal has been satisfied. Never re-trigger, repeat, or double-click an action that has already succeeded.
-13. CONVERSATIONAL QUERIES, GREETINGS & INFORMATION RETRIEVAL:
-   - If the user is greeting you ("hi", "hello", "hey"), asking general questions, asking for explanations, or asking about the page without needing an immediate DOM interaction: return kind: "answer" with risk: "safe", confidence: 1.0, and your response in the "reply" or "rationale" field.
-   - If the user asks for on-page info (e.g. "how many submissions are done"): if visible, return kind: "finish" with rationale containing the answer; if on another tab/section, return kind: "click" on that tab or link's local ID to navigate first.
+13. INFORMATION RETRIEVAL & DOM NAVIGATION DIRECTIVE (CRITICAL):
+   - ALWAYS ground the user's request in the current active web page (see "Active Web Page" at the top of the user prompt).
+   - If the user asks to see, find, check, count, or verify information (e.g. "how many submissions are done in problem statement 171", "what is the deadline", "who is the coordinator"):
+     a) ASSUME the question refers to the current website! NEVER hallucinate third-party platforms (like LeetCode, Codeforces, YouTube, etc.).
+     b) NEVER return kind: "answer" asking "which platform is this from?" or asking the user for clarification when the current website is clearly relevant.
+     c) If the requested information is ALREADY visible on the current screen: return kind: "finish" with confidence: 1.0, risk: "safe", and state the answer clearly in the "reply" and "rationale" fields.
+     d) If the requested information is NOT yet visible on the current screen (e.g., requires navigating to another page/section, clicking a tab, or searching):
+        YOU MUST PROPOSE A DOM ACTION: return kind: "click" on the relevant menu link or tab (e.g. "PROBLEM STATEMENTS", "Submissions", "Explore", "Search"), or return kind: "type" into a search box to find it.
+        DO NOT return kind: "answer" or kind: "finish" until you have navigated and observed the actual answer!
+   - ONLY return kind: "answer" for pure greetings ("hi", "hello", "who are you") or pure questions that have zero relation to web browsing or the current page (e.g. "what is 2 + 2").
 14. SET-OF-MARKS (SOM) VISUAL GROUNDING:
    - The sanitized screenshot includes high-contrast visual numbered mark badges (e.g. [1], [2], [3]) drawn directly on interactive controls.
    - The badge number corresponds directly to the numeric suffix of targetLocalId (badge 1 is el_1, badge 2 is el_2, etc.). Use these visual marks to accurately locate controls on the visual viewport.
@@ -1259,7 +1266,12 @@ IMPORTANT PRIVACY INSTRUCTION: All redacted values and blackened regions are per
 
     const promptSuffix = 'Analyze the layout and return the JSON action proposal. If the goal has already been achieved by the visible page state and landmarks, return kind "finish".';
 
-    return `Goal: ${payload.goal || 'Inspect page'}
+    const pageTitle = pageState.title || 'Active Web Page';
+    const domainStr = (pageState as any).domain ? ` | Domain: ${(pageState as any).domain}` : '';
+    const routeStr = pageState.routeFingerprint ? ` | Route: ${pageState.routeFingerprint}` : '';
+
+    return `Active Web Page: "${pageTitle}"${domainStr}${routeStr}
+User Goal: ${payload.goal || 'Inspect page'}
 ${redactionBlock}${landmarksBlock}Active Viewport Elements:
 ${JSON.stringify(compactElements, null, 2)}
 

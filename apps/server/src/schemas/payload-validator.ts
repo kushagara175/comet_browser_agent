@@ -55,7 +55,8 @@ const ALLOWED_PAGE_STATE_KEYS = new Set([
   'routeFingerprint',
   'postconditionSummary',
   'counters',
-  'contentSummaries'
+  'contentSummaries',
+  'domain'
 ]);
 
 const ALLOWED_MANIFEST_KEYS = new Set([
@@ -460,6 +461,12 @@ export function validateSanitizedPayload(body: any): ValidationResult<SanitizedN
       if (typeof s !== 'string' || s.length > 500 || hasProhibitedScriptPattern(s)) {
         return { isValid: false, errorMessage: 'pageState.contentSummaries contains invalid or unsafe string' };
       }
+    }
+  }
+
+  if (body.pageState.domain !== undefined) {
+    if (typeof body.pageState.domain !== 'string' || body.pageState.domain.length > 100 || hasProhibitedScriptPattern(body.pageState.domain)) {
+      return { isValid: false, errorMessage: 'pageState.domain must be a safe string up to 100 characters' };
     }
   }
 

@@ -73,6 +73,7 @@ export async function computePayloadDigestSha256(payload) {
             ...(Array.isArray(payload.pageState?.statusSummaries) ? { statusSummaries: payload.pageState.statusSummaries.map(String) } : {}),
             ...(payload.pageState?.routeFingerprint ? { routeFingerprint: String(payload.pageState.routeFingerprint) } : {}),
             ...(payload.pageState?.postconditionSummary ? { postconditionSummary: String(payload.pageState.postconditionSummary) } : {}),
+            ...(payload.pageState?.domain ? { domain: String(payload.pageState.domain) } : {}),
             ...(Array.isArray(payload.pageState?.counters) ? { counters: payload.pageState.counters.map((c) => ({ label: String(c.label || ''), value: String(c.value || '') })) } : {}),
             ...(Array.isArray(payload.pageState?.contentSummaries) ? { contentSummaries: payload.pageState.contentSummaries.map(String) } : {})
         },

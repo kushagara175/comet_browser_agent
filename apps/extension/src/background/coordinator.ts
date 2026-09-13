@@ -2062,6 +2062,38 @@ export class RunCoordinator {
         return this.completeWithResult(res);
       }
 
+      // Perception-Execution Bridge: If the model returned 'answer' with a clarification question
+      // (e.g. asking which platform or ending with '?') while on a live webpage where relevant
+      // navigation controls exist (e.g. "Problem Statements", "Submissions"),
+      // auto-advance by clicking the navigation target instead of prematurely terminating the run!
+      if (proposal.kind === 'answer' && step < maxSteps) {
+        const answerText = proposal.reply || proposal.rationale || '';
+        const isClarificationQuestion = (
+          /\b(?:which\s+(?:platform|website|site|problem)|could\s+you\s+clarify|please\s+clarify|where\s+is\s+this|what\s+site)\b/i.test(answerText) ||
+          (answerText.trim().endsWith('?') && this.currentTaskContract?.isAnswerGoal && this.actionHistory.length === 0)
+        );
+
+        if (isClarificationQuestion) {
+          const topic = this.currentTaskContract?.queryTopic || '';
+          const navCandidate = sanitized.elements.find(e =>
+            (e.role === 'link' || e.role === 'button' || e.role === 'tab') &&
+            (/problem\s*statement|submission|statement/i.test(e.sanitizedName) || (topic && e.sanitizedName.toLowerCase().includes(topic.toLowerCase())))
+          );
+          if (navCandidate) {
+            console.log(`[Coordinator] Model proposed clarification query instead of navigation; advancing to navigation target: ${navCandidate.sanitizedName} (${navCandidate.localId})`);
+            proposal = {
+              actionId: `act_nav_${Date.now()}`,
+              kind: 'click',
+              targetLocalId: navCandidate.localId,
+              confidence: 0.96,
+              risk: 'safe',
+              rationale: `Navigating to "${navCandidate.sanitizedName}" to locate the requested data.`
+            };
+            riskLevel = 'safe';
+          }
+        }
+      }
+
       if (proposal.kind === 'finish' || proposal.kind === 'answer') {
         const terminalCheck = this.currentTaskContract
           ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory)

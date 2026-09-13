@@ -18246,6 +18246,7 @@ async function computePayloadDigestSha256(payload) {
       ...Array.isArray(payload.pageState?.statusSummaries) ? { statusSummaries: payload.pageState.statusSummaries.map(String) } : {},
       ...payload.pageState?.routeFingerprint ? { routeFingerprint: String(payload.pageState.routeFingerprint) } : {},
       ...payload.pageState?.postconditionSummary ? { postconditionSummary: String(payload.pageState.postconditionSummary) } : {},
+      ...payload.pageState?.domain ? { domain: String(payload.pageState.domain) } : {},
       ...Array.isArray(payload.pageState?.counters) ? { counters: payload.pageState.counters.map((c) => ({ label: String(c.label || ""), value: String(c.value || "") })) } : {},
       ...Array.isArray(payload.pageState?.contentSummaries) ? { contentSummaries: payload.pageState.contentSummaries.map(String) } : {}
     },
@@ -18525,7 +18526,8 @@ var SanitizerPipeline = class {
       ...snapshot.routeFingerprint ? { routeFingerprint: snapshot.routeFingerprint } : {},
       ...snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {},
       ...snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map((c) => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {},
-      ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {}
+      ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {},
+      ...snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {}
     };
     const safeCanonicalData = {
       captureId: rawCapture.captureId,
@@ -21261,6 +21263,28 @@ var RunCoordinator = class {
           steps: this.stepsTrace
         };
         return this.completeWithResult(res2);
+      }
+      if (proposal.kind === "answer" && step < maxSteps) {
+        const answerText = proposal.reply || proposal.rationale || "";
+        const isClarificationQuestion = /\b(?:which\s+(?:platform|website|site|problem)|could\s+you\s+clarify|please\s+clarify|where\s+is\s+this|what\s+site)\b/i.test(answerText) || answerText.trim().endsWith("?") && this.currentTaskContract?.isAnswerGoal && this.actionHistory.length === 0;
+        if (isClarificationQuestion) {
+          const topic = this.currentTaskContract?.queryTopic || "";
+          const navCandidate = sanitized.elements.find(
+            (e) => (e.role === "link" || e.role === "button" || e.role === "tab") && (/problem\s*statement|submission|statement/i.test(e.sanitizedName) || topic && e.sanitizedName.toLowerCase().includes(topic.toLowerCase()))
+          );
+          if (navCandidate) {
+            console.log(`[Coordinator] Model proposed clarification query instead of navigation; advancing to navigation target: ${navCandidate.sanitizedName} (${navCandidate.localId})`);
+            proposal = {
+              actionId: `act_nav_${Date.now()}`,
+              kind: "click",
+              targetLocalId: navCandidate.localId,
+              confidence: 0.96,
+              risk: "safe",
+              rationale: `Navigating to "${navCandidate.sanitizedName}" to locate the requested data.`
+            };
+            riskLevel = "safe";
+          }
+        }
       }
       if (proposal.kind === "finish" || proposal.kind === "answer") {
         const terminalCheck = this.currentTaskContract ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory) : { satisfied: true, reason: "Goal completed" };

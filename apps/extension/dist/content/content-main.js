@@ -927,6 +927,7 @@
       } catch {
       }
       const routeFingerprint = typeof doc.location !== "undefined" && doc.location?.pathname ? doc.location.pathname.slice(0, 50) : "/";
+      const domain = typeof doc.location !== "undefined" && doc.location?.hostname ? doc.location.hostname.slice(0, 100) : void 0;
       let cappedInteractiveElements = interactiveElements;
       if (cappedInteractiveElements.length > 180) {
         cappedInteractiveElements = [...cappedInteractiveElements].sort((a, b) => {
@@ -955,13 +956,14 @@
           imageElements,
           surfaces,
           interactiveElements: cappedInteractiveElements,
-          pageTitle: doc.title || "Page",
+          pageTitle: doc.title ? doc.title.slice(0, 150) : "Page",
           visibleDialogCount,
           dialogTitles,
           statusSummaries,
           counters: counters.slice(0, 20),
           contentSummaries: contentSummaries.slice(0, 15),
-          routeFingerprint
+          routeFingerprint,
+          domain
         },
         elementMap: this.elementMap
       };

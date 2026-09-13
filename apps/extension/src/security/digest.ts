@@ -78,6 +78,7 @@ export interface SafePayloadDigestFields {
     statusSummaries?: ReadonlyArray<string> | string[];
     routeFingerprint?: string;
     postconditionSummary?: string;
+    domain?: string;
   };
   elements: ReadonlyArray<{
     localId: string;
@@ -108,6 +109,7 @@ export async function computePayloadDigestSha256(payload: any): Promise<string> 
       ...(Array.isArray(payload.pageState?.statusSummaries) ? { statusSummaries: payload.pageState.statusSummaries.map(String) } : {}),
       ...(payload.pageState?.routeFingerprint ? { routeFingerprint: String(payload.pageState.routeFingerprint) } : {}),
       ...(payload.pageState?.postconditionSummary ? { postconditionSummary: String(payload.pageState.postconditionSummary) } : {}),
+      ...(payload.pageState?.domain ? { domain: String(payload.pageState.domain) } : {}),
       ...(Array.isArray(payload.pageState?.counters) ? { counters: payload.pageState.counters.map((c: any) => ({ label: String(c.label || ''), value: String(c.value || '') })) } : {}),
       ...(Array.isArray(payload.pageState?.contentSummaries) ? { contentSummaries: payload.pageState.contentSummaries.map(String) } : {})
     },
