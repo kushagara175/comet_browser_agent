@@ -684,8 +684,11 @@ if (typeof document !== 'undefined') {
 
       if (!targetSession.messages || targetSession.messages.length === 0) {
         if (geminiHero) geminiHero.classList.remove('hidden');
+        hudTabs?.classList.add('hidden');
       } else {
         if (geminiHero) geminiHero.classList.add('hidden');
+        hudTabs?.classList.remove('hidden');
+        switchTab(tabChatBtn, tabChatContent);
         targetSession.messages.forEach(msg => {
           if (msg.role === 'user') {
             conversationHistory.push({ role: 'user', content: msg.text });
@@ -1368,6 +1371,10 @@ if (typeof document !== 'undefined') {
       const welcomeBox = chatMessages.querySelector('.welcome-card');
       if (welcomeBox) welcomeBox.remove();
       if (geminiHero) geminiHero.classList.add('hidden');
+      if (hudTabs) {
+        hudTabs.classList.remove('hidden');
+        switchTab(tabChatBtn, tabChatContent);
+      }
 
       // User Bubble
       const userBubble = document.createElement('div');
