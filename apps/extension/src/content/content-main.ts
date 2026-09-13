@@ -70,7 +70,8 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       message?.type !== 'EXECUTE_ACTION' &&
       message?.type !== 'CLEAR_OVERLAYS' &&
       message?.type !== 'FILL_FORM_FIELDS' &&
-      message?.type !== 'UPLOAD_FILE'
+      message?.type !== 'UPLOAD_FILE' &&
+      message?.type !== 'SET_ACTIVE_BORDER'
     ) {
       return false;
     }
@@ -83,7 +84,23 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 }
 
 export async function handleMessage(message: any): Promise<any> {
+  if (message.type === 'SET_ACTIVE_BORDER') {
+    if (message.active) {
+      overlay.showAgentWorkingGlow(message.label || 'PrivaPilot Agent Active');
+    } else {
+      overlay.hideAgentWorkingGlow();
+    }
+    return { success: true };
+  }
+
+  if (message.type === 'CLEAR_OVERLAYS') {
+    overlay.clear();
+    overlay.hideAgentWorkingGlow();
+    return { success: true };
+  }
+
   if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
+    overlay.showAgentWorkingGlow(message.label || 'PrivaPilot Perceiving Page');
     const extracted = extractor.extractSnapshot(document);
     const captureId = message.captureId || `cap_${Date.now()}`;
     currentCaptureId = captureId;
@@ -211,6 +228,7 @@ export async function handleMessage(message: any): Promise<any> {
 
   if (message.type === 'EXECUTE_ACTION') {
     const proposal: ActionProposal = message.proposal;
+    overlay.showAgentWorkingGlow(proposal?.kind ? `PrivaPilot: ${proposal.kind.toUpperCase()}` : 'PrivaPilot Active');
 
     // 1. Target element resolution with live self-healing
     let targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;

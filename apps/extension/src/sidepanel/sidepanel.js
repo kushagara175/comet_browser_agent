@@ -1443,6 +1443,9 @@ if (typeof document !== 'undefined') {
         if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
           chrome.runtime.sendMessage({ type: 'CANCEL_RUN', target: 'privapilot-background' });
         }
+        if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
+          chrome.tabs.sendMessage(currentActiveTabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
+        }
         agentBubble.textContent = "Understood. I've stopped.";
         setAgentStatus('idle');
         return;
@@ -1473,11 +1476,23 @@ if (typeof document !== 'undefined') {
 
       setAgentStatus(isExplicitAction || needsPageContext ? 'capturing' : 'reasoning');
 
+      // Light up the live ambient gradient border on the target page
+      if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
+        chrome.tabs.sendMessage(currentActiveTabId, {
+          type: 'SET_ACTIVE_BORDER',
+          active: true,
+          label: isExplicitAction ? 'PrivaPilot Agent Active' : 'PrivaPilot Inspecting Page'
+        }).catch?.(() => {});
+      }
+
       if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
         let settled = false;
         const timeout = setTimeout(() => {
           if (settled) return;
           settled = true;
+          if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
+            chrome.tabs.sendMessage(currentActiveTabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
+          }
           agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">⚠️ Reasoning request timed out after 120 seconds.</div>`;
           setAgentStatus('failed-safe');
         }, 120000);
@@ -1492,6 +1507,9 @@ if (typeof document !== 'undefined') {
           if (settled) return;
           settled = true;
           clearTimeout(timeout);
+          if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
+            chrome.tabs.sendMessage(currentActiveTabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
+          }
           if (chrome.runtime.lastError) {
             agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">⚠️ Background service worker unreachable: ${escapeHtml(chrome.runtime.lastError.message)}</div>`;
             setAgentStatus('failed-safe');

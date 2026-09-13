@@ -8,6 +8,8 @@ export declare class OverlayRenderer {
     private overlayContainer;
     private currentBox;
     private clearTimer;
+    private workingGlowEl;
+    private glowWatchdogTimer;
     ensureContainer(): HTMLElement;
     highlightTargetElement(el: HTMLElement, label?: string, durationMs?: number): void;
     /**
@@ -17,5 +19,8 @@ export declare class OverlayRenderer {
     flashActionDispatched(): void;
     private dismissBox;
     clear(): void;
+    private ensureGlowStyles;
+    showAgentWorkingGlow(label?: string): void;
+    hideAgentWorkingGlow(): void;
 }
 //# sourceMappingURL=overlay-renderer.d.ts.map

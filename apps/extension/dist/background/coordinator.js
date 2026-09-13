@@ -129,11 +129,23 @@ export class RunCoordinator {
             runId: res.runId || this.currentRunId || undefined
         };
         this.lastRunResult = finalRes;
+        if (this.currentTabId && typeof this.browser.sendMessageToTab === 'function') {
+            this.browser.sendMessageToTab(this.currentTabId, {
+                type: 'SET_ACTIVE_BORDER',
+                active: false
+            }).catch(() => { });
+        }
         return finalRes;
     }
     cancelRun() {
         this.isCancelled = true;
         this.transition('idle', 'Run cancelled by user');
+        if (this.currentTabId && typeof this.browser.sendMessageToTab === 'function') {
+            this.browser.sendMessageToTab(this.currentTabId, {
+                type: 'SET_ACTIVE_BORDER',
+                active: false
+            }).catch(() => { });
+        }
     }
     transition(next, msg) {
         this.state = next;
@@ -890,6 +902,13 @@ export class RunCoordinator {
             if (options?.tabId) {
                 this.currentTabId = options.tabId;
             }
+        }
+        if (this.currentTabId && typeof this.browser.sendMessageToTab === 'function') {
+            this.browser.sendMessageToTab(this.currentTabId, {
+                type: 'SET_ACTIVE_BORDER',
+                active: true,
+                label: 'PrivaPilot Agent Active'
+            }).catch(() => { });
         }
         if (!this.currentTaskContract.supported) {
             const errorMsg = this.currentTaskContract.abstentionReason || 'Task abstained: Goal is outside closed supported task contracts';

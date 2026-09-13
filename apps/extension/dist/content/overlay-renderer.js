@@ -8,6 +8,8 @@ export class OverlayRenderer {
     overlayContainer = null;
     currentBox = null;
     clearTimer = null;
+    workingGlowEl = null;
+    glowWatchdogTimer = null;
     ensureContainer() {
         if (!this.overlayContainer || !document.body.contains(this.overlayContainer)) {
             this.overlayContainer = document.createElement('div');
@@ -118,6 +120,175 @@ export class OverlayRenderer {
             this.overlayContainer.innerHTML = '';
         }
         this.currentBox = null;
+    }
+    ensureGlowStyles() {
+        if (typeof document === 'undefined')
+            return;
+        if (document.getElementById('privapilot-glow-styles'))
+            return;
+        const style = document.createElement('style');
+        style.id = 'privapilot-glow-styles';
+        style.setAttribute('data-privapilot-ignore', 'true');
+        style.textContent = `
+      @keyframes privapilot-border-breathe {
+        0% {
+          box-shadow:
+            inset 0 0 45px 10px rgba(30, 64, 175, 0.42),
+            inset 0 0 16px 2px rgba(96, 165, 250, 0.65),
+            inset 0 2.5px 6px 1px rgba(191, 219, 254, 0.9);
+          border-top-color: rgba(191, 219, 254, 0.95);
+          opacity: 0.88;
+        }
+        50% {
+          box-shadow:
+            inset 0 0 75px 18px rgba(37, 99, 235, 0.65),
+            inset 0 0 28px 5px rgba(96, 165, 250, 0.88),
+            inset 0 2.5px 10px 2px rgba(255, 255, 255, 0.98);
+          border-top-color: rgba(255, 255, 255, 1);
+          opacity: 1;
+        }
+        100% {
+          box-shadow:
+            inset 0 0 45px 10px rgba(30, 64, 175, 0.42),
+            inset 0 0 16px 2px rgba(96, 165, 250, 0.65),
+            inset 0 2.5px 6px 1px rgba(191, 219, 254, 0.9);
+          border-top-color: rgba(191, 219, 254, 0.95);
+          opacity: 0.88;
+        }
+      }
+
+      @keyframes privapilot-dot-pulse {
+        0%, 100% {
+          transform: scale(1);
+          opacity: 0.8;
+        }
+        50% {
+          transform: scale(1.35);
+          opacity: 1;
+          box-shadow: 0 0 10px #60a5fa;
+        }
+      }
+
+      .privapilot-working-glow {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        pointer-events: none !important;
+        z-index: 2147483646 !important;
+        box-sizing: border-box !important;
+        border-top: 2.5px solid rgba(191, 219, 254, 0.95) !important;
+        border-bottom: 2px solid rgba(59, 130, 246, 0.75) !important;
+        border-left: 2px solid rgba(59, 130, 246, 0.75) !important;
+        border-right: 2px solid rgba(59, 130, 246, 0.75) !important;
+        background:
+          radial-gradient(ellipse at 50% 0%, rgba(59, 130, 246, 0.28) 0%, rgba(29, 78, 216, 0.12) 35%, transparent 70%),
+          radial-gradient(ellipse at 50% 100%, rgba(59, 130, 246, 0.2) 0%, rgba(29, 78, 216, 0.08) 35%, transparent 70%),
+          radial-gradient(ellipse at 0% 50%, rgba(37, 99, 235, 0.2) 0%, transparent 60%),
+          radial-gradient(ellipse at 100% 50%, rgba(37, 99, 235, 0.2) 0%, transparent 60%) !important;
+        animation: privapilot-border-breathe 2.4s ease-in-out infinite !important;
+        transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+      }
+
+      .privapilot-badge-pill {
+        position: fixed !important;
+        top: 12px !important;
+        right: 18px !important;
+        pointer-events: none !important;
+        z-index: 2147483647 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 7px !important;
+        background: rgba(10, 15, 30, 0.88) !important;
+        backdrop-filter: blur(16px) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+        border: 1px solid rgba(96, 165, 250, 0.5) !important;
+        color: #e0f2fe !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        padding: 5px 12px !important;
+        border-radius: 9999px !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(59, 130, 246, 0.45) !important;
+        letter-spacing: 0.3px !important;
+      }
+
+      .privapilot-pulse-dot {
+        width: 7px !important;
+        height: 7px !important;
+        border-radius: 50% !important;
+        background: #60a5fa !important;
+        box-shadow: 0 0 6px #3b82f6 !important;
+        animation: privapilot-dot-pulse 1.6s ease-in-out infinite !important;
+      }
+    `;
+        (document.head || document.documentElement).appendChild(style);
+    }
+    showAgentWorkingGlow(label = 'PrivaPilot Agent Active') {
+        if (typeof document === 'undefined' || !document.body)
+            return;
+        this.ensureGlowStyles();
+        if (this.glowWatchdogTimer) {
+            clearTimeout(this.glowWatchdogTimer);
+        }
+        if (!this.workingGlowEl || !document.body.contains(this.workingGlowEl)) {
+            const glow = document.createElement('div');
+            glow.id = 'privapilot-working-border';
+            glow.className = 'privapilot-overlay privapilot-working-glow';
+            glow.setAttribute('data-privapilot-ignore', 'true');
+            glow.setAttribute('aria-hidden', 'true');
+            const badge = document.createElement('div');
+            badge.className = 'privapilot-overlay privapilot-badge-pill';
+            badge.setAttribute('data-privapilot-ignore', 'true');
+            badge.setAttribute('aria-hidden', 'true');
+            const dot = document.createElement('span');
+            dot.className = 'privapilot-pulse-dot';
+            dot.setAttribute('data-privapilot-ignore', 'true');
+            const text = document.createElement('span');
+            text.className = 'privapilot-badge-text';
+            text.textContent = label;
+            text.setAttribute('data-privapilot-ignore', 'true');
+            badge.appendChild(dot);
+            badge.appendChild(text);
+            glow.appendChild(badge);
+            glow.style.opacity = '0';
+            document.body.appendChild(glow);
+            void glow.offsetHeight;
+            glow.style.opacity = '1';
+            this.workingGlowEl = glow;
+        }
+        else {
+            this.workingGlowEl.style.opacity = '1';
+            const text = this.workingGlowEl.querySelector('.privapilot-badge-text');
+            if (text)
+                text.textContent = label;
+        }
+        // Auto-dismiss watchdog after 45 seconds
+        this.glowWatchdogTimer = setTimeout(() => {
+            this.hideAgentWorkingGlow();
+        }, 45000);
+    }
+    hideAgentWorkingGlow() {
+        if (this.glowWatchdogTimer) {
+            clearTimeout(this.glowWatchdogTimer);
+            this.glowWatchdogTimer = null;
+        }
+        if (this.workingGlowEl) {
+            const el = this.workingGlowEl;
+            el.style.transition = 'opacity 0.28s ease-out';
+            el.style.opacity = '0';
+            setTimeout(() => {
+                if (el.parentNode) {
+                    el.parentNode.removeChild(el);
+                }
+                if (this.workingGlowEl === el) {
+                    this.workingGlowEl = null;
+                }
+            }, 300);
+        }
     }
 }
 //# sourceMappingURL=overlay-renderer.js.map
