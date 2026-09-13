@@ -28,11 +28,11 @@ export function renderMarkdown(text) {
 
   // 1. Code blocks (```lang\ncode\n```)
   html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_match, _lang, code) => {
-    return `<pre style="background: #1e293b; color: #f8fafc; padding: 8px 10px; border-radius: 6px; font-size: 11px; overflow-x: auto; margin: 6px 0; font-family: monospace; border: 1px solid #334155;"><code>${code.trim()}</code></pre>`;
+    return `<pre style="background: #18191b; color: #f8fafc; padding: 8px 10px; border-radius: 6px; font-size: 11px; overflow-x: auto; margin: 6px 0; font-family: monospace; border: 1px solid rgba(255, 255, 255, 0.1);"><code>${code.trim()}</code></pre>`;
   });
 
   // 2. Inline code (`code`)
-  html = html.replace(/`([^`]+)`/g, '<code style="background: #f1f5f9; color: #0f172a; padding: 1px 4px; border-radius: 4px; font-family: monospace; font-size: 11px; border: 1px solid #e2e8f0;">$1</code>');
+  html = html.replace(/`([^`]+)`/g, '<code style="background: rgba(255, 255, 255, 0.08); color: #8ab4f8; padding: 1px 4px; border-radius: 4px; font-family: monospace; font-size: 11px; border: 1px solid rgba(255, 255, 255, 0.12);">$1</code>');
 
   // 3. Bold (**text** or __text__)
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -42,18 +42,18 @@ export function renderMarkdown(text) {
   html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
 
   // 5. Headers (### Header, ## Header, # Header)
-  html = html.replace(/^### (.*$)/gm, '<div style="font-weight: 700; font-size: 12px; margin: 6px 0 2px 0; color: #1e293b;">$1</div>');
-  html = html.replace(/^## (.*$)/gm, '<div style="font-weight: 700; font-size: 12.5px; margin: 7px 0 3px 0; color: #0f172a;">$1</div>');
-  html = html.replace(/^# (.*$)/gm, '<div style="font-weight: 800; font-size: 13px; margin: 8px 0 4px 0; color: #0f172a;">$1</div>');
+  html = html.replace(/^### (.*$)/gm, '<div style="font-weight: 700; font-size: 12px; margin: 6px 0 2px 0; color: #e3e3e3;">$1</div>');
+  html = html.replace(/^## (.*$)/gm, '<div style="font-weight: 700; font-size: 12.5px; margin: 7px 0 3px 0; color: #f1f5f9;">$1</div>');
+  html = html.replace(/^# (.*$)/gm, '<div style="font-weight: 800; font-size: 13px; margin: 8px 0 4px 0; color: #ffffff;">$1</div>');
 
   // 6. Bullet lists (- item or * item or • item)
-  html = html.replace(/^[\*\-\•] (.*$)/gm, '<div style="display: flex; gap: 6px; margin: 2px 0 2px 4px;"><span style="color: #64748b;">•</span><span>$1</span></div>');
+  html = html.replace(/^[\*\-\•] (.*$)/gm, '<div style="display: flex; gap: 6px; margin: 2px 0 2px 4px;"><span style="color: #94a3b8;">•</span><span style="color: #e3e3e3;">$1</span></div>');
 
   // 7. Numbered lists (1. item)
-  html = html.replace(/^(\d+)\. (.*$)/gm, '<div style="display: flex; gap: 6px; margin: 2px 0 2px 4px;"><span style="color: #64748b; font-weight: 600;">$1.</span><span>$2</span></div>');
+  html = html.replace(/^(\d+)\. (.*$)/gm, '<div style="display: flex; gap: 6px; margin: 2px 0 2px 4px;"><span style="color: #94a3b8; font-weight: 600;">$1.</span><span style="color: #e3e3e3;">$2</span></div>');
 
   // 8. Safe links [text](url) - HTTP/HTTPS only
-  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline; word-break: break-all;">$1</a>');
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #8ab4f8; text-decoration: underline; word-break: break-all;">$1</a>');
 
   // 9. Preserve double linebreaks as spacing and single linebreaks as <br/>
   html = html.replace(/\n\n+/g, '<div style="height: 6px;"></div>');
@@ -499,12 +499,274 @@ if (typeof document !== 'undefined') {
     reloadExtensionBtn?.addEventListener('click', triggerReload);
     backToConnectBtn?.addEventListener('click', triggerReload);
 
-    // Menu Toggle (⋮) & Developer HUD Tabs
+    // ==========================================
+    // RECENT CHAT SESSIONS & GEMINI MENU DROPDOWN
+    // ==========================================
+    const DEFAULT_RECENT_SESSIONS = [
+      {
+        id: 'session-1',
+        title: 'Mistral-Large-3 Cost and Token Breakdown',
+        model: 'Mistral-Large-3',
+        updatedAt: Date.now() - 1000 * 60 * 5,
+        messages: [
+          {
+            role: 'user',
+            text: 'Can you provide a breakdown of Mistral-Large-3 pricing and context window compared to GPT-4o?'
+          },
+          {
+            role: 'agent',
+            text: '### Mistral-Large-3 Architecture & Pricing\n\n**Mistral-Large-3** (`mistral-large-2407`) is Mistral AI\'s flagship frontier reasoning model hosted on **Azure AI Foundry**:\n\n- **Context Window**: 128k tokens with full native multilingual and coding support.\n- **Input Pricing**: $2.00 / 1M tokens.\n- **Output Pricing**: $6.00 / 1M tokens.\n\nCompared to GPT-4o ($2.50 / $10.00), Mistral-Large-3 offers ~35% lower inference cost with parity on complex reasoning and function calling.'
+          }
+        ]
+      },
+      {
+        id: 'session-2',
+        title: 'Claude Build Day Travel Costs',
+        model: 'Mistral-Large-3',
+        updatedAt: Date.now() - 1000 * 60 * 60 * 2,
+        messages: [
+          {
+            role: 'user',
+            text: 'Calculate estimated travel costs for the team attending the Claude Build Day in San Francisco.'
+          },
+          {
+            role: 'agent',
+            text: '### Claude Build Day — Travel Budget Estimate\n\nHere is the estimated travel cost breakdown for 3 engineers:\n\n- **Roundtrip Flights**: $1,350 total (~$450/person)\n- **Lodging (3 nights)**: $1,200 total (~$400/night near Moscone Center)\n- **Per Diem & Local Transit**: $600 total\n\n**Estimated Total**: **$3,150** with fail-closed receipt auditing enabled.'
+          }
+        ]
+      },
+      {
+        id: 'session-3',
+        title: 'Qwen3-32B Open-Source Status and Li...',
+        model: 'Mistral-Large-3',
+        updatedAt: Date.now() - 1000 * 60 * 60 * 24,
+        messages: [
+          {
+            role: 'user',
+            text: 'What is the open-source license for Qwen-2.5/Qwen3 and can it run locally via WebGPU or Ollama?'
+          },
+          {
+            role: 'agent',
+            text: '### Qwen Model Family Licensing & Local Inference\n\n- **License**: Apache 2.0 for 0.5B, 1.5B, 7B, 14B, 32B, and 72B variants.\n- **Commercial Use**: Fully permitted without royalty fees.\n- **Local Execution**: Seamlessly supported in **PrivaPilot** via local Ollama or WebGPU on-device fallback with 0 byte data leakage.'
+          }
+        ]
+      },
+      {
+        id: 'session-4',
+        title: 'Gridland Metro Solution in C++',
+        model: 'Mistral-Large-3',
+        updatedAt: Date.now() - 1000 * 60 * 60 * 48,
+        messages: [
+          {
+            role: 'user',
+            text: 'How do you solve the Gridland Metro problem using interval merging in C++?'
+          },
+          {
+            role: 'agent',
+            text: '### C++ Interval Merging for Gridland Metro\n\nWe group railway tracks by row `r` using `std::unordered_map<int, vector<pair<int, int>>>`, sort overlapping intervals `[c1, c2]`, merge them in `O(N log N)`, and subtract occupied track cells from `n * m` total cells.'
+          }
+        ]
+      },
+      {
+        id: 'session-5',
+        title: 'C++ Programmer Joke Counter',
+        model: 'Mistral-Large-3',
+        updatedAt: Date.now() - 1000 * 60 * 60 * 72,
+        messages: [
+          {
+            role: 'user',
+            text: 'Tell me a classic C++ memory joke.'
+          },
+          {
+            role: 'agent',
+            text: 'Why do C++ programmers wear glasses?\n\nBecause they don\'t C# — and they forgot to call `delete` on their optical memory! 😄'
+          }
+        ]
+      }
+    ];
+
+    let chatSessions = [];
+    try {
+      const stored = localStorage.getItem('privapilot_chat_sessions');
+      if (stored) {
+        chatSessions = JSON.parse(stored);
+      }
+    } catch (_e) {}
+
+    if (!Array.isArray(chatSessions) || chatSessions.length === 0) {
+      chatSessions = DEFAULT_RECENT_SESSIONS;
+      try {
+        localStorage.setItem('privapilot_chat_sessions', JSON.stringify(chatSessions));
+      } catch (_e) {}
+    }
+
+    let currentSessionId = '';
+    try {
+      currentSessionId = localStorage.getItem('privapilot_active_session_id') || '';
+    } catch (_e) {}
+
+    if (!currentSessionId || !chatSessions.some(s => s.id === currentSessionId)) {
+      currentSessionId = chatSessions[0].id;
+    }
+
     const menuToggleBtn = document.getElementById('menuToggleBtn');
+    const headerNewChatBtn = document.getElementById('headerNewChatBtn');
+    const geminiMenuDropdown = document.getElementById('geminiMenuDropdown');
+    const recentChatsList = document.getElementById('recentChatsList');
+    const menuNewChatBtn = document.getElementById('menuNewChatBtn');
+    const menuMoreChatsBtn = document.getElementById('menuMoreChatsBtn');
+    const menuOpenNewTabBtn = document.getElementById('menuOpenNewTabBtn');
+    const menuDevToolsBtn = document.getElementById('menuDevToolsBtn');
     const hudTabs = document.getElementById('hudTabs');
-    menuToggleBtn?.addEventListener('click', () => {
+
+    function saveChatSessions() {
+      try {
+        localStorage.setItem('privapilot_chat_sessions', JSON.stringify(chatSessions));
+        localStorage.setItem('privapilot_active_session_id', currentSessionId);
+      } catch (_e) {}
+    }
+
+    function renderRecentChatsMenu() {
+      if (!recentChatsList) return;
+      recentChatsList.innerHTML = '';
+
+      chatSessions.slice(0, 5).forEach((session) => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = `recent-chat-item ${session.id === currentSessionId ? 'active' : ''}`;
+        item.title = session.title;
+        item.innerHTML = `
+          <svg class="item-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+          <span class="item-title">${escapeHtml(session.title)}</span>
+        `;
+        item.addEventListener('click', () => {
+          switchSession(session.id);
+        });
+        recentChatsList.appendChild(item);
+      });
+    }
+
+    function switchSession(sessionId) {
+      const targetSession = chatSessions.find(s => s.id === sessionId);
+      if (!targetSession) return;
+
+      currentSessionId = sessionId;
+      saveChatSessions();
+      renderRecentChatsMenu();
+      geminiMenuDropdown?.classList.add('hidden');
+      menuToggleBtn?.classList.remove('active');
+
+      // Clear existing messages
+      chatMessages.querySelectorAll('.chat-msg, .welcome-card').forEach(el => el.remove());
+
+      // Rebuild conversationHistory
+      conversationHistory = [];
+
+      if (!targetSession.messages || targetSession.messages.length === 0) {
+        if (geminiHero) geminiHero.classList.remove('hidden');
+      } else {
+        if (geminiHero) geminiHero.classList.add('hidden');
+        targetSession.messages.forEach(msg => {
+          if (msg.role === 'user') {
+            conversationHistory.push({ role: 'user', content: msg.text });
+            const userBubble = document.createElement('div');
+            userBubble.className = 'chat-msg user';
+            userBubble.textContent = msg.text;
+            chatMessages.appendChild(userBubble);
+          } else {
+            conversationHistory.push({ role: 'assistant', content: msg.text });
+            const agentBubble = document.createElement('div');
+            agentBubble.className = 'chat-msg agent';
+            agentBubble.innerHTML = `
+              <div style="font-size: 11.5px; color: #e3e3e3; line-height: 1.5; user-select: text;">
+                ${renderMarkdown(msg.text)}
+              </div>
+            `;
+            chatMessages.appendChild(agentBubble);
+          }
+        });
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    }
+
+    function createNewChat() {
+      const newSession = {
+        id: 'session-' + Date.now(),
+        title: 'New Chat',
+        model: 'Mistral-Large-3',
+        updatedAt: Date.now(),
+        messages: []
+      };
+      chatSessions.unshift(newSession);
+      saveChatSessions();
+      switchSession(newSession.id);
+      chatInput?.focus();
+    }
+
+    menuToggleBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isHidden = geminiMenuDropdown?.classList.toggle('hidden');
+      if (isHidden) {
+        menuToggleBtn.classList.remove('active');
+      } else {
+        menuToggleBtn.classList.add('active');
+      }
+    });
+
+    headerNewChatBtn?.addEventListener('click', () => {
+      createNewChat();
+    });
+
+    menuNewChatBtn?.addEventListener('click', () => {
+      createNewChat();
+    });
+
+    menuMoreChatsBtn?.addEventListener('click', () => {
+      geminiMenuDropdown?.classList.add('hidden');
+      menuToggleBtn?.classList.remove('active');
+    });
+
+    menuOpenNewTabBtn?.addEventListener('click', () => {
+      geminiMenuDropdown?.classList.add('hidden');
+      menuToggleBtn?.classList.remove('active');
+      if (typeof chrome !== 'undefined' && chrome?.tabs?.create) {
+        chrome.tabs.create({ url: chrome.runtime.getURL('src/sidepanel/sidepanel.html') });
+      } else {
+        window.open(window.location.href, '_blank');
+      }
+    });
+
+    menuDevToolsBtn?.addEventListener('click', () => {
+      geminiMenuDropdown?.classList.add('hidden');
+      menuToggleBtn?.classList.remove('active');
       hudTabs?.classList.toggle('hidden');
     });
+
+    // Close dropdown on click outside
+    document.addEventListener('click', (e) => {
+      if (geminiMenuDropdown && !geminiMenuDropdown.classList.contains('hidden')) {
+        if (!geminiMenuDropdown.contains(e.target) && !menuToggleBtn?.contains(e.target)) {
+          geminiMenuDropdown.classList.add('hidden');
+          menuToggleBtn?.classList.remove('active');
+        }
+      }
+    });
+
+    // Close dropdown on Esc key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && geminiMenuDropdown && !geminiMenuDropdown.classList.contains('hidden')) {
+        geminiMenuDropdown.classList.add('hidden');
+        menuToggleBtn?.classList.remove('active');
+      }
+    });
+
+    // Initialize recent chats menu and switch to active session
+    renderRecentChatsMenu();
+    switchSession(currentSessionId);
 
     // Close / Toggle Tab Sharing Strip
     const closeSharingBtn = document.getElementById('closeSharingBtn');
@@ -876,6 +1138,14 @@ if (typeof document !== 'undefined') {
           conversationHistory = conversationHistory.slice(-20);
         }
 
+        const activeSession = chatSessions.find(s => s.id === currentSessionId);
+        if (activeSession) {
+          if (!activeSession.messages) activeSession.messages = [];
+          activeSession.messages.push({ role: 'agent', text: res.reply });
+          activeSession.updatedAt = Date.now();
+          saveChatSessions();
+        }
+
         const formattedHtml = renderMarkdown(res.reply);
         const actionSuggestions = extractActionSuggestions(res.reply);
 
@@ -900,11 +1170,11 @@ if (typeof document !== 'undefined') {
               <div class="thought-stream-body">${renderMarkdown(res.reasoning)}</div>
             </details>
           ` : ''}
-          <div style="font-size: 11.5px; color: #0f172a; line-height: 1.5; user-select: text;">${formattedHtml}</div>
+          <div style="font-size: 11.5px; color: #e3e3e3; line-height: 1.5; user-select: text;">${formattedHtml}</div>
           ${actionSuggestions.length > 0 ? `
             <div class="chat-action-chips" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;">
               ${actionSuggestions.map(act => `
-                <button class="chat-action-chip" style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; color: #1d4ed8; font-size: 10.5px; font-weight: 600; cursor: pointer;" data-action="click ${escapeHtml(act)}">
+                <button class="chat-action-chip" style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: rgba(138, 180, 248, 0.12); border: 1px solid rgba(138, 180, 248, 0.3); border-radius: 12px; color: #8ab4f8; font-size: 10.5px; font-weight: 600; cursor: pointer;" data-action="click ${escapeHtml(act)}">
                   ⚡ Click "${escapeHtml(act)}"
                 </button>
               `).join('')}
@@ -1013,12 +1283,21 @@ if (typeof document !== 'undefined') {
       setAgentStatus('complete');
 
       // Record action execution turn in multi-turn history
+      const actionTurnText = `Executed ${action.kind} on ${action.targetLocalId || 'page'}. Rationale: ${action.rationale || 'Action executed and verified complete'}`;
       conversationHistory.push({
         role: 'assistant',
-        content: `Executed ${action.kind} on ${action.targetLocalId || 'page'}. Rationale: ${action.rationale || 'Action executed and verified complete'}`
+        content: actionTurnText
       });
       if (conversationHistory.length > 20) {
         conversationHistory = conversationHistory.slice(-20);
+      }
+
+      const activeSession = chatSessions.find(s => s.id === currentSessionId);
+      if (activeSession) {
+        if (!activeSession.messages) activeSession.messages = [];
+        activeSession.messages.push({ role: 'agent', text: actionTurnText });
+        activeSession.updatedAt = Date.now();
+        saveChatSessions();
       }
 
       // Update Telemetry if measured
@@ -1055,6 +1334,19 @@ if (typeof document !== 'undefined') {
       conversationHistory.push({ role: 'user', content: goalText });
       if (conversationHistory.length > 20) {
         conversationHistory = conversationHistory.slice(-20);
+      }
+
+      // Persist in active chat session
+      const activeSession = chatSessions.find(s => s.id === currentSessionId);
+      if (activeSession) {
+        if ((!activeSession.messages || activeSession.messages.length === 0) && (activeSession.title === 'New Chat' || !activeSession.title)) {
+          activeSession.title = goalText.length > 32 ? goalText.slice(0, 32) + '...' : goalText;
+        }
+        if (!activeSession.messages) activeSession.messages = [];
+        activeSession.messages.push({ role: 'user', text: goalText });
+        activeSession.updatedAt = Date.now();
+        saveChatSessions();
+        renderRecentChatsMenu();
       }
 
       const welcomeBox = chatMessages.querySelector('.welcome-card');
