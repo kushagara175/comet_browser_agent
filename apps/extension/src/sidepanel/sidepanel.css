@@ -847,34 +847,47 @@ html, body {
 /* Tabs */
 .hud-tabs {
   display: flex;
-  background: var(--bg-main);
-  border-bottom: 1px solid var(--border);
-  padding: 4px 10px 0 10px;
-  gap: 4px;
+  background: #18191b;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px 10px 0 10px;
+  gap: 3px;
+  position: relative;
+  z-index: 10;
 }
 
 .hud-tab-btn {
   flex: 1;
   background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 6px 2px;
-  font-size: 10.5px;
-  font-weight: 600;
+  border: 1px solid transparent;
+  border-bottom: none;
+  padding: 7px 4px 8px 4px;
+  font-size: 11px;
+  font-weight: 500;
   color: var(--text-muted);
   cursor: pointer;
+  border-radius: 8px 8px 0 0;
   transition: all 0.15s ease;
+  position: relative;
+  bottom: -1px;
+  margin-bottom: -1px;
+  text-align: center;
 }
 
 .hud-tab-btn:hover {
   color: #ffffff;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .hud-tab-btn.active {
-  color: var(--primary);
-  border-bottom-color: var(--primary);
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 6px 6px 0 0;
+  color: #ffffff;
+  background: var(--bg-main);
+  font-weight: 600;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid var(--bg-main) !important;
+  border-radius: 8px 8px 0 0;
+  z-index: 12;
 }
 
 /* Tab Panes */
