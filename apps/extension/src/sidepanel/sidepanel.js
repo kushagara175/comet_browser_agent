@@ -701,12 +701,25 @@ if (typeof document !== 'undefined') {
           } else {
             conversationHistory.push({ role: 'assistant', content: msg.text });
             const agentBubble = document.createElement('div');
-            agentBubble.className = 'chat-msg agent';
-            agentBubble.innerHTML = `
-              <div style="font-size: 11.5px; color: #e3e3e3; line-height: 1.5; user-select: text;">
-                ${renderMarkdown(msg.text)}
-              </div>
-            `;
+            if (msg.isAction || msg.text?.startsWith('✓ ')) {
+              const cleanText = msg.text.replace(/^✓\s*/, '');
+              agentBubble.className = 'chat-msg agent msg-action';
+              agentBubble.innerHTML = `
+                <div class="action-done-pill">
+                  <svg class="action-done-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                  <span>${escapeHtml(cleanText)}</span>
+                </div>
+              `;
+            } else {
+              agentBubble.className = 'chat-msg agent';
+              agentBubble.innerHTML = `
+                <div style="font-size: 11.5px; color: #e3e3e3; line-height: 1.5; user-select: text;">
+                  ${renderMarkdown(msg.text)}
+                </div>
+              `;
+            }
             chatMessages.appendChild(agentBubble);
           }
         });
@@ -1178,12 +1191,6 @@ if (typeof document !== 'undefined') {
         const actionSuggestions = extractActionSuggestions(res.reply);
 
         agentBubble.innerHTML = `
-          ${maskCount > 0 || elementCount > 0 ? `
-            <div class="perception-badge-row">
-              <span class="perception-pill pill-shield">🛡️ ${maskCount} Masks Applied</span>
-              <span class="perception-pill">🔍 ${elementCount} Interactive Elements</span>
-            </div>
-          ` : ''}
           ${modelDisconnected ? `
             <div style="padding: 6px 8px; margin-bottom: 5px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; color: #b45309; font-size: 10.5px; font-weight: 600;">
               ⚠️ No reasoning model connected — this reply did not come from a model.
@@ -1262,56 +1269,57 @@ if (typeof document !== 'undefined') {
         return;
       }
 
-      // 4. Verified Complete
+      // 4. Verified Complete (Clean Minimal Tick Mark Action Pill)
       const action = res.proposal || { kind: 'click', rationale: res.message || 'Action executed successfully', confidence: 0.95, risk: 'safe' };
       const sanitized = res.sanitized || lastSanitizedContext;
-      const maskCount = sanitized?.maskCount ?? 0;
-      const elementCount = sanitized?.elements?.length ?? 0;
 
-      const kindClass = action.kind === 'type' ? 'kind-type' : (action.kind === 'finish' ? 'kind-finish' : '');
-      const riskClass = action.risk === 'protected' ? 'risk-protected' : 'risk-safe';
+      function getCleanActionLabel(act) {
+        if (!act) return 'Action completed';
+        const kind = (act.kind || '').toLowerCase();
+        if (kind === 'scroll') {
+          const dir = act.direction || (act.scrollDeltaY && act.scrollDeltaY < 0 ? 'up' : 'down');
+          return `Scrolled ${dir}`;
+        }
+        if (kind === 'click') {
+          const target = act.elementText || act.targetName || act.targetLocalId || 'page';
+          return `Clicked ${target.length > 28 ? target.slice(0, 28) + '…' : target}`;
+        }
+        if (kind === 'type') {
+          const text = act.textToType || act.value || '';
+          return text ? `Typed "${text.length > 24 ? text.slice(0, 24) + '…' : text}"` : 'Typed input';
+        }
+        if (kind === 'navigate') {
+          return 'Navigated page';
+        }
+        if (kind === 'key' || kind === 'press') {
+          return `Pressed ${act.key || 'key'}`;
+        }
+        if (kind === 'finish' || kind === 'done') {
+          return 'Completed';
+        }
+        if (res?.message && res.message.length < 36 && !res.message.toLowerCase().includes('proposal') && !res.message.toLowerCase().includes('verified complete')) {
+          return res.message;
+        }
+        return `${kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : 'Action'} done`;
+      }
 
+      const actionLabel = getCleanActionLabel(action);
+
+      agentBubble.classList.add('msg-action');
       agentBubble.innerHTML = `
-        <div class="perception-badge-row">
-          <span class="perception-pill pill-shield">🛡️ ${maskCount} Masks Applied</span>
-          <span class="perception-pill">🔍 ${elementCount} Interactive Elements</span>
+        <div class="action-done-pill">
+          <svg class="action-done-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>${escapeHtml(actionLabel)}</span>
         </div>
-
-        ${action.reasoning ? `
-          <details class="thought-stream-details" open>
-            <summary class="thought-stream-summary">
-              <span>🧠 Agent Thought Process</span>
-              <span class="thought-stream-badge">Reasoning</span>
-            </summary>
-            <div class="thought-stream-body">${renderMarkdown(action.reasoning)}</div>
-          </details>
-        ` : ''}
-
-        <div class="thought-card">
-          <div class="thought-header">
-            <span>⚡ Proposed Action Rationale</span>
-            <span>${Math.round((action.confidence || 0.95) * 100)}% Conf</span>
-          </div>
-          <div class="thought-content">${escapeHtml(action.rationale || 'Action proposed')}</div>
-        </div>
-
-        <div class="action-dispatch-card">
-          <div class="action-card-top">
-            <span class="action-kind-tag ${kindClass}">${escapeHtml((action.kind || 'click').toUpperCase())}</span>
-            <span class="risk-pill ${riskClass}">${escapeHtml((action.risk || 'safe').toUpperCase())}</span>
-          </div>
-          <div class="action-target-row">Target: <code>${escapeHtml(action.targetLocalId || 'page')}</code></div>
-          ${action.textToType ? `<div style="font-size: 10px; color: #475569;">Input: "<strong>${escapeHtml(action.textToType)}</strong>"</div>` : ''}
-          ${action.expectedState ? `<div class="action-rationale-row">Expected: ${escapeHtml(action.expectedState)}</div>` : ''}
-        </div>
-        <div style="margin-top: 4px; font-size: 10px; color: #16a34a; font-weight: 600;">✓ Action executed and verified complete</div>
       `;
 
       chatMessages.scrollTop = chatMessages.scrollHeight;
       setAgentStatus('complete');
 
       // Record action execution turn in multi-turn history
-      const actionTurnText = `Executed ${action.kind} on ${action.targetLocalId || 'page'}. Rationale: ${action.rationale || 'Action executed and verified complete'}`;
+      const actionTurnText = `✓ ${actionLabel}`;
       conversationHistory.push({
         role: 'assistant',
         content: actionTurnText
@@ -1323,7 +1331,7 @@ if (typeof document !== 'undefined') {
       const activeSession = chatSessions.find(s => s.id === currentSessionId);
       if (activeSession) {
         if (!activeSession.messages) activeSession.messages = [];
-        activeSession.messages.push({ role: 'agent', text: actionTurnText });
+        activeSession.messages.push({ role: 'agent', text: actionTurnText, isAction: true });
         activeSession.updatedAt = Date.now();
         saveChatSessions();
       }
