@@ -570,6 +570,8 @@ if (typeof document !== 'undefined') {
     const tabAuditContent = document.getElementById('tabAuditContent');
 
     const menuVaultBtn = document.getElementById('menuVaultBtn');
+    const menuPayloadBtn = document.getElementById('menuPayloadBtn');
+    const menuAuditBtn = document.getElementById('menuAuditBtn');
 
     // Chat Elements
     const chatForm = document.getElementById('chatForm');
@@ -945,7 +947,7 @@ if (typeof document !== 'undefined') {
 
       if (!targetSession.messages || targetSession.messages.length === 0) {
         if (geminiHero) geminiHero.classList.remove('hidden');
-        hudTabs?.classList.add('hidden');
+        switchTab(tabChatBtn, tabChatContent);
       } else {
         if (geminiHero) geminiHero.classList.add('hidden');
         switchTab(tabChatBtn, tabChatContent);
@@ -1058,7 +1060,7 @@ if (typeof document !== 'undefined') {
     menuDevToolsBtn?.addEventListener('click', () => {
       geminiMenuDropdown?.classList.add('hidden');
       menuToggleBtn?.classList.remove('active');
-      hudTabs?.classList.toggle('hidden');
+      switchTab(tabInspectorBtn, tabInspectorContent);
     });
 
     // Close dropdown on click outside
@@ -1157,8 +1159,20 @@ if (typeof document !== 'undefined') {
 
     menuVaultBtn?.addEventListener('click', () => {
       geminiMenuDropdown?.classList.add('hidden');
-      hudTabs?.classList.add('hidden');
+      menuToggleBtn?.classList.remove('active');
       openVaultTab();
+    });
+
+    menuPayloadBtn?.addEventListener('click', () => {
+      geminiMenuDropdown?.classList.add('hidden');
+      menuToggleBtn?.classList.remove('active');
+      switchTab(tabPayloadBtn, tabPayloadContent);
+    });
+
+    menuAuditBtn?.addEventListener('click', () => {
+      geminiMenuDropdown?.classList.add('hidden');
+      menuToggleBtn?.classList.remove('active');
+      switchTab(tabAuditBtn, tabAuditContent);
     });
 
     const vaultLockedBackBtn = document.getElementById('vaultLockedBackBtn');
@@ -1166,7 +1180,6 @@ if (typeof document !== 'undefined') {
 
     function returnToChatFromVault() {
       switchTab(tabChatBtn, tabChatContent);
-      hudTabs?.classList.add('hidden');
     }
 
     vaultLockedBackBtn?.addEventListener('click', returnToChatFromVault);

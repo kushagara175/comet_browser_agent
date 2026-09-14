@@ -94,6 +94,19 @@
           <span>Personal Vault &amp; Passwords</span>
           <span class="vault-menu-badge">🔒 PIN</span>
         </button>
+        <button type="button" id="menuPayloadBtn" class="menu-action-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+          </svg>
+          <span>Wire Payload (JSON)</span>
+        </button>
+        <button type="button" id="menuAuditBtn" class="menu-action-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+          </svg>
+          <span>Telemetry &amp; Audit Log</span>
+        </button>
         <button type="button" id="menuDevToolsBtn" class="menu-action-item">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
@@ -106,13 +119,13 @@
         </button>
       </div>
 
-      <!-- Navigation Tabs (Hidden by default for ultra-clean UI; toggled via ⋮ menu) -->
-      <div id="hudTabs" class="hud-tabs hidden">
+      <!-- Navigation Tabs: Chat & Inspector visible on main screen; other tools in ⋮ menu -->
+      <div id="hudTabs" class="hud-tabs">
         <button id="tabChatBtn" class="hud-tab-btn active">Chat</button>
-        <button id="tabVaultBtn" class="hud-tab-btn">Personal Vault</button>
         <button id="tabInspectorBtn" class="hud-tab-btn">Inspector</button>
-        <button id="tabPayloadBtn" class="hud-tab-btn">Wire Payload</button>
-        <button id="tabAuditBtn" class="hud-tab-btn">Telemetry</button>
+        <button id="tabVaultBtn" class="hud-tab-btn" style="display: none;"></button>
+        <button id="tabPayloadBtn" class="hud-tab-btn" style="display: none;"></button>
+        <button id="tabAuditBtn" class="hud-tab-btn" style="display: none;"></button>
       </div>
 
       <!-- TAB 1: Chat & Execution Stage -->
@@ -319,7 +332,7 @@
       </div>
 
       <!-- TAB 5: Personal Vault & Passwords -->
-      <div id="tabVaultContent" class="tab-pane">
+      <div id="tabVaultContent" class="tab-pane hidden">
         <div class="vault-container">
           <!-- PIN Security Lock Screen -->
           <div id="vaultPinLockScreen" class="vault-lock-screen">

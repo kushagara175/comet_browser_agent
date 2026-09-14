@@ -496,9 +496,15 @@ test('Sidepanel UI Integrity: Contains menuVaultBtn, PIN lock screen, change PIN
   assert.ok(fs.existsSync(htmlPath), 'sidepanel.html exists');
   const html = fs.readFileSync(htmlPath, 'utf8');
 
-  // Menu item with PIN badge
+  // Menu items in dropdown
   assert.ok(html.includes('id="menuVaultBtn"'), 'menuVaultBtn present in dropdown menu');
   assert.ok(html.includes('vault-menu-badge'), 'vault-menu-badge present');
+  assert.ok(html.includes('id="menuPayloadBtn"'), 'menuPayloadBtn present in dropdown menu');
+  assert.ok(html.includes('id="menuAuditBtn"'), 'menuAuditBtn present in dropdown menu');
+
+  // Prominent HUD Tabs (Chat & Inspector)
+  assert.ok(html.includes('id="tabChatBtn"'), 'tabChatBtn present in hudTabs');
+  assert.ok(html.includes('id="tabInspectorBtn"'), 'tabInspectorBtn present in hudTabs');
 
   // PIN lock screen
   assert.ok(html.includes('id="vaultPinLockScreen"'), 'vaultPinLockScreen present');
