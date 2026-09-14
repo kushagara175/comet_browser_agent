@@ -1805,8 +1805,113 @@ html, body {
   background: rgba(255, 255, 255, 0.06) !important;
 }
 
-.model-select-chip .connection-indicator {
-  margin-right: 1px;
+.voice-mode-dropdown-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.voice-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: transparent !important;
+  border: none !important;
+  font-size: 11px;
+  font-weight: 500;
+  color: #a8abb0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.voice-mode-chip:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.voice-mode-chip svg {
+  color: #80868b;
+  transition: transform 0.2s ease;
+}
+
+.voice-mode-chip.active svg {
+  transform: rotate(180deg);
+}
+
+.voice-mode-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  background: rgba(18, 20, 26, 0.95);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  z-index: 1000;
+  animation: voice-menu-appear 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes voice-menu-appear {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.voice-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  border: none !important;
+  background: transparent !important;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.voice-mode-option:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.voice-mode-option.active {
+  background: rgba(138, 180, 248, 0.14) !important;
+}
+
+.voice-mode-option .mode-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.voice-mode-option .mode-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.voice-mode-option .mode-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e3e3e3;
+  line-height: 1.2;
+}
+
+.voice-mode-option.active .mode-title {
+  color: #8ab4f8;
+}
+
+.voice-mode-option .mode-desc {
+  font-size: 10px;
+  color: #9aa0a6;
+  line-height: 1.2;
 }
 
 .send-btn {
@@ -3016,6 +3121,53 @@ html, body {
 .voice-live-transcript:empty {
   display: none;
 }
+
+.voice-thinking-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 4px 12px;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.voice-thinking-indicator.hidden {
+  display: none !important;
+}
+
+.voice-thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8ab4f8;
+  box-shadow: 0 0 8px #8ab4f8;
+  animation: voice-dot-pulse 1.4s ease-in-out infinite;
+}
+
+.voice-thinking-shimmer {
+  background: linear-gradient(90deg, #8ab4f8 0%, #ffffff 50%, #8ab4f8 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: voice-shimmer-anim 2s linear infinite;
+  text-shadow: 0 1px 8px rgba(138, 180, 248, 0.35);
+}
+
+@keyframes voice-dot-pulse {
+  0%, 100% { transform: scale(0.85); opacity: 0.5; }
+  50% { transform: scale(1.25); opacity: 1; }
+}
+
+@keyframes voice-shimmer-anim {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
 
 /* Orbloom Living 3D WebGL Orb Styles */
 .orb-motion {

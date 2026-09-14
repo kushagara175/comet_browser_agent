@@ -96,3 +96,36 @@ test('Voice Reactivity & Silence Auto-Commit: sidepanel has 60 FPS audio loop an
   assert.ok(css.includes('blur(6px)'), 'Reduced blur of 6px must be present');
 });
 
+test('Dual Voice Modes & Shimmering Thinking UI: sidepanel supports Voice to Text and Voice Conversation', () => {
+  const htmlPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.html');
+  const html = fs.readFileSync(htmlPath, 'utf-8');
+
+  // Markup for voice mode dropdown selector
+  assert.ok(html.includes('id="voiceModeWrapper"'), 'voiceModeWrapper must exist');
+  assert.ok(html.includes('id="voiceModeBtn"'), 'voiceModeBtn must exist');
+  assert.ok(html.includes('id="voiceModeMenu"'), 'voiceModeMenu must exist');
+  assert.ok(html.includes('id="voiceModeLabel"'), 'voiceModeLabel must exist');
+  assert.ok(html.includes('data-mode="dictate"'), 'dictate mode option must exist');
+  assert.ok(html.includes('data-mode="talk"'), 'talk mode option must exist');
+
+  // Minimal shimmering thinking indicator
+  assert.ok(html.includes('id="voiceThinkingIndicator"'), 'voiceThinkingIndicator must exist');
+  assert.ok(html.includes('voice-thinking-shimmer'), 'voice-thinking-shimmer must exist');
+
+  // CSS styling
+  const cssPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.css');
+  const css = fs.readFileSync(cssPath, 'utf-8');
+  assert.ok(css.includes('.voice-mode-chip'), '.voice-mode-chip style must exist');
+  assert.ok(css.includes('.voice-mode-menu'), '.voice-mode-menu style must exist');
+  assert.ok(css.includes('.voice-thinking-indicator'), '.voice-thinking-indicator style must exist');
+  assert.ok(css.includes('.voice-thinking-shimmer'), '.voice-thinking-shimmer style must exist');
+
+  // JS handling
+  const jsPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.js');
+  const js = fs.readFileSync(jsPath, 'utf-8');
+  assert.ok(js.includes('currentVoiceMode'), 'currentVoiceMode must be tracked');
+  assert.ok(js.includes('speakVoiceResponse'), 'speakVoiceResponse must exist for Talk mode');
+  assert.ok(js.includes('handleTalkModeConversationTurn'), 'handleTalkModeConversationTurn must exist');
+});
+
+

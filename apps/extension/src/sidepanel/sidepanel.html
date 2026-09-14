@@ -202,6 +202,31 @@
                         <polyline points="6 9 12 15 18 9"></polyline>
                       </svg>
                     </button>
+                    <div class="voice-mode-dropdown-wrapper" id="voiceModeWrapper">
+                      <button type="button" id="voiceModeBtn" class="voice-mode-chip" title="Select Voice Mode">
+                        <span class="voice-mode-icon">🎙️</span>
+                        <span id="voiceModeLabel">Voice to Text</span>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                      </button>
+                      <div id="voiceModeMenu" class="voice-mode-menu hidden">
+                        <button type="button" class="voice-mode-option active" data-mode="dictate">
+                          <span class="mode-icon">📝</span>
+                          <div class="mode-meta">
+                            <span class="mode-title">Voice to Text</span>
+                            <span class="mode-desc">Types into chatbox ready to send</span>
+                          </div>
+                        </button>
+                        <button type="button" class="voice-mode-option" data-mode="talk">
+                          <span class="mode-icon">💬</span>
+                          <div class="mode-meta">
+                            <span class="mode-title">Voice Conversation</span>
+                            <span class="mode-desc">Talk directly with AI voice response</span>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
                     <button type="button" id="sendBtn" class="send-btn mode-mic" title="Voice Input" aria-label="Voice Input or Send">
                       <svg class="icon-send" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="19" x2="12" y2="5"></line>
@@ -603,6 +628,10 @@
             </div>
           </div>
           <div id="voiceLiveTranscript" class="voice-live-transcript"></div>
+          <div id="voiceThinkingIndicator" class="voice-thinking-indicator hidden" aria-live="polite">
+            <span class="voice-thinking-dot"></span>
+            <span class="voice-thinking-shimmer">Reasoning...</span>
+          </div>
         </div>
       </div>
     </div>

@@ -2475,6 +2475,12 @@ if (typeof document !== 'undefined') {
     const voiceModal = document.getElementById('voiceModal');
     const closeVoiceBtn = document.getElementById('closeVoiceBtn');
     const voiceLiveTranscript = document.getElementById('voiceLiveTranscript');
+    const voiceThinkingIndicator = document.getElementById('voiceThinkingIndicator');
+    const voiceModeWrapper = document.getElementById('voiceModeWrapper');
+    const voiceModeBtn = document.getElementById('voiceModeBtn');
+    const voiceModeMenu = document.getElementById('voiceModeMenu');
+    const voiceModeLabel = document.getElementById('voiceModeLabel');
+
     let activeVoiceOrb = null;
     let isVoiceActive = false;
     let voiceRecognition = null;
@@ -2489,6 +2495,113 @@ if (typeof document !== 'undefined') {
     let silenceAutoCloseTimer = null;
     let speechTalkingDecayTimer = null;
     let isSpeechApiTalking = false;
+    let isAiSpeaking = false;
+    let isVoiceThinking = false;
+    let currentVoiceMode = (typeof localStorage !== 'undefined' && localStorage.getItem('privapilot_voice_mode')) || 'dictate';
+
+    function updateVoiceModeUI() {
+      if (voiceModeLabel) {
+        voiceModeLabel.textContent = currentVoiceMode === 'talk' ? 'Voice Conversation' : 'Voice to Text';
+      }
+      if (voiceModeBtn) {
+        const iconSpan = voiceModeBtn.querySelector('.voice-mode-icon');
+        if (iconSpan) {
+          iconSpan.textContent = currentVoiceMode === 'talk' ? '💬' : '🎙️';
+        }
+      }
+      document.querySelectorAll('.voice-mode-option').forEach((opt) => {
+        if (opt.getAttribute('data-mode') === currentVoiceMode) {
+          opt.classList.add('active');
+        } else {
+          opt.classList.remove('active');
+        }
+      });
+    }
+
+    updateVoiceModeUI();
+
+    voiceModeBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isHidden = voiceModeMenu?.classList.toggle('hidden');
+      voiceModeBtn.classList.toggle('active', !isHidden);
+    });
+
+    document.querySelectorAll('.voice-mode-option').forEach((opt) => {
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const mode = opt.getAttribute('data-mode');
+        if (mode && (mode === 'dictate' || mode === 'talk')) {
+          currentVoiceMode = mode;
+          try { localStorage.setItem('privapilot_voice_mode', mode); } catch (_) {}
+          updateVoiceModeUI();
+        }
+        voiceModeMenu?.classList.add('hidden');
+        voiceModeBtn?.classList.remove('active');
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!voiceModeWrapper?.contains(e.target)) {
+        voiceModeMenu?.classList.add('hidden');
+        voiceModeBtn?.classList.remove('active');
+      }
+    });
+
+    // Helper: Natural Text-to-Speech Output for Voice Conversation Mode
+    function speakVoiceResponse(text, onDone) {
+      if (typeof window === 'undefined' || !window.speechSynthesis) {
+        onDone?.();
+        return;
+      }
+      try {
+        window.speechSynthesis.cancel();
+        const clean = (text || '')
+          .replace(/https?:\/\/\S+/gi, '')
+          .replace(/[*_#`~[\]()]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (!clean) {
+          onDone?.();
+          return;
+        }
+
+        const utterance = new SpeechSynthesisUtterance(clean);
+        utterance.rate = 1.05;
+        utterance.pitch = 1.0;
+
+        const voices = window.speechSynthesis.getVoices();
+        const preferred = voices.find((v) =>
+          (v.name.includes('Natural') || v.name.includes('Google') || v.lang === 'en-US') &&
+          !v.name.includes('Whisper')
+        );
+        if (preferred) utterance.voice = preferred;
+
+        utterance.onstart = () => {
+          isAiSpeaking = true;
+          activeVoiceOrb?.setState('speaking');
+        };
+
+        let finished = false;
+        const handleFinish = () => {
+          if (finished) return;
+          finished = true;
+          isAiSpeaking = false;
+          if (activeVoiceOrb) {
+            activeVoiceOrb.setAudioLevel(0);
+          }
+          onDone?.();
+        };
+
+        utterance.onend = handleFinish;
+        utterance.onerror = handleFinish;
+
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.warn('[PrivaPilot Voice] TTS playback note:', err);
+        onDone?.();
+      }
+    }
 
     // Helper: Safely open at most ONE permission prompt tab without spamming
     function openMicPermissionTabOnce() {
@@ -2534,7 +2647,13 @@ if (typeof document !== 'undefined') {
         }
       }
 
-      // 2. SpeechRecognition vocal pulse reinforcement
+      // 2a. Voice Conversation AI speech playback modulation
+      if (isAiSpeaking) {
+        const aiWave = 0.58 + 0.32 * Math.sin(Date.now() / 85) + ((Math.random() - 0.5) * 0.12);
+        computedLevel = Math.max(computedLevel, Math.min(1.0, Math.max(0.25, aiWave)));
+      }
+
+      // 2b. User speech recognition vocal pulse reinforcement
       if (isSpeechApiTalking) {
         const synthRhythm = 0.55 + 0.35 * Math.sin(Date.now() / 95) + ((Math.random() - 0.5) * 0.12);
         computedLevel = Math.max(computedLevel, Math.min(1.0, Math.max(0.25, synthRhythm)));
@@ -2542,7 +2661,10 @@ if (typeof document !== 'undefined') {
 
       // 3. Drive Orbloom living WebGL shaders and rotation
       if (activeVoiceOrb) {
-        if (computedLevel > 0.08) {
+        if (isVoiceThinking) {
+          activeVoiceOrb.setAudioLevel(0);
+          activeVoiceOrb.setState('thinking');
+        } else if (computedLevel > 0.08) {
           activeVoiceOrb.setAudioLevel(computedLevel);
           activeVoiceOrb.setState('speaking');
         } else {
@@ -2552,11 +2674,131 @@ if (typeof document !== 'undefined') {
       }
     }
 
+    // Handle full Voice Conversation turn (Thinking -> Reasoning -> Speaking Back)
+    function handleTalkModeConversationTurn(promptText) {
+      if (!isVoiceActive || isVoiceThinking || isAiSpeaking) return;
+      isVoiceThinking = true;
+      isSpeechApiTalking = false;
+
+      // Temporarily halt speech recognition while the model processes and speaks
+      try {
+        voiceRecognition?.stop();
+      } catch (_) {}
+
+      // Transition orb to thinking state with minimal shimmering text
+      if (activeVoiceOrb) {
+        activeVoiceOrb.setAudioLevel(0);
+        activeVoiceOrb.setState('thinking');
+      }
+      if (voiceThinkingIndicator) {
+        voiceThinkingIndicator.classList.remove('hidden');
+      }
+
+      // Also mirror the question into the sidepanel chat history
+      const userBubble = document.createElement('div');
+      userBubble.className = 'chat-msg user';
+      userBubble.textContent = promptText;
+      chatMessages.appendChild(userBubble);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+      const agentBubble = document.createElement('div');
+      agentBubble.className = 'chat-msg agent';
+      agentBubble.innerHTML = `
+        <div class="agent-thinking-pill">
+          <span class="thinking-pulse-dot"></span>
+          <span class="thinking-shimmer-text">Thinking...</span>
+        </div>
+      `;
+      chatMessages.appendChild(agentBubble);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+      const isRestrictedTab = Boolean(
+        activeTabUrl && (
+          activeTabUrl.textContent?.startsWith('chrome://') ||
+          activeTabUrl.title?.startsWith('chrome://') ||
+          activeTabUrl.textContent?.startsWith('chrome-extension://') ||
+          activeTabUrl.textContent?.startsWith('devtools://') ||
+          activeTabUrl.textContent?.startsWith('about:blank')
+        )
+      );
+      const hasActionOrNavIntent =
+        isBrowserActionRequest(promptText) ||
+        /\b(?:https?:\/\/|[a-z0-9-]+\.(?:com|org|gov|in|edu|net|io|co|ai|xyz))\b/i.test(promptText) ||
+        /\b(?:open|go\s+to|visit|launch|load|search|find|browse)\b/i.test(promptText);
+
+      const shouldRunAgent = Boolean(currentActiveTabId) && (!isRestrictedTab || hasActionOrNavIntent);
+      const messageType = shouldRunAgent ? 'START_AGENT_RUN' : 'GENERAL_CHAT';
+      const payloadKey = shouldRunAgent ? 'goal' : 'message';
+
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        currentRunId = 'run_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+        chrome.runtime.sendMessage({
+          type: messageType,
+          [payloadKey]: promptText,
+          runId: currentRunId,
+          tabId: currentActiveTabId,
+          history: conversationHistory.slice(-10)
+        }, (res) => {
+          isVoiceThinking = false;
+          if (voiceThinkingIndicator) {
+            voiceThinkingIndicator.classList.add('hidden');
+          }
+
+          if (!isVoiceActive) return;
+
+          const rawReply = res?.reply ||
+            res?.proposal?.reply ||
+            (res?.proposal?.kind === 'answer' ? (res?.proposal?.rationale || res?.message) : null) ||
+            (res?.proposal?.kind === 'finish' && res?.proposal?.rationale ? res.proposal.rationale : null) ||
+            res?.message ||
+            'I have completed analyzing the page.';
+
+          renderActionResult(agentBubble, res, 2);
+
+          if (voiceLiveTranscript) {
+            voiceLiveTranscript.textContent = rawReply.length > 90 ? rawReply.slice(0, 90) + '...' : rawReply;
+          }
+
+          speakVoiceResponse(rawReply, () => {
+            if (isVoiceActive && currentVoiceMode === 'talk') {
+              voiceFinalTranscript = '';
+              lastSpokenPrompt = '';
+              if (voiceLiveTranscript) {
+                voiceLiveTranscript.textContent = '';
+              }
+              activeVoiceOrb?.setState('listening');
+              activeVoiceOrb?.setAudioLevel(0);
+              try {
+                voiceRecognition?.start();
+              } catch (_) {}
+            }
+          });
+        });
+      } else {
+        setTimeout(() => {
+          isVoiceThinking = false;
+          if (voiceThinkingIndicator) {
+            voiceThinkingIndicator.classList.add('hidden');
+          }
+          const fallbackText = "I'm in conversation mode and ready to talk.";
+          if (voiceLiveTranscript) voiceLiveTranscript.textContent = fallbackText;
+          speakVoiceResponse(fallbackText, () => {
+            if (isVoiceActive && currentVoiceMode === 'talk') {
+              activeVoiceOrb?.setState('listening');
+              try { voiceRecognition?.start(); } catch (_) {}
+            }
+          });
+        }, 800);
+      }
+    }
+
     async function openVoiceMode() {
       if (!voiceModal) return;
       isVoiceActive = true;
       speechRecErrored = false;
       isSpeechApiTalking = false;
+      isAiSpeaking = false;
+      isVoiceThinking = false;
       voiceFinalTranscript = '';
       lastSpokenPrompt = '';
       clearTimeout(silenceAutoCloseTimer);
@@ -2566,6 +2808,9 @@ if (typeof document !== 'undefined') {
       voiceModal.setAttribute('aria-hidden', 'false');
       if (voiceLiveTranscript) {
         voiceLiveTranscript.textContent = '';
+      }
+      if (voiceThinkingIndicator) {
+        voiceThinkingIndicator.classList.add('hidden');
       }
 
       // Initialize or activate Orbloom Living WebGL Orb with dynamic pink spiral theme
@@ -2646,12 +2891,14 @@ if (typeof document !== 'undefined') {
           voiceRecognition.lang = 'en-US';
 
           voiceRecognition.onspeechstart = () => {
+            if (isAiSpeaking || isVoiceThinking) return;
             isSpeechApiTalking = true;
             clearTimeout(speechTalkingDecayTimer);
             activeVoiceOrb?.setState('speaking');
           };
 
           voiceRecognition.onsoundstart = () => {
+            if (isAiSpeaking || isVoiceThinking) return;
             isSpeechApiTalking = true;
             clearTimeout(speechTalkingDecayTimer);
             activeVoiceOrb?.setState('speaking');
@@ -2665,6 +2912,7 @@ if (typeof document !== 'undefined') {
           };
 
           voiceRecognition.onresult = (event) => {
+            if (isAiSpeaking || isVoiceThinking) return;
             isSpeechApiTalking = true;
             clearTimeout(speechTalkingDecayTimer);
             speechTalkingDecayTimer = setTimeout(() => {
@@ -2691,13 +2939,18 @@ if (typeof document !== 'undefined') {
               updateSendBtn();
             }
 
-            // Inactivity auto-close: after 1.6s of silence following spoken words,
-            // auto-close the voice modal and present the prompt in chatbox ready to send!
+            // Inactivity trigger: 1.6s of silence following spoken words
             clearTimeout(silenceAutoCloseTimer);
             if (currentSpoken) {
               silenceAutoCloseTimer = setTimeout(() => {
-                if (isVoiceActive && lastSpokenPrompt.trim()) {
+                if (!isVoiceActive || !lastSpokenPrompt.trim()) return;
+
+                if (currentVoiceMode === 'dictate') {
+                  // Mode 1: Dictate -> Auto-close and populate chat ready to send
                   closeVoiceMode();
+                } else if (currentVoiceMode === 'talk') {
+                  // Mode 2: Talk / Conversation -> Transition to thinking & speak reply!
+                  handleTalkModeConversationTurn(lastSpokenPrompt.trim());
                 }
               }, 1600);
             }
@@ -2714,8 +2967,8 @@ if (typeof document !== 'undefined') {
           };
 
           voiceRecognition.onend = () => {
-            // Only restart if still active and no terminal error occurred
-            if (isVoiceActive && voiceRecognition && !speechRecErrored) {
+            // Only restart if still active, not speaking or thinking, and no terminal error occurred
+            if (isVoiceActive && voiceRecognition && !speechRecErrored && !isAiSpeaking && !isVoiceThinking) {
               try {
                 voiceRecognition.start();
               } catch (_) {}
@@ -2734,8 +2987,14 @@ if (typeof document !== 'undefined') {
       isVoiceActive = false;
       speechRecErrored = true;
       isSpeechApiTalking = false;
+      isAiSpeaking = false;
+      isVoiceThinking = false;
       clearTimeout(silenceAutoCloseTimer);
       clearTimeout(speechTalkingDecayTimer);
+
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        try { window.speechSynthesis.cancel(); } catch (_) {}
+      }
 
       if (voiceAnimFrame) {
         cancelAnimationFrame(voiceAnimFrame);
@@ -2762,6 +3021,10 @@ if (typeof document !== 'undefined') {
         voiceModal.setAttribute('aria-hidden', 'true');
       }
 
+      if (voiceThinkingIndicator) {
+        voiceThinkingIndicator.classList.add('hidden');
+      }
+
       if (voiceRecognition) {
         try {
           voiceRecognition.abort?.();
@@ -2778,7 +3041,7 @@ if (typeof document !== 'undefined') {
         } catch (_) {}
       }
 
-      // Ensure whatever was spoken is safely written into the chatbox
+      // In dictate mode, ensure whatever was spoken is safely written into the chatbox
       if (lastSpokenPrompt && chatInput) {
         chatInput.value = lastSpokenPrompt.trim();
       }
