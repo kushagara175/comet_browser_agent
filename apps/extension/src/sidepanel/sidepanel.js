@@ -2354,9 +2354,13 @@ if (typeof document !== 'undefined') {
       const agentBubble = document.createElement('div');
       agentBubble.className = 'chat-msg agent';
       agentBubble.innerHTML = `
-        <div class="agent-thinking-pill">
-          <span class="thinking-pulse-dot"></span>
-          <span class="thinking-shimmer-text">Thinking...</span>
+        <div class="monologue-block group" data-state="collapsed">
+          <div class="monologue-toggle-btn">
+            <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+            <span class="monologue-title thinking-shimmer-text">Thinking...</span>
+          </div>
         </div>
       `;
       chatMessages.appendChild(agentBubble);
@@ -2870,9 +2874,13 @@ if (typeof document !== 'undefined') {
       const agentBubble = document.createElement('div');
       agentBubble.className = 'chat-msg agent';
       agentBubble.innerHTML = `
-        <div class="agent-thinking-pill">
-          <span class="thinking-pulse-dot"></span>
-          <span class="thinking-shimmer-text">Thinking...</span>
+        <div class="monologue-block group" data-state="collapsed">
+          <div class="monologue-toggle-btn">
+            <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+            <span class="monologue-title thinking-shimmer-text">Thinking...</span>
+          </div>
         </div>
       `;
       chatMessages.appendChild(agentBubble);
@@ -3445,7 +3453,7 @@ if (typeof document !== 'undefined') {
               addAuditEntry('AGENT', message.message, 'info');
             }
             const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
-            const shimmerText = lastAgentBubble?.querySelector('.agent-thinking-pill .thinking-shimmer-text');
+            const shimmerText = lastAgentBubble?.querySelector('.thinking-shimmer-text');
             if (shimmerText) {
               if (message.state === 'awaiting-reasoning') {
                 shimmerText.textContent = 'Reasoning...';
@@ -3471,7 +3479,7 @@ if (typeof document !== 'undefined') {
               addAuditEntry('PLAN', `${actDesc}: ${act.rationale || 'Executing action'}`, 'pass');
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
               if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
-                const shimmerText = lastAgentBubble.querySelector('.agent-thinking-pill .thinking-shimmer-text');
+                const shimmerText = lastAgentBubble.querySelector('.thinking-shimmer-text');
                 if (shimmerText) {
                   const targetDesc = act.sanitizedTargetName || act.targetLocalId || '';
                   const shortTarget = targetDesc ? ` on ${targetDesc}` : '';
