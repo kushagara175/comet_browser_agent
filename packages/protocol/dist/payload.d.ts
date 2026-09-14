@@ -55,6 +55,20 @@ export interface SanitizedElement {
     readonly nearestHeading?: string;
     /** Whether the element resides inside an active modal or dialog */
     readonly isInsideDialog?: boolean;
+    /** Vertical position relative to current viewport: in_view, above, or below */
+    readonly verticalOffset?: 'in_view' | 'above' | 'below';
+    /** Whether the element is currently within the visible viewport */
+    readonly inViewport?: boolean;
+}
+export interface ScrollMetrics {
+    readonly scrollTop: number;
+    readonly scrollHeight: number;
+    readonly clientHeight: number;
+    readonly maxScrollTop: number;
+    readonly scrollableBelow: boolean;
+    readonly scrollableAbove: boolean;
+    readonly pixelsBelow: number;
+    readonly pixelsAbove: number;
 }
 export interface SanitizedPageState {
     readonly title: string;
@@ -70,6 +84,7 @@ export interface SanitizedPageState {
     }>;
     readonly contentSummaries?: ReadonlyArray<string>;
     readonly domain?: string;
+    readonly scrollMetrics?: ScrollMetrics;
 }
 export interface RedactionManifest {
     readonly manifestVersion: '1.0';

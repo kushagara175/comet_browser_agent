@@ -18452,7 +18452,9 @@ var SanitizerPipeline = class {
         actionCapabilities,
         containerContext: el2.containerContext,
         nearestHeading: el2.nearestHeading,
-        isInsideDialog: el2.isInsideDialog
+        isInsideDialog: el2.isInsideDialog,
+        ...el2.verticalOffset ? { verticalOffset: el2.verticalOffset } : {},
+        ...el2.inViewport !== void 0 ? { inViewport: el2.inViewport } : {}
       };
     });
     let finalSanitizedElements = sanitizedElements;
@@ -18545,7 +18547,8 @@ var SanitizerPipeline = class {
       ...snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {},
       ...snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map((c) => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {},
       ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {},
-      ...snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {}
+      ...snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {},
+      ...snapshot.scrollMetrics ? { scrollMetrics: snapshot.scrollMetrics } : {}
     };
     const safeCanonicalData = {
       captureId: rawCapture.captureId,
@@ -19739,6 +19742,453 @@ var AuditLogger = class {
     this.persistToStorage();
   }
 };
+
+// src/vault/vault-store.ts
+var VAULT_STORAGE_KEY = "privapilot_personal_vault_v1";
+var DEFAULT_USER_PROFILE = {
+  fullName: "Kushagra Singh",
+  firstName: "Kushagra",
+  lastName: "Singh",
+  email: "kushagra@example.com",
+  phone: "+91 98765 43210",
+  organization: "SIH Innovation Lab",
+  address: "123 Cyber Way",
+  city: "New Delhi",
+  state: "Delhi",
+  postalCode: "110001",
+  country: "India",
+  githubUrl: "https://github.com/kushagara175"
+};
+var DEFAULT_VAULT_STATE = {
+  version: 1,
+  profile: DEFAULT_USER_PROFILE,
+  credentials: [
+    {
+      id: "cred_sih_default",
+      domain: "sih.gov.in",
+      title: "Smart India Hackathon Portal",
+      usernameOrEmail: "team_leader@sih.gov.in",
+      password: "SIH#SecurePass2026!",
+      createdAt: Date.now() - 864e5,
+      lastUsedAt: Date.now() - 36e5
+    }
+  ],
+  updatedAt: Date.now()
+};
+var inMemoryVault = null;
+function normalizeDomain(urlOrHost) {
+  if (!urlOrHost || typeof urlOrHost !== "string") return "";
+  const trimmed = urlOrHost.trim().toLowerCase();
+  try {
+    const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const parsed = new URL(withProto);
+    return parsed.hostname.replace(/^www\./, "");
+  } catch {
+    return trimmed.split("/")[0].split(":")[0].replace(/^www\./, "");
+  }
+}
+async function loadVault() {
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([VAULT_STORAGE_KEY], (items) => {
+        if (chrome.runtime?.lastError || !items || !items[VAULT_STORAGE_KEY]) {
+          const initial = inMemoryVault || { ...DEFAULT_VAULT_STATE };
+          chrome.storage.local.set({ [VAULT_STORAGE_KEY]: initial });
+          resolve(initial);
+          return;
+        }
+        resolve(items[VAULT_STORAGE_KEY]);
+      });
+    });
+  }
+  if (!inMemoryVault) {
+    inMemoryVault = JSON.parse(JSON.stringify(DEFAULT_VAULT_STATE));
+  }
+  return JSON.parse(JSON.stringify(inMemoryVault));
+}
+async function saveVault(vault) {
+  vault.updatedAt = Date.now();
+  inMemoryVault = JSON.parse(JSON.stringify(vault));
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+    return new Promise((resolve, reject) => {
+      chrome.storage.local.set({ [VAULT_STORAGE_KEY]: vault }, () => {
+        if (chrome.runtime?.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+}
+async function getUserProfile() {
+  const vault = await loadVault();
+  return vault.profile;
+}
+async function saveUserProfile(profileUpdates) {
+  const vault = await loadVault();
+  vault.profile = {
+    ...vault.profile,
+    ...profileUpdates
+  };
+  if (profileUpdates.fullName && !profileUpdates.firstName) {
+    const parts = profileUpdates.fullName.trim().split(/\s+/);
+    vault.profile.firstName = parts[0] || "";
+    vault.profile.lastName = parts.slice(1).join(" ") || "";
+  }
+  await saveVault(vault);
+  return vault.profile;
+}
+async function getCredentialsForDomain(domainOrUrl) {
+  const domain = normalizeDomain(domainOrUrl);
+  if (!domain) return [];
+  const vault = await loadVault();
+  return vault.credentials.filter((c) => {
+    const credDomain = normalizeDomain(c.domain);
+    return credDomain === domain || domain.endsWith("." + credDomain);
+  });
+}
+async function saveSiteCredential(cred) {
+  const vault = await loadVault();
+  const domain = normalizeDomain(cred.domain);
+  const now = Date.now();
+  const existingIdx = cred.id ? vault.credentials.findIndex((c) => c.id === cred.id) : vault.credentials.findIndex(
+    (c) => normalizeDomain(c.domain) === domain && c.usernameOrEmail === cred.usernameOrEmail
+  );
+  if (existingIdx >= 0) {
+    const updated = {
+      ...vault.credentials[existingIdx],
+      ...cred,
+      domain,
+      lastUsedAt: now
+    };
+    vault.credentials[existingIdx] = updated;
+    await saveVault(vault);
+    return updated;
+  }
+  const newCred = {
+    id: cred.id || `cred_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    domain,
+    title: cred.title || domain,
+    usernameOrEmail: cred.usernameOrEmail,
+    password: cred.password,
+    createdAt: now,
+    lastUsedAt: now
+  };
+  vault.credentials.push(newCred);
+  await saveVault(vault);
+  return newCred;
+}
+async function deleteSiteCredential(idOrDomain, username) {
+  const vault = await loadVault();
+  const initialLen = vault.credentials.length;
+  vault.credentials = vault.credentials.filter((c) => {
+    if (c.id === idOrDomain) return false;
+    if (username && (c.domain === idOrDomain || c.domain === normalizeDomain(idOrDomain)) && c.usernameOrEmail === username) {
+      return false;
+    }
+    if (!username && (c.domain === idOrDomain || c.domain === normalizeDomain(idOrDomain))) {
+      return false;
+    }
+    return true;
+  });
+  if (vault.credentials.length !== initialLen) {
+    await saveVault(vault);
+    return true;
+  }
+  return false;
+}
+
+// src/vault/semantic-matcher.ts
+var SYNONYM_GROUPS = [
+  {
+    canonical: "password",
+    aliases: ["password", "pass", "pwd", "secret", "passcode"],
+    autocompletes: ["current-password", "new-password"],
+    inputTypes: ["password"],
+    friendlyPrompt: "Please enter your password for this site"
+  },
+  {
+    canonical: "username",
+    aliases: ["username", "user id", "userid", "account", "handle", "login id", "sign in", "signin id"],
+    autocompletes: ["username"],
+    friendlyPrompt: "Please enter your username/email"
+  },
+  {
+    canonical: "phone",
+    aliases: [
+      "contact",
+      "contact no",
+      "contact number",
+      "phone",
+      "phone no",
+      "phone number",
+      "telephone",
+      "mobile",
+      "mobile no",
+      "mobile number",
+      "cell",
+      "whatsapp",
+      "tel"
+    ],
+    autocompletes: ["tel", "tel-national", "tel-country-code"],
+    inputTypes: ["tel"],
+    friendlyPrompt: "Please enter your Phone / Contact Number"
+  },
+  {
+    canonical: "email",
+    aliases: ["email", "e-mail", "mail", "email id", "email address", "user email"],
+    autocompletes: ["email"],
+    inputTypes: ["email"],
+    friendlyPrompt: "Please enter your Email Address"
+  },
+  {
+    canonical: "fullName",
+    aliases: ["full name", "your name", "name", "applicant name", "candidate name", "student name", "candidate"],
+    autocompletes: ["name"],
+    friendlyPrompt: "Please enter your Full Name"
+  },
+  {
+    canonical: "firstName",
+    aliases: ["first name", "given name", "fname", "first"],
+    autocompletes: ["given-name"],
+    friendlyPrompt: "Please enter your First Name"
+  },
+  {
+    canonical: "lastName",
+    aliases: ["last name", "surname", "family name", "lname", "last"],
+    autocompletes: ["family-name"],
+    friendlyPrompt: "Please enter your Last Name"
+  },
+  {
+    canonical: "organization",
+    aliases: [
+      "organization",
+      "organisation",
+      "org",
+      "company",
+      "college",
+      "college name",
+      "company name",
+      "institute name",
+      "university name",
+      "school name",
+      "organization name",
+      "organisation name",
+      "org name",
+      "institute",
+      "institution",
+      "university",
+      "school",
+      "employer"
+    ],
+    autocompletes: ["organization"],
+    friendlyPrompt: "Please enter your College / Organization Name"
+  },
+  {
+    canonical: "address",
+    aliases: ["address", "street", "street address", "address line", "residence"],
+    autocompletes: ["street-address", "address-line1", "address-line2"],
+    friendlyPrompt: "Please enter your Street Address"
+  },
+  {
+    canonical: "city",
+    aliases: ["city", "town", "district"],
+    autocompletes: ["address-level2"],
+    friendlyPrompt: "Please enter your City"
+  },
+  {
+    canonical: "state",
+    aliases: ["state", "province", "region"],
+    autocompletes: ["address-level1"],
+    friendlyPrompt: "Please enter your State"
+  },
+  {
+    canonical: "postalCode",
+    aliases: ["pin", "pincode", "pin code", "postal", "postal code", "zip", "zipcode", "zip code"],
+    autocompletes: ["postal-code"],
+    friendlyPrompt: "Please enter your ZIP / PIN Code"
+  },
+  {
+    canonical: "country",
+    aliases: ["country", "nation"],
+    autocompletes: ["country", "country-name"],
+    friendlyPrompt: "Please enter your Country"
+  },
+  {
+    canonical: "githubUrl",
+    aliases: ["github", "github url", "git", "repo", "portfolio", "project url"],
+    autocompletes: ["url"],
+    friendlyPrompt: "Please enter your GitHub / Portfolio URL"
+  }
+];
+function cleanTokens(raw) {
+  return raw.toLowerCase().replace(/[_\-:\*\(\)\[\]\/\\]/g, " ").replace(/\s+/g, " ").trim();
+}
+function classifyFieldDescriptor(descriptor) {
+  const typeAttr = (descriptor.type || "").toLowerCase().trim();
+  const autocomplete = (descriptor.autocomplete || "").toLowerCase().trim();
+  const textCorpus = [
+    descriptor.associatedLabelText || "",
+    descriptor.placeholder || "",
+    descriptor.ariaLabel || "",
+    descriptor.name || "",
+    descriptor.id || "",
+    descriptor.rawName || "",
+    descriptor.sanitizedName || ""
+  ].map(cleanTokens).filter(Boolean).join(" ");
+  let bestMatch = null;
+  for (const group of SYNONYM_GROUPS) {
+    let score = 0;
+    const reasons = [];
+    if (group.inputTypes && group.inputTypes.includes(typeAttr)) {
+      score += 0.45;
+      reasons.push(`type="${typeAttr}"`);
+    }
+    if (autocomplete && group.autocompletes.some((ac2) => autocomplete.includes(ac2))) {
+      score += 0.5;
+      reasons.push(`autocomplete="${autocomplete}"`);
+    }
+    for (const alias of group.aliases) {
+      const aliasClean = cleanTokens(alias);
+      const regex = new RegExp(`\\b${aliasClean.replace(/\s+/g, "\\s+")}\\b`, "i");
+      if (regex.test(textCorpus)) {
+        if (group.canonical === "fullName" && aliasClean === "name") {
+          if (/\b(college|company|organization|organisation|university|institute|institution|school|employer|domain|host|file|folder)\b/i.test(textCorpus)) {
+            continue;
+          }
+        }
+        const isLabelMatch = Boolean(descriptor.associatedLabelText && regex.test(cleanTokens(descriptor.associatedLabelText)));
+        const isPlaceholderMatch = Boolean(descriptor.placeholder && regex.test(cleanTokens(descriptor.placeholder)));
+        const isNameOrIdMatch = Boolean(descriptor.name && regex.test(cleanTokens(descriptor.name)) || descriptor.id && regex.test(cleanTokens(descriptor.id)));
+        const specificity = Math.min(0.15, aliasClean.length * 0.015);
+        const baseBoost = isLabelMatch ? 0.6 : isPlaceholderMatch ? 0.55 : isNameOrIdMatch ? 0.5 : 0.4;
+        score += baseBoost + specificity;
+        reasons.push(`matches alias "${alias}"`);
+        break;
+      }
+    }
+    const finalScore = Math.min(1, score);
+    if (finalScore >= 0.4 && (!bestMatch || finalScore > bestMatch.confidence)) {
+      bestMatch = {
+        canonical: group.canonical,
+        confidence: Number(finalScore.toFixed(2)),
+        reason: reasons.join(", ")
+      };
+    }
+  }
+  return bestMatch;
+}
+function matchFieldToVault(descriptor, profile, siteCredentials = [], _targetDomain = "") {
+  const classification = classifyFieldDescriptor(descriptor);
+  if (!classification) {
+    return {
+      matched: false,
+      confidence: 0,
+      isCredential: false,
+      reason: "No semantic field match found"
+    };
+  }
+  const { canonical, confidence, reason } = classification;
+  const group = SYNONYM_GROUPS.find((g) => g.canonical === canonical);
+  const promptIfMissing = group?.friendlyPrompt || "Please enter the required information";
+  if (canonical === "password") {
+    const cred = siteCredentials[0];
+    if (cred && cred.password) {
+      return {
+        matched: true,
+        canonicalField: "password",
+        valueToFill: cred.password,
+        confidence: Math.max(confidence, 0.95),
+        isCredential: true,
+        reason: `Matched site password for domain (${reason})`,
+        promptIfMissing
+      };
+    }
+    return {
+      matched: false,
+      canonicalField: "password",
+      confidence,
+      isCredential: true,
+      reason: `Password field detected but no saved credential exists for this domain`,
+      promptIfMissing
+    };
+  }
+  if (canonical === "username") {
+    const cred = siteCredentials[0];
+    const usernameVal = cred?.usernameOrEmail || profile.email || profile.fullName;
+    if (usernameVal) {
+      return {
+        matched: true,
+        canonicalField: "username",
+        valueToFill: usernameVal,
+        confidence: Math.max(confidence, 0.9),
+        isCredential: true,
+        reason: `Matched username/login from domain credentials (${reason})`,
+        promptIfMissing
+      };
+    }
+    return {
+      matched: false,
+      canonicalField: "username",
+      confidence,
+      isCredential: true,
+      reason: `Login field detected but username is not configured`,
+      promptIfMissing
+    };
+  }
+  const profileKeyMap = {
+    phone: "phone",
+    email: "email",
+    fullName: "fullName",
+    firstName: "firstName",
+    lastName: "lastName",
+    organization: "organization",
+    address: "address",
+    city: "city",
+    state: "state",
+    postalCode: "postalCode",
+    country: "country",
+    githubUrl: "githubUrl",
+    username: void 0,
+    password: void 0
+  };
+  const profileKey = profileKeyMap[canonical];
+  const profileValue = profileKey ? profile[profileKey] : void 0;
+  if (profileValue && String(profileValue).trim().length > 0) {
+    return {
+      matched: true,
+      canonicalField: canonical,
+      valueToFill: String(profileValue).trim(),
+      confidence: Math.max(confidence, 0.88),
+      isCredential: false,
+      reason: `Matched "${canonical}" to user profile (${reason})`,
+      promptIfMissing
+    };
+  }
+  if (canonical === "firstName" && profile.fullName) {
+    const firstName = profile.fullName.trim().split(/\s+/)[0];
+    if (firstName) {
+      return {
+        matched: true,
+        canonicalField: "firstName",
+        valueToFill: firstName,
+        confidence: Math.max(confidence, 0.85),
+        isCredential: false,
+        reason: `Derived firstName from profile fullName (${reason})`,
+        promptIfMissing
+      };
+    }
+  }
+  return {
+    matched: false,
+    canonicalField: canonical,
+    confidence,
+    isCredential: false,
+    reason: `Field classified as "${canonical}" (${reason}), but value is missing from profile`,
+    promptIfMissing
+  };
+}
 
 // src/background/coordinator.ts
 function sanitizeErrorDetail(rawMessage) {
@@ -21361,42 +21811,78 @@ var RunCoordinator = class {
           this.listeners.onActionProposed(proposal, this.currentRunId);
         }
         if (proposal.kind === "request_user_input") {
-          const promptText = proposal.userInputPrompt || proposal.rationale || "Please provide the information required by the form.";
-          this.transition("awaiting-user-input", promptText);
-          if (this.listeners.onUserInputRequired) {
-            this.listeners.onUserInputRequired({
-              kind: "text_input",
-              prompt: promptText,
-              targetLocalId: proposal.targetLocalId,
-              inputKey: proposal.inputKey,
-              runId: this.currentRunId
-            });
+          let autoFilledFromVault = false;
+          try {
+            const profile = await getUserProfile();
+            const pageDomain = sanitized.pageState?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : "");
+            const creds = await getCredentialsForDomain(pageDomain);
+            const targetEl = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
+            const descriptor = {
+              id: targetEl?.localId,
+              name: targetEl?.sanitizedName,
+              rawName: targetEl?.sanitizedName,
+              placeholder: targetEl?.sanitizedName
+            };
+            const match = matchFieldToVault(descriptor, profile, creds, pageDomain);
+            if (match.matched && match.valueToFill) {
+              await this.browser.sendMessageToTab(activeTab.id, {
+                type: "EXECUTE_ACTION",
+                proposal: {
+                  actionId: `act_vault_autofill_${Date.now()}`,
+                  kind: "type",
+                  targetLocalId: proposal.targetLocalId,
+                  textToType: match.valueToFill,
+                  confidence: 1,
+                  risk: "safe",
+                  rationale: `Autofilled from local vault (${match.canonicalField})`,
+                  userApproved: true
+                },
+                captureId: sanitized.captureId
+              });
+              autoFilledFromVault = true;
+              this.transition("executing", `Autofilled ${match.canonicalField} from local Personal Vault`);
+              continue;
+            }
+          } catch (_) {
           }
-          const stepTrace2 = {
-            step,
-            captureId: sanitized.captureId,
-            pageGeneration: sanitized.captureId,
-            maskCount: sanitized.maskCount,
-            sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
-            decisionOrigin,
-            proposal,
-            riskDecision: "safe",
-            confidenceDecision: "requires_user_input",
-            executed: false,
-            networkRequestMade,
-            timings: { total: Date.now() - t0_step }
-          };
-          this.stepsTrace.push(stepTrace2);
-          const res2 = {
-            success: true,
-            state: "awaiting-user-input",
-            message: promptText,
-            sanitized,
-            proposal,
-            stepCount: step,
-            steps: this.stepsTrace
-          };
-          return this.completeWithResult(res2);
+          if (!autoFilledFromVault) {
+            const promptText = proposal.userInputPrompt || proposal.rationale || "Please provide the information required by the form.";
+            this.transition("awaiting-user-input", promptText);
+            if (this.listeners.onUserInputRequired) {
+              this.listeners.onUserInputRequired({
+                kind: "text_input",
+                prompt: promptText,
+                targetLocalId: proposal.targetLocalId,
+                inputKey: proposal.inputKey,
+                runId: this.currentRunId
+              });
+            }
+            const stepTrace2 = {
+              step,
+              captureId: sanitized.captureId,
+              pageGeneration: sanitized.captureId,
+              maskCount: sanitized.maskCount,
+              sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+              decisionOrigin,
+              proposal,
+              riskDecision: "safe",
+              confidenceDecision: "requires_user_input",
+              executed: false,
+              networkRequestMade,
+              timings: { total: Date.now() - t0_step }
+            };
+            this.stepsTrace.push(stepTrace2);
+            const res2 = {
+              success: true,
+              state: "awaiting-user-input",
+              message: promptText,
+              sanitized,
+              proposal,
+              stepCount: step,
+              steps: this.stepsTrace
+            };
+            return this.completeWithResult(res2);
+          }
         }
         if (proposal.kind === "answer" && step < maxSteps) {
           const answerText = proposal.reply || proposal.rationale || "";
@@ -22194,6 +22680,26 @@ ${detail}`,
         filledCount++;
       }
     }
+    if (options?.saveToVault !== false) {
+      try {
+        const domain = activeTab.url ? normalizeDomain(activeTab.url) : "";
+        if (inputs.password && domain) {
+          await saveSiteCredential({
+            domain,
+            usernameOrEmail: inputs.username || "user",
+            password: inputs.password
+          });
+        }
+        if (inputs.customText && options?.inputKey) {
+          const profileUpdate = {};
+          profileUpdate[options.inputKey] = inputs.customText;
+          await saveUserProfile(profileUpdate);
+        } else if (inputs.username && inputs.username.includes("@")) {
+          await saveUserProfile({ email: inputs.username });
+        }
+      } catch (_) {
+      }
+    }
     if (filledCount === 0) {
       try {
         const directRes = await this.browser.sendMessageToTab(activeTab.id, {
@@ -22317,8 +22823,29 @@ async function handleSidepanelRequest(message) {
     return coordinator.submitUserInput(
       message.inputs || {},
       message.tabId,
-      { resumeLoop: message.resumeLoop ?? true, targetLocalId: message.targetLocalId }
+      {
+        resumeLoop: message.resumeLoop ?? true,
+        targetLocalId: message.targetLocalId,
+        saveToVault: message.saveToVault,
+        inputKey: message.inputKey
+      }
     );
+  }
+  if (message.type === "GET_VAULT_DATA") {
+    const vault = await loadVault();
+    return { success: true, vault };
+  }
+  if (message.type === "SAVE_VAULT_PROFILE") {
+    await saveUserProfile(message.profile || {});
+    return { success: true };
+  }
+  if (message.type === "SAVE_SITE_CREDENTIAL") {
+    await saveSiteCredential(message.credential);
+    return { success: true };
+  }
+  if (message.type === "DELETE_SITE_CREDENTIAL") {
+    await deleteSiteCredential(message.domain, message.username);
+    return { success: true };
   }
   if (message.type === "CANCEL_RUN" || message.type === "STOP_RUN") {
     coordinator.cancelRun();
@@ -22431,11 +22958,48 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       coordinator.submitUserInput(
         message.inputs || {},
         message.tabId,
-        { resumeLoop: message.resumeLoop ?? true, targetLocalId: message.targetLocalId }
+        {
+          resumeLoop: message.resumeLoop ?? true,
+          targetLocalId: message.targetLocalId,
+          saveToVault: message.saveToVault,
+          inputKey: message.inputKey
+        }
       ).then((result) => {
         sendResponse(result);
       }).catch((err) => {
         sendResponse({ success: false, state: "failed-safe", error: err.message });
+      });
+      return true;
+    }
+    if (message.type === "GET_VAULT_DATA") {
+      loadVault().then((vault) => {
+        sendResponse({ success: true, vault });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+    if (message.type === "SAVE_VAULT_PROFILE") {
+      saveUserProfile(message.profile || {}).then(() => {
+        sendResponse({ success: true });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+    if (message.type === "SAVE_SITE_CREDENTIAL") {
+      saveSiteCredential(message.credential).then(() => {
+        sendResponse({ success: true });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+    if (message.type === "DELETE_SITE_CREDENTIAL") {
+      deleteSiteCredential(message.domain, message.username).then(() => {
+        sendResponse({ success: true });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
       });
       return true;
     }

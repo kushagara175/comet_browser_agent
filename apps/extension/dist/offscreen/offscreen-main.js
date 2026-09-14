@@ -15804,7 +15804,9 @@ as ORT format: ${n}`);
           actionCapabilities,
           containerContext: el2.containerContext,
           nearestHeading: el2.nearestHeading,
-          isInsideDialog: el2.isInsideDialog
+          isInsideDialog: el2.isInsideDialog,
+          ...el2.verticalOffset ? { verticalOffset: el2.verticalOffset } : {},
+          ...el2.inViewport !== void 0 ? { inViewport: el2.inViewport } : {}
         };
       });
       let finalSanitizedElements = sanitizedElements;
@@ -15897,7 +15899,8 @@ as ORT format: ${n}`);
         ...snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {},
         ...snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map((c) => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {},
         ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {},
-        ...snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {}
+        ...snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {},
+        ...snapshot.scrollMetrics ? { scrollMetrics: snapshot.scrollMetrics } : {}
       };
       const safeCanonicalData = {
         captureId: rawCapture.captureId,

@@ -266,6 +266,15 @@ export class ElementExtractor {
           }
         } catch (_) {}
 
+        // Vertical offset relative to viewport
+        let verticalOffset: 'in_view' | 'above' | 'below' = 'in_view';
+        if (rect.bottom < 0) {
+          verticalOffset = 'above';
+        } else if (rect.top > viewportHeight) {
+          verticalOffset = 'below';
+        }
+        const inViewport = verticalOffset === 'in_view' && rect.right > 0 && rect.left < viewportWidth;
+
         interactiveElements.push({
           localId,
           role,
@@ -275,7 +284,9 @@ export class ElementExtractor {
           actionCapabilities: caps,
           containerContext,
           nearestHeading,
-          isInsideDialog
+          isInsideDialog,
+          verticalOffset,
+          inViewport
         });
 
         // Also record descriptor for DOM sensitivity analysis (zero live values)
@@ -721,6 +732,30 @@ export class ElementExtractor {
       ? doc.location.hostname.slice(0, 100)
       : undefined;
 
+    const win = doc.defaultView || (typeof window !== 'undefined' ? window : null);
+    const docElem = doc.documentElement;
+    const bodyElem = doc.body;
+
+    const scrollTop = Math.max(0, Math.round(win?.scrollY ?? docElem?.scrollTop ?? bodyElem?.scrollTop ?? 0));
+    const scrollHeight = Math.max(viewportHeight, Math.round(docElem?.scrollHeight ?? bodyElem?.scrollHeight ?? viewportHeight));
+    const clientHeight = Math.max(1, Math.round(win?.innerHeight ?? docElem?.clientHeight ?? viewportHeight));
+    const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+    const scrollableBelow = scrollTop < maxScrollTop - 2;
+    const scrollableAbove = scrollTop > 2;
+    const pixelsBelow = Math.max(0, maxScrollTop - scrollTop);
+    const pixelsAbove = Math.max(0, scrollTop);
+
+    const scrollMetrics = {
+      scrollTop,
+      scrollHeight,
+      clientHeight,
+      maxScrollTop,
+      scrollableBelow,
+      scrollableAbove,
+      pixelsBelow,
+      pixelsAbove
+    };
+
     // Bound interactive controls to at most 180 elements (strictly below closed schema 200 limit)
     let cappedInteractiveElements = interactiveElements;
     if (cappedInteractiveElements.length > 180) {
@@ -761,7 +796,8 @@ export class ElementExtractor {
         counters: counters.slice(0, 20),
         contentSummaries: contentSummaries.slice(0, 15),
         routeFingerprint,
-        domain
+        domain,
+        scrollMetrics
       },
       elementMap: this.elementMap
     };

@@ -4,6 +4,12 @@
 
 import { RunCoordinator } from './coordinator.js';
 import { toSanitizedNetworkPayload } from '@privapilot/protocol';
+import {
+  loadVault,
+  saveUserProfile,
+  saveSiteCredential,
+  deleteSiteCredential
+} from '../vault/index.js';
 
 declare const chrome: any;
 
@@ -85,8 +91,33 @@ async function handleSidepanelRequest(message: any): Promise<any> {
     return coordinator.submitUserInput(
       message.inputs || {},
       message.tabId,
-      { resumeLoop: message.resumeLoop ?? true, targetLocalId: message.targetLocalId }
+      {
+        resumeLoop: message.resumeLoop ?? true,
+        targetLocalId: message.targetLocalId,
+        saveToVault: message.saveToVault,
+        inputKey: message.inputKey
+      }
     );
+  }
+
+  if (message.type === 'GET_VAULT_DATA') {
+    const vault = await loadVault();
+    return { success: true, vault };
+  }
+
+  if (message.type === 'SAVE_VAULT_PROFILE') {
+    await saveUserProfile(message.profile || {});
+    return { success: true };
+  }
+
+  if (message.type === 'SAVE_SITE_CREDENTIAL') {
+    await saveSiteCredential(message.credential);
+    return { success: true };
+  }
+
+  if (message.type === 'DELETE_SITE_CREDENTIAL') {
+    await deleteSiteCredential(message.domain, message.username);
+    return { success: true };
   }
 
   if (message.type === 'CANCEL_RUN' || message.type === 'STOP_RUN') {
@@ -216,11 +247,52 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       coordinator.submitUserInput(
         message.inputs || {},
         message.tabId,
-        { resumeLoop: message.resumeLoop ?? true, targetLocalId: message.targetLocalId }
+        {
+          resumeLoop: message.resumeLoop ?? true,
+          targetLocalId: message.targetLocalId,
+          saveToVault: message.saveToVault,
+          inputKey: message.inputKey
+        }
       ).then((result) => {
         sendResponse(result);
       }).catch((err) => {
         sendResponse({ success: false, state: 'failed-safe', error: err.message });
+      });
+      return true;
+    }
+
+    if (message.type === 'GET_VAULT_DATA') {
+      loadVault().then((vault) => {
+        sendResponse({ success: true, vault });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+
+    if (message.type === 'SAVE_VAULT_PROFILE') {
+      saveUserProfile(message.profile || {}).then(() => {
+        sendResponse({ success: true });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+
+    if (message.type === 'SAVE_SITE_CREDENTIAL') {
+      saveSiteCredential(message.credential).then(() => {
+        sendResponse({ success: true });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+
+    if (message.type === 'DELETE_SITE_CREDENTIAL') {
+      deleteSiteCredential(message.domain, message.username).then(() => {
+        sendResponse({ success: true });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
       });
       return true;
     }

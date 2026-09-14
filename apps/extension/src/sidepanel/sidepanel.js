@@ -558,14 +558,18 @@ if (typeof document !== 'undefined') {
 
     // Tabs
     const tabChatBtn = document.getElementById('tabChatBtn');
+    const tabVaultBtn = document.getElementById('tabVaultBtn');
     const tabInspectorBtn = document.getElementById('tabInspectorBtn');
     const tabPayloadBtn = document.getElementById('tabPayloadBtn');
     const tabAuditBtn = document.getElementById('tabAuditBtn');
 
     const tabChatContent = document.getElementById('tabChatContent');
+    const tabVaultContent = document.getElementById('tabVaultContent');
     const tabInspectorContent = document.getElementById('tabInspectorContent');
     const tabPayloadContent = document.getElementById('tabPayloadContent');
     const tabAuditContent = document.getElementById('tabAuditContent');
+
+    const menuVaultBtn = document.getElementById('menuVaultBtn');
 
     // Chat Elements
     const chatForm = document.getElementById('chatForm');
@@ -1101,17 +1105,211 @@ if (typeof document !== 'undefined') {
 
     // Tab Navigation
     function switchTab(activeBtn, activePane) {
-      [tabChatBtn, tabInspectorBtn, tabPayloadBtn, tabAuditBtn].forEach(b => b?.classList.remove('active'));
-      [tabChatContent, tabInspectorContent, tabPayloadContent, tabAuditContent].forEach(p => p?.classList.add('hidden'));
+      [tabChatBtn, tabVaultBtn, tabInspectorBtn, tabPayloadBtn, tabAuditBtn].forEach(b => b?.classList.remove('active'));
+      [tabChatContent, tabVaultContent, tabInspectorContent, tabPayloadContent, tabAuditContent].forEach(p => p?.classList.add('hidden'));
 
       activeBtn?.classList.add('active');
       activePane?.classList.remove('hidden');
     }
 
     tabChatBtn?.addEventListener('click', () => switchTab(tabChatBtn, tabChatContent));
+    tabVaultBtn?.addEventListener('click', () => {
+      switchTab(tabVaultBtn, tabVaultContent);
+      loadVaultData();
+    });
     tabInspectorBtn?.addEventListener('click', () => switchTab(tabInspectorBtn, tabInspectorContent));
     tabPayloadBtn?.addEventListener('click', () => switchTab(tabPayloadBtn, tabPayloadContent));
     tabAuditBtn?.addEventListener('click', () => switchTab(tabAuditBtn, tabAuditContent));
+
+    menuVaultBtn?.addEventListener('click', () => {
+      geminiMenuDropdown?.classList.add('hidden');
+      hudTabs?.classList.remove('hidden');
+      switchTab(tabVaultBtn, tabVaultContent);
+      loadVaultData();
+    });
+
+    // ==========================================
+    // PERSONAL VAULT & PASSWORDS LOGIC
+    // ==========================================
+    const vaultNavProfileBtn = document.getElementById('vaultNavProfileBtn');
+    const vaultNavCredentialsBtn = document.getElementById('vaultNavCredentialsBtn');
+    const vaultProfileSection = document.getElementById('vaultProfileSection');
+    const vaultCredentialsSection = document.getElementById('vaultCredentialsSection');
+
+    vaultNavProfileBtn?.addEventListener('click', () => {
+      vaultNavProfileBtn.classList.add('active');
+      vaultNavCredentialsBtn?.classList.remove('active');
+      vaultProfileSection?.classList.remove('hidden');
+      vaultCredentialsSection?.classList.add('hidden');
+    });
+
+    vaultNavCredentialsBtn?.addEventListener('click', () => {
+      vaultNavCredentialsBtn.classList.add('active');
+      vaultNavProfileBtn?.classList.remove('active');
+      vaultCredentialsSection?.classList.remove('hidden');
+      vaultProfileSection?.classList.add('hidden');
+    });
+
+    const vaultFullName = document.getElementById('vaultFullName');
+    const vaultEmail = document.getElementById('vaultEmail');
+    const vaultPhone = document.getElementById('vaultPhone');
+    const vaultOrg = document.getElementById('vaultOrg');
+    const vaultAddress = document.getElementById('vaultAddress');
+    const vaultCity = document.getElementById('vaultCity');
+    const vaultState = document.getElementById('vaultState');
+    const vaultPostalCode = document.getElementById('vaultPostalCode');
+    const vaultGithub = document.getElementById('vaultGithub');
+    const vaultSaveProfileBtn = document.getElementById('vaultSaveProfileBtn');
+    const vaultProfileSavedStatus = document.getElementById('vaultProfileSavedStatus');
+
+    const vaultNewDomain = document.getElementById('vaultNewDomain');
+    const vaultNewUsername = document.getElementById('vaultNewUsername');
+    const vaultNewPassword = document.getElementById('vaultNewPassword');
+    const vaultAddCredBtn = document.getElementById('vaultAddCredBtn');
+    const vaultCredList = document.getElementById('vaultCredList');
+
+    function loadVaultData() {
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ target: 'privapilot-background', type: 'GET_VAULT_DATA' }, (res) => {
+          if (res && res.success && res.vault) {
+            const p = res.vault.profile || {};
+            if (vaultFullName) vaultFullName.value = p.fullName || '';
+            if (vaultEmail) vaultEmail.value = p.email || '';
+            if (vaultPhone) vaultPhone.value = p.phone || '';
+            if (vaultOrg) vaultOrg.value = p.organization || '';
+            if (vaultAddress) vaultAddress.value = p.address || '';
+            if (vaultCity) vaultCity.value = p.city || '';
+            if (vaultState) vaultState.value = p.state || '';
+            if (vaultPostalCode) vaultPostalCode.value = p.postalCode || '';
+            if (vaultGithub) vaultGithub.value = p.githubUrl || '';
+
+            renderCredentialsList(res.vault.siteCredentials || []);
+          }
+        });
+      }
+    }
+
+    function renderCredentialsList(creds) {
+      if (!vaultCredList) return;
+      vaultCredList.innerHTML = '';
+      if (!creds || creds.length === 0) {
+        vaultCredList.innerHTML = '<div class="empty-cred-msg">No domain credentials saved yet. Add one above or save from an autofill prompt!</div>';
+        return;
+      }
+
+      creds.forEach((cred) => {
+        const card = document.createElement('div');
+        card.className = 'vault-cred-card';
+        card.innerHTML = `
+          <div class="cred-card-info">
+            <span class="cred-card-domain">🌐 ${escapeHtml(cred.domain)}</span>
+            <span class="cred-card-user">User: ${escapeHtml(cred.usernameOrEmail)}</span>
+          </div>
+          <div class="cred-card-actions">
+            <input type="password" value="${escapeHtml(cred.password)}" readonly style="width: 90px; padding: 4px 6px; font-size: 11px; background: #1e293b; border: 1px solid #475569; border-radius: 4px; color: #cbd5e1;" />
+            <button type="button" class="btn-cred-action reveal-pwd" title="Show/Hide Password">👁️</button>
+            <button type="button" class="btn-cred-action delete delete-cred" data-domain="${escapeHtml(cred.domain)}" data-user="${escapeHtml(cred.usernameOrEmail)}" title="Delete Credential">🗑️</button>
+          </div>
+        `;
+
+        const pwdInput = card.querySelector('input');
+        const eyeBtn = card.querySelector('.reveal-pwd');
+        eyeBtn?.addEventListener('click', () => {
+          if (pwdInput.type === 'password') {
+            pwdInput.type = 'text';
+          } else {
+            pwdInput.type = 'password';
+          }
+        });
+
+        const deleteBtn = card.querySelector('.delete-cred');
+        deleteBtn?.addEventListener('click', () => {
+          const domain = deleteBtn.getAttribute('data-domain');
+          const user = deleteBtn.getAttribute('data-user');
+          if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+            chrome.runtime.sendMessage({
+              target: 'privapilot-background',
+              type: 'DELETE_SITE_CREDENTIAL',
+              domain,
+              username: user
+            }, () => {
+              loadVaultData();
+            });
+          }
+        });
+
+        vaultCredList.appendChild(card);
+      });
+    }
+
+    document.querySelectorAll('.pwd-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetId = btn.getAttribute('data-target');
+        const targetInput = document.getElementById(targetId);
+        if (targetInput) {
+          targetInput.type = targetInput.type === 'password' ? 'text' : 'password';
+        }
+      });
+    });
+
+    vaultSaveProfileBtn?.addEventListener('click', () => {
+      const profile = {
+        fullName: vaultFullName?.value?.trim() || '',
+        email: vaultEmail?.value?.trim() || '',
+        phone: vaultPhone?.value?.trim() || '',
+        organization: vaultOrg?.value?.trim() || '',
+        address: vaultAddress?.value?.trim() || '',
+        city: vaultCity?.value?.trim() || '',
+        state: vaultState?.value?.trim() || '',
+        postalCode: vaultPostalCode?.value?.trim() || '',
+        githubUrl: vaultGithub?.value?.trim() || ''
+      };
+
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+          target: 'privapilot-background',
+          type: 'SAVE_VAULT_PROFILE',
+          profile
+        }, () => {
+          if (vaultProfileSavedStatus) {
+            vaultProfileSavedStatus.classList.remove('hidden');
+            setTimeout(() => {
+              vaultProfileSavedStatus.classList.add('hidden');
+            }, 2500);
+          }
+          addAuditEntry('VAULT', 'Personal profile updated in local zero-knowledge store', 'pass');
+        });
+      }
+    });
+
+    vaultAddCredBtn?.addEventListener('click', () => {
+      const domain = vaultNewDomain?.value?.trim();
+      const user = vaultNewUsername?.value?.trim();
+      const pass = vaultNewPassword?.value?.trim();
+
+      if (!domain || !pass) {
+        alert('Please provide domain and password');
+        return;
+      }
+
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+          target: 'privapilot-background',
+          type: 'SAVE_SITE_CREDENTIAL',
+          credential: {
+            domain,
+            usernameOrEmail: user || 'user',
+            password: pass
+          }
+        }, () => {
+          if (vaultNewDomain) vaultNewDomain.value = '';
+          if (vaultNewUsername) vaultNewUsername.value = '';
+          if (vaultNewPassword) vaultNewPassword.value = '';
+          loadVaultData();
+          addAuditEntry('VAULT', `Saved credential for ${domain} in domain-scoped vault`, 'pass');
+        });
+      }
+    });
 
     // Gemini Suggestion Chips
     document.querySelectorAll('.gemini-chip').forEach(btn => {
@@ -1361,15 +1559,27 @@ if (typeof document !== 'undefined') {
         form.style.flexDirection = 'column';
         form.style.gap = '6px';
 
+        const slotBadge = req.inputKey ? `<span style="font-size: 10px; background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: 600;">Slot: ${escapeHtml(req.inputKey)}</span>` : '';
+        const saveVaultToggle = `
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; margin-top: 4px; cursor: pointer;">
+            <input type="checkbox" id="saveToVaultToggle" checked style="accent-color: #2563eb; cursor: pointer;" />
+            <span>☑️ Save to Personal Vault for future autofill</span>
+          </label>
+        `;
+
         if (req.kind === 'credentials') {
           form.innerHTML = `
+            ${slotBadge ? `<div style="margin-bottom: 2px;">${slotBadge}</div>` : ''}
             <input type="text" id="userInputUsername" placeholder="Email or Username" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 11px; background:#ffffff; color:#0f172a;" />
             <input type="password" id="userInputPassword" placeholder="Password" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 11px; background:#ffffff; color:#0f172a;" />
+            ${saveVaultToggle}
             <button id="btnSubmitInputForm" style="margin-top: 4px; padding: 7px 12px; background: #2563eb; color: #ffffff; border: none; border-radius: 5px; font-weight: 600; font-size: 11px; cursor: pointer;">Fill Form &amp; Continue</button>
           `;
         } else {
           form.innerHTML = `
+            ${slotBadge ? `<div style="margin-bottom: 2px;">${slotBadge}</div>` : ''}
             <input type="text" id="userInputText" placeholder="Enter value..." style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 11px; background:#ffffff; color:#0f172a;" />
+            ${saveVaultToggle}
             <button id="btnSubmitInputForm" style="margin-top: 4px; padding: 7px 12px; background: #2563eb; color: #ffffff; border: none; border-radius: 5px; font-weight: 600; font-size: 11px; cursor: pointer;">Fill &amp; Continue</button>
           `;
         }
@@ -1385,6 +1595,7 @@ if (typeof document !== 'undefined') {
           const userVal = (form.querySelector('#userInputUsername'))?.value?.trim() || '';
           const passVal = (form.querySelector('#userInputPassword'))?.value?.trim() || '';
           const customVal = (form.querySelector('#userInputText'))?.value?.trim() || '';
+          const saveToVault = (form.querySelector('#saveToVaultToggle'))?.checked !== false;
 
           if (!userVal && !passVal && !customVal) {
             let warn = form.querySelector('.input-validation-warn');
@@ -1408,6 +1619,8 @@ if (typeof document !== 'undefined') {
             chrome.runtime.sendMessage({
               type: 'SUBMIT_USER_INPUT',
               inputs: { username: userVal, password: passVal, customText: customVal },
+              saveToVault,
+              inputKey: req.inputKey,
               runId: currentRunId,
               tabId: currentActiveTabId,
               targetLocalId: req.targetLocalId,

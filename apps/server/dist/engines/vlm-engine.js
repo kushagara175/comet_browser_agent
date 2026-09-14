@@ -1055,6 +1055,16 @@ Strict Rules:
 17. INTERACTIVE SLOT-FILLING DIRECTIVE (FOR MISSING USER DATA):
    - If a multi-step form requires user information that was NOT provided in the user's prompt (such as a GitHub URL, email address, custom field, or password), do NOT guess, hallucinate, or fail.
    - Return kind: "request_user_input", set "targetLocalId" to the input field, and provide "userInputPrompt" explaining clearly what data is required. The user will be prompted locally in the sidepanel and execution will smoothly resume.
+18. BIDIRECTIONAL SCROLL AWARENESS (BROWSER-USE PATTERN):
+   - Check the "Scroll Metrics" in Page State Landmarks (e.g. "Scroll: 0px / max 1800px; Page extends 1800px below viewport").
+   - If the element you need has verticalOffset: "below", or is not in the active viewport, return kind: "scroll", scrollDirection: "down".
+   - If you need to navigate back up to the navigation bar or previous sections, return kind: "scroll", scrollDirection: "up" or "top".
+   - Do NOT scroll down if Page State indicates "At bottom of page (no content below)".
+19. FORM FILLING & PERSONAL VAULT RESILIENCE:
+   - When filling out forms (contact info, address, college, registrations, login):
+     Propose typing canonical slot names or values (e.g. Alice, user@domain.com, or user phone).
+     The client's zero-knowledge local vault automatically aliases heterogeneous web labels ("contact", "mobile", "tel" -> phone; "org", "college" -> organization) without leaking PII across the network.
+     If a mandatory field is missing from both the user prompt and page context, propose kind: "request_user_input" with userInputPrompt.
 
 JSON Schema:
 {
@@ -1088,10 +1098,30 @@ JSON Schema:
             bounds: e.coarseBounds,
             capabilities: e.actionCapabilities,
             ...(e.containerContext ? { context: e.containerContext } : {}),
-            ...(e.nearestHeading ? { heading: e.nearestHeading } : {})
+            ...(e.nearestHeading ? { heading: e.nearestHeading } : {}),
+            ...(e.verticalOffset && e.verticalOffset !== 'in_view' ? { verticalOffset: e.verticalOffset } : {}),
+            ...(e.inViewport !== undefined ? { inViewport: e.inViewport } : {})
         }));
         const pageState = payload.pageState || { title: 'Active Page', viewport: [1280, 800] };
         const landmarks = [];
+        if (pageState.scrollMetrics) {
+            const sm = pageState.scrollMetrics;
+            const scrollParts = [];
+            scrollParts.push(`Scroll: ${sm.scrollTop}px / max ${sm.maxScrollTop}px (viewport ${sm.clientHeight}px, total ${sm.scrollHeight}px)`);
+            if (sm.scrollableBelow) {
+                scrollParts.push(`Page extends ${sm.pixelsBelow}px below viewport (scrollable: YES)`);
+            }
+            else {
+                scrollParts.push('At bottom of page (no content below)');
+            }
+            if (sm.scrollableAbove) {
+                scrollParts.push(`Page extends ${sm.pixelsAbove}px above viewport (scrollable: YES)`);
+            }
+            else {
+                scrollParts.push('At top of page (no content above)');
+            }
+            landmarks.push(`Scroll Position & Extents: ${scrollParts.join('; ')}`);
+        }
         if (pageState.visibleDialogCount && pageState.visibleDialogCount > 0) {
             landmarks.push(`Visible Dialogs/Drawers Count: ${pageState.visibleDialogCount}`);
         }

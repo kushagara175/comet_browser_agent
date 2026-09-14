@@ -189,7 +189,9 @@ export class SanitizerPipeline {
                 actionCapabilities,
                 containerContext: el.containerContext,
                 nearestHeading: el.nearestHeading,
-                isInsideDialog: el.isInsideDialog
+                isInsideDialog: el.isInsideDialog,
+                ...(el.verticalOffset ? { verticalOffset: el.verticalOffset } : {}),
+                ...(el.inViewport !== undefined ? { inViewport: el.inViewport } : {})
             };
         });
         // Cap interactive elements strictly to <= 180 (under the 200 server schema limit)
@@ -288,7 +290,8 @@ export class SanitizerPipeline {
             ...(snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {}),
             ...(snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map(c => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {}),
             ...(snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map(s => sanitizeElementName(s)) } : {}),
-            ...(snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {})
+            ...(snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {}),
+            ...(snapshot.scrollMetrics ? { scrollMetrics: snapshot.scrollMetrics } : {})
         };
         const safeCanonicalData = {
             captureId: rawCapture.captureId,

@@ -580,6 +580,13 @@
             }
           } catch (_) {
           }
+          let verticalOffset = "in_view";
+          if (rect.bottom < 0) {
+            verticalOffset = "above";
+          } else if (rect.top > viewportHeight) {
+            verticalOffset = "below";
+          }
+          const inViewport = verticalOffset === "in_view" && rect.right > 0 && rect.left < viewportWidth;
           interactiveElements.push({
             localId,
             role,
@@ -589,7 +596,9 @@
             actionCapabilities: caps,
             containerContext,
             nearestHeading,
-            isInsideDialog
+            isInsideDialog,
+            verticalOffset,
+            inViewport
           });
           if (tag === "input" || tag === "textarea" || tag === "select") {
             domElements.push({
@@ -928,6 +937,27 @@
       }
       const routeFingerprint = typeof doc.location !== "undefined" && doc.location?.pathname ? doc.location.pathname.slice(0, 50) : "/";
       const domain = typeof doc.location !== "undefined" && doc.location?.hostname ? doc.location.hostname.slice(0, 100) : void 0;
+      const win = doc.defaultView || (typeof window !== "undefined" ? window : null);
+      const docElem = doc.documentElement;
+      const bodyElem = doc.body;
+      const scrollTop = Math.max(0, Math.round(win?.scrollY ?? docElem?.scrollTop ?? bodyElem?.scrollTop ?? 0));
+      const scrollHeight = Math.max(viewportHeight, Math.round(docElem?.scrollHeight ?? bodyElem?.scrollHeight ?? viewportHeight));
+      const clientHeight = Math.max(1, Math.round(win?.innerHeight ?? docElem?.clientHeight ?? viewportHeight));
+      const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+      const scrollableBelow = scrollTop < maxScrollTop - 2;
+      const scrollableAbove = scrollTop > 2;
+      const pixelsBelow = Math.max(0, maxScrollTop - scrollTop);
+      const pixelsAbove = Math.max(0, scrollTop);
+      const scrollMetrics = {
+        scrollTop,
+        scrollHeight,
+        clientHeight,
+        maxScrollTop,
+        scrollableBelow,
+        scrollableAbove,
+        pixelsBelow,
+        pixelsAbove
+      };
       let cappedInteractiveElements = interactiveElements;
       if (cappedInteractiveElements.length > 180) {
         cappedInteractiveElements = [...cappedInteractiveElements].sort((a, b) => {
@@ -963,7 +993,8 @@
           counters: counters.slice(0, 20),
           contentSummaries: contentSummaries.slice(0, 15),
           routeFingerprint,
-          domain
+          domain,
+          scrollMetrics
         },
         elementMap: this.elementMap
       };

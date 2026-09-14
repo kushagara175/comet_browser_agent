@@ -32,7 +32,9 @@ const ALLOWED_ELEMENT_KEYS = new Set([
     'actionCapabilities',
     'containerContext',
     'nearestHeading',
-    'isInsideDialog'
+    'isInsideDialog',
+    'verticalOffset',
+    'inViewport'
 ]);
 const ALLOWED_PAGE_STATE_KEYS = new Set([
     'title',
@@ -44,7 +46,18 @@ const ALLOWED_PAGE_STATE_KEYS = new Set([
     'postconditionSummary',
     'counters',
     'contentSummaries',
-    'domain'
+    'domain',
+    'scrollMetrics'
+]);
+const ALLOWED_SCROLL_METRICS_KEYS = new Set([
+    'scrollTop',
+    'scrollHeight',
+    'clientHeight',
+    'maxScrollTop',
+    'scrollableBelow',
+    'scrollableAbove',
+    'pixelsBelow',
+    'pixelsAbove'
 ]);
 const ALLOWED_MANIFEST_KEYS = new Set([
     'manifestVersion',
@@ -253,6 +266,16 @@ function validateElement(el, index, isChat = false) {
     if (el.isInsideDialog !== undefined && typeof el.isInsideDialog !== 'boolean') {
         return { isValid: false, errorMessage: `isInsideDialog at index ${index} must be a boolean` };
     }
+    // verticalOffset
+    if (el.verticalOffset !== undefined) {
+        if (el.verticalOffset !== 'in_view' && el.verticalOffset !== 'above' && el.verticalOffset !== 'below') {
+            return { isValid: false, errorMessage: `verticalOffset at index ${index} must be 'in_view', 'above', or 'below'` };
+        }
+    }
+    // inViewport
+    if (el.inViewport !== undefined && typeof el.inViewport !== 'boolean') {
+        return { isValid: false, errorMessage: `inViewport at index ${index} must be a boolean` };
+    }
     return { isValid: true };
 }
 /**
@@ -409,6 +432,27 @@ export function validateSanitizedPayload(body) {
     if (body.pageState.domain !== undefined) {
         if (typeof body.pageState.domain !== 'string' || body.pageState.domain.length > 100 || hasProhibitedScriptPattern(body.pageState.domain)) {
             return { isValid: false, errorMessage: 'pageState.domain must be a safe string up to 100 characters' };
+        }
+    }
+    if (body.pageState.scrollMetrics !== undefined) {
+        if (!isPlainObject(body.pageState.scrollMetrics)) {
+            return { isValid: false, errorMessage: 'pageState.scrollMetrics must be an object' };
+        }
+        const smKeys = Object.getOwnPropertyNames(body.pageState.scrollMetrics);
+        for (const k of smKeys) {
+            if (PROHIBITED_PROPERTY_NAMES.has(k) || !ALLOWED_SCROLL_METRICS_KEYS.has(k)) {
+                return { isValid: false, errorMessage: 'Closed schema violation: Unknown scrollMetrics property' };
+            }
+        }
+        const sm = body.pageState.scrollMetrics;
+        const numFields = ['scrollTop', 'scrollHeight', 'clientHeight', 'maxScrollTop', 'pixelsBelow', 'pixelsAbove'];
+        for (const f of numFields) {
+            if (typeof sm[f] !== 'number' || !Number.isFinite(sm[f]) || sm[f] < 0) {
+                return { isValid: false, errorMessage: `pageState.scrollMetrics.${f} must be a non-negative number` };
+            }
+        }
+        if (typeof sm.scrollableBelow !== 'boolean' || typeof sm.scrollableAbove !== 'boolean') {
+            return { isValid: false, errorMessage: 'pageState.scrollMetrics scrollable flags must be booleans' };
         }
     }
     // 6b. Validate redactionManifest if present

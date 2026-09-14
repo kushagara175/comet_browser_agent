@@ -2217,4 +2217,281 @@ html, body {
   cursor: pointer;
 }
 
+/* ==========================================================================
+   PERSONAL VAULT & PASSWORDS STYLES
+   ========================================================================== */
+
+.vault-container {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  max-height: 100%;
+}
+
+.vault-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 12px;
+}
+
+.vault-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.vault-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.vault-security-badge {
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 3px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.vault-desc {
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.vault-nav {
+  display: flex;
+  background: #1e293b;
+  padding: 3px;
+  border-radius: 8px;
+  gap: 4px;
+}
+
+.vault-nav-btn {
+  flex: 1;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #94a3b8;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.vault-nav-btn.active {
+  background: #3b82f6;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.vault-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.vault-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vault-field.full-width {
+  grid-column: 1 / -1;
+}
+
+.vault-field label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #cbd5e1;
+}
+
+.vault-field input,
+.vault-cred-form input {
+  padding: 7px 10px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #f8fafc;
+  font-size: 11.5px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.vault-field input:focus,
+.vault-cred-form input:focus {
+  border-color: #3b82f6;
+}
+
+.vault-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.vault-actions .btn-primary {
+  padding: 8px 16px;
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.vault-actions .btn-primary:hover {
+  background: #1d4ed8;
+}
+
+.save-status {
+  font-size: 11.5px;
+  color: #10b981;
+  font-weight: 500;
+}
+
+/* Credentials Section */
+.vault-add-cred-box {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.vault-subheading {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 8px;
+}
+
+.vault-cred-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrap input {
+  width: 100%;
+  padding-right: 32px;
+}
+
+.pwd-toggle-btn {
+  position: absolute;
+  right: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: #94a3b8;
+  padding: 4px;
+}
+
+.btn-secondary {
+  padding: 7px 12px;
+  background: #334155;
+  color: #f1f5f9;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-secondary:hover {
+  background: #475569;
+}
+
+.vault-cred-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.vault-cred-card {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cred-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cred-card-domain {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #60a5fa;
+}
+
+.cred-card-user {
+  font-size: 10.5px;
+  color: #94a3b8;
+}
+
+.cred-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-cred-action {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: #94a3b8;
+  padding: 3px 5px;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.btn-cred-action:hover {
+  color: #f1f5f9;
+}
+
+.btn-cred-action.delete:hover {
+  color: #ef4444;
+}
+
+.empty-cred-msg {
+  font-size: 11px;
+  color: #64748b;
+  text-align: center;
+  padding: 16px;
+  font-style: italic;
+}
+
+
 

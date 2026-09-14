@@ -4,7 +4,7 @@
  * Enforces the core privacy boundary:
  * RawCapture -> DetectionReport -> SanitizedContext -> NetworkPayload
  */
-import { RawCapture, SanitizedContext } from '@privapilot/protocol';
+import { RawCapture, SanitizedContext, ScrollMetrics } from '@privapilot/protocol';
 import { RawDomElementCapture } from './dom-detector.js';
 import { RawTextNodeCapture } from './text-detector.js';
 import { RawImageElementCapture } from './face-detector.js';
@@ -29,6 +29,8 @@ export interface LocalDomSnapshot {
         readonly containerContext?: string;
         readonly nearestHeading?: string;
         readonly isInsideDialog?: boolean;
+        readonly verticalOffset?: 'in_view' | 'above' | 'below';
+        readonly inViewport?: boolean;
     }>;
     readonly pageTitle: string;
     readonly visibleDialogCount?: number;
@@ -42,6 +44,7 @@ export interface LocalDomSnapshot {
     }>;
     readonly contentSummaries?: ReadonlyArray<string>;
     readonly domain?: string;
+    readonly scrollMetrics?: ScrollMetrics;
 }
 export declare class SanitizerPipeline {
     /**

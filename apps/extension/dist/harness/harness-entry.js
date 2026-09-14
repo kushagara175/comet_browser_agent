@@ -14600,6 +14600,13 @@ as ORT format: ${n}`);
             }
           } catch (_) {
           }
+          let verticalOffset = "in_view";
+          if (rect.bottom < 0) {
+            verticalOffset = "above";
+          } else if (rect.top > viewportHeight) {
+            verticalOffset = "below";
+          }
+          const inViewport = verticalOffset === "in_view" && rect.right > 0 && rect.left < viewportWidth;
           interactiveElements.push({
             localId,
             role,
@@ -14609,7 +14616,9 @@ as ORT format: ${n}`);
             actionCapabilities: caps,
             containerContext,
             nearestHeading,
-            isInsideDialog
+            isInsideDialog,
+            verticalOffset,
+            inViewport
           });
           if (tag === "input" || tag === "textarea" || tag === "select") {
             domElements.push({
@@ -14948,6 +14957,27 @@ as ORT format: ${n}`);
       }
       const routeFingerprint = typeof doc.location !== "undefined" && doc.location?.pathname ? doc.location.pathname.slice(0, 50) : "/";
       const domain = typeof doc.location !== "undefined" && doc.location?.hostname ? doc.location.hostname.slice(0, 100) : void 0;
+      const win = doc.defaultView || (typeof window !== "undefined" ? window : null);
+      const docElem = doc.documentElement;
+      const bodyElem = doc.body;
+      const scrollTop = Math.max(0, Math.round(win?.scrollY ?? docElem?.scrollTop ?? bodyElem?.scrollTop ?? 0));
+      const scrollHeight = Math.max(viewportHeight, Math.round(docElem?.scrollHeight ?? bodyElem?.scrollHeight ?? viewportHeight));
+      const clientHeight = Math.max(1, Math.round(win?.innerHeight ?? docElem?.clientHeight ?? viewportHeight));
+      const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+      const scrollableBelow = scrollTop < maxScrollTop - 2;
+      const scrollableAbove = scrollTop > 2;
+      const pixelsBelow = Math.max(0, maxScrollTop - scrollTop);
+      const pixelsAbove = Math.max(0, scrollTop);
+      const scrollMetrics = {
+        scrollTop,
+        scrollHeight,
+        clientHeight,
+        maxScrollTop,
+        scrollableBelow,
+        scrollableAbove,
+        pixelsBelow,
+        pixelsAbove
+      };
       let cappedInteractiveElements = interactiveElements;
       if (cappedInteractiveElements.length > 180) {
         cappedInteractiveElements = [...cappedInteractiveElements].sort((a, b) => {
@@ -14983,7 +15013,8 @@ as ORT format: ${n}`);
           counters: counters.slice(0, 20),
           contentSummaries: contentSummaries.slice(0, 15),
           routeFingerprint,
-          domain
+          domain,
+          scrollMetrics
         },
         elementMap: this.elementMap
       };
@@ -16404,7 +16435,9 @@ as ORT format: ${n}`);
           actionCapabilities,
           containerContext: el2.containerContext,
           nearestHeading: el2.nearestHeading,
-          isInsideDialog: el2.isInsideDialog
+          isInsideDialog: el2.isInsideDialog,
+          ...el2.verticalOffset ? { verticalOffset: el2.verticalOffset } : {},
+          ...el2.inViewport !== void 0 ? { inViewport: el2.inViewport } : {}
         };
       });
       let finalSanitizedElements = sanitizedElements;
@@ -16497,7 +16530,8 @@ as ORT format: ${n}`);
         ...snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {},
         ...snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map((c) => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {},
         ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {},
-        ...snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {}
+        ...snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {},
+        ...snapshot.scrollMetrics ? { scrollMetrics: snapshot.scrollMetrics } : {}
       };
       const safeCanonicalData = {
         captureId: rawCapture.captureId,

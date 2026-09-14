@@ -198,6 +198,8 @@ export declare class RunCoordinator {
     }, targetTabId?: number, options?: {
         resumeLoop?: boolean;
         targetLocalId?: string;
+        saveToVault?: boolean;
+        inputKey?: string;
     }): Promise<CoordinatorRunResult>;
     setServerUrl(url: string): void;
 }

@@ -39,6 +39,15 @@ import {
 import { BrowserAdapter, WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
+import {
+  getUserProfile,
+  saveUserProfile,
+  getCredentialsForDomain,
+  saveSiteCredential,
+  normalizeDomain,
+  matchFieldToVault,
+  FormElementDescriptor
+} from '../vault/index.js';
 
 export interface ChatOutcome {
   readonly success: boolean;
@@ -2122,44 +2131,80 @@ export class RunCoordinator {
         this.listeners.onActionProposed(proposal, this.currentRunId);
       }
 
-      // Interactive Slot-Filling (Skyvern Pattern): pause execution, prompt user in sidepanel without killing session
+      // Interactive Slot-Filling (Skyvern Pattern): check local vault first; if missing, prompt user in sidepanel
       if (proposal.kind === 'request_user_input') {
-        const promptText = proposal.userInputPrompt || proposal.rationale || 'Please provide the information required by the form.';
-        this.transition('awaiting-user-input', promptText);
-        if (this.listeners.onUserInputRequired) {
-          this.listeners.onUserInputRequired({
-            kind: 'text_input',
-            prompt: promptText,
-            targetLocalId: proposal.targetLocalId,
-            inputKey: proposal.inputKey,
-            runId: this.currentRunId
-          });
+        let autoFilledFromVault = false;
+        try {
+          const profile = await getUserProfile();
+          const pageDomain = (sanitized.pageState as any)?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : '');
+          const creds = await getCredentialsForDomain(pageDomain);
+          const targetEl = sanitized.elements.find(e => e.localId === proposal.targetLocalId);
+          const descriptor: FormElementDescriptor = {
+            id: targetEl?.localId,
+            name: targetEl?.sanitizedName,
+            rawName: targetEl?.sanitizedName,
+            placeholder: targetEl?.sanitizedName
+          };
+          const match = matchFieldToVault(descriptor, profile, creds, pageDomain);
+          if (match.matched && match.valueToFill) {
+            await this.browser.sendMessageToTab(activeTab.id, {
+              type: 'EXECUTE_ACTION',
+              proposal: {
+                actionId: `act_vault_autofill_${Date.now()}`,
+                kind: 'type',
+                targetLocalId: proposal.targetLocalId,
+                textToType: match.valueToFill,
+                confidence: 1.0,
+                risk: 'safe',
+                rationale: `Autofilled from local vault (${match.canonicalField})`,
+                userApproved: true
+              },
+              captureId: sanitized.captureId
+            });
+            autoFilledFromVault = true;
+            this.transition('executing', `Autofilled ${match.canonicalField} from local Personal Vault`);
+            continue;
+          }
+        } catch (_) {}
+
+        if (!autoFilledFromVault) {
+          const promptText = proposal.userInputPrompt || proposal.rationale || 'Please provide the information required by the form.';
+          this.transition('awaiting-user-input', promptText);
+          if (this.listeners.onUserInputRequired) {
+            this.listeners.onUserInputRequired({
+              kind: 'text_input',
+              prompt: promptText,
+              targetLocalId: proposal.targetLocalId,
+              inputKey: proposal.inputKey,
+              runId: this.currentRunId
+            });
+          }
+          const stepTrace: E2EStepTrace = {
+            step,
+            captureId: sanitized.captureId,
+            pageGeneration: sanitized.captureId,
+            maskCount: sanitized.maskCount,
+            sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+            decisionOrigin,
+            proposal,
+            riskDecision: 'safe',
+            confidenceDecision: 'requires_user_input',
+            executed: false,
+            networkRequestMade,
+            timings: { total: Date.now() - t0_step }
+          };
+          this.stepsTrace.push(stepTrace);
+          const res: CoordinatorRunResult = {
+            success: true,
+            state: 'awaiting-user-input',
+            message: promptText,
+            sanitized,
+            proposal,
+            stepCount: step,
+            steps: this.stepsTrace
+          };
+          return this.completeWithResult(res);
         }
-        const stepTrace: E2EStepTrace = {
-          step,
-          captureId: sanitized.captureId,
-          pageGeneration: sanitized.captureId,
-          maskCount: sanitized.maskCount,
-          sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
-          decisionOrigin,
-          proposal,
-          riskDecision: 'safe',
-          confidenceDecision: 'requires_user_input',
-          executed: false,
-          networkRequestMade,
-          timings: { total: Date.now() - t0_step }
-        };
-        this.stepsTrace.push(stepTrace);
-        const res: CoordinatorRunResult = {
-          success: true,
-          state: 'awaiting-user-input',
-          message: promptText,
-          sanitized,
-          proposal,
-          stepCount: step,
-          steps: this.stepsTrace
-        };
-        return this.completeWithResult(res);
       }
 
       // Perception-Execution Bridge: If the model returned 'answer' with a clarification question
@@ -2966,7 +3011,7 @@ export class RunCoordinator {
   async submitUserInput(
     inputs: { username?: string; password?: string; customText?: string },
     targetTabId?: number,
-    options?: { resumeLoop?: boolean; targetLocalId?: string }
+    options?: { resumeLoop?: boolean; targetLocalId?: string; saveToVault?: boolean; inputKey?: string }
   ): Promise<CoordinatorRunResult> {
     const tabToUse = targetTabId || this.currentTabId;
     const activeTab = await this.browser.getActiveTab(tabToUse);
@@ -3113,6 +3158,27 @@ export class RunCoordinator {
         });
         filledCount++;
       }
+    }
+
+    // If user consented to save to Personal Vault, commit locally
+    if (options?.saveToVault !== false) {
+      try {
+        const domain = activeTab.url ? normalizeDomain(activeTab.url) : '';
+        if (inputs.password && domain) {
+          await saveSiteCredential({
+            domain,
+            usernameOrEmail: inputs.username || 'user',
+            password: inputs.password
+          });
+        }
+        if (inputs.customText && options?.inputKey) {
+          const profileUpdate: any = {};
+          profileUpdate[options.inputKey] = inputs.customText;
+          await saveUserProfile(profileUpdate);
+        } else if (inputs.username && inputs.username.includes('@')) {
+          await saveUserProfile({ email: inputs.username });
+        }
+      } catch (_) {}
     }
 
     if (filledCount === 0) {

@@ -12,7 +12,8 @@ import {
   SanitizedElement,
   SensitiveRegion,
   SensitiveCategory,
-  RedactionManifest
+  RedactionManifest,
+  ScrollMetrics
 } from '@privapilot/protocol';
 import { sanitizeElementName } from '@privapilot/pii-rules';
 import { CoordinateTransformer } from './coordinate-transformer.js';
@@ -40,6 +41,8 @@ export interface LocalDomSnapshot {
     readonly containerContext?: string;
     readonly nearestHeading?: string;
     readonly isInsideDialog?: boolean;
+    readonly verticalOffset?: 'in_view' | 'above' | 'below';
+    readonly inViewport?: boolean;
   }>;
   readonly pageTitle: string;
   readonly visibleDialogCount?: number;
@@ -50,6 +53,7 @@ export interface LocalDomSnapshot {
   readonly counters?: ReadonlyArray<{ readonly label: string; readonly value: string }>;
   readonly contentSummaries?: ReadonlyArray<string>;
   readonly domain?: string;
+  readonly scrollMetrics?: ScrollMetrics;
 }
 
 export class SanitizerPipeline {
@@ -254,7 +258,9 @@ export class SanitizerPipeline {
         actionCapabilities,
         containerContext: el.containerContext,
         nearestHeading: el.nearestHeading,
-        isInsideDialog: el.isInsideDialog
+        isInsideDialog: el.isInsideDialog,
+        ...(el.verticalOffset ? { verticalOffset: el.verticalOffset } : {}),
+        ...(el.inViewport !== undefined ? { inViewport: el.inViewport } : {})
       };
     });
 
@@ -362,7 +368,8 @@ export class SanitizerPipeline {
       ...(snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {}),
       ...(snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map(c => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {}),
       ...(snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map(s => sanitizeElementName(s)) } : {}),
-      ...(snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {})
+      ...(snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {}),
+      ...(snapshot.scrollMetrics ? { scrollMetrics: snapshot.scrollMetrics } : {})
     };
 
     const safeCanonicalData = {
