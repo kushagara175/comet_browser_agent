@@ -77,3 +77,22 @@ test('Microphone Permission Tab Helper: permission.html and permission.js exist 
   const js = fs.readFileSync(permJs, 'utf-8');
   assert.ok(js.includes('MIC_PERMISSION_GRANTED'), 'MIC_PERMISSION_GRANTED runtime message present in permission.js');
 });
+
+test('Voice Reactivity & Silence Auto-Commit: sidepanel has 60 FPS audio loop and silence auto-close timer', () => {
+  const jsPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.js');
+  const js = fs.readFileSync(jsPath, 'utf-8');
+
+  // 60 FPS audio reactive visualizer loop
+  assert.ok(js.includes('runVoiceAudioLoop'), 'runVoiceAudioLoop must exist');
+  assert.ok(js.includes('setAudioLevel'), 'setAudioLevel must be driven');
+
+  // Silence auto-close timer and prompt transfer
+  assert.ok(js.includes('silenceAutoCloseTimer'), 'silenceAutoCloseTimer must exist');
+  assert.ok(js.includes('lastSpokenPrompt'), 'lastSpokenPrompt must be tracked');
+
+  // CSS translucent background
+  const cssPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.css');
+  const css = fs.readFileSync(cssPath, 'utf-8');
+  assert.ok(css.includes('blur(6px)'), 'Reduced blur of 6px must be present');
+});
+

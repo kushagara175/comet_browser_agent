@@ -2479,8 +2479,16 @@ if (typeof document !== 'undefined') {
     let isVoiceActive = false;
     let voiceRecognition = null;
     let voiceFinalTranscript = '';
+    let lastSpokenPrompt = '';
     let isPermissionTabOpening = false;
     let speechRecErrored = false;
+    let voiceAudioStream = null;
+    let voiceAudioCtx = null;
+    let voiceAnalyser = null;
+    let voiceAnimFrame = null;
+    let silenceAutoCloseTimer = null;
+    let speechTalkingDecayTimer = null;
+    let isSpeechApiTalking = false;
 
     // Helper: Safely open at most ONE permission prompt tab without spamming
     function openMicPermissionTabOnce() {
@@ -2505,25 +2513,86 @@ if (typeof document !== 'undefined') {
       }
     }
 
+    // 60 FPS Living Audio Reactivity Engine for Orbloom
+    function runVoiceAudioLoop() {
+      if (!isVoiceActive) return;
+      voiceAnimFrame = requestAnimationFrame(runVoiceAudioLoop);
+
+      let computedLevel = 0;
+
+      // 1. Direct Web Audio frequency analysis from physical microphone stream
+      if (voiceAnalyser) {
+        const freqData = new Uint8Array(voiceAnalyser.frequencyBinCount);
+        voiceAnalyser.getByteFrequencyData(freqData);
+        let sum = 0;
+        for (let i = 0; i < freqData.length; i++) {
+          sum += freqData[i];
+        }
+        const avg = sum / freqData.length;
+        if (avg > 7) {
+          computedLevel = Math.min(1.0, Math.max(0, (avg - 7) / 48));
+        }
+      }
+
+      // 2. SpeechRecognition vocal pulse reinforcement
+      if (isSpeechApiTalking) {
+        const synthRhythm = 0.55 + 0.35 * Math.sin(Date.now() / 95) + ((Math.random() - 0.5) * 0.12);
+        computedLevel = Math.max(computedLevel, Math.min(1.0, Math.max(0.25, synthRhythm)));
+      }
+
+      // 3. Drive Orbloom living WebGL shaders and rotation
+      if (activeVoiceOrb) {
+        if (computedLevel > 0.08) {
+          activeVoiceOrb.setAudioLevel(computedLevel);
+          activeVoiceOrb.setState('speaking');
+        } else {
+          activeVoiceOrb.setAudioLevel(0);
+          activeVoiceOrb.setState('listening');
+        }
+      }
+    }
+
     async function openVoiceMode() {
       if (!voiceModal) return;
       isVoiceActive = true;
       speechRecErrored = false;
+      isSpeechApiTalking = false;
+      voiceFinalTranscript = '';
+      lastSpokenPrompt = '';
+      clearTimeout(silenceAutoCloseTimer);
+      clearTimeout(speechTalkingDecayTimer);
+
       voiceModal.classList.remove('hidden');
       voiceModal.setAttribute('aria-hidden', 'false');
-      voiceFinalTranscript = '';
       if (voiceLiveTranscript) {
         voiceLiveTranscript.textContent = '';
       }
 
-      // Initialize or activate Orbloom Living WebGL Orb
+      // Initialize or activate Orbloom Living WebGL Orb with dynamic pink spiral theme
       try {
         if (!activeVoiceOrb) {
-          const { createOrb } = await import('./orbloom-bundle.js');
+          const { createOrb, createOrbTheme } = await import('./orbloom-bundle.js');
           const canvas = voiceModal.querySelector('.orb-canvas');
           if (canvas) {
+            const vibrantPinkTheme = createOrbTheme({
+              preset: 'spiral-pink-01',
+              appearance: {
+                intensity: 1.3,
+                detail: 0.95,
+                glow: 1.45,
+              },
+              motion: {
+                speed: 1.18,
+                drift: 0.75,
+              },
+              audioResponse: {
+                brightness: 1.9,
+                motion: 1.6,
+                pulse: 1.85,
+              }
+            });
             activeVoiceOrb = createOrb(canvas, {
-              theme: 'spiral-pink-01',
+              theme: vibrantPinkTheme,
               state: 'idle',
               quality: 'balanced',
               reducedMotion: 'user'
@@ -2534,18 +2603,38 @@ if (typeof document !== 'undefined') {
         if (activeVoiceOrb) {
           activeVoiceOrb.resume?.();
           activeVoiceOrb.setState('listening');
-          try {
-            await activeVoiceOrb.connectMicrophone();
-            activeVoiceOrb.setState('listening');
-          } catch (micErr) {
-            console.warn('[PrivaPilot Voice] Microphone audio connection note:', micErr);
-            // Open dedicated permission helper tab (once, never in a loop!)
-            openMicPermissionTabOnce();
-          }
+          activeVoiceOrb.setAudioLevel(0);
         }
       } catch (orbErr) {
         console.warn('[PrivaPilot Voice] Failed to initialize Orbloom visualizer:', orbErr);
       }
+
+      // Initialize microphone stream for real-time frequency analysis
+      if (navigator.mediaDevices?.getUserMedia) {
+        try {
+          voiceAudioStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true }
+          });
+          voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          if (voiceAudioCtx.state === 'suspended') {
+            await voiceAudioCtx.resume();
+          }
+          const source = voiceAudioCtx.createMediaStreamSource(voiceAudioStream);
+          voiceAnalyser = voiceAudioCtx.createAnalyser();
+          voiceAnalyser.fftSize = 512;
+          voiceAnalyser.smoothingTimeConstant = 0.25;
+          source.connect(voiceAnalyser);
+        } catch (micErr) {
+          console.warn('[PrivaPilot Voice] Microphone audio connection note:', micErr);
+          openMicPermissionTabOnce();
+        }
+      }
+
+      // Start 60 FPS audio reactive visualizer loop
+      if (voiceAnimFrame) {
+        cancelAnimationFrame(voiceAnimFrame);
+      }
+      runVoiceAudioLoop();
 
       // Browser-native real-time Web Speech Recognition
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2556,9 +2645,32 @@ if (typeof document !== 'undefined') {
           voiceRecognition.interimResults = true;
           voiceRecognition.lang = 'en-US';
 
-          let silenceTimer = null;
+          voiceRecognition.onspeechstart = () => {
+            isSpeechApiTalking = true;
+            clearTimeout(speechTalkingDecayTimer);
+            activeVoiceOrb?.setState('speaking');
+          };
+
+          voiceRecognition.onsoundstart = () => {
+            isSpeechApiTalking = true;
+            clearTimeout(speechTalkingDecayTimer);
+            activeVoiceOrb?.setState('speaking');
+          };
+
+          voiceRecognition.onspeechend = () => {
+            clearTimeout(speechTalkingDecayTimer);
+            speechTalkingDecayTimer = setTimeout(() => {
+              isSpeechApiTalking = false;
+            }, 350);
+          };
 
           voiceRecognition.onresult = (event) => {
+            isSpeechApiTalking = true;
+            clearTimeout(speechTalkingDecayTimer);
+            speechTalkingDecayTimer = setTimeout(() => {
+              isSpeechApiTalking = false;
+            }, 450);
+
             let interimTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; ++i) {
               const res = event.results[i];
@@ -2568,7 +2680,9 @@ if (typeof document !== 'undefined') {
                 interimTranscript += res[0].transcript;
               }
             }
-            const currentSpoken = (voiceFinalTranscript + ' ' + interimTranscript).trim();
+            const currentSpoken = (voiceFinalTranscript + (interimTranscript ? ' ' + interimTranscript : '')).trim();
+            lastSpokenPrompt = currentSpoken;
+
             if (voiceLiveTranscript) {
               voiceLiveTranscript.textContent = currentSpoken;
             }
@@ -2576,21 +2690,22 @@ if (typeof document !== 'undefined') {
               chatInput.value = currentSpoken;
               updateSendBtn();
             }
-            if (activeVoiceOrb) {
-              activeVoiceOrb.setState('speaking');
-              clearTimeout(silenceTimer);
-              silenceTimer = setTimeout(() => {
-                if (isVoiceActive && activeVoiceOrb) {
-                  activeVoiceOrb.setState('listening');
+
+            // Inactivity auto-close: after 1.6s of silence following spoken words,
+            // auto-close the voice modal and present the prompt in chatbox ready to send!
+            clearTimeout(silenceAutoCloseTimer);
+            if (currentSpoken) {
+              silenceAutoCloseTimer = setTimeout(() => {
+                if (isVoiceActive && lastSpokenPrompt.trim()) {
+                  closeVoiceMode();
                 }
-              }, 1200);
+              }, 1600);
             }
           };
 
           voiceRecognition.onerror = (e) => {
             console.warn('[PrivaPilot Voice] Speech recognition event:', e?.error);
             speechRecErrored = true;
-            // Stop immediately on error to abort endless restart loops!
             try { voiceRecognition.abort?.(); } catch (_) {}
 
             if (e?.error === 'not-allowed' || e?.error === 'audio-capture') {
@@ -2599,7 +2714,7 @@ if (typeof document !== 'undefined') {
           };
 
           voiceRecognition.onend = () => {
-            // CRITICAL: Only restart if still active and NO error occurred!
+            // Only restart if still active and no terminal error occurred
             if (isVoiceActive && voiceRecognition && !speechRecErrored) {
               try {
                 voiceRecognition.start();
@@ -2618,6 +2733,29 @@ if (typeof document !== 'undefined') {
       if (!isVoiceActive) return;
       isVoiceActive = false;
       speechRecErrored = true;
+      isSpeechApiTalking = false;
+      clearTimeout(silenceAutoCloseTimer);
+      clearTimeout(speechTalkingDecayTimer);
+
+      if (voiceAnimFrame) {
+        cancelAnimationFrame(voiceAnimFrame);
+        voiceAnimFrame = null;
+      }
+
+      if (voiceAudioStream) {
+        try {
+          voiceAudioStream.getTracks().forEach((track) => track.stop());
+        } catch (_) {}
+        voiceAudioStream = null;
+      }
+
+      if (voiceAudioCtx) {
+        try {
+          voiceAudioCtx.close();
+        } catch (_) {}
+        voiceAudioCtx = null;
+        voiceAnalyser = null;
+      }
 
       if (voiceModal) {
         voiceModal.classList.add('hidden');
@@ -2634,15 +2772,27 @@ if (typeof document !== 'undefined') {
 
       if (activeVoiceOrb) {
         try {
-          activeVoiceOrb.disconnectAudio();
+          activeVoiceOrb.setAudioLevel(0);
           activeVoiceOrb.setState('idle');
           activeVoiceOrb.pause?.();
         } catch (_) {}
       }
 
+      // Ensure whatever was spoken is safely written into the chatbox
+      if (lastSpokenPrompt && chatInput) {
+        chatInput.value = lastSpokenPrompt.trim();
+      }
+
+      // Update send button state (will switch to mode-send if text exists)
       updateSendBtn();
+
+      // Focus chat input with cursor at the end, immediately ready to send
       if (chatInput) {
         chatInput.focus();
+        try {
+          const endPos = chatInput.value.length;
+          chatInput.setSelectionRange(endPos, endPos);
+        } catch (_) {}
       }
     }
 
@@ -2658,15 +2808,8 @@ if (typeof document !== 'undefined') {
         if (msg?.type === 'MIC_PERMISSION_GRANTED' && isVoiceActive) {
           isPermissionTabOpening = false;
           speechRecErrored = false;
-          if (activeVoiceOrb) {
-            activeVoiceOrb.connectMicrophone()
-              .then(() => {
-                activeVoiceOrb.setState('listening');
-                if (voiceRecognition && isVoiceActive) {
-                  try { voiceRecognition.start(); } catch (_) {}
-                }
-              })
-              .catch((e) => console.warn('[PrivaPilot Voice] Reconnecting mic error:', e));
+          if (voiceRecognition && isVoiceActive) {
+            try { voiceRecognition.start(); } catch (_) {}
           }
         }
       });
