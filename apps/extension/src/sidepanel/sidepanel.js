@@ -2927,6 +2927,8 @@ if (typeof document !== 'undefined') {
           renderActionResult(agentBubble, res, 2);
 
           if (voiceLiveTranscript) {
+            voiceLiveTranscript.classList.remove('hidden');
+            voiceLiveTranscript.classList.remove('is-idle-listening');
             voiceLiveTranscript.textContent = rawReply.length > 90 ? rawReply.slice(0, 90) + '...' : rawReply;
           }
 
@@ -2935,6 +2937,7 @@ if (typeof document !== 'undefined') {
               voiceFinalTranscript = '';
               lastSpokenPrompt = '';
               if (voiceLiveTranscript) {
+                voiceLiveTranscript.classList.remove('hidden');
                 voiceLiveTranscript.textContent = 'Listening...';
                 voiceLiveTranscript.classList.add('is-idle-listening');
               }
@@ -2954,12 +2957,14 @@ if (typeof document !== 'undefined') {
           }
           const fallbackText = "I'm in conversation mode and ready to talk.";
           if (voiceLiveTranscript) {
+            voiceLiveTranscript.classList.remove('hidden');
             voiceLiveTranscript.classList.remove('is-idle-listening');
             voiceLiveTranscript.textContent = fallbackText;
           }
           speakVoiceResponse(fallbackText, () => {
             if (isVoiceActive && currentVoiceMode === 'talk') {
               if (voiceLiveTranscript) {
+                voiceLiveTranscript.classList.remove('hidden');
                 voiceLiveTranscript.textContent = 'Listening...';
                 voiceLiveTranscript.classList.add('is-idle-listening');
               }
@@ -3118,11 +3123,29 @@ if (typeof document !== 'undefined') {
             activeVoiceOrb?.setState('speaking');
           };
 
+          function dispatchSilenceTurn() {
+            clearTimeout(silenceAutoCloseTimer);
+            if (!isVoiceActive || !lastSpokenPrompt.trim() || isAiSpeaking || isVoiceThinking) return;
+
+            const promptToSend = lastSpokenPrompt.trim();
+            if (currentVoiceMode === 'dictate') {
+              closeVoiceMode();
+            } else if (currentVoiceMode === 'talk') {
+              handleTalkModeConversationTurn(promptToSend);
+            }
+          }
+
           voiceRecognition.onspeechend = () => {
             clearTimeout(speechTalkingDecayTimer);
             speechTalkingDecayTimer = setTimeout(() => {
               isSpeechApiTalking = false;
             }, 350);
+
+            // Speech pause: in talk mode, after words are spoken, a 900ms pause triggers auto-send
+            if (lastSpokenPrompt.trim() && currentVoiceMode === 'talk') {
+              clearTimeout(silenceAutoCloseTimer);
+              silenceAutoCloseTimer = setTimeout(dispatchSilenceTurn, 900);
+            }
           };
 
           voiceRecognition.onresult = (event) => {
@@ -3165,19 +3188,11 @@ if (typeof document !== 'undefined') {
             }
 
             // Inactivity trigger:
-            // Mode 1 (talk / Live Conversation): 2.0s of clean silence triggers auto-send turn
-            // Mode 2 (dictate / Voice-to-Text): 2.8s of silence triggers auto-close and populates chatbox
+            // Mode 1 (talk / Live Conversation): 1.5s of clean silence triggers auto-send turn
+            // Mode 2 (dictate / Voice-to-Text): 2.4s of silence triggers auto-close and populates chatbox
             clearTimeout(silenceAutoCloseTimer);
-            const silenceThreshold = currentVoiceMode === 'talk' ? 2000 : 2800;
-            silenceAutoCloseTimer = setTimeout(() => {
-              if (!isVoiceActive || !lastSpokenPrompt.trim() || isAiSpeaking || isVoiceThinking) return;
-
-              if (currentVoiceMode === 'dictate') {
-                closeVoiceMode();
-              } else if (currentVoiceMode === 'talk') {
-                handleTalkModeConversationTurn(lastSpokenPrompt.trim());
-              }
-            }, silenceThreshold);
+            const silenceThreshold = currentVoiceMode === 'talk' ? 1500 : 2400;
+            silenceAutoCloseTimer = setTimeout(dispatchSilenceTurn, silenceThreshold);
           };
 
           voiceRecognition.onerror = (e) => {
@@ -3196,6 +3211,12 @@ if (typeof document !== 'undefined') {
             if (lastSpokenPrompt) {
               voiceFinalTranscript = lastSpokenPrompt;
             }
+            // If user has spoken something and flow ended, trigger auto-send/commit turn immediately!
+            if (lastSpokenPrompt.trim() && !isAiSpeaking && !isVoiceThinking) {
+              dispatchSilenceTurn();
+              return;
+            }
+            // Only restart if no pending prompt and user is still waiting to speak
             if (isVoiceActive && !speechRecErrored && !isAiSpeaking && !isVoiceThinking) {
               setTimeout(() => {
                 if (isVoiceActive && !speechRecErrored && !isAiSpeaking && !isVoiceThinking) {
