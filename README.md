@@ -14,7 +14,7 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=nodedotjs&logoColor=white)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
-[Problem Statement](docs/00_PROBLEM_STATEMENT.md) · [Architecture & PPT Diagrams](DIAGRAMS.md) · [Execution Plan](docs/EXECUTION_PLAN.md) · [Agent Rules](docs/AGENT_RULES.md) · [Full Docs](docs/INDEX.md)
+[Problem Statement](docs/00_PROBLEM_STATEMENT.md) · [Master Architecture](diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md) · [Architecture & PPT Diagrams](DIAGRAMS.md) · [Execution Plan](docs/EXECUTION_PLAN.md) · [Agent Rules](docs/AGENT_RULES.md) · [Full Docs](docs/INDEX.md)
 
 </div>
 
@@ -95,20 +95,20 @@ Honest state, updated as work lands. **No performance number appears in this rep
 
 | Component | State |
 | :--- | :--- |
-| Monorepo build & test suite | ✅ Clean build, 198/198 unit & integration tests passing (`npm test`) |
-| Protocol & type-enforced privacy boundary | ✅ `packages/protocol/` (`RedactionManifest`, `E2EStepTrace`) |
+| Monorepo build & test suite | ✅ Clean build, 339/339 unit & integration tests passing (`npm test`) across 40 suites |
+| Protocol & type-enforced privacy boundary | ✅ `packages/protocol/` (`RedactionManifest`, `E2EStepTrace`, `TaskContract`) |
 | Deterministic PII detectors (DOM + regex + Luhn + Verhoeff) | ✅ `packages/pii-rules/` |
-| Server gateway, closed schema, canary scanner | ✅ `apps/server/` (pixel verification enforcement) |
+| Server gateway, closed schema, canary scanner | ✅ `apps/server/` (native Node.js `node:http`, closed schema, 10MB limit) |
 | Action risk policy & confirmation gate | ✅ `packages/protocol/src/action.ts` (closed postconditions, fresh confirmation) |
 | Pixel redaction running inside extension | ✅ Offscreen document canvas host (`apps/extension/src/offscreen/`) |
 | Production pixel verifier & face fallback | ✅ `apps/extension/src/sanitizer/pixel-verifier.ts` (fail-closed `#0f172a` fallback) |
-| On-device visual UI candidate generator | ✅ `apps/extension/src/vision/visual-candidate-generator.ts` (edge/gradient proposals) |
-| Perception fusion & routing | ✅ `apps/extension/src/vision/perception-fuser.ts` (dom-only, vision-only, fused) |
-| Benchmark against authored ground truth | ✅ Real Chrome browser benchmark (`npm run benchmark:browser`: 100% covered) |
+| On-device visual UI candidate generator | 🔬 `apps/extension/src/vision/visual-candidate-generator.ts` (experimental edge proposals, benchmark-evaluated) |
+| Perception fusion & routing | 🔬 `apps/extension/src/vision/perception-fuser.ts` (experimental DOM/vision fusion, benchmark-evaluated) |
+| Benchmark against authored ground truth | ✅ Real Chrome browser benchmark (`npm run benchmark:browser`: 100% covered, 0 under-masks) |
 | Bounded multi-step agent loop & local router | ✅ Bounded agent loop with local safe router (`apps/extension/src/background/coordinator.ts`) |
-| Browser compatibility | ✅ Chrome Manifest V3 active; Firefox experimental (per submission rubric) |
+| Browser compatibility | ✅ Chrome Manifest V3 active; Firefox planned / unverified (per submission rubric) |
 
-Detailed benchmark metrics and test outcomes are tracked in **[`docs/benchmark-results/`](docs/benchmark-results/EVALUATION_REPORT.md)**.
+Detailed benchmark metrics and test outcomes are tracked in **[`docs/benchmark-results/`](docs/benchmark-results/EVALUATION_REPORT.md)** and the canonical technical architecture in **[`diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md`](diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md)**. See also the **[`docs/CODE_DOCUMENTATION_AUDIT.md`](docs/CODE_DOCUMENTATION_AUDIT.md)** for code-to-docs verification.
 
 ---
 

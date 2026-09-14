@@ -1,8 +1,10 @@
 # 04. Browser Extension Architecture & Automation — SIH26171
 
+> **Notice:** The canonical, fully verified technical architecture document for this project is **[`diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md`](../diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md)**. This document serves as a modular browser extension reference.
+
 ## 1. Extension Architecture (Manifest V3)
 
-The client agent is built as a browser extension adhering to the **Chrome Manifest V3** standard (with Firefox Manifest V3 architecture ready):
+The client agent is built as a browser extension adhering to the **Chrome Manifest V3** standard (with Firefox port planned as future work):
 
 ```mermaid
 flowchart TD

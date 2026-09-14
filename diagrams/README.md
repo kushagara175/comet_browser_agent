@@ -18,6 +18,7 @@ This document provides **contest-winning, publication-grade architectural diagra
 | **Slide 3** | [On-Device Redaction & Privacy Guard Deep Dive](#3-slide-3-on-device-redaction--privacy-guard-deep-dive) | Focuses on the 40% evaluation weight: UltraFace ONNX + DOM Sanitizer + Luhn/Verhoeff. |
 | **Slide 4** | [Compact 1-Page PPT Master Layout (2-in-1 Architecture)](#4-slide-4-compact-1-page-ppt-master-layout) | Optimized high-density layout fitting both system flow and core novelty onto one slide. |
 | **Slide 5** | [Official ISRO Evaluation Metrics vs Technical Alignment](#5-slide-5-isro-evaluation-metrics-vs-technical-architecture-alignment) | Direct mapping of project subsystems to the official 5 SIH evaluation criteria. |
+| **Slide 6** | [Code-Aligned Master Architecture](06_CODE_ALIGNED_MASTER_ARCHITECTURE.md) | Authoritative master architecture, runtime pipelines, privacy boundaries, risk matrix, and failure recovery. |
 
 ---
 
@@ -78,7 +79,7 @@ flowchart TB
     %% ==========================================
     %% ZONE 3: REASONING GATEWAY (SERVER)
     %% ==========================================
-    subgraph Zone3 ["ZONE 3: Centralized Open-Weights Reasoning Gateway (Node / Express)"]
+    subgraph Zone3 ["ZONE 3: Centralized Open-Weights Reasoning Gateway (Node.js node:http :4501)"]
         direction TB
         Payload["📦 Privacy-Sanitized HTTPS Payload<br/>• Redacted Screenshot (Zero PII)<br/>• Ephemeral Local Element Map"]:::modelNode
         ModelRouter["🔀 Gateway Router & Probe<br/>(Ollama / LM Studio / Cloud Open-Weights)"]:::modelNode
@@ -355,5 +356,5 @@ flowchart TD
 ### 💡 How to Export for PPT Slides
 - **Direct GitHub Viewing:** These diagrams render automatically in your GitHub repository browser.
 - **Copying to PowerPoint:**
-  1. Open [index.html](file:///c:/Users/HP/Desktop/sih/index.html) in any browser and click **"Export HD PNG"** for crystal-clear slide graphics.
+  1. Open [index.html](../index.html) in any browser and click **"Export HD PNG"** for crystal-clear slide graphics.
   2. Or paste any diagram's Mermaid code into [Mermaid Live Editor](https://mermaid.live) to download SVG/PNG vector exports.

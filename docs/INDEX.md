@@ -20,11 +20,13 @@ disagree, the one higher in this list wins.
 | **[PHASES.md](PHASES.md)** | The task board — phases R0–R8 ordered by which problem-statement clause each satisfies, every one with an exit gate. **Start here to decide what to do next.** |
 | **[AGENT_RULES.md](AGENT_RULES.md)** | Binding rules for every coding session: privacy boundary, fail-closed policy, data classes, action safety, evidence-and-honesty rules, reuse table, definition of done. **Read before writing code.** |
 | **[AUDIT_LOCAL_VS_DEFERRED.md](AUDIT_LOCAL_VS_DEFERRED.md)** | What is actually measured by executing code versus what is still unverified, and why. Records the benchmark-harness rebuild, the real bugs it exposed, and every ground-truth correction with its justification. **Read before quoting any metric.** |
+| **[CODE_DOCUMENTATION_AUDIT.md](CODE_DOCUMENTATION_AUDIT.md)** | **Code-to-documentation verification audit report.** Tracks verified code realities vs documentation across frameworks, models, endpoints, test counts, and security guarantees. |
 
 ## Tier 3 — Design reference
 
 | Document | What it covers |
 | :--- | :--- |
+| **[06_CODE_ALIGNED_MASTER_ARCHITECTURE.md](../diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md)** | **Canonical Master Technical Architecture (16:9 Presentation & Technical Deep Dive). Verified against executable code.** |
 | **[DIAGRAMS.md](../DIAGRAMS.md)** | **Architecture Diagrams & Algorithmic DAGs for SIH PPT Slides (4-Zone Pipeline, Decision Gates, Redaction Deep Dive, ISRO Metrics).** |
 | **[SIH26171_WINNING_EXECUTION_PLAYBOOK.md](SIH26171_WINNING_EXECUTION_PLAYBOOK.md)** | The full design spec and source of truth for architectural decisions — privacy contract, detection and redaction design, reasoning and execution rules, benchmark strategy, adversarial cases, jury answers. |
 | [01_PROBLEM_ANALYSIS.md](01_PROBLEM_ANALYSIS.md) | Problem and domain context; the privacy paradox in web agents; why the finale use cases being unknown shapes the design. |

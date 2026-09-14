@@ -1,5 +1,7 @@
 # 02. System Architecture & Core Modules — SIH26171
 
+> **Notice:** The canonical, fully verified technical architecture document for this project is **[`diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md`](../diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md)**. This document serves as a modular architectural reference.
+
 ## 1. Architectural Philosophy: The Privacy-Preserving Client-Server Split
 
 Standard agentic web architectures send raw, sensitive screen data directly to cloud LLMs. Our architecture enforces a strict **Fail-Closed Privacy Boundary** directly inside the user's browser:
@@ -46,7 +48,7 @@ Standard agentic web architectures send raw, sensitive screen data directly to c
 
 ```mermaid
 flowchart TD
-    UserTab[Active Browser Tab: Chrome MV3 Active / Firefox Ready] --> CaptureEngine[Viewport Capture & DOM Parser]
+    UserTab[Active Browser Tab: Chrome MV3 Active / Firefox Planned] --> CaptureEngine[Viewport Capture & DOM Parser]
 
     subgraph Client_Extension_Sandbox ["Client Browser Extension (Manifest V3)"]
         CaptureEngine --> OffscreenWorker[Offscreen Document Canvas Host]
@@ -64,7 +66,7 @@ flowchart TD
         CanvasObfuscator --> SanitizedArtifacts["Sanitized Context: Redacted Screenshot + Ephemeral Local IDs"]
     end
 
-    subgraph Server_Reasoning_Gateway ["Centralized Reasoning Server (Node / Express)"]
+    subgraph Server_Reasoning_Gateway ["Centralized Reasoning Server (Node.js node:http)"]
         SanitizedArtifacts -->|HTTPS Payload (No Raw PII)| GatewayRouter[API Gateway & Prompt Formatter]
         GatewayRouter --> CentralVLM["Server Reasoning Engine (VLM / LLM)"]
         CentralVLM --> ActionParser["Closed-Schema Action Proposal Validator"]
@@ -97,10 +99,10 @@ flowchart TD
 ### Subsystem 2: In-Browser Vision & Privacy Filter
 - **Face & Media Detection:** Runs a quantized UltraFace ONNX model on WebAssembly (with WebGPU execution provider fallback where supported), detecting human faces locally.
 - **DOM Attribute Sanitization:** Identifies and blanks out all `input[type="password"]`, `autocomplete="cc-number"`, and confidential form values.
-- **Canvas Obfuscator:** Applies solid blackout `#000000` rectangles over sensitive input fields and blur masks over detected face regions.
+- **Canvas Obfuscator:** Applies solid blackout `#0f172a` rectangles over sensitive input fields and blur masks over detected face regions.
 
 ### Subsystem 3: Centralized Server Reasoning Gateway
-- **Express Server Gateway:** Receives the sanitized screenshot and structural DOM elements via HTTPS with closed JSON schema validation and canary scanning.
+- **Node.js HTTP Gateway (`node:http` on :4501):** Built on native Node.js HTTP (zero external framework bloat), receives the sanitized screenshot and structural DOM elements via HTTPS with closed JSON schema validation and canary scanning.
 - **Action Command Output:** Returns deterministic actions addressed strictly by ephemeral local IDs:
   ```json
   {

@@ -1,5 +1,7 @@
 # 03. In-Browser Vision & Server Reasoning Pipeline — SIH26171
 
+> **Notice:** The canonical, fully verified technical architecture document for this project is **[`diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md`](../diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md)**. This document serves as a modular pipeline reference.
+
 ## 1. Pipeline Overview
 
 The perception and reasoning pipeline bridges client-side visual processing with server-side multimodal reasoning:
@@ -76,7 +78,7 @@ export async function sanitizeScreenshot(
   }
   
   // 2. Apply Solid Blackout Rectangles over sensitive DOM inputs
-  ctx.fillStyle = '#000000';
+  ctx.fillStyle = '#0f172a';
   for (const box of domBoxes) {
     ctx.fillRect(box.x, box.y, box.width, box.height);
   }
@@ -90,8 +92,12 @@ export async function sanitizeScreenshot(
 ## 3. Server-Side Reasoning Engine
 
 ### A. Centralized Reasoning Model Configuration
-- **Supported Engines:** `Qwen2.5-VL`, `Claude 3.5 Sonnet`, `Llama-3.2-Vision`, or local Ollama / LM Studio instances.
-- **Deployment:** Centralized server gateway during SIH (fully permitted by official rules).
+- **Supported Backends (`vlm-engine.ts`):** 
+  1. Local Ollama (`:11434/api/chat` and `:11434/v1`)
+  2. Local LM Studio (`:1234/v1`)
+  3. Cloud Open-Weights VLMs via OpenAI-compatible endpoints (`VLM_ENDPOINT` with Groq, OpenRouter, Together AI, Azure OpenAI)
+  4. Automatic fallback: `MockReasoningEngine` (deterministic offline reasoner when no model is online)
+- **Deployment:** Centralized Node.js `node:http` server gateway (`apps/server/`) during SIH.
 
 ### B. Reasoning System Prompt Schema
 ```text

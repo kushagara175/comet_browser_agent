@@ -54,7 +54,7 @@ flowchart TB
     end
 
     %% ZONE 3
-    subgraph Zone3 ["ZONE 3: Centralized Open-Weights Reasoning Gateway (Node / Express)"]
+    subgraph Zone3 ["ZONE 3: Centralized Open-Weights Reasoning Gateway (Node.js node:http :4501)"]
         direction TB
         Payload["📦 Privacy-Sanitized HTTPS Payload<br/>• Redacted Screenshot (Zero PII)<br/>• Ephemeral Local Element Map"]:::modelNode
         ModelRouter["🔀 Gateway Router & Probe<br/>(Ollama / LM Studio / Cloud Open-Weights)"]:::modelNode

@@ -1,5 +1,7 @@
 # 06. Mission Control HUD & Telemetry Dashboard — SIH26171
 
+> **Notice:** The canonical, fully verified technical architecture document for this project is **[`diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md`](../diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md)**. This document serves as a modular frontend HUD reference.
+
 ## 1. UI/UX Design Philosophy
 
 The Mission Control HUD is packaged directly as a **Chrome Manifest V3 Side-Panel** (with vanilla WebGL shader animations, live dual-pane preview, and verified telemetry):

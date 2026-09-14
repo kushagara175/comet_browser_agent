@@ -1,5 +1,7 @@
 # 05. Action Execution, Verification & Privacy Audit Trail — SIH26171
 
+> **Notice:** The canonical, fully verified technical architecture document for this project is **[`diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md`](../diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md)**. This document serves as a modular execution and verification reference.
+
 ## 1. Subsystem Architecture
 
 The perception loop combines bounded multi-step execution with explicit semantic verification and local privacy audit logging:
