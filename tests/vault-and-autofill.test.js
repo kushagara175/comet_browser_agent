@@ -517,4 +517,8 @@ test('Sidepanel UI Integrity: Contains menuVaultBtn, PIN lock screen, change PIN
   assert.ok(html.includes('id="vaultExportBtn"'), 'vaultExportBtn present');
   assert.ok(html.includes('id="vaultImportBtn"'), 'vaultImportBtn present');
   assert.ok(html.includes('id="vaultImportFileInput"'), 'vaultImportFileInput present');
+
+  // Back to Chat buttons
+  assert.ok(html.includes('id="vaultLockedBackBtn"'), 'vaultLockedBackBtn present');
+  assert.ok(html.includes('id="vaultBackToChatBtn"'), 'vaultBackToChatBtn present');
 });

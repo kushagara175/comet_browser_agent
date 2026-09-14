@@ -2508,10 +2508,49 @@ html, body {
 /* PIN Security Lock Screen */
 .vault-lock-screen {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 420px;
   padding: 20px 10px;
+}
+
+.vault-top-nav-row {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  margin-bottom: 12px;
+}
+
+.vault-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.vault-back-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+  border-color: rgba(96, 165, 250, 0.4);
+}
+
+.vault-back-btn svg {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.vault-back-btn:hover svg {
+  transform: translateX(-2px);
+  color: #60a5fa;
 }
 
 .vault-lock-card {

@@ -948,7 +948,6 @@ if (typeof document !== 'undefined') {
         hudTabs?.classList.add('hidden');
       } else {
         if (geminiHero) geminiHero.classList.add('hidden');
-        hudTabs?.classList.remove('hidden');
         switchTab(tabChatBtn, tabChatContent);
         targetSession.messages.forEach(msg => {
           if (msg.role === 'user') {
@@ -1158,9 +1157,20 @@ if (typeof document !== 'undefined') {
 
     menuVaultBtn?.addEventListener('click', () => {
       geminiMenuDropdown?.classList.add('hidden');
-      hudTabs?.classList.remove('hidden');
+      hudTabs?.classList.add('hidden');
       openVaultTab();
     });
+
+    const vaultLockedBackBtn = document.getElementById('vaultLockedBackBtn');
+    const vaultBackToChatBtn = document.getElementById('vaultBackToChatBtn');
+
+    function returnToChatFromVault() {
+      switchTab(tabChatBtn, tabChatContent);
+      hudTabs?.classList.add('hidden');
+    }
+
+    vaultLockedBackBtn?.addEventListener('click', returnToChatFromVault);
+    vaultBackToChatBtn?.addEventListener('click', returnToChatFromVault);
 
     // Vault PIN unlock logic
     function submitVaultPin() {
@@ -2253,10 +2263,7 @@ if (typeof document !== 'undefined') {
       const welcomeBox = chatMessages.querySelector('.welcome-card');
       if (welcomeBox) welcomeBox.remove();
       if (geminiHero) geminiHero.classList.add('hidden');
-      if (hudTabs) {
-        hudTabs.classList.remove('hidden');
-        switchTab(tabChatBtn, tabChatContent);
-      }
+      switchTab(tabChatBtn, tabChatContent);
 
       // User Bubble
       const userBubble = document.createElement('div');
