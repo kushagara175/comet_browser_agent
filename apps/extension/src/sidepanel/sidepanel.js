@@ -2759,6 +2759,7 @@ if (typeof document !== 'undefined') {
 
         try { window.speechSynthesis.resume(); } catch (_) {}
         window.speechSynthesis.speak(utterance);
+        try { window.speechSynthesis.resume(); } catch (_) {}
       } catch (err) {
         console.warn('[PrivaPilot Voice] TTS playback note:', err);
         onDone?.();
@@ -2852,6 +2853,9 @@ if (typeof document !== 'undefined') {
         activeVoiceOrb.setAudioLevel(0);
         activeVoiceOrb.setState('thinking');
       }
+      if (voiceLiveTranscript) {
+        voiceLiveTranscript.classList.add('hidden');
+      }
       if (voiceThinkingIndicator) {
         voiceThinkingIndicator.classList.remove('hidden');
       }
@@ -2931,12 +2935,13 @@ if (typeof document !== 'undefined') {
               voiceFinalTranscript = '';
               lastSpokenPrompt = '';
               if (voiceLiveTranscript) {
-                voiceLiveTranscript.textContent = '';
+                voiceLiveTranscript.textContent = 'Listening...';
+                voiceLiveTranscript.classList.add('is-idle-listening');
               }
               activeVoiceOrb?.setState('listening');
               activeVoiceOrb?.setAudioLevel(0);
               try {
-                voiceRecognition?.start();
+                initSpeechRecognition();
               } catch (_) {}
             }
           });
@@ -2948,11 +2953,18 @@ if (typeof document !== 'undefined') {
             voiceThinkingIndicator.classList.add('hidden');
           }
           const fallbackText = "I'm in conversation mode and ready to talk.";
-          if (voiceLiveTranscript) voiceLiveTranscript.textContent = fallbackText;
+          if (voiceLiveTranscript) {
+            voiceLiveTranscript.classList.remove('is-idle-listening');
+            voiceLiveTranscript.textContent = fallbackText;
+          }
           speakVoiceResponse(fallbackText, () => {
             if (isVoiceActive && currentVoiceMode === 'talk') {
+              if (voiceLiveTranscript) {
+                voiceLiveTranscript.textContent = 'Listening...';
+                voiceLiveTranscript.classList.add('is-idle-listening');
+              }
               activeVoiceOrb?.setState('listening');
-              try { voiceRecognition?.start(); } catch (_) {}
+              try { initSpeechRecognition(); } catch (_) {}
             }
           });
         }, 800);
@@ -2974,7 +2986,9 @@ if (typeof document !== 'undefined') {
       voiceModal.classList.remove('hidden');
       voiceModal.setAttribute('aria-hidden', 'false');
       if (voiceLiveTranscript) {
-        voiceLiveTranscript.textContent = '';
+        voiceLiveTranscript.classList.remove('hidden');
+        voiceLiveTranscript.textContent = 'Listening...';
+        voiceLiveTranscript.classList.add('is-idle-listening');
       }
       if (voiceThinkingIndicator) {
         voiceThinkingIndicator.classList.add('hidden');
@@ -3138,32 +3152,32 @@ if (typeof document !== 'undefined') {
             lastSpokenPrompt = currentSpoken;
 
             if (voiceLiveTranscript) {
+              voiceLiveTranscript.classList.remove('hidden');
+              voiceLiveTranscript.classList.remove('is-idle-listening');
               voiceLiveTranscript.textContent = currentSpoken;
             }
             if (voiceSendNowBtn) {
-              voiceSendNowBtn.classList.remove('hidden');
+              voiceSendNowBtn.classList.add('hidden');
             }
             if (chatInput) {
               chatInput.value = currentSpoken;
               updateSendBtn();
             }
 
-            // Inactivity trigger: 1.4s of clean silence following spoken words
+            // Inactivity trigger:
+            // Mode 1 (talk / Live Conversation): 2.0s of clean silence triggers auto-send turn
+            // Mode 2 (dictate / Voice-to-Text): 2.8s of silence triggers auto-close and populates chatbox
             clearTimeout(silenceAutoCloseTimer);
+            const silenceThreshold = currentVoiceMode === 'talk' ? 2000 : 2800;
             silenceAutoCloseTimer = setTimeout(() => {
               if (!isVoiceActive || !lastSpokenPrompt.trim() || isAiSpeaking || isVoiceThinking) return;
 
               if (currentVoiceMode === 'dictate') {
-                // Mode 1: Dictate -> Keep chatInput populated, ready to send
-                if (chatInput) {
-                  chatInput.value = lastSpokenPrompt.trim();
-                  updateSendBtn();
-                }
+                closeVoiceMode();
               } else if (currentVoiceMode === 'talk') {
-                // Mode 2: Talk / Conversation -> Transition to thinking & speak reply!
                 handleTalkModeConversationTurn(lastSpokenPrompt.trim());
               }
-            }, 1400);
+            }, silenceThreshold);
           };
 
           voiceRecognition.onerror = (e) => {

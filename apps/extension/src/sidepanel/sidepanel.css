@@ -3138,32 +3138,43 @@ html, body {
   display: none !important;
 }
 
+.voice-thinking-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 14px;
+}
+
 .voice-thinking-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #8ab4f8;
-  box-shadow: 0 0 8px #8ab4f8;
-  animation: voice-dot-pulse 1.4s ease-in-out infinite;
+  display: none !important;
 }
 
 .voice-thinking-shimmer {
-  background: linear-gradient(90deg, #8ab4f8 0%, #ffffff 50%, #8ab4f8 100%);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.35) 25%, #ffffff 50%, rgba(255, 255, 255, 0.35) 75%, rgba(255, 255, 255, 0.35) 100%);
   background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: voice-shimmer-anim 2s linear infinite;
-  text-shadow: 0 1px 8px rgba(138, 180, 248, 0.35);
+  animation: white-shimmer-ltr 2.2s linear infinite;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.15);
+  user-select: none;
 }
 
-@keyframes voice-dot-pulse {
-  0%, 100% { transform: scale(0.85); opacity: 0.5; }
-  50% { transform: scale(1.25); opacity: 1; }
-}
-
-@keyframes voice-shimmer-anim {
-  0% { background-position: 200% center; }
-  100% { background-position: -200% center; }
+.voice-live-transcript.is-idle-listening {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.35) 25%, #ffffff 50%, rgba(255, 255, 255, 0.35) 75%, rgba(255, 255, 255, 0.35) 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: white-shimmer-ltr 2.2s linear infinite;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.15);
+  user-select: none;
 }
 
 .voice-modal-mode-selector {
@@ -3208,45 +3219,6 @@ html, body {
 }
 
 .voice-send-now-btn {
-  margin-top: 14px;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.08) !important;
-  border: 1px solid rgba(255, 255, 255, 0.18) !important;
-  color: #8ab4f8;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-  backdrop-filter: blur(8px);
-}
-
-.voice-send-now-btn:hover {
-  background: rgba(138, 180, 248, 0.25) !important;
-  border-color: rgba(138, 180, 248, 0.55) !important;
-  color: #ffffff;
-  transform: scale(1.08);
-  box-shadow: 0 0 16px rgba(138, 180, 248, 0.45);
-}
-
-.voice-send-now-btn:active {
-  transform: scale(0.94);
-}
-
-.voice-send-now-btn svg {
-  display: block;
-  stroke: currentColor;
-  transition: transform 0.15s ease;
-}
-
-.voice-send-now-btn:hover svg {
-  transform: translateY(-1px);
-}
-
-.voice-send-now-btn.hidden {
   display: none !important;
 }
 
