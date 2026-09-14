@@ -3168,6 +3168,70 @@ html, body {
   100% { background-position: -200% center; }
 }
 
+.voice-modal-mode-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 3px;
+  margin-top: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.voice-modal-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  border: none !important;
+  background: transparent !important;
+  color: #9aa0a6;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.voice-modal-mode-pill:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.voice-modal-mode-pill.active {
+  background: rgba(138, 180, 248, 0.22) !important;
+  color: #8ab4f8;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(138, 180, 248, 0.18);
+}
+
+.voice-send-now-btn {
+  margin-top: 10px;
+  padding: 6px 14px;
+  border-radius: 14px;
+  background: rgba(138, 180, 248, 0.18) !important;
+  border: 1px solid rgba(138, 180, 248, 0.35) !important;
+  color: #8ab4f8;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.voice-send-now-btn:hover {
+  background: rgba(138, 180, 248, 0.3) !important;
+  color: #ffffff;
+  transform: scale(1.04);
+}
+
+.voice-send-now-btn.hidden {
+  display: none !important;
+}
+
 
 /* Orbloom Living 3D WebGL Orb Styles */
 .orb-motion {

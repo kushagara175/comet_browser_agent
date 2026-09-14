@@ -108,9 +108,12 @@ test('Dual Voice Modes & Shimmering Thinking UI: sidepanel supports Voice to Tex
   assert.ok(html.includes('data-mode="dictate"'), 'dictate mode option must exist');
   assert.ok(html.includes('data-mode="talk"'), 'talk mode option must exist');
 
-  // Minimal shimmering thinking indicator
+  // Minimal shimmering thinking indicator & in-modal mode selector
   assert.ok(html.includes('id="voiceThinkingIndicator"'), 'voiceThinkingIndicator must exist');
   assert.ok(html.includes('voice-thinking-shimmer'), 'voice-thinking-shimmer must exist');
+  assert.ok(html.includes('id="voiceModalModeSelector"'), 'voiceModalModeSelector must exist');
+  assert.ok(html.includes('voice-modal-mode-pill'), 'voice-modal-mode-pill must exist');
+  assert.ok(html.includes('id="voiceSendNowBtn"'), 'voiceSendNowBtn must exist');
 
   // CSS styling
   const cssPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.css');
@@ -119,6 +122,8 @@ test('Dual Voice Modes & Shimmering Thinking UI: sidepanel supports Voice to Tex
   assert.ok(css.includes('.voice-mode-menu'), '.voice-mode-menu style must exist');
   assert.ok(css.includes('.voice-thinking-indicator'), '.voice-thinking-indicator style must exist');
   assert.ok(css.includes('.voice-thinking-shimmer'), '.voice-thinking-shimmer style must exist');
+  assert.ok(css.includes('.voice-modal-mode-selector'), '.voice-modal-mode-selector style must exist');
+  assert.ok(css.includes('.voice-modal-mode-pill'), '.voice-modal-mode-pill style must exist');
 
   // JS handling
   const jsPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.js');
@@ -126,6 +131,7 @@ test('Dual Voice Modes & Shimmering Thinking UI: sidepanel supports Voice to Tex
   assert.ok(js.includes('currentVoiceMode'), 'currentVoiceMode must be tracked');
   assert.ok(js.includes('speakVoiceResponse'), 'speakVoiceResponse must exist for Talk mode');
   assert.ok(js.includes('handleTalkModeConversationTurn'), 'handleTalkModeConversationTurn must exist');
+  assert.ok(js.includes('spiral-cyan-03'), 'spiral-cyan-03 celestial theme preset must be used');
 });
 
 

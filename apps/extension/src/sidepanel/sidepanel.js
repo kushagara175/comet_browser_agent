@@ -2480,6 +2480,7 @@ if (typeof document !== 'undefined') {
     const voiceModeBtn = document.getElementById('voiceModeBtn');
     const voiceModeMenu = document.getElementById('voiceModeMenu');
     const voiceModeLabel = document.getElementById('voiceModeLabel');
+    const voiceSendNowBtn = document.getElementById('voiceSendNowBtn');
 
     let activeVoiceOrb = null;
     let isVoiceActive = false;
@@ -2516,6 +2517,13 @@ if (typeof document !== 'undefined') {
           opt.classList.remove('active');
         }
       });
+      document.querySelectorAll('.voice-modal-mode-pill').forEach((pill) => {
+        if (pill.getAttribute('data-mode') === currentVoiceMode) {
+          pill.classList.add('active');
+        } else {
+          pill.classList.remove('active');
+        }
+      });
     }
 
     updateVoiceModeUI();
@@ -2538,6 +2546,27 @@ if (typeof document !== 'undefined') {
         voiceModeMenu?.classList.add('hidden');
         voiceModeBtn?.classList.remove('active');
       });
+    });
+
+    document.querySelectorAll('.voice-modal-mode-pill').forEach((pill) => {
+      pill.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const mode = pill.getAttribute('data-mode');
+        if (mode && (mode === 'dictate' || mode === 'talk')) {
+          currentVoiceMode = mode;
+          try { localStorage.setItem('privapilot_voice_mode', mode); } catch (_) {}
+          updateVoiceModeUI();
+        }
+      });
+    });
+
+    voiceSendNowBtn?.addEventListener('click', () => {
+      if (!lastSpokenPrompt.trim()) return;
+      if (currentVoiceMode === 'dictate') {
+        closeVoiceMode();
+      } else if (currentVoiceMode === 'talk') {
+        handleTalkModeConversationTurn(lastSpokenPrompt.trim());
+      }
     });
 
     document.addEventListener('click', (e) => {
@@ -2812,34 +2841,44 @@ if (typeof document !== 'undefined') {
       if (voiceThinkingIndicator) {
         voiceThinkingIndicator.classList.add('hidden');
       }
+      if (voiceSendNowBtn) {
+        voiceSendNowBtn.classList.add('hidden');
+      }
 
-      // Initialize or activate Orbloom Living WebGL Orb with dynamic pink spiral theme
+      // Initialize or activate Orbloom Living WebGL Orb with vibrant celestial cyan theme
       try {
         if (!activeVoiceOrb) {
           const { createOrb, createOrbTheme } = await import('./orbloom-bundle.js');
           const canvas = voiceModal.querySelector('.orb-canvas');
           if (canvas) {
-            const vibrantPinkTheme = createOrbTheme({
-              preset: 'spiral-pink-01',
+            const vibrantTheme = createOrbTheme({
+              preset: 'spiral-cyan-03',
+              seed: 3.465,
+              colors: {
+                base: '#101632',
+                interior: '#050a18',
+                accents: ['#4CC9F0', '#7B5CFF', '#B8F1FF']
+              },
               appearance: {
-                intensity: 1.3,
-                detail: 0.95,
-                glow: 1.45,
+                intensity: 1.45,
+                detail: 1.0,
+                glass: 0.42,
+                glow: 1.5,
               },
               motion: {
-                speed: 1.18,
-                drift: 0.75,
+                speed: 1.25,
+                drift: 0.85,
               },
               audioResponse: {
-                brightness: 1.9,
-                motion: 1.6,
-                pulse: 1.85,
+                brightness: 1.95,
+                motion: 1.65,
+                pulse: 1.9,
               }
             });
             activeVoiceOrb = createOrb(canvas, {
-              theme: vibrantPinkTheme,
-              state: 'idle',
-              quality: 'balanced',
+              theme: vibrantTheme,
+              state: 'listening',
+              quality: 'high',
               reducedMotion: 'user'
             });
           }
@@ -2934,12 +2973,15 @@ if (typeof document !== 'undefined') {
             if (voiceLiveTranscript) {
               voiceLiveTranscript.textContent = currentSpoken;
             }
+            if (voiceSendNowBtn && currentSpoken) {
+              voiceSendNowBtn.classList.remove('hidden');
+            }
             if (chatInput && currentSpoken) {
               chatInput.value = currentSpoken;
               updateSendBtn();
             }
 
-            // Inactivity trigger: 1.6s of silence following spoken words
+            // Inactivity trigger: 1.2s of clean silence following spoken words
             clearTimeout(silenceAutoCloseTimer);
             if (currentSpoken) {
               silenceAutoCloseTimer = setTimeout(() => {
@@ -2952,7 +2994,7 @@ if (typeof document !== 'undefined') {
                   // Mode 2: Talk / Conversation -> Transition to thinking & speak reply!
                   handleTalkModeConversationTurn(lastSpokenPrompt.trim());
                 }
-              }, 1600);
+              }, 1200);
             }
           };
 
@@ -3023,6 +3065,10 @@ if (typeof document !== 'undefined') {
 
       if (voiceThinkingIndicator) {
         voiceThinkingIndicator.classList.add('hidden');
+      }
+
+      if (voiceSendNowBtn) {
+        voiceSendNowBtn.classList.add('hidden');
       }
 
       if (voiceRecognition) {
