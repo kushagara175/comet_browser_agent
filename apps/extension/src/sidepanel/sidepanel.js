@@ -1021,25 +1021,11 @@ if (typeof document !== 'undefined') {
               : '';
 
             if (msg.isAction || msg.text?.startsWith('✓ ')) {
-              const cleanText = msg.text.replace(/^✓\s*/, '');
               agentBubble.className = 'chat-msg agent msg-action';
               agentBubble.innerHTML = `
                 ${thinkingHtml}
-                ${msg.steps && msg.steps.length > 1 ? `
-                  <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 7px;">
-                    ${msg.steps.map(s => `
-                      <div style="font-size: 10.5px; color: #94a3b8; display: flex; align-items: center; gap: 6px;">
-                        <span style="background: rgba(148, 163, 184, 0.15); padding: 1px 5px; border-radius: 4px; font-weight: 600;">Step ${s.step}</span>
-                        <span>${escapeHtml(s.proposal?.rationale || s.proposal?.kind || 'Action done')}</span>
-                      </div>
-                    `).join('')}
-                  </div>
-                ` : ''}
                 <div class="action-done-pill">
-                  <svg class="action-done-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                  </svg>
-                  <span>${escapeHtml(cleanText)}</span>
+                  <span class="action-done-text">Completed</span>
                 </div>
               `;
             } else {
@@ -2238,21 +2224,8 @@ if (typeof document !== 'undefined') {
       agentBubble.classList.add('msg-action');
       agentBubble.innerHTML = `
         ${thinkingHtml}
-        ${res.steps && res.steps.length > 1 ? `
-          <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 7px;">
-            ${res.steps.map(s => `
-              <div style="font-size: 10.5px; color: #94a3b8; display: flex; align-items: center; gap: 6px;">
-                <span style="background: rgba(148, 163, 184, 0.15); padding: 1px 5px; border-radius: 4px; font-weight: 600;">Step ${s.step}</span>
-                <span>${escapeHtml(getCleanActionLabel(s.proposal))}</span>
-              </div>
-            `).join('')}
-          </div>
-        ` : ''}
         <div class="action-done-pill">
-          <svg class="action-done-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
-          <span>${escapeHtml(actionLabel)}</span>
+          <span class="action-done-text">Completed</span>
         </div>
       `;
 
@@ -2886,6 +2859,28 @@ if (typeof document !== 'undefined') {
       chatMessages.appendChild(agentBubble);
       chatMessages.scrollTop = chatMessages.scrollHeight;
 
+      // Associate with current Voice Mode session and save in history as a separate session
+      let activeSession = chatSessions.find(s => s.id === currentSessionId);
+      if (!activeSession || activeSession.id === 'session-new' || !activeSession.id.startsWith('session-voice-')) {
+        const newVoiceId = 'session-voice-' + Date.now();
+        activeSession = {
+          id: newVoiceId,
+          title: promptText.length > 25 ? promptText.slice(0, 25) + '...' : promptText,
+          updatedAt: Date.now(),
+          messages: []
+        };
+        chatSessions.unshift(activeSession);
+        currentSessionId = newVoiceId;
+      } else if (activeSession.title === 'Voice Conversation' || activeSession.title === 'New Chat') {
+        activeSession.title = promptText.length > 25 ? promptText.slice(0, 25) + '...' : promptText;
+      }
+
+      if (!activeSession.messages) activeSession.messages = [];
+      activeSession.messages.push({ role: 'user', text: promptText, isVoice: true });
+      activeSession.updatedAt = Date.now();
+      saveChatSessions();
+      renderRecentChatsMenu();
+
       const isRestrictedTab = Boolean(
         activeTabUrl && (
           activeTabUrl.textContent?.startsWith('chrome://') ||
@@ -2902,11 +2897,12 @@ if (typeof document !== 'undefined') {
         /\b(?:https?:\/\/|[a-z0-9-]+\.(?:com|org|gov|in|edu|net|io|co|ai|xyz))\b/i.test(promptText) ||
         /\b(?:open|go\s+to|visit|launch|load|search\s+for|find\s+on\s+page|click|scroll)\b/i.test(promptText);
 
-      // If explicit browser action requested, execute agent run.
-      // Otherwise, chat with the reasoning model (with page context if available, or direct general chat)
+      // Only perform page context capture if the user explicitly asks about the current tab/page
+      const isExplicitPageQuery = /\b(?:this\s+(?:page|tab|site|website|article)|on\s+(?:the\s+)?screen|read\s+(?:this|the\s+page)|summarize\s+(?:this|the\s+page)|look\s+at\s+this)\b/i.test(promptText);
+
       const messageType = isExplicitBrowserAction
         ? 'START_AGENT_RUN'
-        : (currentActiveTabId && !isRestrictedTab ? 'CHAT_WITH_PAGE' : 'GENERAL_CHAT');
+        : (isExplicitPageQuery && currentActiveTabId && !isRestrictedTab ? 'CHAT_WITH_PAGE' : 'GENERAL_CHAT');
       const payloadKey = messageType === 'START_AGENT_RUN' ? 'goal' : 'message';
 
       if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
@@ -2931,6 +2927,24 @@ if (typeof document !== 'undefined') {
             (res?.proposal?.kind === 'finish' && res?.proposal?.rationale ? res.proposal.rationale : null) ||
             res?.message ||
             'I am listening. How can I help you?').trim();
+
+          const realReasoning = res?.reasoning || res?.proposal?.reasoning || res?.proposal?.rationale || '';
+          activeSession.messages.push({
+            role: 'agent',
+            text: rawReply,
+            reasoning: realReasoning,
+            durationSeconds: 2,
+            isVoice: true
+          });
+          activeSession.updatedAt = Date.now();
+          saveChatSessions();
+          renderRecentChatsMenu();
+
+          conversationHistory.push({ role: 'user', content: promptText });
+          conversationHistory.push({ role: 'assistant', content: rawReply });
+          if (conversationHistory.length > 20) {
+            conversationHistory = conversationHistory.slice(-20);
+          }
 
           renderActionResult(agentBubble, res, 2);
 
@@ -3008,6 +3022,24 @@ if (typeof document !== 'undefined') {
       }
       if (voiceSendNowBtn) {
         voiceSendNowBtn.classList.add('hidden');
+      }
+
+      // Ensure Voice Mode has a dedicated session in recent history
+      if (currentVoiceMode === 'talk') {
+        let activeSession = chatSessions.find(s => s.id === currentSessionId);
+        if (!activeSession || (activeSession.messages && activeSession.messages.length > 0 && !activeSession.id.startsWith('session-voice-'))) {
+          const newVoiceId = 'session-voice-' + Date.now();
+          const voiceSession = {
+            id: newVoiceId,
+            title: 'Voice Conversation',
+            updatedAt: Date.now(),
+            messages: []
+          };
+          chatSessions.unshift(voiceSession);
+          currentSessionId = newVoiceId;
+          saveChatSessions();
+          renderRecentChatsMenu();
+        }
       }
 
       // Synchronize voice mode UI state
@@ -3149,10 +3181,10 @@ if (typeof document !== 'undefined') {
               isSpeechApiTalking = false;
             }, 350);
 
-            // Speech pause: in talk mode, after words are spoken, a 900ms pause triggers auto-send
+            // Speech pause: in talk mode, after words are spoken, a snappy 450ms pause triggers auto-send
             if (lastSpokenPrompt.trim() && currentVoiceMode === 'talk') {
               clearTimeout(silenceAutoCloseTimer);
-              silenceAutoCloseTimer = setTimeout(dispatchSilenceTurn, 900);
+              silenceAutoCloseTimer = setTimeout(dispatchSilenceTurn, 450);
             }
           };
 
@@ -3196,10 +3228,10 @@ if (typeof document !== 'undefined') {
             }
 
             // Inactivity trigger:
-            // Mode 1 (talk / Live Conversation): 1.5s of clean silence triggers auto-send turn
-            // Mode 2 (dictate / Voice-to-Text): 2.4s of silence triggers auto-close and populates chatbox
+            // Mode 1 (talk / Live Conversation): 800ms of clean silence triggers auto-send turn
+            // Mode 2 (dictate / Voice-to-Text): 2.0s of silence triggers auto-close and populates chatbox
             clearTimeout(silenceAutoCloseTimer);
-            const silenceThreshold = currentVoiceMode === 'talk' ? 1500 : 2400;
+            const silenceThreshold = currentVoiceMode === 'talk' ? 800 : 2000;
             silenceAutoCloseTimer = setTimeout(dispatchSilenceTurn, silenceThreshold);
           };
 
