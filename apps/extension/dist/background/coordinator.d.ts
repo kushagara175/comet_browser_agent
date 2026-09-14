@@ -132,6 +132,7 @@ export declare class RunCoordinator {
     private currentTaskContract;
     private currentRunId;
     private currentTabId?;
+    private lastGoal;
     constructor(browser?: BrowserAdapter, httpClient?: ReasoningHttpClient, auditLogger?: AuditLogger, options?: {
         defaultMaxSteps?: number;
         maxStaleRetries?: number;

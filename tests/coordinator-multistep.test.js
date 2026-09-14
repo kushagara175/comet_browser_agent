@@ -840,6 +840,73 @@ test('Coordinator Multi-Step: Scenario 14 - Starts on existing website (Wikipedi
   assert.ok(result.message?.includes('Ministry of Jal Shakti'));
 });
 
+test('Coordinator Multi-Step: Scenario 15 - "do again" / retry resolves to previous goal and executes agent tools seamlessly', async () => {
+  const browser = createFakeBrowserAdapter({
+    elements: [
+      {
+        localId: 'el_sih_search',
+        role: 'input',
+        sanitizedName: 'Search Problem Statement',
+        coarseBounds: [0.3, 0.4, 0.4, 0.05],
+        state: ['visible', 'enabled'],
+        actionCapabilities: ['type', 'click']
+      }
+    ]
+  });
+
+  browser.getActiveTab = async () => ({
+    id: 1,
+    url: 'https://sih.gov.in/sih2026PS',
+    title: 'Smart India Hackathon Portal',
+    status: 'complete'
+  });
+
+  const step1 = {
+    actionId: 'act_1',
+    kind: 'finish',
+    reply: 'Found initial PS details',
+    confidence: 1.0,
+    risk: 'safe',
+    rationale: 'Done'
+  };
+
+  const step2RetryAction = {
+    actionId: 'act_retry_type',
+    kind: 'type',
+    targetLocalId: 'el_sih_search',
+    textToType: '171',
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Retry search for 171'
+  };
+
+  const step3Finish = {
+    actionId: 'act_retry_finish',
+    kind: 'finish',
+    reply: 'Problem Statement 171: Smart Water Management',
+    confidence: 1.0,
+    risk: 'safe',
+    rationale: 'Extracted details'
+  };
+
+  const httpClient = createSequenceHttpClient([step1, step2RetryAction, step3Finish]);
+  const coordinator = new RunCoordinator(browser, httpClient);
+
+  // Run 1: Initial task
+  await coordinator.startRun(
+    'search for "171", and tell me its title, organization, and category',
+    { maxSteps: 3 }
+  );
+
+  // Run 2: User follow-up "do again"
+  const retryResult = await coordinator.startRun('do again', { maxSteps: 3 });
+
+  assert.strictEqual(retryResult.success, true);
+  assert.strictEqual(retryResult.state, 'complete');
+  assert.ok(retryResult.message?.includes('Problem Statement 171'));
+});
+
+
 
 
 

@@ -236,6 +236,7 @@ export class RunCoordinator {
   private currentTaskContract: TaskContract | null = null;
   private currentRunId: string = '';
   private currentTabId?: number;
+  private lastGoal: string = '';
 
   constructor(
     browser: BrowserAdapter = new WebExtensionAdapter(),
@@ -1177,9 +1178,18 @@ export class RunCoordinator {
       await new Promise((r) => setTimeout(r, 40));
     }
 
+    const RETRY_PATTERN = /^(?:do\s+again|try\s+again|retry|redo|do\s+it\s+again|again|run\s+again|repeat|one\s+more\s+time|once\s+more)[.!]?$/i;
+    let effectiveGoal = (goal || '').trim();
+    if (RETRY_PATTERN.test(effectiveGoal) && this.lastGoal) {
+      effectiveGoal = this.lastGoal;
+    } else if (effectiveGoal) {
+      this.lastGoal = effectiveGoal;
+    }
+
     this.currentRunId = requestedRunId;
-    this.currentGoal = goal;
-    this.currentTaskContract = resolveTaskContract(goal);
+    this.currentGoal = effectiveGoal;
+    this.currentTaskContract = resolveTaskContract(effectiveGoal);
+    goal = effectiveGoal;
 
     try {
       const activeTab = await this.browser.getActiveTab(options?.tabId);

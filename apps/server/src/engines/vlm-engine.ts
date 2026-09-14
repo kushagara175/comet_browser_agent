@@ -1180,10 +1180,14 @@ Strict Rules:
         YOU MUST PROPOSE A DOM ACTION: return kind: "click" on the relevant menu link or tab (e.g. "PROBLEM STATEMENTS", "Submissions", "Explore", "Search"), or return kind: "type" into a search box with "pressEnter": true to find it.
         DO NOT return kind: "answer" or kind: "finish" until you have navigated and observed the actual answer!
    - ONLY return kind: "answer" for pure greetings ("hi", "hello", "who are you") or pure questions that have zero relation to web browsing or the current page (e.g. "what is 2 + 2").
-14. SET-OF-MARKS (SOM) VISUAL GROUNDING:
+14. RETRY & REPEAT DIRECTIVES: If the user goal asks to "do again", "try again", "retry", "repeat", "search again", or "redo":
+   - DO NOT assume the goal is already complete or that context is lacking!
+   - You MUST actively execute the search or interaction (e.g. type the search query into the search box, click the search/filter button, or re-verify the table).
+   - NEVER propose kind: "finish" claiming "the goal is already achieved" or "page is up to date" on a retry request. Always trigger the necessary browser action to fulfill the intent.
+15. SET-OF-MARKS (SOM) VISUAL GROUNDING:
    - The sanitized screenshot includes high-contrast visual numbered mark badges (e.g. [1], [2], [3]) drawn directly on interactive controls.
    - The badge number corresponds directly to the numeric suffix of targetLocalId (badge 1 is el_1, badge 2 is el_2, etc.). Use these visual marks to accurately locate controls on the visual viewport.
-15. MULTI-ACTION BATCH DIRECTIVE (HIGHLY RECOMMENDED FOR MULTI-STEP FORMS):
+16. MULTI-ACTION BATCH DIRECTIVE (HIGHLY RECOMMENDED FOR MULTI-STEP FORMS):
    - When a form requires filling multiple fields and/or clicking a button (e.g. Type into el_1, Type into el_3, then Click el_2 to advance), return kind: "batch" with a list of atomic actions in "batchActions":
      {
        "actionId": "act_batch_1",

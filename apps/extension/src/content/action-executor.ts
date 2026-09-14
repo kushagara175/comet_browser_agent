@@ -429,8 +429,27 @@ export class ActionExecutor {
             targetEl.dispatchEvent(new KeyboardEventCtor('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
             targetEl.dispatchEvent(new KeyboardEventCtor('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
             targetEl.dispatchEvent(new KeyboardEventCtor('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+
+            // Detect if this input is a client-side filter / search input or inside an ASP.NET wrapper form
+            const isSearchFilterInput =
+              (targetEl.getAttribute?.('type') || '').toLowerCase() === 'search' ||
+              targetEl.hasAttribute?.('aria-controls') ||
+              Boolean(targetEl.closest?.('.dataTables_filter, .dataTable, .table-filter, [class*="filter" i]'));
+
             const form = (targetEl as any).form || (typeof targetEl.closest === 'function' ? targetEl.closest('form') : null);
-            if (form) {
+            const isAspnetWrapperForm =
+              Boolean(form && (form.id === 'aspnetForm' || form.name === 'aspnetForm' || (form.getAttribute?.('action') || '').includes('.aspx')));
+
+            // Dispatch HTML5 'search' event for DataTables / instant table filters
+            if (EventCtor) {
+              try {
+                targetEl.dispatchEvent(new EventCtor('search', { bubbles: true, cancelable: true }));
+              } catch (_) {}
+            }
+
+            // Only submit if it's a real form submission (e.g. Wikipedia search, Google search, login forms),
+            // and NOT a client-side table filter or ASP.NET postback wrapper!
+            if (form && !isSearchFilterInput && !isAspnetWrapperForm) {
               const submitBtn = form.querySelector?.('button[type="submit"], input[type="submit"], button:not([type]), [role="button"]');
               if (typeof form.requestSubmit === 'function') {
                 try {
@@ -453,7 +472,7 @@ export class ActionExecutor {
               } else if (typeof form.submit === 'function') {
                 try { form.submit(); } catch (_) {}
               }
-            } else {
+            } else if (!form) {
               const container = targetEl.parentElement?.parentElement || targetEl.parentElement;
               const searchBtn = container?.querySelector?.('button[aria-label*="search" i], button[title*="search" i], [role="button"][aria-label*="search" i]') as HTMLElement | null;
               if (searchBtn && typeof searchBtn.click === 'function') {

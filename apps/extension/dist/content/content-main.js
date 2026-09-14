@@ -1319,8 +1319,16 @@
               targetEl.dispatchEvent(new KeyboardEventCtor("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
               targetEl.dispatchEvent(new KeyboardEventCtor("keypress", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
               targetEl.dispatchEvent(new KeyboardEventCtor("keyup", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+              const isSearchFilterInput = (targetEl.getAttribute?.("type") || "").toLowerCase() === "search" || targetEl.hasAttribute?.("aria-controls") || Boolean(targetEl.closest?.('.dataTables_filter, .dataTable, .table-filter, [class*="filter" i]'));
               const form = targetEl.form || (typeof targetEl.closest === "function" ? targetEl.closest("form") : null);
-              if (form) {
+              const isAspnetWrapperForm = Boolean(form && (form.id === "aspnetForm" || form.name === "aspnetForm" || (form.getAttribute?.("action") || "").includes(".aspx")));
+              if (EventCtor) {
+                try {
+                  targetEl.dispatchEvent(new EventCtor("search", { bubbles: true, cancelable: true }));
+                } catch (_) {
+                }
+              }
+              if (form && !isSearchFilterInput && !isAspnetWrapperForm) {
                 const submitBtn = form.querySelector?.('button[type="submit"], input[type="submit"], button:not([type]), [role="button"]');
                 if (typeof form.requestSubmit === "function") {
                   try {
@@ -1354,7 +1362,7 @@
                   } catch (_) {
                   }
                 }
-              } else {
+              } else if (!form) {
                 const container = targetEl.parentElement?.parentElement || targetEl.parentElement;
                 const searchBtn = container?.querySelector?.('button[aria-label*="search" i], button[title*="search" i], [role="button"][aria-label*="search" i]');
                 if (searchBtn && typeof searchBtn.click === "function") {
