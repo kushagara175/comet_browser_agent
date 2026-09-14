@@ -4,7 +4,8 @@ import {
   sanitizeReasoningText,
   parseReasoningLines,
   formatReasoningIntoLinesHtml,
-  renderThinkingAccordion
+  renderThinkingAccordion,
+  collectAllStepReasoning
 } from '../apps/extension/src/sidepanel/sidepanel.js';
 
 test('Thinking: sanitizeReasoningText strips think tags and filters fake canned strings', () => {
@@ -104,3 +105,54 @@ test('Thinking: renderThinkingAccordion generates accessible collapsible monolog
   assert.ok(html.includes('⚡'));
   assert.ok(html.includes('<code class="thought-code">el_2</code>'));
 });
+
+test('Thinking: renderThinkingAccordion defaults to collapsed state initially', () => {
+  const reasoning = '👁️ Observation: Target loaded. ⚡ Action Selection: Click button.';
+  const html = renderThinkingAccordion(reasoning, 3);
+  assert.ok(html.includes('data-state="collapsed"'), 'Must default to collapsed state');
+  assert.ok(html.includes('aria-expanded="false"'), 'aria-expanded must be false by default');
+  assert.ok(html.includes('display: none'), 'Drawer must be hidden by default');
+});
+
+test('Thinking: collectAllStepReasoning aggregates reasoning across multi-step runs without duplicates', () => {
+  const multiStepRes = {
+    steps: [
+      {
+        step: 1,
+        proposal: {
+          kind: 'type',
+          reasoning: '👁️ Observation: On search page.\n⚡ Action Selection: Type search query into el_5.'
+        }
+      },
+      {
+        step: 2,
+        proposal: {
+          kind: 'click',
+          reasoning: '👁️ Observation: Results visible.\n⚡ Action Selection: Click first search result link el_8.'
+        }
+      }
+    ],
+    reasoning: '👁️ Observation: Results visible.\n⚡ Action Selection: Click first search result link el_8.'
+  };
+
+  const aggregated = collectAllStepReasoning(multiStepRes);
+  assert.ok(aggregated.includes('Type search query into el_5'));
+  assert.ok(aggregated.includes('Click first search result link el_8'));
+  // Ensure Step 1 is not dropped
+  assert.ok(aggregated.includes('On search page'));
+});
+
+test('Thinking: parseReasoningLines strips repetitive duplicate category labels', () => {
+  const duplicateLabelText = 'Observation: Observation: The current page is the Wikipedia article for Chandrayaan-3.';
+  const parsed = parseReasoningLines(duplicateLabelText);
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].category, 'Observation');
+  assert.ok(!parsed[0].body.startsWith('Observation:'), 'Body must not contain repetitive category label');
+  assert.ok(parsed[0].body.startsWith('The current page is the Wikipedia article'));
+
+  const formatted = formatReasoningIntoLinesHtml(duplicateLabelText);
+  // Ensure Observation: is only in the strong tag once
+  const occurrences = (formatted.match(/Observation:/g) || []).length;
+  assert.equal(occurrences, 1, `Expected "Observation:" to appear exactly once, but appeared ${occurrences} times in: ${formatted}`);
+});
+

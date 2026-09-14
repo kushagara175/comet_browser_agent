@@ -372,6 +372,31 @@ export function sanitizeReasoningText(raw) {
 }
 
 /**
+ * Aggregates reasoning from all executed steps of a completed run to display the complete multi-step thought history.
+ */
+export function collectAllStepReasoning(res) {
+  const parts = [];
+  if (Array.isArray(res?.steps) && res.steps.length > 0) {
+    for (const s of res.steps) {
+      const r = s.proposal?.reasoning || s.reasoning;
+      if (r && typeof r === 'string' && r.trim()) {
+        const trimmed = r.trim();
+        if (!parts.includes(trimmed)) {
+          parts.push(trimmed);
+        }
+      }
+    }
+  }
+  if (parts.length === 0) {
+    const fallback = res?.reasoning || res?.proposal?.reasoning || res?.proposal?.rationale || '';
+    if (fallback && typeof fallback === 'string' && fallback.trim()) {
+      parts.push(fallback.trim());
+    }
+  }
+  return parts.join('\n\n');
+}
+
+/**
  * Parses raw reasoning into discrete, structured thought units with icons and categories.
  */
 export function parseReasoningLines(rawText) {
@@ -384,14 +409,14 @@ export function parseReasoningLines(rawText) {
     .map(l => l.trim())
     .filter(Boolean);
 
-  // If condensed into a single string, split by major delimiters or sentence boundaries
+  // If condensed into a single string, split by major delimiters or semantic transitions
   if (rawLines.length === 1 && rawLines[0].length > 70) {
     const text = rawLines[0];
     const emojiSplit = text.split(/(?=(?:👁️|🎯|⚡|📋|🧠))\s*/u).map(l => l.trim()).filter(Boolean);
     if (emojiSplit.length > 1) {
       rawLines = emojiSplit;
     } else {
-      const keywordSplit = text.split(/(?<=[.!?]|^)\s+(?=(?:Observation:|User Intent:|Intent:|Strategic plan:|Strategy:|Action Selection:|Next Action:|Action:|Extraction:))/iu).map(l => l.trim()).filter(Boolean);
+      const keywordSplit = text.split(/(?<=[.!?]|^)\s+(?=(?:Observation:|User Intent:|Intent:|Strategic plan:|Strategy:|Action Selection:|Next Action:|Action:|Extraction:|The user(?:'s)? goal|The user goal|The search and|The requested|Next step|To fulfill|To proceed))/iu).map(l => l.trim()).filter(Boolean);
       if (keywordSplit.length > 1) {
         rawLines = keywordSplit;
       } else {
@@ -405,29 +430,30 @@ export function parseReasoningLines(rawText) {
 
     let icon = '▸';
     let category = '';
-    let body = text;
 
-    if (/^(?:👁️|Observation:?|Observing\b)/i.test(text)) {
+    if (/^(?:👁️|Observation:?|Observing\b|The (?:current )?page|Active page)/i.test(text)) {
       icon = '👁️';
       category = 'Observation';
-      body = text.replace(/^(?:👁️\s*|Observation:?\s*|Observing\s+(?:that\s+)?)/i, '').trim();
-    } else if (/^(?:🎯|User Intent:?|Intent:?|Strategic plan:?|Strategy:?)/i.test(text)) {
+    } else if (/^(?:🎯|User Intent:?|Intent:?|Strategic plan:?|Strategy:?|The user(?:'s)? goal|User goal|Goal is)/i.test(text)) {
       icon = '🎯';
       category = 'Intent & Strategy';
-      body = text.replace(/^(?:🎯\s*|User Intent:?\s*|Intent:?\s*|Strategic plan:?\s*|Strategy:?\s*)/i, '').trim();
-    } else if (/^(?:⚡|Action Selection:?|Action:?|Next Action:?|Tool:?)/i.test(text)) {
+    } else if (/^(?:⚡|Action Selection:?|Action:?|Next Action:?|Tool:?|Execution|The search and|Navigating|Typing|Clicking|Next step|To fulfill|To proceed)/i.test(text)) {
       icon = '⚡';
       category = 'Action Selection';
-      body = text.replace(/^(?:⚡\s*|Action Selection:?\s*|Action:?\s*|Next Action:?\s*|Tool:?\s*)/i, '').trim();
-    } else if (/^(?:📋|Extraction:?|Extracted:?|Data:?|Result:?)/i.test(text)) {
+    } else if (/^(?:📋|Extraction:?|Extracted:?|Data:?|Result:?|Payloads|Instruments)/i.test(text)) {
       icon = '📋';
       category = 'Extraction';
-      body = text.replace(/^(?:📋\s*|Extraction:?\s*|Extracted:?\s*|Data:?\s*|Result:?\s*)/i, '').trim();
     } else if (/^(?:🧠|Thinking:?|Reasoning:?)/i.test(text)) {
       icon = '🧠';
       category = 'Reasoning';
-      body = text.replace(/^(?:🧠\s*|Thinking:?\s*|Reasoning:?\s*)/i, '').trim();
     }
+
+    // Thoroughly strip redundant leading category words/emojis from body so category label is NEVER duplicated
+    let body = text
+      .replace(/^(?:👁️|🎯|⚡|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking)[\s:—–\-]*/gi, '')
+      .replace(/^(?:👁️|🎯|⚡|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking)[\s:—–\-]*/gi, '')
+      .replace(/^[•\-\*\d\.]+\s*/, '')
+      .trim();
 
     if (body.length > 0) {
       body = body.charAt(0).toUpperCase() + body.slice(1);
@@ -461,6 +487,7 @@ export function formatReasoningIntoLinesHtml(rawText) {
 
 /**
  * Renders the collapsible Monologue/Thinking Accordion with structured line-by-line thoughts.
+ * By default, renders in a clean collapsed state (open: false) so the main answer is prominently visible.
  */
 export function renderThinkingAccordion(rawReasoning, durationSeconds, options = {}) {
   const sanitized = sanitizeReasoningText(rawReasoning);
@@ -2028,10 +2055,12 @@ if (typeof document !== 'undefined') {
           conversationHistory = conversationHistory.slice(-20);
         }
 
-        const realReasoning = res.reasoning || res.proposal?.reasoning;
-        const duration = (res?.telemetry?.serverLatencyMs ? Math.max(1, Math.round(res.telemetry.serverLatencyMs / 1000)) : null) || durationSeconds || 2;
-        const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded';
-        const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: wasExpanded });
+        const realReasoning = collectAllStepReasoning(res);
+        const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || 0;
+        const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
+        const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
+        const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
+        const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: false });
 
         const activeSession = chatSessions.find(s => s.id === currentSessionId);
         if (activeSession) {
@@ -2150,10 +2179,12 @@ if (typeof document !== 'undefined') {
           displayHtml = `⚠️ <strong>Verification Failed:</strong> ${escapeHtml(errorMsg)}`;
         }
 
-        const realReasoning = res?.reasoning || res?.proposal?.reasoning;
-        const duration = (res?.telemetry?.serverLatencyMs ? Math.max(1, Math.round(res.telemetry.serverLatencyMs / 1000)) : null) || durationSeconds || 2;
-        const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded';
-        const thinkingHtml = realReasoning ? renderThinkingAccordion(realReasoning, duration, { open: wasExpanded }) : '';
+        const realReasoning = collectAllStepReasoning(res);
+        const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || 0;
+        const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
+        const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
+        const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
+        const thinkingHtml = realReasoning ? renderThinkingAccordion(realReasoning, duration, { open: false }) : '';
 
         agentBubble.innerHTML = `
           ${thinkingHtml}
@@ -2168,11 +2199,13 @@ if (typeof document !== 'undefined') {
       const action = res.proposal || { kind: 'click', rationale: res.message || 'Action executed successfully', confidence: 0.95, risk: 'safe' };
       const sanitized = res.sanitized || lastSanitizedContext;
 
-      const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded';
       const actionLabel = getCleanActionLabel(action);
-      const realReasoning = action.reasoning || res.reasoning;
-      const duration = (res?.telemetry?.serverLatencyMs ? Math.max(1, Math.round(res.telemetry.serverLatencyMs / 1000)) : null) || durationSeconds || 2;
-      const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: wasExpanded });
+      const realReasoning = collectAllStepReasoning(res);
+      const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || 0;
+      const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
+      const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
+      const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
+      const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: false });
 
       agentBubble.classList.add('msg-action');
       agentBubble.innerHTML = `
@@ -2293,35 +2326,13 @@ if (typeof document !== 'undefined') {
       const agentBubble = document.createElement('div');
       agentBubble.className = 'chat-msg agent';
       agentBubble.innerHTML = `
-        <div class="monologue-block executing" data-state="expanded">
-          <button type="button" class="monologue-toggle-btn" aria-expanded="true">
-            <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-            <span class="monologue-title thinking-shimmer-text">Thinking (1s)</span>
-          </button>
-          <div class="monologue-drawer" style="display: block;">
-            <div class="monologue-content">
-              <div class="live-thought-stream" style="display: flex; flex-direction: column; gap: 5px; padding: 2px 0;">
-                <div class="live-thought-line initial-perception-shimmer" style="display: flex; align-items: baseline; gap: 7px; font-size: 11.5px; color: #94a3b8; line-height: 1.5; padding: 2px 0; font-style: italic;">
-                  <span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">⚡</span>
-                  <span class="thought-body" style="flex: 1;">Perceiving page and awaiting model reasoning...</span>
-                </div>
-              </div>
-            </div>
-          </div>
+        <div class="agent-thinking-pill">
+          <span class="thinking-pulse-dot"></span>
+          <span class="thinking-shimmer-text">Thinking...</span>
         </div>
       `;
       chatMessages.appendChild(agentBubble);
       chatMessages.scrollTop = chatMessages.scrollHeight;
-
-      const liveThinkingTimer = setInterval(() => {
-        const sec = Math.max(1, Math.round((Date.now() - turnStartTime) / 1000));
-        const shimmerEl = agentBubble.querySelector('.thinking-shimmer-text');
-        if (shimmerEl) {
-          shimmerEl.textContent = `Thinking (${sec}s)`;
-        }
-      }, 500);
 
       setAgentStatus('capturing');
 
@@ -2340,7 +2351,6 @@ if (typeof document !== 'undefined') {
 
       // Handle direct stop/cancel commands immediately
       if (/^(?:stop|cancel|halt|abort|quit)(?:\s+(?:it|now|all|agent|run))?$/i.test(goalText.trim())) {
-        clearInterval(liveThinkingTimer);
         if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
           chrome.runtime.sendMessage({ type: 'CANCEL_RUN', target: 'privapilot-background' });
         }
@@ -2396,7 +2406,6 @@ if (typeof document !== 'undefined') {
         const timeout = setTimeout(() => {
           if (settled) return;
           settled = true;
-          clearInterval(liveThinkingTimer);
           if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
             chrome.tabs.sendMessage(currentActiveTabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
           }
@@ -2413,7 +2422,6 @@ if (typeof document !== 'undefined') {
         }, (res) => {
           if (settled) return;
           settled = true;
-          clearInterval(liveThinkingTimer);
           clearTimeout(timeout);
           const finalDuration = Math.max(1, Math.round((Date.now() - turnStartTime) / 1000));
           if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
@@ -2429,7 +2437,6 @@ if (typeof document !== 'undefined') {
       } else {
         // Fallback for standalone / mock preview
         setTimeout(() => {
-          clearInterval(liveThinkingTimer);
           agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; color: #1d4ed8; font-size: 11px;">ℹ️ Running in standalone mode. Connect Chrome extension runtime for live browser automation.</div>`;
           setAgentStatus('idle');
         }, 300);
@@ -2526,28 +2533,15 @@ if (typeof document !== 'undefined') {
             if (message.message) {
               addAuditEntry('AGENT', message.message, 'info');
             }
-            if (message.state === 'awaiting-reasoning') {
-              const liveStream = chatMessages.querySelector('.chat-msg.agent:last-child .live-thought-stream');
-              if (liveStream && !liveStream.querySelector('.thought-reasoning-step')) {
-                const shimmer = liveStream.querySelector('.initial-perception-shimmer');
-                if (shimmer) shimmer.remove();
-                const waitLine = document.createElement('div');
-                waitLine.className = 'live-thought-line thought-reasoning-step';
-                waitLine.style.display = 'flex';
-                waitLine.style.alignItems = 'baseline';
-                waitLine.style.gap = '7px';
-                waitLine.style.fontSize = '11.5px';
-                waitLine.style.color = '#93c5fd';
-                waitLine.style.lineHeight = '1.5';
-                waitLine.style.padding = '2px 0';
-                waitLine.style.fontStyle = 'italic';
-                waitLine.innerHTML = `
-                  <span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">🧠</span>
-                  <span class="thought-body" style="flex: 1;">Synthesizing page context and evaluating candidate browser actions...</span>
-                `;
-                liveStream.appendChild(waitLine);
-                const drawer = liveStream.closest('.monologue-drawer');
-                if (drawer) drawer.scrollTop = drawer.scrollHeight;
+            const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
+            const shimmerText = lastAgentBubble?.querySelector('.agent-thinking-pill .thinking-shimmer-text');
+            if (shimmerText) {
+              if (message.state === 'awaiting-reasoning') {
+                shimmerText.textContent = 'Reasoning...';
+              } else if (message.state === 'capturing') {
+                shimmerText.textContent = 'Perceiving page...';
+              } else if (message.state === 'executing') {
+                shimmerText.textContent = 'Executing action...';
               }
             }
           }
@@ -2566,32 +2560,12 @@ if (typeof document !== 'undefined') {
               addAuditEntry('PLAN', `${actDesc}: ${act.rationale || 'Executing action'}`, 'pass');
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
               if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
-                const liveStream = lastAgentBubble.querySelector('.live-thought-stream');
-                const placeholder = liveStream?.querySelector('.thought-reasoning-step');
-                if (placeholder) placeholder.remove();
-                const shimmer = liveStream?.querySelector('.initial-perception-shimmer');
-                if (shimmer) shimmer.remove();
-
-                const liveReasoning = sanitizeReasoningText(act.reasoning) || sanitizeReasoningText(act.rationale);
-                if (liveStream && liveReasoning) {
-                  streamLiveReasoningLines(liveStream, liveReasoning);
+                const shimmerText = lastAgentBubble.querySelector('.agent-thinking-pill .thinking-shimmer-text');
+                if (shimmerText) {
+                  const targetDesc = act.sanitizedTargetName || act.targetLocalId || '';
+                  const shortTarget = targetDesc ? ` on ${targetDesc}` : '';
+                  shimmerText.textContent = `Executing ${(act.kind || 'action').toUpperCase()}${shortTarget}...`;
                 }
-
-                let statusRing = lastAgentBubble.querySelector('.agent-thinking-stream');
-                if (!statusRing) {
-                  statusRing = document.createElement('div');
-                  statusRing.className = 'agent-thinking-stream';
-                  statusRing.style.display = 'flex';
-                  statusRing.style.alignItems = 'center';
-                  statusRing.style.gap = '8px';
-                  statusRing.style.marginTop = '6px';
-                  lastAgentBubble.appendChild(statusRing);
-                }
-                statusRing.innerHTML = `
-                  <div class="agent-status-ring" style="display: inline-block; width: 12px; height: 12px; border: 2px solid #8ab4f8; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;"></div>
-                  <span style="font-size: 11px; font-weight: 600; color: #8ab4f8;">Executing ${escapeHtml((act.kind || 'action').toUpperCase())} ${escapeHtml(act.sanitizedTargetName || act.targetLocalId || '')}</span>
-                `;
-                chatMessages.scrollTop = chatMessages.scrollHeight;
               }
             }
           }

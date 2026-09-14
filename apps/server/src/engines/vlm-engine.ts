@@ -1181,10 +1181,11 @@ Strict Rules:
    Execute step 1 (navigation or intermediate click/scroll/hover), observe the updated page state on the next cycle, and continue with the subsequent steps (typing, extracting, or verifying) before proposing "finish". Do NOT propose "finish" prematurely after intermediate navigation clicks.
 10. STRUCTURED 3-PART CHAIN-OF-THOUGHT DIRECTIVE (CRITICAL):
     Before proposing an action or answer, you MUST provide explicit structured thinking in the "reasoning" field (or inside <think>...</think> tags).
-    Structure your thinking into 3 distinct progressive lines:
+    You MUST provide all 3 progressive sections on EVERY step (including intermediate actions, navigation, and final finish/answer steps):
     👁️ Observation: [Analyze visible page context, active URL/tab, relevant elements and their SOM local IDs, tables, or notices]
     🎯 User Intent: [State the user's objective, evaluate the goal, and identify the required browser strategy]
-    ⚡ Action Selection: [Explain why the chosen tool (click/type/select/scroll/batch/finish) and targetLocalId are the optimal execution step, citing relevant browser skills]
+    ⚡ Action Selection: [Explain why the chosen tool (click/type/select/scroll/batch/finish) and targetLocalId are the optimal execution step, citing relevant browser skills. On finish/answer, explain how the visible page data fulfills the user's goal.]
+    Do NOT output only an Observation without User Intent and Action Selection. Always include all 3 sections on every turn.
 11. Do not return "finish" merely because you have explained what should happen. Use "finish" only when visible page state proves the user's requested browser operation is already complete.
 12. GOAL COMPLETION & PROGRESSION:
    - For QUESTION-ANSWERING & INFORMATION RETRIEVAL GOALS (e.g. "search for X and tell me Y", "find Z and tell me when it was first launched and who organizes it", "how many submissions..."):
