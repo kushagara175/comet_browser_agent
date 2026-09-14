@@ -23,6 +23,11 @@ skills/
 ├── browser-harness/
 │   └── SKILL.md                          # Master guide & architectural index
 ├── interaction-skills/
+│   ├── agent-cursor.md                   # Animated AI Ghost Cursor with Bézier glide
+│   ├── execution-shield.md               # In-page user interaction lock & safety barrier
+│   ├── stagehand-primitives.md           # Stagehand act(), extract(), observe() models
+│   ├── browser-use-patterns.md           # browser-use DOM pruning & self-healing
+│   ├── skyvern-patterns.md               # Skyvern tabular extraction & workflow memory
 │   ├── controlled-inputs.md              # React/Vue fiber-safe input filling
 │   ├── cookies-and-storage.md            # Session & consent state handling
 │   ├── dialogs.md                        # Alerts, modals, banners, overlays
@@ -49,6 +54,11 @@ skills/
 
 | Skill | Target Elements | Execution Mechanism | Postcondition |
 | :--- | :--- | :--- | :--- |
+| `agent-cursor` | Viewport & target DOM elements | Cubic Bézier trajectory + action pill + click ripple | Cursor glided & visual cue rendered |
+| `execution-shield` | Viewport / window event loop | Capture-phase event cancellation + Escape emergency release | User input locked during execution |
+| `stagehand-primitives`| Viewport elements | `act`, `extract`, `observe` high-level automation pipeline | Semantic action verified |
+| `browser-use-patterns`| DOM nodes & Chrome tabs | Pruned interactive map + coordinate-DOM hybrid | Action dispatched without DOM bloat |
+| `skyvern-patterns` | DataTables & multi-step forms | DataTable filter isolation + batch filling | Tabular data extracted / form filled |
 | `controlled-inputs` | `<input>`, `<textarea>`, `[contenteditable]` | Native prototype descriptor setter + `InputEvent` + `change` | `value_present` |
 | `dropdowns` | `<select>`, `[role="combobox"]`, `[role="listbox"]` | Option index mapping / simulated click selection | `select_changed` |
 | `dialogs` | `<dialog>`, `[role="dialog"]`, `.modal` | Close button grounding or synthetic dismiss | `visibility_changed: hidden` |

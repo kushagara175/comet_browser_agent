@@ -108,6 +108,8 @@ export async function handleMessage(message: any): Promise<any> {
   if (message.type === 'CLEAR_OVERLAYS') {
     overlay.clear();
     overlay.hideAgentWorkingGlow();
+    overlay.disableSafetyShield();
+    overlay.hideCursor(0);
     return { success: true };
   }
 
@@ -241,101 +243,116 @@ export async function handleMessage(message: any): Promise<any> {
   if (message.type === 'EXECUTE_ACTION') {
     const proposal: ActionProposal = message.proposal;
     overlay.showAgentWorkingGlow(proposal?.kind ? `PrivaPilot: ${proposal.kind.toUpperCase()}` : 'PrivaPilot Active');
+    overlay.enableSafetyShield(proposal?.kind ? `PrivaPilot: ${proposal.kind.toUpperCase()}` : 'PrivaPilot Automating Page...');
 
-    // 1. Target element resolution with live self-healing
-    let targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;
+    try {
+      // 1. Target element resolution with live self-healing
+      let targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;
 
-    // If target is missing from current map or detached from DOM, self-heal immediately
-    if (proposal.targetLocalId && (!targetEl || !targetEl.isConnected)) {
-      const refreshed = extractor.extractSnapshot(document);
-      currentElementMap = refreshed.elementMap;
-      currentCaptureId = message.captureId || currentCaptureId;
-      targetEl = currentElementMap.get(proposal.targetLocalId) || null;
+      // If target is missing from current map or detached from DOM, self-heal immediately
+      if (proposal.targetLocalId && (!targetEl || !targetEl.isConnected)) {
+        const refreshed = extractor.extractSnapshot(document);
+        currentElementMap = refreshed.elementMap;
+        currentCaptureId = message.captureId || currentCaptureId;
+        targetEl = currentElementMap.get(proposal.targetLocalId) || null;
 
-      // Heuristic self-healing: if still not found by localId, match by semantic text or rationale
-      if (!targetEl) {
-        const targetTextMatch = (proposal.rationale || '').match(/["']([^"']+)["']/);
-        const targetSearch = targetTextMatch ? targetTextMatch[1].toLowerCase().trim() : '';
-        if (targetSearch) {
-          for (const el of currentElementMap.values()) {
-            const elText = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').toLowerCase();
-            if (el.isConnected && (elText === targetSearch || elText.includes(targetSearch))) {
-              targetEl = el;
-              break;
+        // Heuristic self-healing: if still not found by localId, match by semantic text or rationale
+        if (!targetEl) {
+          const targetTextMatch = (proposal.rationale || '').match(/["']([^"']+)["']/);
+          const targetSearch = targetTextMatch ? targetTextMatch[1].toLowerCase().trim() : '';
+          if (targetSearch) {
+            for (const el of currentElementMap.values()) {
+              const elText = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').toLowerCase();
+              if (el.isConnected && (elText === targetSearch || elText.includes(targetSearch))) {
+                targetEl = el;
+                break;
+              }
             }
           }
         }
       }
-    }
 
-    // Guard against stale capture only if target cannot be found in live DOM
-    if (!targetEl && proposal.targetLocalId) {
-      return {
-        success: false,
-        actionId: proposal.actionId,
-        semanticOutcomeVerified: false,
-        staleTarget: true,
-        message: `Target element '${proposal.targetLocalId}' not found in live DOM after self-healing retry`
-      };
-    }
-
-    // 2. Highlight target if present
-    if (targetEl) {
-      if (typeof targetEl.scrollIntoView === 'function') {
-        try {
-          targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        } catch (_) {}
+      // Guard against stale capture only if target cannot be found in live DOM
+      if (!targetEl && proposal.targetLocalId) {
+        return {
+          success: false,
+          actionId: proposal.actionId,
+          semanticOutcomeVerified: false,
+          staleTarget: true,
+          message: `Target element '${proposal.targetLocalId}' not found in live DOM after self-healing retry`
+        };
       }
-      overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase(), 1200);
-      // Brief visual dwell so user sees targeted element highlighted before dispatch
-      await new Promise((r) => setTimeout(r, 120));
-    }
 
-    // Capture safe pre-action semantic snapshot BEFORE execution
-    const preSnapshot = SemanticStateVerifier.captureSnapshot(targetEl, document);
+      // 2. Highlight target and glide AI agent cursor if present
+      if (targetEl) {
+        if (typeof targetEl.scrollIntoView === 'function') {
+          try {
+            targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          } catch (_) {}
+        }
+        overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase(), 1200);
+        // Smoothly glide the visual AI agent cursor to the targeted element
+        await overlay.glideCursorTo(targetEl, proposal.kind.toUpperCase(), (proposal as any).textToType, 320);
+      }
 
-    // 3. Dispatch synthetic DOM action
-    const execResult = ActionExecutor.execute(proposal, currentElementMap);
+      // Capture safe pre-action semantic snapshot BEFORE execution
+      const preSnapshot = SemanticStateVerifier.captureSnapshot(targetEl, document);
 
-    // Visual feedback: Flash green dispatched ring on target and cleanly dismiss ("so after click it goes")
-    if (targetEl && execResult.success) {
-      overlay.flashActionDispatched();
-    } else {
-      overlay.clear();
-    }
+      // 3. Dispatch synthetic DOM action
+      const execResult = ActionExecutor.execute(proposal, currentElementMap);
 
-    if (!execResult.success) {
+      // Visual feedback: Trigger click ripple / typing badge and flash dispatched ring
+      if (targetEl && execResult.success) {
+        if (proposal.kind === 'click') {
+          overlay.triggerClickRipple();
+        } else if (proposal.kind === 'type') {
+          overlay.triggerTypingBadge();
+        }
+        overlay.flashActionDispatched();
+      } else {
+        overlay.clear();
+      }
+
+      if (!execResult.success) {
+        return {
+          success: false,
+          actionId: proposal.actionId,
+          semanticOutcomeVerified: false,
+          staleTarget: execResult.staleTarget ?? (!targetEl && Boolean(proposal.targetLocalId)),
+          message: execResult.message || 'Action execution failed',
+          reasonCode: execResult.reasonCode || 'EXECUTION_FAILED'
+        };
+      }
+
+      // 4. Semantically verify post-action state with explicit bounded postconditions
+      const verification = await SemanticStateVerifier.verifyOutcome(proposal, targetEl, preSnapshot, { timeoutMs: 2500 });
+      const isSuccess = execResult.success && verification.verified;
+
       return {
-        success: false,
+        success: isSuccess,
         actionId: proposal.actionId,
-        semanticOutcomeVerified: false,
-        staleTarget: execResult.staleTarget ?? (!targetEl && Boolean(proposal.targetLocalId)),
-        message: execResult.message || 'Action execution failed',
-        reasonCode: execResult.reasonCode || 'EXECUTION_FAILED'
-      };
-    }
-
-    // 4. Semantically verify post-action state with explicit bounded postconditions
-    const verification = await SemanticStateVerifier.verifyOutcome(proposal, targetEl, preSnapshot, { timeoutMs: 2500 });
-    const isSuccess = execResult.success && verification.verified;
-
-    return {
-      success: isSuccess,
-      actionId: proposal.actionId,
-      semanticOutcomeVerified: verification.verified,
-      reasonCode: verification.reasonCode,
-      message: isSuccess ? execResult.message : verification.message,
-      verification: {
-        verified: verification.verified,
+        semanticOutcomeVerified: verification.verified,
         reasonCode: verification.reasonCode,
-        durationMs: verification.details?.durationMs,
-        matchedCondition: verification.details?.matchedCondition
-      }
-    };
+        message: isSuccess ? execResult.message : verification.message,
+        verification: {
+          verified: verification.verified,
+          reasonCode: verification.reasonCode,
+          durationMs: verification.details?.durationMs,
+          matchedCondition: verification.details?.matchedCondition
+        }
+      };
+    } finally {
+      // Re-enable external user interaction and smoothly park/hide agent cursor
+      overlay.disableSafetyShield();
+      overlay.hideCursor(800);
+    }
   }
 
   if (message.type === 'CLEAR_OVERLAYS') {
     overlay.clear();
+    overlay.hideAgentWorkingGlow();
+    overlay.disableSafetyShield();
+    overlay.hideCursor(0);
     return { success: true };
   }
 

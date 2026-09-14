@@ -2225,6 +2225,16 @@
     clearTimer = null;
     workingGlowEl = null;
     glowWatchdogTimer = null;
+    // Animated AI Ghost Cursor state
+    cursorEl = null;
+    cursorDismissTimer = null;
+    currentCursorX = typeof window !== "undefined" ? Math.round(window.innerWidth / 2) : 200;
+    currentCursorY = typeof window !== "undefined" ? Math.round(window.innerHeight / 2) : 200;
+    // In-Page Execution Safety Shield state
+    shieldEl = null;
+    shieldWatchdogTimer = null;
+    boundShieldHandler = null;
+    isShieldActive = false;
     ensureContainer() {
       if (!this.overlayContainer || !document.body.contains(this.overlayContainer)) {
         this.overlayContainer = document.createElement("div");
@@ -2334,6 +2344,8 @@
         this.overlayContainer.innerHTML = "";
       }
       this.currentBox = null;
+      this.hideCursor(0);
+      this.disableSafetyShield();
     }
     ensureGlowStyles() {
       if (typeof document === "undefined") return;
@@ -2436,6 +2448,142 @@
         box-shadow: 0 0 6px #3b82f6 !important;
         animation: privapilot-dot-pulse 1.6s ease-in-out infinite !important;
       }
+
+      /* Animated AI Ghost Cursor */
+      .privapilot-agent-cursor {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        z-index: 2147483647 !important;
+        pointer-events: none !important;
+        opacity: 0;
+        transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease-out;
+        will-change: transform, opacity;
+      }
+
+      .privapilot-cursor-pointer {
+        display: block !important;
+        width: 30px !important;
+        height: 30px !important;
+        filter: drop-shadow(0 3px 10px rgba(37, 99, 235, 0.75)) drop-shadow(0 0 18px rgba(96, 165, 250, 0.9)) !important;
+        transform-origin: 0 0;
+      }
+
+      .privapilot-cursor-badge {
+        position: absolute !important;
+        top: 20px !important;
+        left: 22px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 5px !important;
+        background: rgba(10, 15, 30, 0.92) !important;
+        border: 1px solid rgba(96, 165, 250, 0.7) !important;
+        color: #ffffff !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        padding: 2.5px 8px !important;
+        border-radius: 9999px !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 10px rgba(59, 130, 246, 0.5) !important;
+        white-space: nowrap !important;
+        pointer-events: none !important;
+        transition: border-color 0.2s, box-shadow 0.2s !important;
+      }
+
+      .privapilot-cursor-ripple {
+        position: absolute !important;
+        top: 3px !important;
+        left: 3px !important;
+        width: 8px !important;
+        height: 8px !important;
+        border-radius: 50% !important;
+        border: 2.5px solid #10b981 !important;
+        box-shadow: 0 0 12px #10b981 !important;
+        pointer-events: none !important;
+        transform: translate(-50%, -50%) scale(0.2) !important;
+        opacity: 0 !important;
+      }
+
+      .privapilot-cursor-ripple.privapilot-ripple-active {
+        animation: privapilot-ripple-expand 0.48s cubic-bezier(0.1, 0.9, 0.2, 1) forwards !important;
+      }
+
+      @keyframes privapilot-ripple-expand {
+        0% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(0.3);
+          border-color: #60a5fa;
+        }
+        50% {
+          border-color: #10b981;
+          box-shadow: 0 0 20px #10b981;
+        }
+        100% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(5.5);
+          border-color: #10b981;
+        }
+      }
+
+      /* In-Page Execution Safety Shield */
+      .privapilot-shield-root {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        z-index: 2147483645 !important;
+        pointer-events: auto !important;
+        cursor: wait !important;
+        background: rgba(15, 23, 42, 0.05) !important;
+        backdrop-filter: blur(0.5px) !important;
+        -webkit-backdrop-filter: blur(0.5px) !important;
+        transition: opacity 0.2s ease !important;
+      }
+
+      .privapilot-shield-hud {
+        position: fixed !important;
+        top: 14px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        background: rgba(10, 15, 30, 0.94) !important;
+        backdrop-filter: blur(16px) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+        border: 1.5px solid rgba(59, 130, 246, 0.8) !important;
+        color: #f0f9ff !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        font-size: 12px !important;
+        font-weight: 600 !important;
+        padding: 6px 16px !important;
+        border-radius: 9999px !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 20px rgba(59, 130, 246, 0.5) !important;
+        letter-spacing: 0.3px !important;
+        user-select: none !important;
+        pointer-events: auto !important;
+      }
+
+      .privapilot-shield-pulse-dot {
+        width: 8px !important;
+        height: 8px !important;
+        border-radius: 50% !important;
+        background: #38bdf8 !important;
+        box-shadow: 0 0 8px #38bdf8 !important;
+        animation: privapilot-dot-pulse 1.2s ease-in-out infinite !important;
+      }
+
+      .privapilot-shield-esc-badge {
+        background: rgba(59, 130, 246, 0.25) !important;
+        border: 1px solid rgba(96, 165, 250, 0.5) !important;
+        border-radius: 4px !important;
+        padding: 1px 6px !important;
+        font-size: 10px !important;
+        color: #93c5fd !important;
+        margin-left: 4px !important;
+        font-family: monospace !important;
+      }
     `;
       (document.head || document.documentElement).appendChild(style);
     }
@@ -2478,6 +2626,9 @@
       this.glowWatchdogTimer = setTimeout(() => {
         this.hideAgentWorkingGlow();
       }, 45e3);
+      if (this.glowWatchdogTimer && typeof this.glowWatchdogTimer.unref === "function") {
+        this.glowWatchdogTimer.unref();
+      }
     }
     hideAgentWorkingGlow() {
       if (this.glowWatchdogTimer) {
@@ -2497,6 +2648,262 @@
           }
         }, 300);
       }
+    }
+    /**
+     * Ensures the visual AI agent cursor element exists in the DOM.
+     */
+    ensureCursor() {
+      if (!this.cursorEl || !document.body.contains(this.cursorEl)) {
+        this.ensureGlowStyles();
+        const cursor = document.createElement("div");
+        cursor.id = "privapilot-agent-cursor";
+        cursor.className = "privapilot-overlay privapilot-agent-cursor";
+        cursor.setAttribute("data-privapilot-ignore", "true");
+        cursor.setAttribute("aria-hidden", "true");
+        cursor.innerHTML = `
+        <svg class="privapilot-cursor-pointer" viewBox="0 0 32 32" width="30" height="30">
+          <defs>
+            <linearGradient id="privapilot-cursor-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#93c5fd" />
+              <stop offset="45%" stop-color="#3b82f6" />
+              <stop offset="100%" stop-color="#1d4ed8" />
+            </linearGradient>
+          </defs>
+          <path d="M 3 3 L 11 26 L 15 16 L 25 12 Z" fill="url(#privapilot-cursor-grad)" stroke="#ffffff" stroke-width="1.8" stroke-linejoin="round" />
+          <circle cx="11.5" cy="11.5" r="2.2" fill="#ffffff" />
+          <circle cx="11.5" cy="11.5" r="1.1" fill="#38bdf8" />
+        </svg>
+        <div class="privapilot-overlay privapilot-cursor-ripple" data-privapilot-ignore="true"></div>
+        <div class="privapilot-overlay privapilot-cursor-badge" data-privapilot-ignore="true">
+          <span class="privapilot-cursor-badge-icon">\u26A1</span>
+          <span class="privapilot-cursor-badge-text">Click</span>
+        </div>
+      `;
+        cursor.style.transform = `translate3d(${this.currentCursorX}px, ${this.currentCursorY}px, 0)`;
+        document.body.appendChild(cursor);
+        this.cursorEl = cursor;
+      }
+      return this.cursorEl;
+    }
+    /**
+     * Smoothly glides the AI agent cursor to the target element's position with cubic Bézier easing.
+     */
+    async glideCursorTo(el, actionKind = "CLICK", extraText, durationMs = 360) {
+      if (typeof document === "undefined" || !document.body) return;
+      const cursor = this.ensureCursor();
+      if (this.cursorDismissTimer) {
+        clearTimeout(this.cursorDismissTimer);
+        this.cursorDismissTimer = null;
+      }
+      const rect = el.getBoundingClientRect();
+      const targetX = Math.round(rect.left + Math.min(Math.max(rect.width * 0.35, 8), 40));
+      const targetY = Math.round(rect.top + Math.min(Math.max(rect.height * 0.5, 8), 26));
+      const iconEl = cursor.querySelector(".privapilot-cursor-badge-icon");
+      const textEl = cursor.querySelector(".privapilot-cursor-badge-text");
+      let icon = "\u26A1";
+      let text = "Click";
+      const kindUpper = (actionKind || "CLICK").toUpperCase();
+      if (kindUpper.includes("TYPE")) {
+        icon = "\u270D\uFE0F";
+        text = extraText ? `Type "${extraText.slice(0, 16)}${extraText.length > 16 ? "..." : ""}"` : "Typing...";
+      } else if (kindUpper.includes("CLICK")) {
+        icon = "\u26A1";
+        text = "Click";
+      } else if (kindUpper.includes("SELECT")) {
+        icon = "\u{1F4CB}";
+        text = "Select";
+      } else if (kindUpper.includes("HOVER")) {
+        icon = "\u{1F441}\uFE0F";
+        text = "Hover";
+      } else if (kindUpper.includes("SCROLL")) {
+        icon = "\u{1F4DC}";
+        text = "Scroll";
+      } else if (kindUpper.includes("UPLOAD")) {
+        icon = "\u{1F4C1}";
+        text = "Upload";
+      } else if (kindUpper.includes("DRAG")) {
+        icon = "\u270B";
+        text = "Drag";
+      } else {
+        icon = "\u{1F3AF}";
+        text = actionKind;
+      }
+      if (iconEl) iconEl.textContent = icon;
+      if (textEl) textEl.textContent = text;
+      cursor.style.transition = `transform ${durationMs}ms cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease-out`;
+      cursor.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
+      cursor.style.opacity = "1";
+      this.currentCursorX = targetX;
+      this.currentCursorY = targetY;
+      await new Promise((resolve) => setTimeout(resolve, durationMs));
+    }
+    /**
+     * Spawns an animated click ripple at the cursor's current location.
+     */
+    triggerClickRipple() {
+      if (!this.cursorEl) return;
+      const ripple = this.cursorEl.querySelector(".privapilot-cursor-ripple");
+      if (ripple) {
+        ripple.classList.remove("privapilot-ripple-active");
+        void ripple.offsetWidth;
+        ripple.classList.add("privapilot-ripple-active");
+      }
+    }
+    /**
+     * Highlights the badge with an active typing glow.
+     */
+    triggerTypingBadge() {
+      if (!this.cursorEl) return;
+      const badge = this.cursorEl.querySelector(".privapilot-cursor-badge");
+      if (badge) {
+        badge.style.borderColor = "#38bdf8";
+        badge.style.boxShadow = "0 0 14px rgba(56, 189, 248, 0.75)";
+        setTimeout(() => {
+          if (badge) {
+            badge.style.borderColor = "rgba(96, 165, 250, 0.7)";
+            badge.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.4), 0 0 10px rgba(59, 130, 246, 0.5)";
+          }
+        }, 400);
+      }
+    }
+    /**
+     * Smoothly fades out and parks the agent cursor.
+     */
+    hideCursor(delayMs = 600) {
+      if (this.cursorDismissTimer) {
+        clearTimeout(this.cursorDismissTimer);
+        this.cursorDismissTimer = null;
+      }
+      if (delayMs <= 0) {
+        if (this.cursorEl) {
+          this.cursorEl.style.opacity = "0";
+        }
+        return;
+      }
+      this.cursorDismissTimer = setTimeout(() => {
+        if (this.cursorEl) {
+          this.cursorEl.style.opacity = "0";
+        }
+      }, delayMs);
+      if (this.cursorDismissTimer && typeof this.cursorDismissTimer.unref === "function") {
+        this.cursorDismissTimer.unref();
+      }
+    }
+    /**
+     * Enables the in-page execution safety shield to prevent accidental user mouse/keyboard
+     * interference while an agent action or batch is running.
+     */
+    enableSafetyShield(label = "PrivaPilot Automating Page...") {
+      if (typeof document === "undefined" || !document.body) return;
+      this.ensureGlowStyles();
+      if (this.shieldWatchdogTimer) {
+        clearTimeout(this.shieldWatchdogTimer);
+      }
+      if (!this.boundShieldHandler) {
+        this.boundShieldHandler = (e) => {
+          if (e.key === "Escape") {
+            this.disableSafetyShield();
+            try {
+              window.dispatchEvent(new CustomEvent("privapilot-emergency-pause"));
+            } catch (_) {
+            }
+            return;
+          }
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          if (e.cancelable) {
+            e.preventDefault();
+          }
+        };
+        const events = [
+          "click",
+          "mousedown",
+          "mouseup",
+          "dblclick",
+          "contextmenu",
+          "keydown",
+          "keypress",
+          "wheel",
+          "touchstart",
+          "touchend"
+        ];
+        for (const ev of events) {
+          window.addEventListener(ev, this.boundShieldHandler, { capture: true, passive: false });
+        }
+      }
+      if (!this.shieldEl || !document.body.contains(this.shieldEl)) {
+        const shield = document.createElement("div");
+        shield.id = "privapilot-execution-shield";
+        shield.className = "privapilot-overlay privapilot-shield-root";
+        shield.setAttribute("data-privapilot-ignore", "true");
+        shield.setAttribute("aria-hidden", "true");
+        shield.innerHTML = `
+        <div class="privapilot-overlay privapilot-shield-hud" data-privapilot-ignore="true">
+          <span class="privapilot-shield-pulse-dot" data-privapilot-ignore="true"></span>
+          <span class="privapilot-shield-text" data-privapilot-ignore="true">${label}</span>
+          <span class="privapilot-shield-esc-badge" data-privapilot-ignore="true">Esc to Pause</span>
+        </div>
+      `;
+        shield.style.opacity = "0";
+        document.body.appendChild(shield);
+        void shield.offsetHeight;
+        shield.style.opacity = "1";
+        this.shieldEl = shield;
+      } else {
+        this.shieldEl.style.opacity = "1";
+        const text = this.shieldEl.querySelector(".privapilot-shield-text");
+        if (text) text.textContent = label;
+      }
+      this.isShieldActive = true;
+      this.shieldWatchdogTimer = setTimeout(() => {
+        this.disableSafetyShield();
+      }, 25e3);
+      if (this.shieldWatchdogTimer && typeof this.shieldWatchdogTimer.unref === "function") {
+        this.shieldWatchdogTimer.unref();
+      }
+    }
+    /**
+     * Disables the safety shield and restores full user mouse and keyboard control.
+     */
+    disableSafetyShield() {
+      if (this.shieldWatchdogTimer) {
+        clearTimeout(this.shieldWatchdogTimer);
+        this.shieldWatchdogTimer = null;
+      }
+      if (this.boundShieldHandler) {
+        const events = [
+          "click",
+          "mousedown",
+          "mouseup",
+          "dblclick",
+          "contextmenu",
+          "keydown",
+          "keypress",
+          "wheel",
+          "touchstart",
+          "touchend"
+        ];
+        for (const ev of events) {
+          window.removeEventListener(ev, this.boundShieldHandler, { capture: true });
+        }
+        this.boundShieldHandler = null;
+      }
+      if (this.shieldEl) {
+        const el = this.shieldEl;
+        el.style.opacity = "0";
+        setTimeout(() => {
+          if (el.parentNode) {
+            el.parentNode.removeChild(el);
+          }
+          if (this.shieldEl === el) {
+            this.shieldEl = null;
+          }
+        }, 200);
+      }
+      this.isShieldActive = false;
+    }
+    isExternalInputLocked() {
+      return this.isShieldActive;
     }
   };
 
@@ -2566,6 +2973,8 @@
     if (message.type === "CLEAR_OVERLAYS") {
       overlay.clear();
       overlay.hideAgentWorkingGlow();
+      overlay.disableSafetyShield();
+      overlay.hideCursor(0);
       return { success: true };
     }
     if (message.type === "EXTRACT_DOM_SNAPSHOT") {
@@ -2685,80 +3094,94 @@
     if (message.type === "EXECUTE_ACTION") {
       const proposal = message.proposal;
       overlay.showAgentWorkingGlow(proposal?.kind ? `PrivaPilot: ${proposal.kind.toUpperCase()}` : "PrivaPilot Active");
-      let targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;
-      if (proposal.targetLocalId && (!targetEl || !targetEl.isConnected)) {
-        const refreshed = extractor.extractSnapshot(document);
-        currentElementMap = refreshed.elementMap;
-        currentCaptureId = message.captureId || currentCaptureId;
-        targetEl = currentElementMap.get(proposal.targetLocalId) || null;
-        if (!targetEl) {
-          const targetTextMatch = (proposal.rationale || "").match(/["']([^"']+)["']/);
-          const targetSearch = targetTextMatch ? targetTextMatch[1].toLowerCase().trim() : "";
-          if (targetSearch) {
-            for (const el of currentElementMap.values()) {
-              const elText = (el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "").toLowerCase();
-              if (el.isConnected && (elText === targetSearch || elText.includes(targetSearch))) {
-                targetEl = el;
-                break;
+      overlay.enableSafetyShield(proposal?.kind ? `PrivaPilot: ${proposal.kind.toUpperCase()}` : "PrivaPilot Automating Page...");
+      try {
+        let targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;
+        if (proposal.targetLocalId && (!targetEl || !targetEl.isConnected)) {
+          const refreshed = extractor.extractSnapshot(document);
+          currentElementMap = refreshed.elementMap;
+          currentCaptureId = message.captureId || currentCaptureId;
+          targetEl = currentElementMap.get(proposal.targetLocalId) || null;
+          if (!targetEl) {
+            const targetTextMatch = (proposal.rationale || "").match(/["']([^"']+)["']/);
+            const targetSearch = targetTextMatch ? targetTextMatch[1].toLowerCase().trim() : "";
+            if (targetSearch) {
+              for (const el of currentElementMap.values()) {
+                const elText = (el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "").toLowerCase();
+                if (el.isConnected && (elText === targetSearch || elText.includes(targetSearch))) {
+                  targetEl = el;
+                  break;
+                }
               }
             }
           }
         }
-      }
-      if (!targetEl && proposal.targetLocalId) {
-        return {
-          success: false,
-          actionId: proposal.actionId,
-          semanticOutcomeVerified: false,
-          staleTarget: true,
-          message: `Target element '${proposal.targetLocalId}' not found in live DOM after self-healing retry`
-        };
-      }
-      if (targetEl) {
-        if (typeof targetEl.scrollIntoView === "function") {
-          try {
-            targetEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
-          } catch (_) {
+        if (!targetEl && proposal.targetLocalId) {
+          return {
+            success: false,
+            actionId: proposal.actionId,
+            semanticOutcomeVerified: false,
+            staleTarget: true,
+            message: `Target element '${proposal.targetLocalId}' not found in live DOM after self-healing retry`
+          };
+        }
+        if (targetEl) {
+          if (typeof targetEl.scrollIntoView === "function") {
+            try {
+              targetEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            } catch (_) {
+            }
           }
+          overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase(), 1200);
+          await overlay.glideCursorTo(targetEl, proposal.kind.toUpperCase(), proposal.textToType, 320);
         }
-        overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase(), 1200);
-        await new Promise((r) => setTimeout(r, 120));
-      }
-      const preSnapshot = SemanticStateVerifier.captureSnapshot(targetEl, document);
-      const execResult = ActionExecutor.execute(proposal, currentElementMap);
-      if (targetEl && execResult.success) {
-        overlay.flashActionDispatched();
-      } else {
-        overlay.clear();
-      }
-      if (!execResult.success) {
+        const preSnapshot = SemanticStateVerifier.captureSnapshot(targetEl, document);
+        const execResult = ActionExecutor.execute(proposal, currentElementMap);
+        if (targetEl && execResult.success) {
+          if (proposal.kind === "click") {
+            overlay.triggerClickRipple();
+          } else if (proposal.kind === "type") {
+            overlay.triggerTypingBadge();
+          }
+          overlay.flashActionDispatched();
+        } else {
+          overlay.clear();
+        }
+        if (!execResult.success) {
+          return {
+            success: false,
+            actionId: proposal.actionId,
+            semanticOutcomeVerified: false,
+            staleTarget: execResult.staleTarget ?? (!targetEl && Boolean(proposal.targetLocalId)),
+            message: execResult.message || "Action execution failed",
+            reasonCode: execResult.reasonCode || "EXECUTION_FAILED"
+          };
+        }
+        const verification = await SemanticStateVerifier.verifyOutcome(proposal, targetEl, preSnapshot, { timeoutMs: 2500 });
+        const isSuccess = execResult.success && verification.verified;
         return {
-          success: false,
+          success: isSuccess,
           actionId: proposal.actionId,
-          semanticOutcomeVerified: false,
-          staleTarget: execResult.staleTarget ?? (!targetEl && Boolean(proposal.targetLocalId)),
-          message: execResult.message || "Action execution failed",
-          reasonCode: execResult.reasonCode || "EXECUTION_FAILED"
-        };
-      }
-      const verification = await SemanticStateVerifier.verifyOutcome(proposal, targetEl, preSnapshot, { timeoutMs: 2500 });
-      const isSuccess = execResult.success && verification.verified;
-      return {
-        success: isSuccess,
-        actionId: proposal.actionId,
-        semanticOutcomeVerified: verification.verified,
-        reasonCode: verification.reasonCode,
-        message: isSuccess ? execResult.message : verification.message,
-        verification: {
-          verified: verification.verified,
+          semanticOutcomeVerified: verification.verified,
           reasonCode: verification.reasonCode,
-          durationMs: verification.details?.durationMs,
-          matchedCondition: verification.details?.matchedCondition
-        }
-      };
+          message: isSuccess ? execResult.message : verification.message,
+          verification: {
+            verified: verification.verified,
+            reasonCode: verification.reasonCode,
+            durationMs: verification.details?.durationMs,
+            matchedCondition: verification.details?.matchedCondition
+          }
+        };
+      } finally {
+        overlay.disableSafetyShield();
+        overlay.hideCursor(800);
+      }
     }
     if (message.type === "CLEAR_OVERLAYS") {
       overlay.clear();
+      overlay.hideAgentWorkingGlow();
+      overlay.disableSafetyShield();
+      overlay.hideCursor(0);
       return { success: true };
     }
     if (message.type === "UPLOAD_FILE") {
