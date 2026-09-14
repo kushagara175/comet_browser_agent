@@ -21,10 +21,16 @@ Every browser interaction adheres to three inviolable privacy and security invar
 ```
 skills/
 ├── browser-harness/
-│   └── SKILL.md                          # Master guide & architectural index
+│   ├── SKILL.md                          # Master guide & architectural index
+│   └── best-agent-skills.md              # Architectural open-source benchmark & analysis
 ├── interaction-skills/
 │   ├── agent-cursor.md                   # Animated AI Ghost Cursor with Bézier glide
 │   ├── execution-shield.md               # In-page user interaction lock & safety barrier
+│   ├── structured-extraction.md          # Schema-based table & list extractor with pagination
+│   ├── human-in-the-loop.md              # Dynamic slot filling & CAPTCHA/OTP pausing
+│   ├── tab-graph-orchestration.md        # Multi-tab state DAG, child tabs & cleanup
+│   ├── visual-som-grounding.md           # Set-of-Marks visual badges & canvas grounding
+│   ├── human-overshoot-and-cadence.md    # Motor biomechanics, overshoot & variable typing
 │   ├── stagehand-primitives.md           # Stagehand act(), extract(), observe() models
 │   ├── browser-use-patterns.md           # browser-use DOM pruning & self-healing
 │   ├── skyvern-patterns.md               # Skyvern tabular extraction & workflow memory
@@ -56,6 +62,11 @@ skills/
 | :--- | :--- | :--- | :--- |
 | `agent-cursor` | Viewport & target DOM elements | Cubic Bézier trajectory + action pill + click ripple | Cursor glided & visual cue rendered |
 | `execution-shield` | Viewport / window event loop | Capture-phase event cancellation + Escape emergency release | User input locked during execution |
+| `structured-extraction`| Tables, card lists, pagination | Schema-driven DOM mapping + next-button traversal | Structured JSON records extracted |
+| `human-in-the-loop`| CAPTCHAs, OTP inputs, 2FA | Amber pulse badge + sidepanel resume prompt | Human input provided & task resumed |
+| `tab-graph-orchestration`| Multi-tab DAG | OpenerTabId tracking + child tab scraping & cleanup | Background tab data extracted |
+| `visual-som-grounding`| Custom canvas, icon buttons | Numbered Set-of-Marks visual pill overlays | Coordinate grounded without DOM text |
+| `human-overshoot-and-cadence`| Mouse trajectories & inputs | 3-8px micro-overshoot + Gaussian typing bursts | Realistic human biomechanics |
 | `stagehand-primitives`| Viewport elements | `act`, `extract`, `observe` high-level automation pipeline | Semantic action verified |
 | `browser-use-patterns`| DOM nodes & Chrome tabs | Pruned interactive map + coordinate-DOM hybrid | Action dispatched without DOM bloat |
 | `skyvern-patterns` | DataTables & multi-step forms | DataTable filter isolation + batch filling | Tabular data extracted / form filled |
