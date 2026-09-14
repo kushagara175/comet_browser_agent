@@ -1112,11 +1112,46 @@ if (typeof document !== 'undefined') {
       activePane?.classList.remove('hidden');
     }
 
-    tabChatBtn?.addEventListener('click', () => switchTab(tabChatBtn, tabChatContent));
-    tabVaultBtn?.addEventListener('click', () => {
+    let isVaultUnlocked = false;
+
+    const vaultPinLockScreen = document.getElementById('vaultPinLockScreen');
+    const vaultUnlockedContainer = document.getElementById('vaultUnlockedContainer');
+    const vaultPinInput = document.getElementById('vaultPinInput');
+    const vaultPinError = document.getElementById('vaultPinError');
+    const vaultUnlockBtn = document.getElementById('vaultUnlockBtn');
+    const vaultPinForm = document.getElementById('vaultPinForm');
+
+    const vaultLockBtn = document.getElementById('vaultLockBtn');
+    const vaultChangePinBtn = document.getElementById('vaultChangePinBtn');
+    const vaultChangePinModal = document.getElementById('vaultChangePinModal');
+    const closeChangePinBtn = document.getElementById('closeChangePinBtn');
+    const cancelChangePinBtn = document.getElementById('cancelChangePinBtn');
+    const saveNewPinBtn = document.getElementById('saveNewPinBtn');
+    const vaultCurrentPin = document.getElementById('vaultCurrentPin');
+    const vaultNewPin = document.getElementById('vaultNewPin');
+    const vaultConfirmPin = document.getElementById('vaultConfirmPin');
+    const changePinError = document.getElementById('changePinError');
+
+    function openVaultTab() {
       switchTab(tabVaultBtn, tabVaultContent);
-      loadVaultData();
-    });
+      if (!isVaultUnlocked) {
+        vaultPinLockScreen?.classList.remove('hidden');
+        vaultUnlockedContainer?.classList.add('hidden');
+        vaultChangePinModal?.classList.add('hidden');
+        if (vaultPinInput) {
+          vaultPinInput.value = '';
+          vaultPinInput.focus();
+        }
+        vaultPinError?.classList.add('hidden');
+      } else {
+        vaultPinLockScreen?.classList.add('hidden');
+        vaultUnlockedContainer?.classList.remove('hidden');
+        loadVaultData();
+      }
+    }
+
+    tabChatBtn?.addEventListener('click', () => switchTab(tabChatBtn, tabChatContent));
+    tabVaultBtn?.addEventListener('click', () => openVaultTab());
     tabInspectorBtn?.addEventListener('click', () => switchTab(tabInspectorBtn, tabInspectorContent));
     tabPayloadBtn?.addEventListener('click', () => switchTab(tabPayloadBtn, tabPayloadContent));
     tabAuditBtn?.addEventListener('click', () => switchTab(tabAuditBtn, tabAuditContent));
@@ -1124,8 +1159,144 @@ if (typeof document !== 'undefined') {
     menuVaultBtn?.addEventListener('click', () => {
       geminiMenuDropdown?.classList.add('hidden');
       hudTabs?.classList.remove('hidden');
-      switchTab(tabVaultBtn, tabVaultContent);
-      loadVaultData();
+      openVaultTab();
+    });
+
+    // Vault PIN unlock logic
+    function submitVaultPin() {
+      const pin = vaultPinInput?.value?.trim() || '';
+      if (!pin) {
+        showPinError('Please enter your 4-digit PIN');
+        return;
+      }
+
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ target: 'privapilot-background', type: 'VERIFY_VAULT_PIN', pin }, (res) => {
+          if (res && res.success && res.valid) {
+            isVaultUnlocked = true;
+            vaultPinError?.classList.add('hidden');
+            vaultPinLockScreen?.classList.add('hidden');
+            vaultUnlockedContainer?.classList.remove('hidden');
+            loadVaultData();
+            addAuditEntry('VAULT', 'Personal Vault unlocked via Master PIN', 'pass');
+          } else {
+            showPinError('Invalid PIN. Please try again.');
+            if (vaultPinInput) {
+              vaultPinInput.value = '';
+              vaultPinInput.focus();
+            }
+          }
+        });
+      } else {
+        // Fallback for isolated test/dev environments
+        if (pin === '1234') {
+          isVaultUnlocked = true;
+          vaultPinError?.classList.add('hidden');
+          vaultPinLockScreen?.classList.add('hidden');
+          vaultUnlockedContainer?.classList.remove('hidden');
+          loadVaultData();
+        } else {
+          showPinError('Invalid PIN. Please try again.');
+        }
+      }
+    }
+
+    function showPinError(msg) {
+      if (!vaultPinError) return;
+      vaultPinError.textContent = msg;
+      vaultPinError.classList.remove('hidden');
+      if (vaultPinInput) {
+        vaultPinInput.classList.remove('shake');
+        void vaultPinInput.offsetWidth; // Trigger reflow for animation restart
+        vaultPinInput.classList.add('shake');
+      }
+    }
+
+    vaultUnlockBtn?.addEventListener('click', submitVaultPin);
+    vaultPinInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitVaultPin();
+      }
+    });
+    vaultPinForm?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      submitVaultPin();
+    });
+
+    // Lock Vault immediate button
+    vaultLockBtn?.addEventListener('click', () => {
+      isVaultUnlocked = false;
+      vaultUnlockedContainer?.classList.add('hidden');
+      vaultPinLockScreen?.classList.remove('hidden');
+      vaultChangePinModal?.classList.add('hidden');
+      if (vaultPinInput) {
+        vaultPinInput.value = '';
+        vaultPinInput.focus();
+      }
+      vaultPinError?.classList.add('hidden');
+      addAuditEntry('VAULT', 'Personal Vault locked immediately by user', 'pass');
+    });
+
+    // Change PIN modal logic
+    vaultChangePinBtn?.addEventListener('click', () => {
+      vaultChangePinModal?.classList.remove('hidden');
+      if (changePinError) changePinError.classList.add('hidden');
+      if (vaultCurrentPin) vaultCurrentPin.value = '';
+      if (vaultNewPin) vaultNewPin.value = '';
+      if (vaultConfirmPin) vaultConfirmPin.value = '';
+      vaultCurrentPin?.focus();
+    });
+
+    closeChangePinBtn?.addEventListener('click', () => {
+      vaultChangePinModal?.classList.add('hidden');
+    });
+
+    cancelChangePinBtn?.addEventListener('click', () => {
+      vaultChangePinModal?.classList.add('hidden');
+    });
+
+    function showChangePinError(msg) {
+      if (!changePinError) return;
+      changePinError.textContent = msg;
+      changePinError.classList.remove('hidden');
+    }
+
+    saveNewPinBtn?.addEventListener('click', () => {
+      const curPin = vaultCurrentPin?.value?.trim() || '';
+      const newPin = vaultNewPin?.value?.trim() || '';
+      const confPin = vaultConfirmPin?.value?.trim() || '';
+
+      if (!curPin) {
+        showChangePinError('Please enter your current PIN');
+        return;
+      }
+      if (!newPin || newPin.length < 4) {
+        showChangePinError('New PIN must be at least 4 digits');
+        return;
+      }
+      if (newPin !== confPin) {
+        showChangePinError('New PIN and confirmation do not match');
+        return;
+      }
+
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ target: 'privapilot-background', type: 'VERIFY_VAULT_PIN', pin: curPin }, (vRes) => {
+          if (vRes && vRes.success && vRes.valid) {
+            chrome.runtime.sendMessage({ target: 'privapilot-background', type: 'SET_VAULT_PIN', newPin }, (sRes) => {
+              if (sRes && sRes.success) {
+                vaultChangePinModal?.classList.add('hidden');
+                alert('Vault Security PIN successfully updated!');
+                addAuditEntry('VAULT', 'Master Security PIN updated in local store', 'pass');
+              } else {
+                showChangePinError('Failed to update PIN');
+              }
+            });
+          } else {
+            showChangePinError('Current PIN is incorrect');
+          }
+        });
+      }
     });
 
     // ==========================================
@@ -1133,21 +1304,36 @@ if (typeof document !== 'undefined') {
     // ==========================================
     const vaultNavProfileBtn = document.getElementById('vaultNavProfileBtn');
     const vaultNavCredentialsBtn = document.getElementById('vaultNavCredentialsBtn');
+    const vaultNavBackupBtn = document.getElementById('vaultNavBackupBtn');
     const vaultProfileSection = document.getElementById('vaultProfileSection');
     const vaultCredentialsSection = document.getElementById('vaultCredentialsSection');
+    const vaultBackupSection = document.getElementById('vaultBackupSection');
 
     vaultNavProfileBtn?.addEventListener('click', () => {
       vaultNavProfileBtn.classList.add('active');
       vaultNavCredentialsBtn?.classList.remove('active');
+      vaultNavBackupBtn?.classList.remove('active');
       vaultProfileSection?.classList.remove('hidden');
       vaultCredentialsSection?.classList.add('hidden');
+      vaultBackupSection?.classList.add('hidden');
     });
 
     vaultNavCredentialsBtn?.addEventListener('click', () => {
       vaultNavCredentialsBtn.classList.add('active');
       vaultNavProfileBtn?.classList.remove('active');
+      vaultNavBackupBtn?.classList.remove('active');
       vaultCredentialsSection?.classList.remove('hidden');
       vaultProfileSection?.classList.add('hidden');
+      vaultBackupSection?.classList.add('hidden');
+    });
+
+    vaultNavBackupBtn?.addEventListener('click', () => {
+      vaultNavBackupBtn.classList.add('active');
+      vaultNavProfileBtn?.classList.remove('active');
+      vaultNavCredentialsBtn?.classList.remove('active');
+      vaultBackupSection?.classList.remove('hidden');
+      vaultProfileSection?.classList.add('hidden');
+      vaultCredentialsSection?.classList.add('hidden');
     });
 
     const vaultFullName = document.getElementById('vaultFullName');
@@ -1183,7 +1369,7 @@ if (typeof document !== 'undefined') {
             if (vaultPostalCode) vaultPostalCode.value = p.postalCode || '';
             if (vaultGithub) vaultGithub.value = p.githubUrl || '';
 
-            renderCredentialsList(res.vault.siteCredentials || []);
+            renderCredentialsList(res.vault.credentials || res.vault.siteCredentials || []);
           }
         });
       }
@@ -1307,6 +1493,96 @@ if (typeof document !== 'undefined') {
           if (vaultNewPassword) vaultNewPassword.value = '';
           loadVaultData();
           addAuditEntry('VAULT', `Saved credential for ${domain} in domain-scoped vault`, 'pass');
+        });
+      }
+    });
+
+    // Backup & Restore handlers
+    const vaultExportBtn = document.getElementById('vaultExportBtn');
+    const vaultImportFileInput = document.getElementById('vaultImportFileInput');
+    const vaultSelectFileBtn = document.getElementById('vaultSelectFileBtn');
+    const vaultImportBtn = document.getElementById('vaultImportBtn');
+    const vaultFileLabel = document.getElementById('vaultFileLabel');
+    const vaultBackupFeedback = document.getElementById('vaultBackupFeedback');
+    let pendingBackupJson = null;
+
+    function showBackupFeedback(msg, type = 'success') {
+      if (!vaultBackupFeedback) return;
+      vaultBackupFeedback.textContent = msg;
+      vaultBackupFeedback.className = `backup-feedback ${type}`;
+      vaultBackupFeedback.classList.remove('hidden');
+      setTimeout(() => {
+        vaultBackupFeedback.classList.add('hidden');
+      }, 4000);
+    }
+
+    vaultExportBtn?.addEventListener('click', () => {
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ target: 'privapilot-background', type: 'EXPORT_VAULT_BACKUP' }, (res) => {
+          if (res && res.success && res.backupJson) {
+            const blob = new Blob([res.backupJson], { type: 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const dateStr = new Date().toISOString().slice(0, 10);
+            a.href = url;
+            a.download = `privapilot-vault-backup-${dateStr}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showBackupFeedback('Vault backup successfully exported to device (.json)', 'success');
+            addAuditEntry('VAULT', 'Personal Vault backup exported to local device', 'pass');
+          } else {
+            showBackupFeedback('Failed to export vault backup', 'error');
+          }
+        });
+      }
+    });
+
+    vaultSelectFileBtn?.addEventListener('click', () => {
+      vaultImportFileInput?.click();
+    });
+
+    vaultImportFileInput?.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (vaultFileLabel) vaultFileLabel.textContent = file.name;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        pendingBackupJson = event.target?.result;
+        if (vaultImportBtn) vaultImportBtn.disabled = false;
+      };
+      reader.onerror = () => {
+        showBackupFeedback('Could not read selected backup file', 'error');
+        pendingBackupJson = null;
+        if (vaultImportBtn) vaultImportBtn.disabled = true;
+      };
+      reader.readAsText(file);
+    });
+
+    vaultImportBtn?.addEventListener('click', () => {
+      if (!pendingBackupJson) return;
+      if (!confirm('Restoring will replace existing vault profile and site credentials with the backup file data. Continue?')) {
+        return;
+      }
+
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+          target: 'privapilot-background',
+          type: 'IMPORT_VAULT_BACKUP',
+          backupJson: pendingBackupJson
+        }, (res) => {
+          if (res && res.success) {
+            showBackupFeedback('Vault restored successfully from backup!', 'success');
+            addAuditEntry('VAULT', 'Personal Vault successfully restored from device backup', 'pass');
+            loadVaultData();
+            pendingBackupJson = null;
+            if (vaultImportBtn) vaultImportBtn.disabled = true;
+            if (vaultFileLabel) vaultFileLabel.textContent = 'Choose .json Backup File';
+          } else {
+            showBackupFeedback(res?.error || 'Failed to restore vault backup', 'error');
+          }
         });
       }
     });

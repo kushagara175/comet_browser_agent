@@ -19745,6 +19745,7 @@ var AuditLogger = class {
 
 // src/vault/vault-store.ts
 var VAULT_STORAGE_KEY = "privapilot_personal_vault_v1";
+var DEFAULT_VAULT_PIN = "1234";
 var DEFAULT_USER_PROFILE = {
   fullName: "Kushagra Singh",
   firstName: "Kushagra",
@@ -19761,6 +19762,7 @@ var DEFAULT_USER_PROFILE = {
 };
 var DEFAULT_VAULT_STATE = {
   version: 1,
+  masterPin: DEFAULT_VAULT_PIN,
   profile: DEFAULT_USER_PROFILE,
   credentials: [
     {
@@ -19897,6 +19899,73 @@ async function deleteSiteCredential(idOrDomain, username) {
     return true;
   }
   return false;
+}
+async function getVaultPin() {
+  const vault = await loadVault();
+  return vault.masterPin || DEFAULT_VAULT_PIN;
+}
+async function verifyVaultPin(pin) {
+  if (!pin || typeof pin !== "string") return false;
+  const currentPin = await getVaultPin();
+  return pin.trim() === currentPin.trim();
+}
+async function setVaultPin(newPin) {
+  if (!newPin || typeof newPin !== "string" || newPin.trim().length < 4) {
+    return false;
+  }
+  const vault = await loadVault();
+  vault.masterPin = newPin.trim();
+  await saveVault(vault);
+  return true;
+}
+async function exportVaultJson() {
+  const vault = await loadVault();
+  const backup = {
+    app: "privapilot",
+    exportVersion: 1,
+    exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    vault: {
+      profile: vault.profile,
+      credentials: vault.credentials,
+      masterPin: vault.masterPin || DEFAULT_VAULT_PIN
+    }
+  };
+  return JSON.stringify(backup, null, 2);
+}
+async function importVaultJson(jsonStr) {
+  try {
+    const data = JSON.parse(jsonStr);
+    const vaultData = data.vault || data;
+    if (!vaultData.profile || typeof vaultData.profile !== "object") {
+      return { success: false, error: "Invalid backup: missing profile data" };
+    }
+    if (!Array.isArray(vaultData.credentials)) {
+      return { success: false, error: "Invalid backup: credentials must be a list" };
+    }
+    const current = await loadVault();
+    const restored = {
+      version: 1,
+      masterPin: vaultData.masterPin && typeof vaultData.masterPin === "string" ? vaultData.masterPin : current.masterPin || DEFAULT_VAULT_PIN,
+      profile: {
+        ...DEFAULT_USER_PROFILE,
+        ...vaultData.profile
+      },
+      credentials: vaultData.credentials.map((c) => ({
+        id: c.id || `cred_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        domain: normalizeDomain(c.domain || ""),
+        title: c.title || c.domain || "Site Credential",
+        usernameOrEmail: c.usernameOrEmail || "",
+        password: c.password || "",
+        createdAt: c.createdAt || Date.now(),
+        lastUsedAt: c.lastUsedAt
+      })).filter((c) => c.domain && c.password),
+      updatedAt: Date.now()
+    };
+    await saveVault(restored);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message || "Failed to parse JSON backup" };
+  }
 }
 
 // src/vault/semantic-matcher.ts
@@ -22847,6 +22916,22 @@ async function handleSidepanelRequest(message) {
     await deleteSiteCredential(message.domain, message.username);
     return { success: true };
   }
+  if (message.type === "VERIFY_VAULT_PIN") {
+    const valid = await verifyVaultPin(message.pin || "");
+    return { success: true, valid };
+  }
+  if (message.type === "SET_VAULT_PIN") {
+    const success = await setVaultPin(message.newPin || "");
+    return { success };
+  }
+  if (message.type === "EXPORT_VAULT_BACKUP") {
+    const backupJson = await exportVaultJson();
+    return { success: true, backupJson };
+  }
+  if (message.type === "IMPORT_VAULT_BACKUP") {
+    const res = await importVaultJson(message.backupJson || "");
+    return res;
+  }
   if (message.type === "CANCEL_RUN" || message.type === "STOP_RUN") {
     coordinator.cancelRun();
     return { success: true, state: "idle", message: "Run cancelled by user" };
@@ -22998,6 +23083,38 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
     if (message.type === "DELETE_SITE_CREDENTIAL") {
       deleteSiteCredential(message.domain, message.username).then(() => {
         sendResponse({ success: true });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+    if (message.type === "VERIFY_VAULT_PIN") {
+      verifyVaultPin(message.pin || "").then((valid) => {
+        sendResponse({ success: true, valid });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+    if (message.type === "SET_VAULT_PIN") {
+      setVaultPin(message.newPin || "").then((success) => {
+        sendResponse({ success });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+    if (message.type === "EXPORT_VAULT_BACKUP") {
+      exportVaultJson().then((backupJson) => {
+        sendResponse({ success: true, backupJson });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+    if (message.type === "IMPORT_VAULT_BACKUP") {
+      importVaultJson(message.backupJson || "").then((res) => {
+        sendResponse(res);
       }).catch((err) => {
         sendResponse({ success: false, error: err.message });
       });

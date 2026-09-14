@@ -5,6 +5,7 @@
  * Strict Zero-Leakage Policy: No vault entries or unmasked passwords ever leave the device.
  */
 const VAULT_STORAGE_KEY = 'privapilot_personal_vault_v1';
+export const DEFAULT_VAULT_PIN = '1234';
 export const DEFAULT_USER_PROFILE = {
     fullName: 'Kushagra Singh',
     firstName: 'Kushagra',
@@ -21,6 +22,7 @@ export const DEFAULT_USER_PROFILE = {
 };
 const DEFAULT_VAULT_STATE = {
     version: 1,
+    masterPin: DEFAULT_VAULT_PIN,
     profile: DEFAULT_USER_PROFILE,
     credentials: [
         {
@@ -192,6 +194,90 @@ export async function deleteSiteCredential(idOrDomain, username) {
         return true;
     }
     return false;
+}
+/**
+ * Retrieves the current vault PIN, falling back to DEFAULT_VAULT_PIN ('1234') if unset.
+ */
+export async function getVaultPin() {
+    const vault = await loadVault();
+    return vault.masterPin || DEFAULT_VAULT_PIN;
+}
+/**
+ * Verifies if the provided PIN matches the stored vault PIN.
+ */
+export async function verifyVaultPin(pin) {
+    if (!pin || typeof pin !== 'string')
+        return false;
+    const currentPin = await getVaultPin();
+    return pin.trim() === currentPin.trim();
+}
+/**
+ * Updates the master PIN for vault access.
+ */
+export async function setVaultPin(newPin) {
+    if (!newPin || typeof newPin !== 'string' || newPin.trim().length < 4) {
+        return false;
+    }
+    const vault = await loadVault();
+    vault.masterPin = newPin.trim();
+    await saveVault(vault);
+    return true;
+}
+/**
+ * Exports the entire vault state as a sanitized JSON backup string for safe device storage.
+ */
+export async function exportVaultJson() {
+    const vault = await loadVault();
+    const backup = {
+        app: 'privapilot',
+        exportVersion: 1,
+        exportedAt: new Date().toISOString(),
+        vault: {
+            profile: vault.profile,
+            credentials: vault.credentials,
+            masterPin: vault.masterPin || DEFAULT_VAULT_PIN
+        }
+    };
+    return JSON.stringify(backup, null, 2);
+}
+/**
+ * Imports and restores vault state from a JSON backup string.
+ */
+export async function importVaultJson(jsonStr) {
+    try {
+        const data = JSON.parse(jsonStr);
+        const vaultData = data.vault || data;
+        if (!vaultData.profile || typeof vaultData.profile !== 'object') {
+            return { success: false, error: 'Invalid backup: missing profile data' };
+        }
+        if (!Array.isArray(vaultData.credentials)) {
+            return { success: false, error: 'Invalid backup: credentials must be a list' };
+        }
+        const current = await loadVault();
+        const restored = {
+            version: 1,
+            masterPin: vaultData.masterPin && typeof vaultData.masterPin === 'string' ? vaultData.masterPin : (current.masterPin || DEFAULT_VAULT_PIN),
+            profile: {
+                ...DEFAULT_USER_PROFILE,
+                ...vaultData.profile
+            },
+            credentials: vaultData.credentials.map((c) => ({
+                id: c.id || `cred_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                domain: normalizeDomain(c.domain || ''),
+                title: c.title || c.domain || 'Site Credential',
+                usernameOrEmail: c.usernameOrEmail || '',
+                password: c.password || '',
+                createdAt: c.createdAt || Date.now(),
+                lastUsedAt: c.lastUsedAt
+            })).filter((c) => c.domain && c.password),
+            updatedAt: Date.now()
+        };
+        await saveVault(restored);
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message || 'Failed to parse JSON backup' };
+    }
 }
 /**
  * Resets the in-memory vault (primarily for unit test isolation).

@@ -766,6 +766,18 @@ html, body {
   color: #ffffff;
 }
 
+.vault-menu-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  letter-spacing: 0.2px;
+}
+
 .provider-pill {
   display: inline-flex;
   align-items: center;
@@ -2492,6 +2504,345 @@ html, body {
   padding: 16px;
   font-style: italic;
 }
+
+/* PIN Security Lock Screen */
+.vault-lock-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  padding: 20px 10px;
+}
+
+.vault-lock-card {
+  width: 100%;
+  max-width: 320px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+}
+
+.lock-shield-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.25) 0%, rgba(30, 41, 59, 0.8) 70%);
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.vault-lock-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #f8fafc;
+  margin: 0 0 8px 0;
+  letter-spacing: -0.2px;
+}
+
+.vault-lock-desc {
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.5;
+  margin: 0 0 20px 0;
+}
+
+.vault-pin-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.pin-input-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.vault-pin-field {
+  width: 180px;
+  height: 48px;
+  background: #0f172a;
+  border: 1.5px solid #334155;
+  border-radius: 10px;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 10px;
+  color: #60a5fa;
+  caret-color: #38bdf8;
+  outline: none;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.vault-pin-field:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25), inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.vault-pin-error {
+  font-size: 11px;
+  font-weight: 500;
+  color: #ef4444;
+  margin-top: 2px;
+  animation: shakeError 0.35s ease;
+}
+
+@keyframes shakeError {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.btn-vault-unlock {
+  width: 100%;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.btn-vault-unlock:hover {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+}
+
+.vault-lock-hint {
+  margin-top: 16px;
+  font-size: 10.5px;
+  color: #64748b;
+}
+
+.vault-lock-hint code {
+  background: #0f172a;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #94a3b8;
+  font-family: monospace;
+}
+
+/* Unlocked Container */
+.vault-unlocked-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.vault-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-vault-header-action {
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-vault-header-action:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #f8fafc;
+}
+
+.btn-vault-header-action.btn-lock:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+/* Change PIN Card */
+.vault-change-pin-card {
+  background: #1e293b;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.change-pin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.change-pin-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #93c5fd;
+}
+
+.change-pin-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 5px;
+}
+
+.change-pin-close:hover {
+  color: #f1f5f9;
+}
+
+.change-pin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Backup & Restore Section */
+.backup-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.backup-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.backup-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.backup-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f8fafc;
+  margin: 0 0 4px 0;
+}
+
+.backup-desc {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.backup-desc code {
+  background: #0f172a;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: #38bdf8;
+  font-family: monospace;
+}
+
+.btn-backup-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+}
+
+.btn-backup-action.export {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.btn-backup-action.export:hover {
+  background: #1d4ed8;
+}
+
+.backup-import-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-backup-action.choose {
+  background: #0f172a;
+  color: #cbd5e1;
+  border: 1px solid #475569;
+}
+
+.btn-backup-action.choose:hover {
+  background: #1e293b;
+  border-color: #64748b;
+  color: #f8fafc;
+}
+
+.btn-backup-action.restore {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.btn-backup-action.restore:hover:not(:disabled) {
+  background: #059669;
+}
+
+.btn-backup-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.backup-feedback {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.backup-feedback.success {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.backup-feedback.error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
 
 
 

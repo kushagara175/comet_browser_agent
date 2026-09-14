@@ -8,7 +8,11 @@ import {
   loadVault,
   saveUserProfile,
   saveSiteCredential,
-  deleteSiteCredential
+  deleteSiteCredential,
+  verifyVaultPin,
+  setVaultPin,
+  exportVaultJson,
+  importVaultJson
 } from '../vault/index.js';
 
 declare const chrome: any;
@@ -118,6 +122,26 @@ async function handleSidepanelRequest(message: any): Promise<any> {
   if (message.type === 'DELETE_SITE_CREDENTIAL') {
     await deleteSiteCredential(message.domain, message.username);
     return { success: true };
+  }
+
+  if (message.type === 'VERIFY_VAULT_PIN') {
+    const valid = await verifyVaultPin(message.pin || '');
+    return { success: true, valid };
+  }
+
+  if (message.type === 'SET_VAULT_PIN') {
+    const success = await setVaultPin(message.newPin || '');
+    return { success };
+  }
+
+  if (message.type === 'EXPORT_VAULT_BACKUP') {
+    const backupJson = await exportVaultJson();
+    return { success: true, backupJson };
+  }
+
+  if (message.type === 'IMPORT_VAULT_BACKUP') {
+    const res = await importVaultJson(message.backupJson || '');
+    return res;
   }
 
   if (message.type === 'CANCEL_RUN' || message.type === 'STOP_RUN') {
@@ -291,6 +315,42 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     if (message.type === 'DELETE_SITE_CREDENTIAL') {
       deleteSiteCredential(message.domain, message.username).then(() => {
         sendResponse({ success: true });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+
+    if (message.type === 'VERIFY_VAULT_PIN') {
+      verifyVaultPin(message.pin || '').then((valid) => {
+        sendResponse({ success: true, valid });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+
+    if (message.type === 'SET_VAULT_PIN') {
+      setVaultPin(message.newPin || '').then((success) => {
+        sendResponse({ success });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+
+    if (message.type === 'EXPORT_VAULT_BACKUP') {
+      exportVaultJson().then((backupJson) => {
+        sendResponse({ success: true, backupJson });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+
+    if (message.type === 'IMPORT_VAULT_BACKUP') {
+      importVaultJson(message.backupJson || '').then((res) => {
+        sendResponse(res);
       }).catch((err) => {
         sendResponse({ success: false, error: err.message });
       });

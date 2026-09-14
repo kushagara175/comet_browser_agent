@@ -11,6 +11,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
 import { validateSanitizedPayload } from '../apps/server/dist/schemas/payload-validator.js';
 import {
   classifyFieldDescriptor,
@@ -23,6 +25,12 @@ import {
   getCredentialsForDomain,
   deleteSiteCredential,
   normalizeDomain,
+  getVaultPin,
+  verifyVaultPin,
+  setVaultPin,
+  exportVaultJson,
+  importVaultJson,
+  DEFAULT_VAULT_PIN,
   _resetInMemoryVault
 } from '../apps/extension/dist/vault/vault-store.js';
 
@@ -330,4 +338,183 @@ test('Vault Store: Domain normalization handles diverse URL formats', () => {
   assert.strictEqual(normalizeDomain('http://www.google.com/search?q=test'), 'google.com');
   assert.strictEqual(normalizeDomain('subdomain.example.org:8080/path'), 'subdomain.example.org');
   assert.strictEqual(normalizeDomain('LOCALHOST:3000'), 'localhost');
+});
+
+// ==========================================
+// 5. PIN Security & Master Lock
+// ==========================================
+
+test('Vault PIN Security: Defaults to 1234, verifies correctly, rejects bad PIN', async () => {
+  _resetInMemoryVault();
+  assert.strictEqual(DEFAULT_VAULT_PIN, '1234');
+  const initialPin = await getVaultPin();
+  assert.strictEqual(initialPin, '1234');
+
+  // Correct PIN verification
+  const valid = await verifyVaultPin('1234');
+  assert.strictEqual(valid, true);
+
+  // Whitespace trimmed verification
+  const validWithSpaces = await verifyVaultPin(' 1234 ');
+  assert.strictEqual(validWithSpaces, true);
+
+  // Incorrect PIN verification
+  const invalid = await verifyVaultPin('0000');
+  assert.strictEqual(invalid, false);
+
+  const empty = await verifyVaultPin('');
+  assert.strictEqual(empty, false);
+});
+
+test('Vault PIN Security: Updates master PIN and enforces minimum 4 digits', async () => {
+  _resetInMemoryVault();
+
+  // Valid PIN update
+  const updated = await setVaultPin('5678');
+  assert.strictEqual(updated, true);
+  assert.strictEqual(await getVaultPin(), '5678');
+  assert.strictEqual(await verifyVaultPin('5678'), true);
+  assert.strictEqual(await verifyVaultPin('1234'), false);
+
+  // Rejects invalid PINs < 4 characters
+  const tooShort = await setVaultPin('12');
+  assert.strictEqual(tooShort, false);
+  assert.strictEqual(await getVaultPin(), '5678');
+
+  const emptyPin = await setVaultPin('');
+  assert.strictEqual(emptyPin, false);
+});
+
+// ==========================================
+// 6. Device Backup & Restore (JSON)
+// ==========================================
+
+test('Vault Backup & Restore: Exports valid JSON with profile and credentials', async () => {
+  _resetInMemoryVault({
+    version: 1,
+    masterPin: '4321',
+    profile: {
+      fullName: 'Kushagra Singh Backup Test',
+      email: 'kushagra@example.com',
+      phone: '+91 98765 43210',
+      organization: 'Innovation Lab'
+    },
+    credentials: [
+      {
+        id: 'cred_backup_1',
+        domain: 'sih.gov.in',
+        title: 'SIH Portal',
+        usernameOrEmail: 'team_backup',
+        password: 'BackupSecurePass2026!',
+        createdAt: Date.now()
+      }
+    ],
+    updatedAt: Date.now()
+  });
+
+  const jsonBackup = await exportVaultJson();
+  assert.ok(jsonBackup && typeof jsonBackup === 'string');
+
+  const parsed = JSON.parse(jsonBackup);
+  assert.strictEqual(parsed.app, 'privapilot');
+  assert.strictEqual(parsed.exportVersion, 1);
+  assert.ok(parsed.exportedAt);
+  assert.strictEqual(parsed.vault.profile.fullName, 'Kushagra Singh Backup Test');
+  assert.strictEqual(parsed.vault.credentials.length, 1);
+  assert.strictEqual(parsed.vault.credentials[0].domain, 'sih.gov.in');
+  assert.strictEqual(parsed.vault.masterPin, '4321');
+});
+
+test('Vault Backup & Restore: Imports and restores vault state correctly', async () => {
+  _resetInMemoryVault();
+
+  const backupData = {
+    app: 'privapilot',
+    exportVersion: 1,
+    exportedAt: new Date().toISOString(),
+    vault: {
+      masterPin: '9999',
+      profile: {
+        fullName: 'Restored User',
+        email: 'restored@example.com',
+        phone: '+91 11111 22222',
+        organization: 'Restored Org',
+        city: 'Bengaluru'
+      },
+      credentials: [
+        {
+          domain: 'restored-site.org',
+          usernameOrEmail: 'restored_user',
+          password: 'RestoredPassword#999'
+        }
+      ]
+    }
+  };
+
+  const res = await importVaultJson(JSON.stringify(backupData));
+  assert.strictEqual(res.success, true);
+
+  const profile = await getUserProfile();
+  assert.strictEqual(profile.fullName, 'Restored User');
+  assert.strictEqual(profile.email, 'restored@example.com');
+  assert.strictEqual(profile.phone, '+91 11111 22222');
+
+  const pin = await getVaultPin();
+  assert.strictEqual(pin, '9999');
+
+  const creds = await getCredentialsForDomain('restored-site.org');
+  assert.strictEqual(creds.length, 1);
+  assert.strictEqual(creds[0].usernameOrEmail, 'restored_user');
+  assert.strictEqual(creds[0].password, 'RestoredPassword#999');
+});
+
+test('Vault Backup & Restore: Safely rejects corrupted or malformed backup payloads', async () => {
+  _resetInMemoryVault();
+
+  // Invalid JSON syntax
+  const badSyntax = await importVaultJson('{ invalid json: ');
+  assert.strictEqual(badSyntax.success, false);
+  assert.ok(badSyntax.error);
+
+  // Missing profile
+  const missingProfile = await importVaultJson(JSON.stringify({ vault: { credentials: [] } }));
+  assert.strictEqual(missingProfile.success, false);
+  assert.match(missingProfile.error, /missing profile/i);
+
+  // Non-array credentials
+  const badCreds = await importVaultJson(JSON.stringify({ vault: { profile: { fullName: 'Test' }, credentials: 'not-an-array' } }));
+  assert.strictEqual(badCreds.success, false);
+  assert.match(badCreds.error, /credentials must be a list/i);
+});
+
+// ==========================================
+// 7. Sidepanel UI Integrity Check
+// ==========================================
+
+test('Sidepanel UI Integrity: Contains menuVaultBtn, PIN lock screen, change PIN, and backup controls', () => {
+  const htmlPath = path.resolve('apps/extension/src/sidepanel/sidepanel.html');
+  assert.ok(fs.existsSync(htmlPath), 'sidepanel.html exists');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  // Menu item with PIN badge
+  assert.ok(html.includes('id="menuVaultBtn"'), 'menuVaultBtn present in dropdown menu');
+  assert.ok(html.includes('vault-menu-badge'), 'vault-menu-badge present');
+
+  // PIN lock screen
+  assert.ok(html.includes('id="vaultPinLockScreen"'), 'vaultPinLockScreen present');
+  assert.ok(html.includes('id="vaultPinInput"'), 'vaultPinInput present');
+  assert.ok(html.includes('id="vaultUnlockBtn"'), 'vaultUnlockBtn present');
+
+  // Unlocked container & Change PIN modal
+  assert.ok(html.includes('id="vaultUnlockedContainer"'), 'vaultUnlockedContainer present');
+  assert.ok(html.includes('id="vaultLockBtn"'), 'vaultLockBtn present');
+  assert.ok(html.includes('id="vaultChangePinBtn"'), 'vaultChangePinBtn present');
+  assert.ok(html.includes('id="vaultChangePinModal"'), 'vaultChangePinModal present');
+
+  // Backup & Restore
+  assert.ok(html.includes('id="vaultNavBackupBtn"'), 'vaultNavBackupBtn present');
+  assert.ok(html.includes('id="vaultBackupSection"'), 'vaultBackupSection present');
+  assert.ok(html.includes('id="vaultExportBtn"'), 'vaultExportBtn present');
+  assert.ok(html.includes('id="vaultImportBtn"'), 'vaultImportBtn present');
+  assert.ok(html.includes('id="vaultImportFileInput"'), 'vaultImportFileInput present');
 });

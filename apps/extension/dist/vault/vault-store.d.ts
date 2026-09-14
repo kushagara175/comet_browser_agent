@@ -31,10 +31,12 @@ export interface SiteCredential {
 }
 export interface PersonalVaultState {
     version: 1;
+    masterPin?: string;
     profile: UserProfileData;
     credentials: SiteCredential[];
     updatedAt: number;
 }
+export declare const DEFAULT_VAULT_PIN = "1234";
 export declare const DEFAULT_USER_PROFILE: UserProfileData;
 /**
  * Normalizes an arbitrary URL, hostname, or string into a clean lowercase domain origin.
@@ -73,6 +75,29 @@ export declare function saveSiteCredential(cred: Omit<SiteCredential, 'id' | 'cr
  * Deletes a site credential by unique ID, or by domain and username.
  */
 export declare function deleteSiteCredential(idOrDomain: string, username?: string): Promise<boolean>;
+/**
+ * Retrieves the current vault PIN, falling back to DEFAULT_VAULT_PIN ('1234') if unset.
+ */
+export declare function getVaultPin(): Promise<string>;
+/**
+ * Verifies if the provided PIN matches the stored vault PIN.
+ */
+export declare function verifyVaultPin(pin: string): Promise<boolean>;
+/**
+ * Updates the master PIN for vault access.
+ */
+export declare function setVaultPin(newPin: string): Promise<boolean>;
+/**
+ * Exports the entire vault state as a sanitized JSON backup string for safe device storage.
+ */
+export declare function exportVaultJson(): Promise<string>;
+/**
+ * Imports and restores vault state from a JSON backup string.
+ */
+export declare function importVaultJson(jsonStr: string): Promise<{
+    success: boolean;
+    error?: string;
+}>;
 /**
  * Resets the in-memory vault (primarily for unit test isolation).
  */
