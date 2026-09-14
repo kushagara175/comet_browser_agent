@@ -522,7 +522,8 @@ export class VlmReasoningEngine {
         const annotated = cleanReason
             ? {
                 ...fallbackProposal,
-                rationale: `[offline reasoner: ${cleanReason}] ${fallbackProposal.rationale}`.slice(0, 500)
+                rationale: `[offline reasoner: ${cleanReason}] ${fallbackProposal.rationale}`.slice(0, 500),
+                reply: fallbackProposal.reply || (fallbackProposal.kind === 'finish' ? `⚠️ Reasoning model unavailable (${cleanReason}). ${fallbackProposal.rationale}` : undefined)
             }
             : fallbackProposal;
         let validation = validateActionProposal(annotated, payload.elements);
