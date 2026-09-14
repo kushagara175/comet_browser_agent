@@ -2011,7 +2011,10 @@ if (typeof document !== 'undefined') {
       }
 
       // 0. Conversational Model Reply (from Chat Endpoint / Local Model / Agent Answer)
-      const modelReply = res.reply || res.proposal?.reply || (res.proposal?.kind === 'answer' ? (res.proposal?.rationale || res.message) : null);
+      const modelReply = res.reply ||
+        res.proposal?.reply ||
+        (res.proposal?.kind === 'answer' ? (res.proposal?.rationale || res.message) : null) ||
+        (res.proposal?.kind === 'finish' && res.proposal?.rationale && res.proposal.rationale.length > 20 && !res.proposal.rationale.toLowerCase().startsWith('task completed') && !res.proposal.rationale.toLowerCase().startsWith('action executed') ? res.proposal.rationale : null);
       if (res && modelReply) {
         const maskCount = res.maskCount ?? res.sanitized?.maskCount ?? 0;
         const elementCount = res.elementCount ?? res.sanitized?.elementCount ?? (res.sanitized?.elements ? res.sanitized.elements.length : 0);
@@ -2300,13 +2303,9 @@ if (typeof document !== 'undefined') {
           <div class="monologue-drawer" style="display: block;">
             <div class="monologue-content">
               <div class="live-thought-stream" style="display: flex; flex-direction: column; gap: 5px; padding: 2px 0;">
-                <div class="live-thought-line" style="display: flex; align-items: baseline; gap: 7px; font-size: 11.5px; color: #cbd5e1; line-height: 1.5; padding: 2px 0;">
-                  <span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">👁️</span>
-                  <span class="thought-body" style="flex: 1;"><strong class="thought-category" style="color: #93c5fd; font-weight: 600; margin-right: 5px;">Observation:</strong>Analyzing active page structure and interactive controls...</span>
-                </div>
-                <div class="live-thought-line" style="display: flex; align-items: baseline; gap: 7px; font-size: 11.5px; color: #cbd5e1; line-height: 1.5; padding: 2px 0;">
-                  <span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">🎯</span>
-                  <span class="thought-body" style="flex: 1;"><strong class="thought-category" style="color: #93c5fd; font-weight: 600; margin-right: 5px;">Intent & Strategy:</strong>Grounding goal <em>"${escapeHtml(goalText)}"</em> against viewport controls...</span>
+                <div class="live-thought-line initial-perception-shimmer" style="display: flex; align-items: baseline; gap: 7px; font-size: 11.5px; color: #94a3b8; line-height: 1.5; padding: 2px 0; font-style: italic;">
+                  <span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">⚡</span>
+                  <span class="thought-body" style="flex: 1;">Perceiving page and awaiting model reasoning...</span>
                 </div>
               </div>
             </div>
@@ -2530,6 +2529,8 @@ if (typeof document !== 'undefined') {
             if (message.state === 'awaiting-reasoning') {
               const liveStream = chatMessages.querySelector('.chat-msg.agent:last-child .live-thought-stream');
               if (liveStream && !liveStream.querySelector('.thought-reasoning-step')) {
+                const shimmer = liveStream.querySelector('.initial-perception-shimmer');
+                if (shimmer) shimmer.remove();
                 const waitLine = document.createElement('div');
                 waitLine.className = 'live-thought-line thought-reasoning-step';
                 waitLine.style.display = 'flex';
@@ -2568,6 +2569,8 @@ if (typeof document !== 'undefined') {
                 const liveStream = lastAgentBubble.querySelector('.live-thought-stream');
                 const placeholder = liveStream?.querySelector('.thought-reasoning-step');
                 if (placeholder) placeholder.remove();
+                const shimmer = liveStream?.querySelector('.initial-perception-shimmer');
+                if (shimmer) shimmer.remove();
 
                 const liveReasoning = sanitizeReasoningText(act.reasoning) || sanitizeReasoningText(act.rationale);
                 if (liveStream && liveReasoning) {

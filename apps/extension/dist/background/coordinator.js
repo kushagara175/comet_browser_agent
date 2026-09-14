@@ -358,17 +358,8 @@ export class RunCoordinator {
                     expectedPostcondition: { kind: 'status_changed' }
                 };
             }
-            // Fallback: summarize available stats if available
-            const anyStats = pageCounters.length > 0
-                ? pageCounters.map(c => `${c.label}: ${c.value}`).join(', ')
-                : (sanitized.pageState?.title || 'Page observed');
-            return {
-                actionId: `act_local_answer_${step}_${Date.now()}`,
-                kind: 'finish',
-                confidence: 0.90,
-                risk: 'safe',
-                rationale: `Information retrieval completed for "${topic}": ${anyStats}`
-            };
+            // If no exact match on current page, return null so central model reasoning executes
+            return null;
         }
         // 1c. Domain Playbook Intelligence (Site-specific navigation, target grounding, metrics)
         const urlForPlaybook = currentUrl || (sanitized.pageState?.routeFingerprint ? `https://sih.gov.in${sanitized.pageState.routeFingerprint}` : '');
@@ -1575,7 +1566,8 @@ export class RunCoordinator {
                         proposal = await this.httpClient.requestReasoningAction(sanitized);
                     }
                     catch (err) {
-                        // Fallback to local offline router only if the server is unreachable
+                        console.warn('[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:', err?.message || err);
+                        // Fallback to local offline router (Playbooks, Form Filling, Metrics, Bookmarks, Scroll)
                         const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
                         if (localProposal) {
                             proposal = localProposal;

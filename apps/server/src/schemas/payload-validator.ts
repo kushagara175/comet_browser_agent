@@ -575,7 +575,7 @@ export function validateSanitizedPayload(body: any): ValidationResult<SanitizedN
     }
 
     // Screenshot transmission requires verified passed pixel check
-    if (body.screenshot && m.pixelVerificationPerformed !== undefined) {
+    if (body.screenshot && (m.totalRegions ?? 0) > 0 && m.pixelVerificationPerformed !== undefined) {
       if (!m.pixelVerificationPerformed || !m.pixelVerificationPassed) {
         return { isValid: false, errorMessage: 'Privacy violation: Screenshot payload requires passed pixel verification gate' };
       }

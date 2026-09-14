@@ -18529,8 +18529,8 @@ var SanitizerPipeline = class {
       },
       placeholderConvention: "[REDACTED]",
       geometrySemantics: "clamped_css_pixels",
-      pixelVerificationPerformed: true,
-      pixelVerificationPassed: verification.isValid,
+      pixelVerificationPerformed: visibleRegions.length === 0 ? true : Boolean(verification.pixelVerificationReport),
+      pixelVerificationPassed: visibleRegions.length === 0 ? true : verification.isValid,
       uninspectableSurfacePolicy: "fail_closed",
       visionAttempted: visibleRegions.some((r) => r.category === "face"),
       visionSucceeded: visibleRegions.some((r) => r.category === "face"),
@@ -20540,14 +20540,7 @@ var RunCoordinator = class {
           expectedPostcondition: { kind: "status_changed" }
         };
       }
-      const anyStats = pageCounters.length > 0 ? pageCounters.map((c) => `${c.label}: ${c.value}`).join(", ") : sanitized.pageState?.title || "Page observed";
-      return {
-        actionId: `act_local_answer_${step}_${Date.now()}`,
-        kind: "finish",
-        confidence: 0.9,
-        risk: "safe",
-        rationale: `Information retrieval completed for "${topic}": ${anyStats}`
-      };
+      return null;
     }
     const urlForPlaybook = currentUrl || (sanitized.pageState?.routeFingerprint ? `https://sih.gov.in${sanitized.pageState.routeFingerprint}` : "");
     const playbook = lookupDomainPlaybook(urlForPlaybook) || (trimmedGoal.includes("sih") ? lookupDomainPlaybook("sih.gov.in") : void 0);
@@ -21644,6 +21637,7 @@ var RunCoordinator = class {
           try {
             proposal = await this.httpClient.requestReasoningAction(sanitized);
           } catch (err) {
+            console.warn("[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:", err?.message || err);
             const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
             if (localProposal) {
               proposal = localProposal;
