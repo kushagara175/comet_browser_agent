@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PrivaPilot — Privacy Mission Control HUD</title>
-  <link rel="stylesheet" href="sidepanel.css?v=2.3.3" />
+  <link rel="stylesheet" href="sidepanel.css?v=2.3.4" />
 </head>
 <body>
   <div class="app-container">
@@ -606,8 +606,11 @@
             <span class="voice-thinking-dot"></span>
             <span class="voice-thinking-shimmer">Reasoning...</span>
           </div>
-          <button type="button" id="voiceSendNowBtn" class="voice-send-now-btn hidden">
-            <span>Done / Send ↵</span>
+          <button type="button" id="voiceSendNowBtn" class="voice-send-now-btn hidden" title="Send now" aria-label="Send now">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"></line>
+              <polyline points="5 12 12 5 19 12"></polyline>
+            </svg>
           </button>
           <div id="voiceModalModeSelector" class="voice-modal-mode-selector" style="display: none;">
             <button type="button" class="voice-modal-mode-pill active" data-mode="dictate">
@@ -619,20 +622,17 @@
           </div>
         </div>
 
-        <!-- BOTTOM RIGHT BORDERLESS SHIMMERING VOICE MODE SWITCHER -->
+        <!-- BOTTOM RIGHT CRISP BORDERLESS SHIMMERING SINGLE-MODE TOGGLE -->
         <div id="voiceOverlayModeWrapper" class="voice-overlay-mode-wrapper">
           <div id="voiceShimmerModeBar" class="voice-shimmer-mode-bar">
-            <button type="button" class="voice-shimmer-mode-btn active" data-mode="dictate" title="Switch to Voice to Text">
+            <button type="button" id="voiceShimmerToggleBtn" class="voice-shimmer-mode-btn active" title="Click to switch mode">
               <span class="mode-shimmer-dot"></span>
-              <span class="mode-shimmer-text">Voice to Text</span>
-            </button>
-            <span class="voice-shimmer-divider">/</span>
-            <button type="button" class="voice-shimmer-mode-btn" data-mode="talk" title="Switch to Live Conversation">
-              <span class="mode-shimmer-dot"></span>
-              <span class="mode-shimmer-text">Live Conversation</span>
+              <span id="voiceShimmerActiveText" class="mode-shimmer-text">Voice to Text</span>
             </button>
           </div>
           <!-- Compatibility elements -->
+          <button type="button" class="voice-shimmer-mode-btn" data-mode="dictate" style="display: none;"></button>
+          <button type="button" class="voice-shimmer-mode-btn" data-mode="talk" style="display: none;"></button>
           <button type="button" id="voiceOverlayModeBtn" class="voice-overlay-mode-chip" style="display: none;"></button>
           <span id="voiceOverlayModeLabel" style="display: none;">Voice to Text</span>
           <span id="voiceOverlayModeIcon" style="display: none;">📝</span>
@@ -660,7 +660,7 @@
   </div>
 
   <script src="waves-shader.js"></script>
-  <script type="module" src="sidepanel.js?v=2.3.3"></script>
+  <script type="module" src="sidepanel.js?v=2.3.4"></script>
 </body>
 </html>
 

@@ -3208,22 +3208,42 @@ html, body {
 }
 
 .voice-send-now-btn {
-  margin-top: 10px;
-  padding: 6px 14px;
-  border-radius: 14px;
-  background: rgba(138, 180, 248, 0.18) !important;
-  border: 1px solid rgba(138, 180, 248, 0.35) !important;
+  margin-top: 14px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
   color: #8ab4f8;
-  font-size: 11px;
-  font-weight: 600;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(8px);
 }
 
 .voice-send-now-btn:hover {
-  background: rgba(138, 180, 248, 0.3) !important;
+  background: rgba(138, 180, 248, 0.25) !important;
+  border-color: rgba(138, 180, 248, 0.55) !important;
   color: #ffffff;
-  transform: scale(1.04);
+  transform: scale(1.08);
+  box-shadow: 0 0 16px rgba(138, 180, 248, 0.45);
+}
+
+.voice-send-now-btn:active {
+  transform: scale(0.94);
+}
+
+.voice-send-now-btn svg {
+  display: block;
+  stroke: currentColor;
+  transition: transform 0.15s ease;
+}
+
+.voice-send-now-btn:hover svg {
+  transform: translateY(-1px);
 }
 
 .voice-send-now-btn.hidden {
@@ -3241,7 +3261,7 @@ html, body {
 .voice-shimmer-mode-bar {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 0;
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
@@ -3252,54 +3272,46 @@ html, body {
 .voice-shimmer-mode-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   background: transparent !important;
   border: none !important;
+  outline: none !important;
   box-shadow: none !important;
   padding: 4px 6px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.42);
-  font-size: 11.5px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  user-select: none;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.voice-shimmer-mode-btn:hover {
-  color: rgba(255, 255, 255, 0.85);
-}
-
 .voice-shimmer-mode-btn .mode-shimmer-dot {
-  display: none;
-  width: 5px;
-  height: 5px;
+  display: inline-block;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #8ab4f8;
-  box-shadow: 0 0 6px #8ab4f8;
+  box-shadow: 0 0 8px #8ab4f8, 0 0 14px rgba(138, 180, 248, 0.6);
   animation: voice-dot-pulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
 }
 
-.voice-shimmer-mode-btn.active {
-  color: #ffffff;
-}
-
-.voice-shimmer-mode-btn.active .mode-shimmer-dot {
-  display: inline-block;
-}
-
-.voice-shimmer-mode-btn.active .mode-shimmer-text {
+.voice-shimmer-mode-btn .mode-shimmer-text {
   background: linear-gradient(90deg, #8ab4f8 0%, #ffffff 50%, #8ab4f8 100%);
   background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: voice-shimmer-anim 2s linear infinite;
+  animation: voice-shimmer-anim 2.2s linear infinite;
+  font-size: 12px;
   font-weight: 600;
-  text-shadow: 0 1px 8px rgba(138, 180, 248, 0.4);
+  letter-spacing: -0.01em;
+  text-shadow: 0 0 12px rgba(138, 180, 248, 0.35);
+}
+
+.voice-shimmer-mode-btn:hover {
+  filter: brightness(1.15);
 }
 
 .voice-shimmer-divider {
-  color: rgba(255, 255, 255, 0.2);
-  font-size: 11px;
+  display: none !important;
 }
 
 /* Fallback / compatibility classes */

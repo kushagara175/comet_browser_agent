@@ -118,10 +118,15 @@ test('Dual Voice Modes & Shimmering Thinking UI: sidepanel supports Voice to Tex
   // Bottom-right in-overlay borderless shimmering voice mode switcher
   assert.ok(html.includes('id="voiceOverlayModeWrapper"'), 'voiceOverlayModeWrapper must exist');
   assert.ok(html.includes('id="voiceShimmerModeBar"'), 'voiceShimmerModeBar must exist');
+  assert.ok(html.includes('id="voiceShimmerToggleBtn"'), 'voiceShimmerToggleBtn must exist');
+  assert.ok(html.includes('id="voiceShimmerActiveText"'), 'voiceShimmerActiveText must exist');
   assert.ok(html.includes('class="voice-shimmer-mode-btn'), 'voice-shimmer-mode-btn must exist');
   assert.ok(html.includes('id="voiceOverlayModeBtn"'), 'voiceOverlayModeBtn must exist');
   assert.ok(html.includes('id="voiceOverlayModeMenu"'), 'voiceOverlayModeMenu must exist');
   assert.ok(html.includes('id="voiceOverlayModeLabel"'), 'voiceOverlayModeLabel must exist');
+
+  // Minimal circular SVG send button markup
+  assert.ok(html.includes('<svg width="15" height="15"'), 'voiceSendNowBtn must contain minimal SVG send icon');
 
   // CSS styling
   const cssPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.css');
@@ -135,11 +140,13 @@ test('Dual Voice Modes & Shimmering Thinking UI: sidepanel supports Voice to Tex
   assert.ok(css.includes('.voice-overlay-mode-wrapper'), '.voice-overlay-mode-wrapper style must exist');
   assert.ok(css.includes('.voice-shimmer-mode-bar'), '.voice-shimmer-mode-bar style must exist');
   assert.ok(css.includes('.voice-shimmer-mode-btn'), '.voice-shimmer-mode-btn style must exist');
+  assert.ok(css.includes('.voice-send-now-btn'), '.voice-send-now-btn style must exist');
 
   // JS handling
   const jsPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.js');
   const js = fs.readFileSync(jsPath, 'utf-8');
   assert.ok(js.includes('currentVoiceMode'), 'currentVoiceMode must be tracked');
+  assert.ok(js.includes('voiceShimmerToggleBtn'), 'voiceShimmerToggleBtn must be wired');
   assert.ok(js.includes('speakVoiceResponse'), 'speakVoiceResponse must exist for Talk mode');
   assert.ok(js.includes('handleTalkModeConversationTurn'), 'handleTalkModeConversationTurn must exist');
   assert.ok(js.includes('spiral-cyan-03'), 'spiral-cyan-03 celestial theme preset must be used');

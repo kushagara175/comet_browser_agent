@@ -2525,6 +2525,17 @@ if (typeof document !== 'undefined') {
         voiceOverlayModeIcon.textContent = currentVoiceMode === 'talk' ? '💬' : '📝';
       }
 
+      // Borderless shimmering single-mode toggle
+      const voiceShimmerActiveText = document.getElementById('voiceShimmerActiveText');
+      if (voiceShimmerActiveText) {
+        voiceShimmerActiveText.textContent = currentVoiceMode === 'talk' ? 'Live Conversation' : 'Voice to Text';
+      }
+      const voiceShimmerToggleBtn = document.getElementById('voiceShimmerToggleBtn');
+      if (voiceShimmerToggleBtn) {
+        voiceShimmerToggleBtn.setAttribute('data-mode', currentVoiceMode);
+        voiceShimmerToggleBtn.title = `Current: ${currentVoiceMode === 'talk' ? 'Live Conversation' : 'Voice to Text'} (click to switch)`;
+      }
+
       // Borderless shimmering mode switcher
       document.querySelectorAll('.voice-shimmer-mode-btn').forEach((btn) => {
         if (btn.getAttribute('data-mode') === currentVoiceMode) {
@@ -2552,8 +2563,17 @@ if (typeof document !== 'undefined') {
 
     updateVoiceModeUI();
 
-    // Borderless shimmering mode button handlers
-    document.querySelectorAll('.voice-shimmer-mode-btn').forEach((btn) => {
+    // Borderless shimmering single-mode toggle button click handler
+    const voiceShimmerToggleBtnEl = document.getElementById('voiceShimmerToggleBtn');
+    voiceShimmerToggleBtnEl?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      currentVoiceMode = currentVoiceMode === 'talk' ? 'dictate' : 'talk';
+      try { localStorage.setItem('privapilot_voice_mode', currentVoiceMode); } catch (_) {}
+      updateVoiceModeUI();
+    });
+
+    // Borderless shimmering mode button handlers for compatibility
+    document.querySelectorAll('.voice-shimmer-mode-btn:not(#voiceShimmerToggleBtn)').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const mode = btn.getAttribute('data-mode');
