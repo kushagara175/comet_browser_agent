@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PrivaPilot — Privacy Mission Control HUD</title>
-  <link rel="stylesheet" href="sidepanel.css?v=2.3.4" />
+  <link rel="stylesheet" href="sidepanel.css?v=2.3.5" />
 </head>
 <body>
   <div class="app-container">
@@ -622,24 +622,31 @@
           </div>
         </div>
 
-        <!-- BOTTOM RIGHT CRISP BORDERLESS SHIMMERING SINGLE-MODE TOGGLE -->
+        <!-- BOTTOM RIGHT CRISP BORDERLESS MODE DROPDOWN SELECTOR -->
         <div id="voiceOverlayModeWrapper" class="voice-overlay-mode-wrapper">
-          <div id="voiceShimmerModeBar" class="voice-shimmer-mode-bar">
-            <button type="button" id="voiceShimmerToggleBtn" class="voice-shimmer-mode-btn active" title="Click to switch mode">
-              <span class="mode-shimmer-dot"></span>
-              <span id="voiceShimmerActiveText" class="mode-shimmer-text">Voice to Text</span>
+          <button type="button" id="voiceOverlayModeBtn" class="voice-overlay-mode-chip voice-shimmer-mode-btn" title="Select voice mode" aria-haspopup="true" aria-expanded="false">
+            <span id="voiceOverlayModeLabel" class="mode-shimmer-text">Voice to Text</span>
+            <svg class="voice-mode-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <div id="voiceOverlayModeMenu" class="voice-overlay-mode-menu hidden" role="menu">
+            <button type="button" class="voice-overlay-mode-option active" data-mode="dictate" role="menuitem">
+              <span class="mode-opt-title">Voice to Text</span>
+              <span class="mode-opt-check">✓</span>
+            </button>
+            <button type="button" class="voice-overlay-mode-option" data-mode="talk" role="menuitem">
+              <span class="mode-opt-title">Live Conversation</span>
+              <span class="mode-opt-check">✓</span>
             </button>
           </div>
-          <!-- Compatibility elements -->
-          <button type="button" class="voice-shimmer-mode-btn" data-mode="dictate" style="display: none;"></button>
-          <button type="button" class="voice-shimmer-mode-btn" data-mode="talk" style="display: none;"></button>
-          <button type="button" id="voiceOverlayModeBtn" class="voice-overlay-mode-chip" style="display: none;"></button>
-          <span id="voiceOverlayModeLabel" style="display: none;">Voice to Text</span>
-          <span id="voiceOverlayModeIcon" style="display: none;">📝</span>
-          <div id="voiceOverlayModeMenu" class="voice-overlay-mode-menu hidden" style="display: none;">
-            <button type="button" class="voice-overlay-mode-option active" data-mode="dictate"></button>
-            <button type="button" class="voice-overlay-mode-option" data-mode="talk"></button>
+          <!-- Compatibility elements for tests / backward compatibility -->
+          <div id="voiceShimmerModeBar" style="display: none;" aria-hidden="true">
+            <button type="button" id="voiceShimmerToggleBtn" class="voice-shimmer-mode-btn" data-mode="dictate">
+              <span id="voiceShimmerActiveText">Voice to Text</span>
+            </button>
           </div>
+          <span id="voiceOverlayModeIcon" style="display: none;" aria-hidden="true">📝</span>
         </div>
       </div>
     </div>
@@ -660,7 +667,7 @@
   </div>
 
   <script src="waves-shader.js"></script>
-  <script type="module" src="sidepanel.js?v=2.3.4"></script>
+  <script type="module" src="sidepanel.js?v=2.3.5"></script>
 </body>
 </html>
 

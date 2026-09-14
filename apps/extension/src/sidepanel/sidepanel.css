@@ -3269,10 +3269,62 @@ html, body {
   user-select: none;
 }
 
+.voice-overlay-mode-chip {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  padding: 5px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.voice-overlay-mode-chip:hover,
+.voice-overlay-mode-chip.menu-open {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.voice-overlay-mode-chip .voice-mode-arrow {
+  stroke: rgba(255, 255, 255, 0.6);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), stroke 0.2s ease;
+  flex-shrink: 0;
+}
+
+.voice-overlay-mode-chip:hover .voice-mode-arrow,
+.voice-overlay-mode-chip.menu-open .voice-mode-arrow {
+  stroke: #8ab4f8;
+}
+
+.voice-overlay-mode-chip.menu-open .voice-mode-arrow {
+  transform: rotate(180deg);
+}
+
+.voice-overlay-mode-text,
+.voice-overlay-mode-chip .mode-shimmer-text {
+  background: linear-gradient(90deg, #8ab4f8 0%, #ffffff 50%, #8ab4f8 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: voice-shimmer-anim 2.5s linear infinite;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-shadow: 0 0 12px rgba(138, 180, 248, 0.35);
+}
+
+.mode-shimmer-dot {
+  display: none !important;
+}
+
 .voice-shimmer-mode-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   background: transparent !important;
   border: none !important;
   outline: none !important;
@@ -3283,44 +3335,91 @@ html, body {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.voice-shimmer-mode-btn .mode-shimmer-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #8ab4f8;
-  box-shadow: 0 0 8px #8ab4f8, 0 0 14px rgba(138, 180, 248, 0.6);
-  animation: voice-dot-pulse 1.4s ease-in-out infinite;
-  flex-shrink: 0;
-}
-
-.voice-shimmer-mode-btn .mode-shimmer-text {
-  background: linear-gradient(90deg, #8ab4f8 0%, #ffffff 50%, #8ab4f8 100%);
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: voice-shimmer-anim 2.2s linear infinite;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  text-shadow: 0 0 12px rgba(138, 180, 248, 0.35);
-}
-
-.voice-shimmer-mode-btn:hover {
-  filter: brightness(1.15);
-}
-
 .voice-shimmer-divider {
   display: none !important;
 }
 
-/* Fallback / compatibility classes */
-.voice-overlay-mode-chip {
+/* Floating Bottom-Right Voice Mode Dropdown Menu */
+.voice-overlay-mode-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  min-width: 175px;
+  background: rgba(14, 18, 28, 0.96) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 1px rgba(255, 255, 255, 0.2);
+  padding: 5px;
+  z-index: 10002;
+  display: flex !important;
+  flex-direction: column;
+  gap: 3px;
+  transform-origin: bottom right;
+  animation: voice-menu-appear 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.voice-overlay-mode-menu.hidden {
   display: none !important;
 }
 
-.voice-overlay-mode-menu {
-  display: none !important;
+@keyframes voice-menu-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.voice-overlay-mode-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.voice-overlay-mode-option:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.voice-overlay-mode-option.active {
+  background: rgba(138, 180, 248, 0.16);
+  color: #8ab4f8;
+  font-weight: 600;
+}
+
+.voice-overlay-mode-option .mode-opt-title {
+  flex: 1;
+  text-align: left;
+}
+
+.voice-overlay-mode-option .mode-opt-check {
+  font-size: 12px;
+  font-weight: 700;
+  color: #8ab4f8;
+  opacity: 0;
+  margin-left: 8px;
+  transition: opacity 0.15s ease;
+}
+
+.voice-overlay-mode-option.active .mode-opt-check {
+  opacity: 1;
 }
 
 

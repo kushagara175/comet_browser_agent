@@ -2611,6 +2611,7 @@ if (typeof document !== 'undefined') {
       e.stopPropagation();
       const isHidden = voiceOverlayModeMenu?.classList.toggle('hidden');
       voiceOverlayModeBtn.classList.toggle('menu-open', !isHidden);
+      voiceOverlayModeBtn.setAttribute('aria-expanded', String(!isHidden));
     });
 
     document.querySelectorAll('.voice-overlay-mode-option').forEach((opt) => {
@@ -2624,6 +2625,7 @@ if (typeof document !== 'undefined') {
         }
         voiceOverlayModeMenu?.classList.add('hidden');
         voiceOverlayModeBtn?.classList.remove('menu-open');
+        voiceOverlayModeBtn?.setAttribute('aria-expanded', 'false');
       });
     });
 
@@ -2656,6 +2658,7 @@ if (typeof document !== 'undefined') {
       if (!voiceOverlayModeWrapper?.contains(e.target)) {
         voiceOverlayModeMenu?.classList.add('hidden');
         voiceOverlayModeBtn?.classList.remove('menu-open');
+        voiceOverlayModeBtn?.setAttribute('aria-expanded', 'false');
       }
     });
 
