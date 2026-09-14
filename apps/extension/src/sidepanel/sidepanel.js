@@ -649,23 +649,22 @@ if (typeof document !== 'undefined') {
       window.initWavesShader(shaderCanvas);
     }
 
-    // Auto transition to mission control HUD after splash
+    // Auto transition to mission control HUD after brief splash
     if (loadingView && aiWorkerView) {
-      setTimeout(() => {
+      const dismissSplash = () => {
         loadingView.classList.add('hidden');
         aiWorkerView.classList.remove('hidden');
-        setTimeout(() => chatInput?.focus(), 80);
-      }, 750);
+        setTimeout(() => chatInput?.focus(), 50);
+      };
+      setTimeout(dismissSplash, 200);
+      loadingView.addEventListener('click', dismissSplash);
     }
 
-    // Reset button
+    // Top-left logo button: starts fresh new chat session cleanly without loading screen flicker
     backToConnectBtn?.addEventListener('click', () => {
-      aiWorkerView?.classList.add('hidden');
-      loadingView?.classList.remove('hidden');
-      setTimeout(() => {
-        loadingView?.classList.add('hidden');
-        aiWorkerView?.classList.remove('hidden');
-      }, 800);
+      if (typeof createNewChat === 'function') {
+        createNewChat();
+      }
     });
 
     let currentActiveTabId = null;
@@ -750,27 +749,59 @@ if (typeof document !== 'undefined') {
       }
     }
 
-    // Extension In-Panel Reload: reloads entire extension runtime (background worker + sidepanel)
+    // Refresh & Reset Session: Clears chat responses, starts a fresh new chat session, and updates tab context WITHOUT closing the sidepanel!
     const reloadExtensionBtn = document.getElementById('reloadExtensionBtn');
-    const triggerReload = () => {
-      reloadExtensionBtn?.classList.add('spinning');
-      if (loadingView && aiWorkerView) {
-        aiWorkerView.classList.add('hidden');
-        loadingView.classList.remove('hidden');
-      }
-      setTimeout(() => {
+    const triggerReload = (e) => {
+      // If user holds Shift while clicking, allow full extension restart for debugging
+      if (e?.shiftKey) {
+        reloadExtensionBtn?.classList.add('spinning');
         if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.reload === 'function') {
           chrome.runtime.reload();
-        } else {
-          try {
-            const url = new URL(window.location.href);
-            url.searchParams.set('t', Date.now().toString());
-            window.location.replace(url.toString());
-          } catch (_e) {
-            window.location.reload();
-          }
+          return;
         }
-      }, 250);
+      }
+
+      reloadExtensionBtn?.classList.add('spinning');
+
+      // 1. Reset agent status & clear active borders
+      setAgentStatus('idle');
+      if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
+        chrome.tabs.sendMessage(currentActiveTabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
+      }
+
+      // 2. Clear conversation history and reset chat messages
+      conversationHistory = [];
+      if (typeof createNewChat === 'function') {
+        createNewChat();
+      }
+
+      // 3. Clear inspector cache
+      cachedRawScreenshot = '';
+      cachedSanitizedScreenshot = '';
+      lastSanitizedContext = null;
+      currentGoalText = '';
+
+      // 4. Update tab information
+      updateActiveTabUrl();
+
+      // 5. Ensure HUD is visible and loading view is hidden
+      if (loadingView && aiWorkerView) {
+        loadingView.classList.add('hidden');
+        aiWorkerView.classList.remove('hidden');
+      }
+
+      // 6. Reset chat input & send button
+      if (chatInput) {
+        chatInput.value = '';
+        chatInput.focus();
+      }
+      if (typeof updateSendBtn === 'function') {
+        updateSendBtn();
+      }
+
+      setTimeout(() => {
+        reloadExtensionBtn?.classList.remove('spinning');
+      }, 350);
     };
     reloadExtensionBtn?.addEventListener('click', triggerReload);
 
@@ -2451,10 +2482,36 @@ if (typeof document !== 'undefined') {
     let isVoiceActive = false;
     let voiceRecognition = null;
     let voiceFinalTranscript = '';
+    let isPermissionTabOpening = false;
+    let speechRecErrored = false;
+
+    // Helper: Safely open at most ONE permission prompt tab without spamming
+    function openMicPermissionTabOnce() {
+      if (isPermissionTabOpening) return;
+      if (typeof chrome === 'undefined' || !chrome.tabs?.create || !chrome.runtime?.getURL) return;
+
+      isPermissionTabOpening = true;
+      const permUrl = chrome.runtime.getURL('src/sidepanel/permission.html');
+
+      if (chrome.tabs.query) {
+        chrome.tabs.query({ url: permUrl }, (tabs) => {
+          if (tabs && tabs.length > 0) {
+            chrome.tabs.update(tabs[0].id, { active: true });
+          } else {
+            chrome.tabs.create({ url: permUrl });
+          }
+          setTimeout(() => { isPermissionTabOpening = false; }, 4000);
+        });
+      } else {
+        chrome.tabs.create({ url: permUrl });
+        setTimeout(() => { isPermissionTabOpening = false; }, 4000);
+      }
+    }
 
     async function openVoiceMode() {
       if (!voiceModal) return;
       isVoiceActive = true;
+      speechRecErrored = false;
       voiceModal.classList.remove('hidden');
       voiceModal.setAttribute('aria-hidden', 'false');
       voiceFinalTranscript = '';
@@ -2485,11 +2542,8 @@ if (typeof document !== 'undefined') {
             activeVoiceOrb.setState('listening');
           } catch (micErr) {
             console.warn('[PrivaPilot Voice] Microphone audio connection note:', micErr);
-            // Chrome blocks getUserMedia permission dialogs in extension sidepanels.
-            // Open dedicated permission helper tab so user can click "Allow" natively.
-            if (typeof chrome !== 'undefined' && chrome.tabs?.create && chrome.runtime?.getURL) {
-              chrome.tabs.create({ url: chrome.runtime.getURL('src/sidepanel/permission.html') });
-            }
+            // Open dedicated permission helper tab (once, never in a loop!)
+            openMicPermissionTabOnce();
           }
         }
       } catch (orbErr) {
@@ -2538,15 +2592,18 @@ if (typeof document !== 'undefined') {
 
           voiceRecognition.onerror = (e) => {
             console.warn('[PrivaPilot Voice] Speech recognition event:', e?.error);
+            speechRecErrored = true;
+            // Stop immediately on error to abort endless restart loops!
+            try { voiceRecognition.abort?.(); } catch (_) {}
+
             if (e?.error === 'not-allowed' || e?.error === 'audio-capture') {
-              if (typeof chrome !== 'undefined' && chrome.tabs?.create && chrome.runtime?.getURL) {
-                chrome.tabs.create({ url: chrome.runtime.getURL('src/sidepanel/permission.html') });
-              }
+              openMicPermissionTabOnce();
             }
           };
 
           voiceRecognition.onend = () => {
-            if (isVoiceActive && voiceRecognition) {
+            // CRITICAL: Only restart if still active and NO error occurred!
+            if (isVoiceActive && voiceRecognition && !speechRecErrored) {
               try {
                 voiceRecognition.start();
               } catch (_) {}
@@ -2563,6 +2620,7 @@ if (typeof document !== 'undefined') {
     function closeVoiceMode() {
       if (!isVoiceActive) return;
       isVoiceActive = false;
+      speechRecErrored = true;
 
       if (voiceModal) {
         voiceModal.classList.add('hidden');
@@ -2571,7 +2629,8 @@ if (typeof document !== 'undefined') {
 
       if (voiceRecognition) {
         try {
-          voiceRecognition.stop();
+          voiceRecognition.abort?.();
+          voiceRecognition.stop?.();
         } catch (_) {}
         voiceRecognition = null;
       }
@@ -2599,15 +2658,19 @@ if (typeof document !== 'undefined') {
 
     if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
       chrome.runtime.onMessage.addListener((msg) => {
-        if (msg?.type === 'MIC_PERMISSION_GRANTED' && isVoiceActive && activeVoiceOrb) {
-          activeVoiceOrb.connectMicrophone()
-            .then(() => {
-              activeVoiceOrb.setState('listening');
-              if (voiceRecognition) {
-                try { voiceRecognition.start(); } catch (_) {}
-              }
-            })
-            .catch((e) => console.warn('[PrivaPilot Voice] Reconnecting mic error:', e));
+        if (msg?.type === 'MIC_PERMISSION_GRANTED' && isVoiceActive) {
+          isPermissionTabOpening = false;
+          speechRecErrored = false;
+          if (activeVoiceOrb) {
+            activeVoiceOrb.connectMicrophone()
+              .then(() => {
+                activeVoiceOrb.setState('listening');
+                if (voiceRecognition && isVoiceActive) {
+                  try { voiceRecognition.start(); } catch (_) {}
+                }
+              })
+              .catch((e) => console.warn('[PrivaPilot Voice] Reconnecting mic error:', e));
+          }
         }
       });
     }
