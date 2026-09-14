@@ -115,8 +115,10 @@ test('Dual Voice Modes & Shimmering Thinking UI: sidepanel supports Voice to Tex
   assert.ok(html.includes('voice-modal-mode-pill'), 'voice-modal-mode-pill must exist');
   assert.ok(html.includes('id="voiceSendNowBtn"'), 'voiceSendNowBtn must exist');
 
-  // Bottom-right in-overlay voice mode dropdown selector
+  // Bottom-right in-overlay borderless shimmering voice mode switcher
   assert.ok(html.includes('id="voiceOverlayModeWrapper"'), 'voiceOverlayModeWrapper must exist');
+  assert.ok(html.includes('id="voiceShimmerModeBar"'), 'voiceShimmerModeBar must exist');
+  assert.ok(html.includes('class="voice-shimmer-mode-btn'), 'voice-shimmer-mode-btn must exist');
   assert.ok(html.includes('id="voiceOverlayModeBtn"'), 'voiceOverlayModeBtn must exist');
   assert.ok(html.includes('id="voiceOverlayModeMenu"'), 'voiceOverlayModeMenu must exist');
   assert.ok(html.includes('id="voiceOverlayModeLabel"'), 'voiceOverlayModeLabel must exist');
@@ -131,8 +133,8 @@ test('Dual Voice Modes & Shimmering Thinking UI: sidepanel supports Voice to Tex
   assert.ok(css.includes('.voice-modal-mode-selector'), '.voice-modal-mode-selector style must exist');
   assert.ok(css.includes('.voice-modal-mode-pill'), '.voice-modal-mode-pill style must exist');
   assert.ok(css.includes('.voice-overlay-mode-wrapper'), '.voice-overlay-mode-wrapper style must exist');
-  assert.ok(css.includes('.voice-overlay-mode-chip'), '.voice-overlay-mode-chip style must exist');
-  assert.ok(css.includes('.voice-overlay-mode-menu'), '.voice-overlay-mode-menu style must exist');
+  assert.ok(css.includes('.voice-shimmer-mode-bar'), '.voice-shimmer-mode-bar style must exist');
+  assert.ok(css.includes('.voice-shimmer-mode-btn'), '.voice-shimmer-mode-btn style must exist');
 
   // JS handling
   const jsPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.js');

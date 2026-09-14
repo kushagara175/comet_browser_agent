@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PrivaPilot — Privacy Mission Control HUD</title>
-  <link rel="stylesheet" href="sidepanel.css?v=2.3.1" />
+  <link rel="stylesheet" href="sidepanel.css?v=2.3.2" />
 </head>
 <body>
   <div class="app-container">
@@ -202,7 +202,7 @@
                         <polyline points="6 9 12 15 18 9"></polyline>
                       </svg>
                     </button>
-                    <div class="voice-mode-dropdown-wrapper" id="voiceModeWrapper">
+                    <div class="voice-mode-dropdown-wrapper" id="voiceModeWrapper" style="display: none;" aria-hidden="true">
                       <button type="button" id="voiceModeBtn" class="voice-mode-chip" title="Select Voice Mode">
                         <span class="voice-mode-icon">🎙️</span>
                         <span id="voiceModeLabel">Voice to Text</span>
@@ -645,30 +645,26 @@
           </div>
         </div>
 
-        <!-- BOTTOM RIGHT DROPDOWN MENU FOR VOICE MODE SELECTION -->
+        <!-- BOTTOM RIGHT BORDERLESS SHIMMERING VOICE MODE SWITCHER -->
         <div id="voiceOverlayModeWrapper" class="voice-overlay-mode-wrapper">
-          <button type="button" id="voiceOverlayModeBtn" class="voice-overlay-mode-chip" title="Select Voice Mode">
-            <span id="voiceOverlayModeIcon" class="voice-overlay-mode-icon">📝</span>
-            <span id="voiceOverlayModeLabel" class="voice-overlay-mode-label">Voice to Text</span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          </button>
-          <div id="voiceOverlayModeMenu" class="voice-overlay-mode-menu hidden">
-            <button type="button" class="voice-overlay-mode-option active" data-mode="dictate">
-              <span class="mode-icon">📝</span>
-              <div class="mode-meta">
-                <span class="mode-title">Voice to Text</span>
-                <span class="mode-desc">Transcribes speech directly to chatbox</span>
-              </div>
+          <div id="voiceShimmerModeBar" class="voice-shimmer-mode-bar">
+            <button type="button" class="voice-shimmer-mode-btn active" data-mode="dictate" title="Switch to Voice to Text">
+              <span class="mode-shimmer-dot"></span>
+              <span class="mode-shimmer-text">Voice to Text</span>
             </button>
-            <button type="button" class="voice-overlay-mode-option" data-mode="talk">
-              <span class="mode-icon">💬</span>
-              <div class="mode-meta">
-                <span class="mode-title">Live Conversation</span>
-                <span class="mode-desc">Interactive voice dialogue with AI speech</span>
-              </div>
+            <span class="voice-shimmer-divider">/</span>
+            <button type="button" class="voice-shimmer-mode-btn" data-mode="talk" title="Switch to Live Conversation">
+              <span class="mode-shimmer-dot"></span>
+              <span class="mode-shimmer-text">Live Conversation</span>
             </button>
+          </div>
+          <!-- Compatibility elements -->
+          <button type="button" id="voiceOverlayModeBtn" class="voice-overlay-mode-chip" style="display: none;"></button>
+          <span id="voiceOverlayModeLabel" style="display: none;">Voice to Text</span>
+          <span id="voiceOverlayModeIcon" style="display: none;">📝</span>
+          <div id="voiceOverlayModeMenu" class="voice-overlay-mode-menu hidden" style="display: none;">
+            <button type="button" class="voice-overlay-mode-option active" data-mode="dictate"></button>
+            <button type="button" class="voice-overlay-mode-option" data-mode="talk"></button>
           </div>
         </div>
       </div>
@@ -676,7 +672,7 @@
   </div>
 
   <script src="waves-shader.js"></script>
-  <script type="module" src="sidepanel.js?v=2.3.1"></script>
+  <script type="module" src="sidepanel.js?v=2.3.2"></script>
 </body>
 </html>
 

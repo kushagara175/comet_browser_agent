@@ -3240,123 +3240,79 @@ html, body {
   z-index: 10001;
 }
 
-.voice-overlay-mode-chip {
+.voice-shimmer-mode-bar {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 14px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #e3e3e3;
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  gap: 8px;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0;
   user-select: none;
 }
 
-.voice-overlay-mode-chip:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(138, 180, 248, 0.45);
-  color: #ffffff;
-  transform: translateY(-1px);
-}
-
-.voice-overlay-mode-chip.menu-open {
-  background: rgba(138, 180, 248, 0.18);
-  border-color: rgba(138, 180, 248, 0.55);
-  color: #8ab4f8;
-  box-shadow: 0 0 16px rgba(138, 180, 248, 0.25);
-}
-
-.voice-overlay-mode-chip svg {
-  transition: transform 0.2s ease;
-}
-
-.voice-overlay-mode-chip.menu-open svg {
-  transform: rotate(180deg);
-}
-
-.voice-overlay-mode-menu {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-  min-width: 220px;
-  background: rgba(15, 18, 26, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
-  padding: 6px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  z-index: 10002;
+.voice-shimmer-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.voice-overlay-mode-menu.hidden {
-  display: none !important;
+.voice-shimmer-mode-btn:hover {
+  color: rgba(255, 255, 255, 0.85);
 }
 
-.voice-overlay-mode-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 12px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  color: #d1d5db;
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.16s ease;
+.voice-shimmer-mode-btn .mode-shimmer-dot {
+  display: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #8ab4f8;
+  box-shadow: 0 0 6px #8ab4f8;
+  animation: voice-dot-pulse 1.4s ease-in-out infinite;
 }
 
-.voice-overlay-mode-option:hover {
-  background: rgba(255, 255, 255, 0.08);
+.voice-shimmer-mode-btn.active {
   color: #ffffff;
 }
 
-.voice-overlay-mode-option.active {
-  background: rgba(138, 180, 248, 0.15);
-  border-color: rgba(138, 180, 248, 0.35);
-  color: #8ab4f8;
+.voice-shimmer-mode-btn.active .mode-shimmer-dot {
+  display: inline-block;
 }
 
-.voice-overlay-mode-option .mode-icon {
-  font-size: 16px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.voice-overlay-mode-option .mode-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.voice-overlay-mode-option .mode-title {
-  font-size: 12px;
+.voice-shimmer-mode-btn.active .mode-shimmer-text {
+  background: linear-gradient(90deg, #8ab4f8 0%, #ffffff 50%, #8ab4f8 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: voice-shimmer-anim 2s linear infinite;
   font-weight: 600;
-  line-height: 1.2;
+  text-shadow: 0 1px 8px rgba(138, 180, 248, 0.4);
 }
 
-.voice-overlay-mode-option .mode-desc {
-  font-size: 10.5px;
-  color: #9aa0a6;
-  line-height: 1.2;
+.voice-shimmer-divider {
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 11px;
 }
 
-.voice-overlay-mode-option.active .mode-desc {
-  color: #c2e7ff;
+/* Fallback / compatibility classes */
+.voice-overlay-mode-chip {
+  display: none !important;
 }
+
+.voice-overlay-mode-menu {
+  display: none !important;
+}
+
 
 
 

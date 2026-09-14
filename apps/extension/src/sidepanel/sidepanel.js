@@ -2505,6 +2505,7 @@ if (typeof document !== 'undefined') {
     let isSpeechApiTalking = false;
     let isAiSpeaking = false;
     let isVoiceThinking = false;
+    let activeSpeechUtterance = null;
     let currentVoiceMode = (typeof localStorage !== 'undefined' && localStorage.getItem('privapilot_voice_mode')) || 'dictate';
 
     function updateVoiceModeUI() {
@@ -2523,6 +2524,16 @@ if (typeof document !== 'undefined') {
       if (voiceOverlayModeIcon) {
         voiceOverlayModeIcon.textContent = currentVoiceMode === 'talk' ? '💬' : '📝';
       }
+
+      // Borderless shimmering mode switcher
+      document.querySelectorAll('.voice-shimmer-mode-btn').forEach((btn) => {
+        if (btn.getAttribute('data-mode') === currentVoiceMode) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+
       document.querySelectorAll('.voice-mode-option, .voice-overlay-mode-option').forEach((opt) => {
         if (opt.getAttribute('data-mode') === currentVoiceMode) {
           opt.classList.add('active');
@@ -2540,6 +2551,19 @@ if (typeof document !== 'undefined') {
     }
 
     updateVoiceModeUI();
+
+    // Borderless shimmering mode button handlers
+    document.querySelectorAll('.voice-shimmer-mode-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const mode = btn.getAttribute('data-mode');
+        if (mode && (mode === 'dictate' || mode === 'talk')) {
+          currentVoiceMode = mode;
+          try { localStorage.setItem('privapilot_voice_mode', mode); } catch (_) {}
+          updateVoiceModeUI();
+        }
+      });
+    });
 
     // Chat bar dropdown handlers
     voiceModeBtn?.addEventListener('click', (e) => {
@@ -2623,9 +2647,14 @@ if (typeof document !== 'undefined') {
       }
       try {
         window.speechSynthesis.cancel();
+        if (window.speechSynthesis.paused) {
+          try { window.speechSynthesis.resume(); } catch (_) {}
+        }
+
         const clean = (text || '')
           .replace(/https?:\/\/\S+/gi, '')
           .replace(/[*_#`~[\]()]/g, ' ')
+          .replace(/```[\s\S]*?```/g, '')
           .replace(/\s+/g, ' ')
           .trim();
 
@@ -2634,35 +2663,63 @@ if (typeof document !== 'undefined') {
           return;
         }
 
-        const utterance = new SpeechSynthesisUtterance(clean);
+        // Limit spoken response to first 2-3 natural sentences
+        const sentences = clean.match(/[^.!?]+[.!?]+/g);
+        const spokenText = sentences && sentences.length > 0
+          ? sentences.slice(0, 3).join(' ')
+          : (clean.length > 250 ? clean.slice(0, 250) + '...' : clean);
+
+        const utterance = new SpeechSynthesisUtterance(spokenText);
+        activeSpeechUtterance = utterance; // Prevent Chrome V8 garbage collection!
         utterance.rate = 1.05;
         utterance.pitch = 1.0;
 
         const voices = window.speechSynthesis.getVoices();
-        const preferred = voices.find((v) =>
-          (v.name.includes('Natural') || v.name.includes('Google') || v.lang === 'en-US') &&
-          !v.name.includes('Whisper')
-        );
-        if (preferred) utterance.voice = preferred;
-
-        utterance.onstart = () => {
-          isAiSpeaking = true;
-          activeVoiceOrb?.setState('speaking');
-        };
+        if (voices && voices.length > 0) {
+          const preferred = voices.find((v) =>
+            (v.name.includes('Natural') || v.name.includes('Google') || v.lang === 'en-US' || v.lang?.startsWith('en')) &&
+            !v.name.includes('Whisper')
+          );
+          if (preferred) utterance.voice = preferred;
+        }
 
         let finished = false;
         const handleFinish = () => {
           if (finished) return;
           finished = true;
           isAiSpeaking = false;
+          activeSpeechUtterance = null;
           if (activeVoiceOrb) {
             activeVoiceOrb.setAudioLevel(0);
           }
           onDone?.();
         };
 
+        utterance.onstart = () => {
+          isAiSpeaking = true;
+          activeVoiceOrb?.setState('speaking');
+        };
+
         utterance.onend = handleFinish;
-        utterance.onerror = handleFinish;
+        utterance.onerror = (e) => {
+          console.warn('[PrivaPilot Voice] TTS error:', e);
+          handleFinish();
+        };
+
+        // Safety watchdog: prevent Chrome speechSynthesis from silently pausing
+        const watchdog = setInterval(() => {
+          if (finished) {
+            clearInterval(watchdog);
+            return;
+          }
+          if (window.speechSynthesis.paused) {
+            try { window.speechSynthesis.resume(); } catch (_) {}
+          }
+          if (!window.speechSynthesis.speaking) {
+            clearInterval(watchdog);
+            handleFinish();
+          }
+        }, 600);
 
         window.speechSynthesis.speak(utterance);
       } catch (err) {
@@ -2789,14 +2846,19 @@ if (typeof document !== 'undefined') {
           activeTabUrl.textContent?.startsWith('about:blank')
         )
       );
-      const hasActionOrNavIntent =
+
+      // In Live Conversation mode: distinguish explicit automation commands from dialogue
+      const isExplicitBrowserAction =
         isBrowserActionRequest(promptText) ||
         /\b(?:https?:\/\/|[a-z0-9-]+\.(?:com|org|gov|in|edu|net|io|co|ai|xyz))\b/i.test(promptText) ||
-        /\b(?:open|go\s+to|visit|launch|load|search|find|browse)\b/i.test(promptText);
+        /\b(?:open|go\s+to|visit|launch|load|search\s+for|find\s+on\s+page|click|scroll)\b/i.test(promptText);
 
-      const shouldRunAgent = Boolean(currentActiveTabId) && (!isRestrictedTab || hasActionOrNavIntent);
-      const messageType = shouldRunAgent ? 'START_AGENT_RUN' : 'GENERAL_CHAT';
-      const payloadKey = shouldRunAgent ? 'goal' : 'message';
+      // If explicit browser action requested, execute agent run.
+      // Otherwise, chat with the reasoning model (with page context if available, or direct general chat)
+      const messageType = isExplicitBrowserAction
+        ? 'START_AGENT_RUN'
+        : (currentActiveTabId && !isRestrictedTab ? 'CHAT_WITH_PAGE' : 'GENERAL_CHAT');
+      const payloadKey = messageType === 'START_AGENT_RUN' ? 'goal' : 'message';
 
       if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
         currentRunId = 'run_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
@@ -2814,12 +2876,12 @@ if (typeof document !== 'undefined') {
 
           if (!isVoiceActive) return;
 
-          const rawReply = res?.reply ||
+          const rawReply = (res?.reply ||
             res?.proposal?.reply ||
             (res?.proposal?.kind === 'answer' ? (res?.proposal?.rationale || res?.message) : null) ||
             (res?.proposal?.kind === 'finish' && res?.proposal?.rationale ? res.proposal.rationale : null) ||
             res?.message ||
-            'I have completed analyzing the page.';
+            'I am listening. How can I help you?').trim();
 
           renderActionResult(agentBubble, res, 2);
 
@@ -3046,10 +3108,13 @@ if (typeof document !== 'undefined') {
 
           voiceRecognition.onerror = (e) => {
             console.warn('[PrivaPilot Voice] Speech recognition event:', e?.error);
-            speechRecErrored = true;
-            try { voiceRecognition.abort?.(); } catch (_) {}
-
-            if (e?.error === 'not-allowed' || e?.error === 'audio-capture') {
+            if (e?.error === 'no-speech') {
+              // Harmless pause from user, ignore and keep alive
+              return;
+            }
+            if (e?.error === 'not-allowed' || e?.error === 'audio-capture' || e?.error === 'service-not-allowed') {
+              speechRecErrored = true;
+              try { voiceRecognition.abort?.(); } catch (_) {}
               openMicPermissionTabOnce();
             }
           };
