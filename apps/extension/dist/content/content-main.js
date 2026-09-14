@@ -2230,6 +2230,8 @@
     cursorDismissTimer = null;
     currentCursorX = typeof window !== "undefined" ? Math.round(window.innerWidth / 2) : 200;
     currentCursorY = typeof window !== "undefined" ? Math.round(window.innerHeight / 2) : 200;
+    isAgentCursorActive = false;
+    boundMouseMove = null;
     // In-Page Execution Safety Shield state
     shieldEl = null;
     shieldWatchdogTimer = null;
@@ -2709,9 +2711,21 @@
           <span class="privapilot-cursor-badge-text">Click</span>
         </div>
       `;
-        cursor.style.transform = `translate3d(${this.currentCursorX}px, ${this.currentCursorY}px, 0)`;
+        cursor.style.transform = `translate3d(${Math.round(this.currentCursorX - 2.5)}px, ${Math.round(this.currentCursorY - 1.7)}px, 0)`;
         document.body.appendChild(cursor);
         this.cursorEl = cursor;
+        if (typeof window !== "undefined" && !this.boundMouseMove) {
+          this.boundMouseMove = (e) => {
+            if (!this.isAgentCursorActive) {
+              this.currentCursorX = e.clientX;
+              this.currentCursorY = e.clientY;
+            }
+          };
+          try {
+            window.addEventListener("mousemove", this.boundMouseMove, { passive: true, capture: true });
+          } catch (_) {
+          }
+        }
       }
       return this.cursorEl;
     }
@@ -2760,7 +2774,48 @@
       if (textEl) textEl.textContent = label;
     }
     /**
-     * Glides the cursor along a natural human curved trajectory to the target element.
+     * Computes the exact interactive target point (screen coordinates) for an element,
+     * accounting for element semantics (buttons, text inputs, links) and cursor hotspot tip offsets.
+     */
+    computeTargetPoint(el, cursorType) {
+      const rect = el.getBoundingClientRect();
+      const tagName = (el.tagName || "").toUpperCase();
+      const role = (el.getAttribute?.("role") || "").toLowerCase();
+      const type = (el.getAttribute?.("type") || "").toLowerCase();
+      const isTextInput = tagName === "TEXTAREA" || tagName === "INPUT" && !["button", "submit", "reset", "checkbox", "radio", "file"].includes(type) || Boolean(el.isContentEditable);
+      const isClickable = tagName === "BUTTON" || tagName === "A" || role === "button" || role === "link" || role === "tab" || role === "menuitem" || type === "button" || type === "submit" || type === "checkbox" || type === "radio";
+      let targetX;
+      let targetY;
+      if (isTextInput) {
+        const leftPad = Math.min(Math.max(rect.width * 0.08, 12), 40);
+        targetX = Math.round(rect.left + leftPad);
+        targetY = Math.round(rect.top + rect.height * 0.5);
+      } else if (isClickable) {
+        targetX = Math.round(rect.left + rect.width * 0.5);
+        targetY = Math.round(rect.top + rect.height * 0.5);
+      } else {
+        targetX = Math.round(rect.left + Math.min(rect.width * 0.5, 120));
+        targetY = Math.round(rect.top + Math.min(rect.height * 0.5, 28));
+      }
+      let hotspotX = 2.5;
+      let hotspotY = 1.7;
+      if (cursorType === "hand") {
+        hotspotX = 7.1;
+        hotspotY = 2.1;
+      } else if (cursorType === "caret") {
+        hotspotX = 7.5;
+        hotspotY = 8.25;
+      }
+      return {
+        targetX,
+        targetY,
+        containerX: Math.round(targetX - hotspotX),
+        containerY: Math.round(targetY - hotspotY)
+      };
+    }
+    /**
+     * Glides the cursor along a natural human curved trajectory to the target element
+     * using Ken Perlin's Smootherstep velocity easing and live element tracking.
      */
     async glideCursorTo(el, actionKind = "CLICK", extraText, durationMs) {
       if (typeof document === "undefined" || !document.body) return;
@@ -2769,65 +2824,79 @@
         clearTimeout(this.cursorDismissTimer);
         this.cursorDismissTimer = null;
       }
-      const rect = el.getBoundingClientRect();
+      this.isAgentCursorActive = true;
       const tagName = (el.tagName || "").toUpperCase();
       const role = (el.getAttribute?.("role") || "").toLowerCase();
-      const isClickable = tagName === "BUTTON" || tagName === "A" || role === "button" || role === "link" || role === "tab";
-      const isTextInput = tagName === "INPUT" || tagName === "TEXTAREA" || el.isContentEditable;
-      const targetX = Math.round(rect.left + Math.min(Math.max(rect.width * 0.35, 6), 35));
-      const targetY = Math.round(rect.top + Math.min(Math.max(rect.height * 0.5, 6), 22));
-      if (isClickable) {
-        this.setCursorPointerType("hand");
-      } else if (isTextInput) {
-        this.setCursorPointerType("caret");
-      } else {
-        this.setCursorPointerType("arrow");
-      }
+      const type = (el.getAttribute?.("type") || "").toLowerCase();
+      const isTextInput = tagName === "TEXTAREA" || tagName === "INPUT" && !["button", "submit", "reset", "checkbox", "radio", "file"].includes(type) || Boolean(el.isContentEditable);
+      const isClickable = tagName === "BUTTON" || tagName === "A" || role === "button" || role === "link" || role === "tab" || role === "menuitem" || type === "button" || type === "submit" || type === "checkbox" || type === "radio";
+      const pointerType = isTextInput ? "caret" : isClickable ? "hand" : "arrow";
+      this.setCursorPointerType(pointerType);
       this.updateCursorBadge(actionKind, extraText);
       cursor.style.opacity = "1";
+      const initialPoint = this.computeTargetPoint(el, pointerType);
       const startX = this.currentCursorX;
       const startY = this.currentCursorY;
-      const dx = targetX - startX;
-      const dy = targetY - startY;
-      const dist = Math.hypot(dx, dy);
-      const totalDuration = durationMs !== void 0 ? durationMs : Math.min(Math.max(Math.round(dist * 0.42), 240), 440);
+      const initialDx = initialPoint.targetX - startX;
+      const initialDy = initialPoint.targetY - startY;
+      const dist = Math.hypot(initialDx, initialDy);
+      const totalDuration = durationMs !== void 0 ? durationMs : Math.min(Math.max(Math.round(220 + dist * 0.36), 260), 440);
       if (totalDuration <= 20) {
-        cursor.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
-        this.currentCursorX = targetX;
-        this.currentCursorY = targetY;
+        cursor.style.transform = `translate3d(${initialPoint.containerX}px, ${initialPoint.containerY}px, 0)`;
+        this.currentCursorX = initialPoint.targetX;
+        this.currentCursorY = initialPoint.targetY;
         return;
       }
-      const nx = -dy / (dist || 1);
-      const ny = dx / (dist || 1);
-      const arcHeight = Math.min(Math.max(dist * 0.16, 12), 85) * (Math.random() > 0.45 ? 1 : -1);
-      const cp1x = startX + dx * 0.35 + nx * arcHeight;
-      const cp1y = startY + dy * 0.35 + ny * arcHeight;
-      const cp2x = startX + dx * 0.78 + nx * (arcHeight * 0.4);
-      const cp2y = startY + dy * 0.78 + ny * (arcHeight * 0.4);
-      const startTime = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+      const nx = -initialDy / (dist || 1);
+      const ny = initialDx / (dist || 1);
+      const arcSign = Math.round(startX + startY) % 2 === 0 ? 1 : -1;
+      const arcHeight = Math.min(Math.max(dist * 0.14, 6), 55) * arcSign;
+      let hotspotX = 2.5;
+      let hotspotY = 1.7;
+      if (pointerType === "hand") {
+        hotspotX = 7.1;
+        hotspotY = 2.1;
+      } else if (pointerType === "caret") {
+        hotspotX = 7.5;
+        hotspotY = 8.25;
+      }
       await new Promise((resolve) => {
         const getRaf = () => {
           if (typeof requestAnimationFrame === "function") return requestAnimationFrame;
           return (cb) => setTimeout(() => cb(Date.now()), 16);
         };
+        let startTime = null;
         const step = (now) => {
+          if (startTime === null) {
+            startTime = now;
+          }
           const elapsed = Math.max(0, now - startTime);
           const progress = Math.min(1, elapsed / totalDuration);
-          const t = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+          const t = progress * progress * progress * (progress * (progress * 6 - 15) + 10);
+          const livePoint = this.computeTargetPoint(el, pointerType);
+          const curTargetX = livePoint.targetX;
+          const curTargetY = livePoint.targetY;
+          const curDx = curTargetX - startX;
+          const curDy = curTargetY - startY;
+          const cp1x = startX + curDx * 0.32 + nx * arcHeight;
+          const cp1y = startY + curDy * 0.32 + ny * arcHeight;
+          const cp2x = startX + curDx * 0.72 + nx * (arcHeight * 0.45);
+          const cp2y = startY + curDy * 0.72 + ny * (arcHeight * 0.45);
           const oneMinusT = 1 - t;
           const x = Math.round(
-            oneMinusT * oneMinusT * oneMinusT * startX + 3 * oneMinusT * oneMinusT * t * cp1x + 3 * oneMinusT * t * t * cp2x + t * t * t * targetX
+            oneMinusT * oneMinusT * oneMinusT * startX + 3 * oneMinusT * oneMinusT * t * cp1x + 3 * oneMinusT * t * t * cp2x + t * t * t * curTargetX
           );
           const y = Math.round(
-            oneMinusT * oneMinusT * oneMinusT * startY + 3 * oneMinusT * oneMinusT * t * cp1y + 3 * oneMinusT * t * t * cp2y + t * t * t * targetY
+            oneMinusT * oneMinusT * oneMinusT * startY + 3 * oneMinusT * oneMinusT * t * cp1y + 3 * oneMinusT * t * t * cp2y + t * t * t * curTargetY
           );
-          cursor.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+          cursor.style.transform = `translate3d(${Math.round(x - hotspotX)}px, ${Math.round(y - hotspotY)}px, 0)`;
           if (progress < 1) {
             getRaf()(step);
           } else {
-            cursor.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
-            this.currentCursorX = targetX;
-            this.currentCursorY = targetY;
+            const finalPoint = this.computeTargetPoint(el, pointerType);
+            cursor.style.transform = `translate3d(${finalPoint.containerX}px, ${finalPoint.containerY}px, 0)`;
+            this.currentCursorX = finalPoint.targetX;
+            this.currentCursorY = finalPoint.targetY;
             resolve();
           }
         };
@@ -2893,12 +2962,14 @@
         this.cursorDismissTimer = null;
       }
       if (delayMs <= 0) {
+        this.isAgentCursorActive = false;
         if (this.cursorEl) {
           this.cursorEl.style.opacity = "0";
         }
         return;
       }
       this.cursorDismissTimer = setTimeout(() => {
+        this.isAgentCursorActive = false;
         if (this.cursorEl) {
           this.cursorEl.style.opacity = "0";
         }
@@ -3246,12 +3317,12 @@
         if (targetEl) {
           if (typeof targetEl.scrollIntoView === "function") {
             try {
-              targetEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+              targetEl.scrollIntoView({ behavior: "auto", block: "nearest", inline: "nearest" });
             } catch (_) {
             }
           }
           overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase(), 1200);
-          await overlay.glideCursorTo(targetEl, proposal.kind.toUpperCase(), proposal.textToType, 320);
+          await overlay.glideCursorTo(targetEl, proposal.kind.toUpperCase(), proposal.textToType);
         }
         const preSnapshot = SemanticStateVerifier.captureSnapshot(targetEl, document);
         if (proposal.kind === "click" && targetEl) {

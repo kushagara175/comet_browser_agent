@@ -287,12 +287,12 @@ export async function handleMessage(message: any): Promise<any> {
       if (targetEl) {
         if (typeof targetEl.scrollIntoView === 'function') {
           try {
-            targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            targetEl.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
           } catch (_) {}
         }
         overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase(), 1200);
         // Smoothly glide the visual AI agent cursor to the targeted element
-        await overlay.glideCursorTo(targetEl, proposal.kind.toUpperCase(), (proposal as any).textToType, 320);
+        await overlay.glideCursorTo(targetEl, proposal.kind.toUpperCase(), (proposal as any).textToType);
       }
 
       // Capture safe pre-action semantic snapshot BEFORE execution

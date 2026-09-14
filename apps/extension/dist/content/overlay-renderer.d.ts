@@ -14,6 +14,8 @@ export declare class OverlayRenderer {
     private cursorDismissTimer;
     private currentCursorX;
     private currentCursorY;
+    private isAgentCursorActive;
+    private boundMouseMove;
     private shieldEl;
     private shieldWatchdogTimer;
     private boundShieldHandler;
@@ -44,7 +46,18 @@ export declare class OverlayRenderer {
     setCursorPointerType(type: 'arrow' | 'hand' | 'caret'): void;
     private updateCursorBadge;
     /**
-     * Glides the cursor along a natural human curved trajectory to the target element.
+     * Computes the exact interactive target point (screen coordinates) for an element,
+     * accounting for element semantics (buttons, text inputs, links) and cursor hotspot tip offsets.
+     */
+    computeTargetPoint(el: HTMLElement, cursorType: 'arrow' | 'hand' | 'caret'): {
+        targetX: number;
+        targetY: number;
+        containerX: number;
+        containerY: number;
+    };
+    /**
+     * Glides the cursor along a natural human curved trajectory to the target element
+     * using Ken Perlin's Smootherstep velocity easing and live element tracking.
      */
     glideCursorTo(el: HTMLElement, actionKind?: string, extraText?: string, durationMs?: number): Promise<void>;
     /**

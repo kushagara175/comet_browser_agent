@@ -412,3 +412,77 @@ test('OverlayRenderer: clear() cleans all target boxes, cursor, and safety shiel
   const cursor = renderer.ensureCursor();
   assert.equal(cursor.style.opacity, '0');
 });
+
+test('Agent Cursor: computeTargetPoint() pinpoints button center with pointer hand offset', () => {
+  setupMockDocument();
+  const renderer = new OverlayRenderer();
+
+  const buttonEl = new MockElement('button');
+  buttonEl.getBoundingClientRect = () => ({
+    top: 200,
+    left: 400,
+    width: 160,
+    height: 50,
+    right: 560,
+    bottom: 250
+  });
+
+  const pt = renderer.computeTargetPoint(buttonEl, 'hand');
+  // True center of button: left 400 + 80 = 480, top 200 + 25 = 225
+  assert.equal(pt.targetX, 480, 'Button targetX should be exactly at horizontal center');
+  assert.equal(pt.targetY, 225, 'Button targetY should be exactly at vertical center');
+  // Hand index finger tip offset: x - 7.1, y - 2.1
+  assert.equal(pt.containerX, 473, 'containerX compensates for hand index finger tip');
+  assert.equal(pt.containerY, 223, 'containerY compensates for hand index finger tip');
+});
+
+test('Agent Cursor: computeTargetPoint() calculates text input insertion point with caret offset', () => {
+  setupMockDocument();
+  const renderer = new OverlayRenderer();
+
+  const inputEl = new MockElement('input');
+  inputEl.setAttribute('type', 'text');
+  inputEl.getBoundingClientRect = () => ({
+    top: 100,
+    left: 150,
+    width: 320,
+    height: 40,
+    right: 470,
+    bottom: 140
+  });
+
+  const pt = renderer.computeTargetPoint(inputEl, 'caret');
+  // Text input indentation: left 150 + min(max(320*0.08, 12), 40) = 150 + 25.6 = 176
+  assert.equal(pt.targetX, 176, 'Input targetX should be inside typing field');
+  assert.equal(pt.targetY, 120, 'Input targetY should be centered vertically');
+  // Caret I-beam center offset: x - 7.5, y - 8.25 -> 176 - 7.5 = 168.5 -> rounded 169
+  assert.equal(pt.containerX, 169, 'containerX compensates for I-beam center');
+  assert.equal(pt.containerY, 112, 'containerY compensates for I-beam center');
+});
+
+test('Agent Cursor: glideCursorTo() dynamically tracks moving element during animation', async () => {
+  setupMockDocument();
+  const renderer = new OverlayRenderer();
+
+  let topPos = 300;
+  const dynamicEl = new MockElement('button');
+  dynamicEl.getBoundingClientRect = () => ({
+    top: topPos,
+    left: 500,
+    width: 100,
+    height: 40,
+    right: 600,
+    bottom: topPos + 40
+  });
+
+  // Start glide with RAF duration
+  const glidePromise = renderer.glideCursorTo(dynamicEl, 'CLICK', undefined, 40);
+  // Element shifts position during execution (e.g. scroll or reflow)
+  topPos = 180;
+  await glidePromise;
+
+  const cursor = renderer.ensureCursor();
+  // Target center at end: left 550, top 180 + 20 = 200. Container: 550 - 7 = 543, 200 - 2 = 198
+  assert.ok(cursor.style.transform.includes('198px'), 'Cursor lands on live updated element coordinate');
+});
+

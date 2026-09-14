@@ -17,6 +17,8 @@ export class OverlayRenderer {
   private cursorDismissTimer: any = null;
   private currentCursorX: number = typeof window !== 'undefined' ? Math.round(window.innerWidth / 2) : 200;
   private currentCursorY: number = typeof window !== 'undefined' ? Math.round(window.innerHeight / 2) : 200;
+  private isAgentCursorActive: boolean = false;
+  private boundMouseMove: ((e: MouseEvent) => void) | null = null;
 
   // In-Page Execution Safety Shield state
   private shieldEl: HTMLElement | null = null;
@@ -529,10 +531,22 @@ export class OverlayRenderer {
         </div>
       `;
 
-      cursor.style.transform = `translate3d(${this.currentCursorX}px, ${this.currentCursorY}px, 0)`;
+      cursor.style.transform = `translate3d(${Math.round(this.currentCursorX - 2.5)}px, ${Math.round(this.currentCursorY - 1.7)}px, 0)`;
       document.body.appendChild(cursor);
 
       this.cursorEl = cursor;
+
+      if (typeof window !== 'undefined' && !this.boundMouseMove) {
+        this.boundMouseMove = (e: MouseEvent) => {
+          if (!this.isAgentCursorActive) {
+            this.currentCursorX = e.clientX;
+            this.currentCursorY = e.clientY;
+          }
+        };
+        try {
+          window.addEventListener('mousemove', this.boundMouseMove, { passive: true, capture: true });
+        } catch (_) {}
+      }
     }
     return this.cursorEl;
   }
@@ -588,7 +602,78 @@ export class OverlayRenderer {
   }
 
   /**
-   * Glides the cursor along a natural human curved trajectory to the target element.
+   * Computes the exact interactive target point (screen coordinates) for an element,
+   * accounting for element semantics (buttons, text inputs, links) and cursor hotspot tip offsets.
+   */
+  computeTargetPoint(el: HTMLElement, cursorType: 'arrow' | 'hand' | 'caret'): {
+    targetX: number;
+    targetY: number;
+    containerX: number;
+    containerY: number;
+  } {
+    const rect = el.getBoundingClientRect();
+    const tagName = (el.tagName || '').toUpperCase();
+    const role = (el.getAttribute?.('role') || '').toLowerCase();
+    const type = (el.getAttribute?.('type') || '').toLowerCase();
+    const isTextInput =
+      tagName === 'TEXTAREA' ||
+      (tagName === 'INPUT' && !['button', 'submit', 'reset', 'checkbox', 'radio', 'file'].includes(type)) ||
+      Boolean((el as any).isContentEditable);
+    const isClickable =
+      tagName === 'BUTTON' ||
+      tagName === 'A' ||
+      role === 'button' ||
+      role === 'link' ||
+      role === 'tab' ||
+      role === 'menuitem' ||
+      type === 'button' ||
+      type === 'submit' ||
+      type === 'checkbox' ||
+      type === 'radio';
+
+    let targetX: number;
+    let targetY: number;
+
+    if (isTextInput) {
+      // Natural typing entry point: comfortable indentation inside text box, vertically centered
+      const leftPad = Math.min(Math.max(rect.width * 0.08, 12), 40);
+      targetX = Math.round(rect.left + leftPad);
+      targetY = Math.round(rect.top + rect.height * 0.5);
+    } else if (isClickable) {
+      // Buttons, links, tabs, checkboxes: pinpoint center of the interactable element
+      targetX = Math.round(rect.left + rect.width * 0.5);
+      targetY = Math.round(rect.top + rect.height * 0.5);
+    } else {
+      // General elements: comfortable top-left / center balance
+      targetX = Math.round(rect.left + Math.min(rect.width * 0.5, 120));
+      targetY = Math.round(rect.top + Math.min(rect.height * 0.5, 28));
+    }
+
+    // Hotspot offsets so the physical tip/caret lands precisely on (targetX, targetY)
+    // Arrow: Tip is at SVG (3, 2) in 24x24 viewBox scaled to 20x20 -> (2.5px, 1.67px)
+    // Hand: Tip of index finger is at SVG (8.5, 2.5) scaled to 20x20 -> (7.1px, 2.1px)
+    // Caret: Center of I-beam is at SVG (10, 11) in 24x24 viewBox scaled to 18x18 -> (7.5px, 8.25px)
+    let hotspotX = 2.5;
+    let hotspotY = 1.7;
+    if (cursorType === 'hand') {
+      hotspotX = 7.1;
+      hotspotY = 2.1;
+    } else if (cursorType === 'caret') {
+      hotspotX = 7.5;
+      hotspotY = 8.25;
+    }
+
+    return {
+      targetX,
+      targetY,
+      containerX: Math.round(targetX - hotspotX),
+      containerY: Math.round(targetY - hotspotY)
+    };
+  }
+
+  /**
+   * Glides the cursor along a natural human curved trajectory to the target element
+   * using Ken Perlin's Smootherstep velocity easing and live element tracking.
    */
   async glideCursorTo(
     el: HTMLElement,
@@ -602,60 +687,69 @@ export class OverlayRenderer {
       clearTimeout(this.cursorDismissTimer);
       this.cursorDismissTimer = null;
     }
+    this.isAgentCursorActive = true;
 
-    const rect = el.getBoundingClientRect();
     const tagName = (el.tagName || '').toUpperCase();
     const role = (el.getAttribute?.('role') || '').toLowerCase();
-    const isClickable = tagName === 'BUTTON' || tagName === 'A' || role === 'button' || role === 'link' || role === 'tab';
-    const isTextInput = tagName === 'INPUT' || tagName === 'TEXTAREA' || (el as any).isContentEditable;
+    const type = (el.getAttribute?.('type') || '').toLowerCase();
+    const isTextInput =
+      tagName === 'TEXTAREA' ||
+      (tagName === 'INPUT' && !['button', 'submit', 'reset', 'checkbox', 'radio', 'file'].includes(type)) ||
+      Boolean((el as any).isContentEditable);
+    const isClickable =
+      tagName === 'BUTTON' ||
+      tagName === 'A' ||
+      role === 'button' ||
+      role === 'link' ||
+      role === 'tab' ||
+      role === 'menuitem' ||
+      type === 'button' ||
+      type === 'submit' ||
+      type === 'checkbox' ||
+      type === 'radio';
 
-    // Realistic target coordinates: human clicks inside element with natural slight offset
-    const targetX = Math.round(rect.left + Math.min(Math.max(rect.width * 0.35, 6), 35));
-    const targetY = Math.round(rect.top + Math.min(Math.max(rect.height * 0.5, 6), 22));
-
-    // Update pointer shape to match element type
-    if (isClickable) {
-      this.setCursorPointerType('hand');
-    } else if (isTextInput) {
-      this.setCursorPointerType('caret');
-    } else {
-      this.setCursorPointerType('arrow');
-    }
-
-    // Update minimal vector icon and text label
+    const pointerType: 'arrow' | 'hand' | 'caret' = isTextInput ? 'caret' : (isClickable ? 'hand' : 'arrow');
+    this.setCursorPointerType(pointerType);
     this.updateCursorBadge(actionKind, extraText);
 
-    // Make cursor visible at starting point
+    // Make cursor visible
     cursor.style.opacity = '1';
 
+    const initialPoint = this.computeTargetPoint(el, pointerType);
     const startX = this.currentCursorX;
     const startY = this.currentCursorY;
-    const dx = targetX - startX;
-    const dy = targetY - startY;
-    const dist = Math.hypot(dx, dy);
+    const initialDx = initialPoint.targetX - startX;
+    const initialDy = initialPoint.targetY - startY;
+    const dist = Math.hypot(initialDx, initialDy);
 
     // Dynamic duration based on human movement distance: small move ~240ms, long move ~420ms
-    const totalDuration = durationMs !== undefined ? durationMs : Math.min(Math.max(Math.round(dist * 0.42), 240), 440);
+    const totalDuration = durationMs !== undefined
+      ? durationMs
+      : Math.min(Math.max(Math.round(220 + dist * 0.36), 260), 440);
 
     // Headless test or instantaneous duration check
     if (totalDuration <= 20) {
-      cursor.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
-      this.currentCursorX = targetX;
-      this.currentCursorY = targetY;
+      cursor.style.transform = `translate3d(${initialPoint.containerX}px, ${initialPoint.containerY}px, 0)`;
+      this.currentCursorX = initialPoint.targetX;
+      this.currentCursorY = initialPoint.targetY;
       return;
     }
 
-    // Natural curved human trajectory (Bézier control points)
-    const nx = -dy / (dist || 1);
-    const ny = dx / (dist || 1);
-    const arcHeight = Math.min(Math.max(dist * 0.16, 12), 85) * (Math.random() > 0.45 ? 1 : -1);
+    // Arc height and normal vector for human curved trajectory
+    const nx = -initialDy / (dist || 1);
+    const ny = initialDx / (dist || 1);
+    const arcSign = (Math.round(startX + startY) % 2 === 0) ? 1 : -1;
+    const arcHeight = Math.min(Math.max(dist * 0.14, 6), 55) * arcSign;
 
-    const cp1x = startX + dx * 0.35 + nx * arcHeight;
-    const cp1y = startY + dy * 0.35 + ny * arcHeight;
-    const cp2x = startX + dx * 0.78 + nx * (arcHeight * 0.4);
-    const cp2y = startY + dy * 0.78 + ny * (arcHeight * 0.4);
-
-    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    let hotspotX = 2.5;
+    let hotspotY = 1.7;
+    if (pointerType === 'hand') {
+      hotspotX = 7.1;
+      hotspotY = 2.1;
+    } else if (pointerType === 'caret') {
+      hotspotX = 7.5;
+      hotspotY = 8.25;
+    }
 
     await new Promise<void>((resolve) => {
       const getRaf = () => {
@@ -663,38 +757,54 @@ export class OverlayRenderer {
         return (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 16);
       };
 
+      let startTime: number | null = null;
+
       const step = (now: number) => {
+        if (startTime === null) {
+          startTime = now;
+        }
         const elapsed = Math.max(0, now - startTime);
         const progress = Math.min(1, elapsed / totalDuration);
 
-        // Human velocity easing (cubic ease-in-out)
-        const t = progress < 0.5
-          ? 4 * progress * progress * progress
-          : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+        // Ken Perlin's Smootherstep velocity easing: 6p^5 - 15p^4 + 10p^3
+        // Guarantees 0 initial jerk and velvety smooth deceleration into target
+        const t = progress * progress * progress * (progress * (progress * 6 - 15) + 10);
 
-        // Cubic Bézier calculation
+        // Dynamically track live element position in case of layout shift or scrolling
+        const livePoint = this.computeTargetPoint(el, pointerType);
+        const curTargetX = livePoint.targetX;
+        const curTargetY = livePoint.targetY;
+        const curDx = curTargetX - startX;
+        const curDy = curTargetY - startY;
+
+        const cp1x = startX + curDx * 0.32 + nx * arcHeight;
+        const cp1y = startY + curDy * 0.32 + ny * arcHeight;
+        const cp2x = startX + curDx * 0.72 + nx * (arcHeight * 0.45);
+        const cp2y = startY + curDy * 0.72 + ny * (arcHeight * 0.45);
+
         const oneMinusT = 1 - t;
         const x = Math.round(
           oneMinusT * oneMinusT * oneMinusT * startX +
           3 * oneMinusT * oneMinusT * t * cp1x +
           3 * oneMinusT * t * t * cp2x +
-          t * t * t * targetX
+          t * t * t * curTargetX
         );
         const y = Math.round(
           oneMinusT * oneMinusT * oneMinusT * startY +
           3 * oneMinusT * oneMinusT * t * cp1y +
           3 * oneMinusT * t * t * cp2y +
-          t * t * t * targetY
+          t * t * t * curTargetY
         );
 
-        cursor.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+        cursor.style.transform = `translate3d(${Math.round(x - hotspotX)}px, ${Math.round(y - hotspotY)}px, 0)`;
 
         if (progress < 1) {
           getRaf()(step);
         } else {
-          cursor.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
-          this.currentCursorX = targetX;
-          this.currentCursorY = targetY;
+          const finalPoint = this.computeTargetPoint(el, pointerType);
+          cursor.style.transform = `translate3d(${finalPoint.containerX}px, ${finalPoint.containerY}px, 0)`;
+          this.currentCursorX = finalPoint.targetX;
+          this.currentCursorY = finalPoint.targetY;
           resolve();
         }
       };
@@ -767,6 +877,7 @@ export class OverlayRenderer {
     }
 
     if (delayMs <= 0) {
+      this.isAgentCursorActive = false;
       if (this.cursorEl) {
         this.cursorEl.style.opacity = '0';
       }
@@ -774,6 +885,7 @@ export class OverlayRenderer {
     }
 
     this.cursorDismissTimer = setTimeout(() => {
+      this.isAgentCursorActive = false;
       if (this.cursorEl) {
         this.cursorEl.style.opacity = '0';
       }
