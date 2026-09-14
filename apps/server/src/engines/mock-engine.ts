@@ -13,6 +13,23 @@ import {
 
 export class MockReasoningEngine {
   async decideNextAction(payload: SanitizedNetworkPayload): Promise<ActionProposal> {
+    const proposal = await this.computeAction(payload);
+    if (!proposal.reasoning && proposal.rationale) {
+      const targetDesc = proposal.targetLocalId ? `element ${proposal.targetLocalId}` : 'the page';
+      const count = payload.elements?.length || 0;
+      return {
+        ...proposal,
+        reasoning: [
+          `👁️ Observation: Analyzed viewport containing ${count} interactive element${count === 1 ? '' : 's'}.`,
+          `🎯 User Intent: Aligning execution strategy for: "${payload.goal || ''}".`,
+          `⚡ Action Selection: Selecting ${proposal.kind} on ${targetDesc} (${proposal.rationale}).`
+        ].join('\n')
+      };
+    }
+    return proposal;
+  }
+
+  private async computeAction(payload: SanitizedNetworkPayload): Promise<ActionProposal> {
     const goal = (payload.goal || '').toLowerCase();
     const elements = payload.elements || [];
 

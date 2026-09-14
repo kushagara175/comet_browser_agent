@@ -6,5 +6,6 @@
 import { SanitizedNetworkPayload, ActionProposal } from '@privapilot/protocol';
 export declare class MockReasoningEngine {
     decideNextAction(payload: SanitizedNetworkPayload): Promise<ActionProposal>;
+    private computeAction;
 }
 //# sourceMappingURL=mock-engine.d.ts.map

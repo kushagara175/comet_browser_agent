@@ -1244,17 +1244,71 @@ html, body {
 }
 
 .monologue-content {
-  max-height: 130px;
+  max-height: 240px;
   overflow-y: auto;
   padding-left: 10px;
-  border-left: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(163, 163, 163, 0.9);
+  border-left: 1.5px solid rgba(138, 180, 248, 0.25);
+  color: #cbd5e1;
   font-size: 12px;
-  line-height: 1.6;
-  white-space: pre-wrap;
+  line-height: 1.55;
   word-break: break-word;
   user-select: text;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.thought-lines-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.thought-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 11.5px;
+  color: #cbd5e1;
+  line-height: 1.5;
+  padding: 1px 0;
+}
+
+.thought-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.thought-category {
+  color: #93c5fd;
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.thought-body {
+  flex: 1;
+  word-break: break-word;
+}
+
+.thought-code {
+  background: rgba(148, 163, 184, 0.15);
+  color: #67e8f9;
+  padding: 1px 5px;
+  border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10.5px;
+  border: 1px solid rgba(103, 232, 249, 0.2);
+}
+
+@keyframes thoughtFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .monologue-content::-webkit-scrollbar {

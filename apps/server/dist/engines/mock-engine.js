@@ -6,6 +6,22 @@
 import { resolveTaskContract, groundTargetCandidates } from '@privapilot/protocol';
 export class MockReasoningEngine {
     async decideNextAction(payload) {
+        const proposal = await this.computeAction(payload);
+        if (!proposal.reasoning && proposal.rationale) {
+            const targetDesc = proposal.targetLocalId ? `element ${proposal.targetLocalId}` : 'the page';
+            const count = payload.elements?.length || 0;
+            return {
+                ...proposal,
+                reasoning: [
+                    `👁️ Observation: Analyzed viewport containing ${count} interactive element${count === 1 ? '' : 's'}.`,
+                    `🎯 User Intent: Aligning execution strategy for: "${payload.goal || ''}".`,
+                    `⚡ Action Selection: Selecting ${proposal.kind} on ${targetDesc} (${proposal.rationale}).`
+                ].join('\n')
+            };
+        }
+        return proposal;
+    }
+    async computeAction(payload) {
         const goal = (payload.goal || '').toLowerCase();
         const elements = payload.elements || [];
         // 1. Check if an active modal / drawer is already open with a protected submit or approval button

@@ -342,6 +342,202 @@ export function mapVisionProviderToBadge(provider, modelName) {
   }
 }
 
+/**
+ * Real LLM Monologue / Thinking Extraction & Sanitization (inspired by allel)
+ */
+export function sanitizeReasoningText(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  const clean = raw
+    .replace(/<\/?think(?:ing)?>/gi, '')
+    .replace(/<\/?thought>/gi, '')
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+    .replace(/```json[\s\S]*?```/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  // Strict check: filter out empty or canned fallback strings
+  const FAKE_STRINGS = [
+    'analyzed visible page elements and generated response.',
+    'formulated response to query.',
+    'evaluated page context and synthesized response.',
+    'llm analyzed page elements and determined the optimal execution path.',
+    'evaluating page elements and planning action...',
+    'analyzed visible page context and formulated response.',
+    'action executed successfully'
+  ];
+  if (FAKE_STRINGS.some(fake => clean.toLowerCase() === fake || clean.toLowerCase().startsWith(fake))) {
+    return '';
+  }
+  return clean;
+}
+
+/**
+ * Parses raw reasoning into discrete, structured thought units with icons and categories.
+ */
+export function parseReasoningLines(rawText) {
+  const clean = sanitizeReasoningText(rawText);
+  if (!clean) return [];
+
+  // Split on newlines
+  let rawLines = clean
+    .split(/\r?\n+/)
+    .map(l => l.trim())
+    .filter(Boolean);
+
+  // If condensed into a single string, split by major delimiters or sentence boundaries
+  if (rawLines.length === 1 && rawLines[0].length > 70) {
+    const text = rawLines[0];
+    const emojiSplit = text.split(/(?=(?:👁️|🎯|⚡|📋|🧠))\s*/u).map(l => l.trim()).filter(Boolean);
+    if (emojiSplit.length > 1) {
+      rawLines = emojiSplit;
+    } else {
+      const keywordSplit = text.split(/(?<=[.!?]|^)\s+(?=(?:Observation:|User Intent:|Intent:|Strategic plan:|Strategy:|Action Selection:|Next Action:|Action:|Extraction:))/iu).map(l => l.trim()).filter(Boolean);
+      if (keywordSplit.length > 1) {
+        rawLines = keywordSplit;
+      } else {
+        rawLines = text.split(/(?<=[.!?])\s+(?=[A-Z0-9])/).map(l => l.trim()).filter(Boolean);
+      }
+    }
+  }
+
+  return rawLines.map(line => {
+    let text = line.replace(/^[\*\-\•]\s+/, '').replace(/^\d+\.\s+/, '').trim();
+
+    let icon = '▸';
+    let category = '';
+    let body = text;
+
+    if (/^(?:👁️|Observation:?|Observing\b)/i.test(text)) {
+      icon = '👁️';
+      category = 'Observation';
+      body = text.replace(/^(?:👁️\s*|Observation:?\s*|Observing\s+(?:that\s+)?)/i, '').trim();
+    } else if (/^(?:🎯|User Intent:?|Intent:?|Strategic plan:?|Strategy:?)/i.test(text)) {
+      icon = '🎯';
+      category = 'Intent & Strategy';
+      body = text.replace(/^(?:🎯\s*|User Intent:?\s*|Intent:?\s*|Strategic plan:?\s*|Strategy:?\s*)/i, '').trim();
+    } else if (/^(?:⚡|Action Selection:?|Action:?|Next Action:?|Tool:?)/i.test(text)) {
+      icon = '⚡';
+      category = 'Action Selection';
+      body = text.replace(/^(?:⚡\s*|Action Selection:?\s*|Action:?\s*|Next Action:?\s*|Tool:?\s*)/i, '').trim();
+    } else if (/^(?:📋|Extraction:?|Extracted:?|Data:?|Result:?)/i.test(text)) {
+      icon = '📋';
+      category = 'Extraction';
+      body = text.replace(/^(?:📋\s*|Extraction:?\s*|Extracted:?\s*|Data:?\s*|Result:?\s*)/i, '').trim();
+    } else if (/^(?:🧠|Thinking:?|Reasoning:?)/i.test(text)) {
+      icon = '🧠';
+      category = 'Reasoning';
+      body = text.replace(/^(?:🧠\s*|Thinking:?\s*|Reasoning:?\s*)/i, '').trim();
+    }
+
+    if (body.length > 0) {
+      body = body.charAt(0).toUpperCase() + body.slice(1);
+    }
+
+    return { icon, category, body };
+  });
+}
+
+/**
+ * Formats parsed reasoning into line-by-line HTML with semantic styling and code chip highlighting.
+ */
+export function formatReasoningIntoLinesHtml(rawText) {
+  const parsed = parseReasoningLines(rawText);
+  if (!parsed || parsed.length === 0) return '';
+
+  const linesHtml = parsed.map(item => {
+    let escapedBody = escapeHtml(item.body)
+      .replace(/(?:`)(el_\w+)(?:`)/g, '<code class="thought-code">$1</code>')
+      .replace(/\b(el_\d+)\b/g, '<code class="thought-code">$1</code>');
+
+    const categoryHtml = item.category
+      ? `<strong class="thought-category" style="color: #93c5fd; font-weight: 600; margin-right: 5px;">${escapeHtml(item.category)}:</strong>`
+      : '';
+
+    return `<div class="thought-line" style="display: flex; align-items: baseline; gap: 7px; font-size: 11.5px; color: #cbd5e1; line-height: 1.5; padding: 2px 0;"><span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">${item.icon}</span><span class="thought-body" style="flex: 1; word-break: break-word;">${categoryHtml}${escapedBody}</span></div>`;
+  }).join('');
+
+  return `<div class="thought-lines-container" style="display: flex; flex-direction: column; gap: 5px; padding: 2px 0;">${linesHtml}</div>`;
+}
+
+/**
+ * Renders the collapsible Monologue/Thinking Accordion with structured line-by-line thoughts.
+ */
+export function renderThinkingAccordion(rawReasoning, durationSeconds, options = {}) {
+  const sanitized = sanitizeReasoningText(rawReasoning);
+  if (!sanitized) return '';
+
+  const words = sanitized.split(/\s+/).filter(Boolean).length;
+  const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
+  const duration = durationSeconds && durationSeconds > 0 ? durationSeconds : computedFallback;
+  const label = options.label || `Thought for ${duration}s`;
+  const isExpanded = Boolean(options.open);
+
+  return `
+    <div class="monologue-block group" data-state="${isExpanded ? 'expanded' : 'collapsed'}">
+      <button type="button" class="monologue-toggle-btn" aria-expanded="${isExpanded ? 'true' : 'false'}">
+        <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
+        <span class="monologue-title monologue-completed-text">${escapeHtml(label)}</span>
+      </button>
+      <div class="monologue-drawer" style="display: ${isExpanded ? 'block' : 'none'};">
+        <div class="monologue-content">${formatReasoningIntoLinesHtml(sanitized)}</div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Smoothly streams live reasoning lines into the live thought container with staggered animations.
+ */
+export function streamLiveReasoningLines(liveStream, liveReasoning) {
+  if (!liveStream || !liveReasoning) return;
+  const lines = parseReasoningLines(liveReasoning);
+  if (lines.length === 0) return;
+
+  const existingTexts = new Set(Array.from(liveStream.children).map(c => c.textContent?.trim()));
+
+  lines.forEach((item, index) => {
+    const fullText = `${item.category ? item.category + ': ' : ''}${item.body}`;
+    if (existingTexts.has(fullText)) return;
+
+    const lineEl = document.createElement('div');
+    lineEl.className = 'thought-line live-streamed-line';
+    lineEl.style.display = 'flex';
+    lineEl.style.alignItems = 'baseline';
+    lineEl.style.gap = '7px';
+    lineEl.style.fontSize = '11.5px';
+    lineEl.style.color = '#cbd5e1';
+    lineEl.style.lineHeight = '1.5';
+    lineEl.style.padding = '2px 0';
+    lineEl.style.opacity = '0';
+    lineEl.style.transform = 'translateY(3px)';
+    lineEl.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+
+    let escapedBody = escapeHtml(item.body)
+      .replace(/(?:`)(el_\w+)(?:`)/g, '<code class="thought-code">$1</code>')
+      .replace(/\b(el_\d+)\b/g, '<code class="thought-code">$1</code>');
+
+    const categoryHtml = item.category
+      ? `<strong class="thought-category" style="color: #93c5fd; font-weight: 600; margin-right: 5px;">${escapeHtml(item.category)}:</strong>`
+      : '';
+
+    lineEl.innerHTML = `
+      <span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">${item.icon}</span>
+      <span class="thought-body" style="flex: 1; word-break: break-word;">${categoryHtml}${escapedBody}</span>
+    `;
+
+    liveStream.appendChild(lineEl);
+
+    setTimeout(() => {
+      lineEl.style.opacity = '1';
+      lineEl.style.transform = 'translateY(0)';
+      const drawer = liveStream.closest('.monologue-drawer');
+      if (drawer) drawer.scrollTop = drawer.scrollHeight;
+    }, (index + 1) * 90);
+  });
+}
+
 // Browser Extension DOM Logic (Runs only in browser environment)
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', () => {
@@ -1102,58 +1298,6 @@ if (typeof document !== 'undefined') {
       }
     }
 
-    // Real LLM Monologue / Thinking Extraction & Sanitization (inspired by allel)
-    function sanitizeReasoningText(raw) {
-      if (!raw || typeof raw !== 'string') return '';
-      const clean = raw
-        .replace(/<\/?think(?:ing)?>/gi, '')
-        .replace(/<\/?thought>/gi, '')
-        .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
-        .replace(/```json[\s\S]*?```/gi, '')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-
-      // Strict check: filter out empty or canned fallback strings
-      const FAKE_STRINGS = [
-        'analyzed visible page elements and generated response.',
-        'formulated response to query.',
-        'evaluated page context and synthesized response.',
-        'llm analyzed page elements and determined the optimal execution path.',
-        'evaluating page elements and planning action...',
-        'analyzed visible page context and formulated response.',
-        'action executed successfully'
-      ];
-      if (FAKE_STRINGS.some(fake => clean.toLowerCase() === fake || clean.toLowerCase().startsWith(fake))) {
-        return '';
-      }
-      return clean;
-    }
-
-    function renderThinkingAccordion(rawReasoning, durationSeconds, options = {}) {
-      const sanitized = sanitizeReasoningText(rawReasoning);
-      if (!sanitized) return '';
-
-      const words = sanitized.split(/\s+/).filter(Boolean).length;
-      const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
-      const duration = durationSeconds && durationSeconds > 0 ? durationSeconds : computedFallback;
-      const label = options.label || `Thought for ${duration}s`;
-      const isExpanded = Boolean(options.open);
-
-      return `
-        <div class="monologue-block group" data-state="${isExpanded ? 'expanded' : 'collapsed'}">
-          <button type="button" class="monologue-toggle-btn" aria-expanded="${isExpanded ? 'true' : 'false'}">
-            <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-            <span class="monologue-title monologue-completed-text">${escapeHtml(label)}</span>
-          </button>
-          <div class="monologue-drawer" style="display: ${isExpanded ? 'block' : 'none'};">
-            <div class="monologue-content">${renderMarkdown(sanitized)}</div>
-          </div>
-        </div>
-      `;
-    }
-
     // Delegated click handler for allel MonologueBlock expandable/collapsible toggle
     document.addEventListener('click', (e) => {
       const toggleBtn = e.target.closest('.monologue-toggle-btn');
@@ -1637,15 +1781,26 @@ if (typeof document !== 'undefined') {
       const agentBubble = document.createElement('div');
       agentBubble.className = 'chat-msg agent';
       agentBubble.innerHTML = `
-        <div class="monologue-block executing" data-state="collapsed">
-          <button type="button" class="monologue-toggle-btn" aria-expanded="false">
+        <div class="monologue-block executing" data-state="expanded">
+          <button type="button" class="monologue-toggle-btn" aria-expanded="true">
             <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
             <span class="monologue-title thinking-shimmer-text">Thinking (1s)</span>
           </button>
-          <div class="monologue-drawer" style="display: none;">
-            <div class="monologue-content"><div class="live-thought-stream" style="color: #a3a3a3; font-style: italic;">Evaluating page context, anonymizing sensitive elements, and synthesizing actions...</div></div>
+          <div class="monologue-drawer" style="display: block;">
+            <div class="monologue-content">
+              <div class="live-thought-stream" style="display: flex; flex-direction: column; gap: 5px; padding: 2px 0;">
+                <div class="live-thought-line" style="display: flex; align-items: baseline; gap: 7px; font-size: 11.5px; color: #cbd5e1; line-height: 1.5; padding: 2px 0;">
+                  <span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">👁️</span>
+                  <span class="thought-body" style="flex: 1;"><strong class="thought-category" style="color: #93c5fd; font-weight: 600; margin-right: 5px;">Observation:</strong>Analyzing active page structure and interactive controls...</span>
+                </div>
+                <div class="live-thought-line" style="display: flex; align-items: baseline; gap: 7px; font-size: 11.5px; color: #cbd5e1; line-height: 1.5; padding: 2px 0;">
+                  <span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">🎯</span>
+                  <span class="thought-body" style="flex: 1;"><strong class="thought-category" style="color: #93c5fd; font-weight: 600; margin-right: 5px;">Intent & Strategy:</strong>Grounding goal <em>"${escapeHtml(goalText)}"</em> against viewport controls...</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       `;
@@ -1862,22 +2017,25 @@ if (typeof document !== 'undefined') {
             setAgentStatus(message.state);
             if (message.message) {
               addAuditEntry('AGENT', message.message, 'info');
+            }
+            if (message.state === 'awaiting-reasoning') {
               const liveStream = chatMessages.querySelector('.chat-msg.agent:last-child .live-thought-stream');
-              if (liveStream) {
-                if (liveStream.getAttribute('data-live-init') !== 'true') {
-                  liveStream.setAttribute('data-live-init', 'true');
-                  liveStream.innerHTML = '';
-                  liveStream.style.fontStyle = 'normal';
-                  liveStream.style.display = 'flex';
-                  liveStream.style.flexDirection = 'column';
-                  liveStream.style.gap = '5px';
-                }
-                const stepLine = document.createElement('div');
-                stepLine.style.fontSize = '11.5px';
-                stepLine.style.color = '#cbd5e1';
-                stepLine.style.lineHeight = '1.45';
-                stepLine.innerHTML = `<span style="color: #8ab4f8; margin-right: 6px; font-weight: 600;">▸</span>${escapeHtml(message.message)}`;
-                liveStream.appendChild(stepLine);
+              if (liveStream && !liveStream.querySelector('.thought-reasoning-step')) {
+                const waitLine = document.createElement('div');
+                waitLine.className = 'live-thought-line thought-reasoning-step';
+                waitLine.style.display = 'flex';
+                waitLine.style.alignItems = 'baseline';
+                waitLine.style.gap = '7px';
+                waitLine.style.fontSize = '11.5px';
+                waitLine.style.color = '#93c5fd';
+                waitLine.style.lineHeight = '1.5';
+                waitLine.style.padding = '2px 0';
+                waitLine.style.fontStyle = 'italic';
+                waitLine.innerHTML = `
+                  <span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">🧠</span>
+                  <span class="thought-body" style="flex: 1;">Synthesizing page context and evaluating candidate browser actions...</span>
+                `;
+                liveStream.appendChild(waitLine);
                 const drawer = liveStream.closest('.monologue-drawer');
                 if (drawer) drawer.scrollTop = drawer.scrollHeight;
               }
@@ -1888,37 +2046,7 @@ if (typeof document !== 'undefined') {
             if (message.message) {
               addAuditEntry(`STEP ${message.step}/${message.maxSteps}`, message.message, 'info');
             }
-            const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
-            const liveStream = lastAgentBubble?.querySelector('.live-thought-stream');
-            if (liveStream && message.message) {
-              if (liveStream.getAttribute('data-live-init') !== 'true') {
-                liveStream.setAttribute('data-live-init', 'true');
-                liveStream.innerHTML = '';
-                liveStream.style.fontStyle = 'normal';
-                liveStream.style.display = 'flex';
-                liveStream.style.flexDirection = 'column';
-                liveStream.style.gap = '5px';
-              }
-              const stepLine = document.createElement('div');
-              stepLine.style.fontSize = '11.5px';
-              stepLine.style.color = '#cbd5e1';
-              stepLine.style.lineHeight = '1.45';
-              stepLine.innerHTML = `<span style="color: #8ab4f8; margin-right: 6px; font-weight: 600;">▸ Step ${message.step}/${message.maxSteps}:</span>${escapeHtml(message.message)}`;
-              liveStream.appendChild(stepLine);
-              const drawer = liveStream.closest('.monologue-drawer');
-              if (drawer) drawer.scrollTop = drawer.scrollHeight;
-            } else if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card') && !lastAgentBubble.querySelector('.monologue-block')) {
-              lastAgentBubble.innerHTML = `
-                <div class="agent-thinking-stream" style="display: flex; align-items: center; gap: 8px;">
-                  <div class="agent-status-ring" style="display: inline-block; width: 12px; height: 12px; border: 2px solid #8ab4f8; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;"></div>
-                  <div>
-                    <span style="font-size: 11px; font-weight: 600; color: #8ab4f8;">Step ${message.step}/${message.maxSteps}</span>
-                    <span style="font-size: 11px; color: #94a3b8; margin-left: 4px;">${escapeHtml(message.message || 'Thinking...')}</span>
-                  </div>
-                </div>
-              `;
-              chatMessages.scrollTop = chatMessages.scrollHeight;
-            }
+            // Step telemetry is recorded for the Inspector tab, not dumped into user-facing thoughts
           }
 
           if (message.type === 'COORDINATOR_ACTION_PROPOSED') {
@@ -1928,28 +2056,28 @@ if (typeof document !== 'undefined') {
               addAuditEntry('PLAN', `${actDesc}: ${act.rationale || 'Executing action'}`, 'pass');
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
               if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
-                const liveReasoning = sanitizeReasoningText(act.reasoning);
-                const prevBlock = lastAgentBubble.querySelector('.monologue-block');
-                const isExpanded = prevBlock ? prevBlock.getAttribute('data-state') === 'expanded' : true;
-                const liveThinkingHtml = liveReasoning ? `
-                  <div class="monologue-block group" data-state="${isExpanded ? 'expanded' : 'collapsed'}" style="margin-bottom: 6px;">
-                    <button type="button" class="monologue-toggle-btn" aria-expanded="${isExpanded ? 'true' : 'false'}">
-                      <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                      </svg>
-                      <span class="monologue-title thinking-shimmer-text">Thinking...</span>
-                    </button>
-                    <div class="monologue-drawer" style="display: ${isExpanded ? 'block' : 'none'};">
-                      <div class="monologue-content">${renderMarkdown(liveReasoning)}</div>
-                    </div>
-                  </div>
-                ` : '';
-                lastAgentBubble.innerHTML = `
-                  ${liveThinkingHtml}
-                  <div class="agent-thinking-stream" style="display: flex; align-items: center; gap: 8px;">
-                    <div class="agent-status-ring" style="display: inline-block; width: 12px; height: 12px; border: 2px solid #8ab4f8; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;"></div>
-                    <span style="font-size: 11px; font-weight: 600; color: #8ab4f8;">Executing ${escapeHtml((act.kind || 'action').toUpperCase())} ${escapeHtml(act.sanitizedTargetName || act.targetLocalId || '')}</span>
-                  </div>
+                const liveStream = lastAgentBubble.querySelector('.live-thought-stream');
+                const placeholder = liveStream?.querySelector('.thought-reasoning-step');
+                if (placeholder) placeholder.remove();
+
+                const liveReasoning = sanitizeReasoningText(act.reasoning) || sanitizeReasoningText(act.rationale);
+                if (liveStream && liveReasoning) {
+                  streamLiveReasoningLines(liveStream, liveReasoning);
+                }
+
+                let statusRing = lastAgentBubble.querySelector('.agent-thinking-stream');
+                if (!statusRing) {
+                  statusRing = document.createElement('div');
+                  statusRing.className = 'agent-thinking-stream';
+                  statusRing.style.display = 'flex';
+                  statusRing.style.alignItems = 'center';
+                  statusRing.style.gap = '8px';
+                  statusRing.style.marginTop = '6px';
+                  lastAgentBubble.appendChild(statusRing);
+                }
+                statusRing.innerHTML = `
+                  <div class="agent-status-ring" style="display: inline-block; width: 12px; height: 12px; border: 2px solid #8ab4f8; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;"></div>
+                  <span style="font-size: 11px; font-weight: 600; color: #8ab4f8;">Executing ${escapeHtml((act.kind || 'action').toUpperCase())} ${escapeHtml(act.sanitizedTargetName || act.targetLocalId || '')}</span>
                 `;
                 chatMessages.scrollTop = chatMessages.scrollHeight;
               }
