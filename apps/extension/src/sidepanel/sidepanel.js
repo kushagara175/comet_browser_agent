@@ -2479,11 +2479,17 @@ if (typeof document !== 'undefined') {
 
         if (activeVoiceOrb) {
           activeVoiceOrb.resume?.();
-          activeVoiceOrb.setState('idle');
+          activeVoiceOrb.setState('listening');
           try {
             await activeVoiceOrb.connectMicrophone();
+            activeVoiceOrb.setState('listening');
           } catch (micErr) {
             console.warn('[PrivaPilot Voice] Microphone audio connection note:', micErr);
+            // Chrome blocks getUserMedia permission dialogs in extension sidepanels.
+            // Open dedicated permission helper tab so user can click "Allow" natively.
+            if (typeof chrome !== 'undefined' && chrome.tabs?.create && chrome.runtime?.getURL) {
+              chrome.tabs.create({ url: chrome.runtime.getURL('src/sidepanel/permission.html') });
+            }
           }
         }
       } catch (orbErr) {
@@ -2498,6 +2504,8 @@ if (typeof document !== 'undefined') {
           voiceRecognition.continuous = true;
           voiceRecognition.interimResults = true;
           voiceRecognition.lang = 'en-US';
+
+          let silenceTimer = null;
 
           voiceRecognition.onresult = (event) => {
             let interimTranscript = '';
@@ -2519,11 +2527,22 @@ if (typeof document !== 'undefined') {
             }
             if (activeVoiceOrb) {
               activeVoiceOrb.setState('speaking');
+              clearTimeout(silenceTimer);
+              silenceTimer = setTimeout(() => {
+                if (isVoiceActive && activeVoiceOrb) {
+                  activeVoiceOrb.setState('listening');
+                }
+              }, 1200);
             }
           };
 
           voiceRecognition.onerror = (e) => {
             console.warn('[PrivaPilot Voice] Speech recognition event:', e?.error);
+            if (e?.error === 'not-allowed' || e?.error === 'audio-capture') {
+              if (typeof chrome !== 'undefined' && chrome.tabs?.create && chrome.runtime?.getURL) {
+                chrome.tabs.create({ url: chrome.runtime.getURL('src/sidepanel/permission.html') });
+              }
+            }
           };
 
           voiceRecognition.onend = () => {
@@ -2577,6 +2596,21 @@ if (typeof document !== 'undefined') {
         closeVoiceMode();
       }
     });
+
+    if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+      chrome.runtime.onMessage.addListener((msg) => {
+        if (msg?.type === 'MIC_PERMISSION_GRANTED' && isVoiceActive && activeVoiceOrb) {
+          activeVoiceOrb.connectMicrophone()
+            .then(() => {
+              activeVoiceOrb.setState('listening');
+              if (voiceRecognition) {
+                try { voiceRecognition.start(); } catch (_) {}
+              }
+            })
+            .catch((e) => console.warn('[PrivaPilot Voice] Reconnecting mic error:', e));
+        }
+      });
+    }
 
     // Chat Form Submit & Input Handling
     if (chatForm && chatInput) {

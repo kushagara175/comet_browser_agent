@@ -66,3 +66,14 @@ test('Orbloom Bundle ESM Module: Bundled locally without remote dependencies or 
   assert.equal(typeof bundle.attachMicrophone, 'function', 'attachMicrophone must be exported as a function');
   assert.equal(typeof bundle.OrbController, 'function', 'OrbController must be exported as a class/function');
 });
+
+test('Microphone Permission Tab Helper: permission.html and permission.js exist for Chrome native prompt', () => {
+  const permHtml = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/permission.html');
+  const permJs = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/permission.js');
+  assert.ok(fs.existsSync(permHtml), 'permission.html must exist');
+  assert.ok(fs.existsSync(permJs), 'permission.js must exist');
+  const html = fs.readFileSync(permHtml, 'utf-8');
+  assert.ok(html.includes('id="allowMicBtn"'), 'allowMicBtn must exist in permission.html');
+  const js = fs.readFileSync(permJs, 'utf-8');
+  assert.ok(js.includes('MIC_PERMISSION_GRANTED'), 'MIC_PERMISSION_GRANTED runtime message present in permission.js');
+});
