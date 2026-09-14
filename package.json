@@ -38,5 +38,8 @@
     "@types/node": "^26.4.0",
     "esbuild": "^0.25.0",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "orbloom": "^0.1.0"
   }
 }

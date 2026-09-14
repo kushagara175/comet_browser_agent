@@ -1825,17 +1825,37 @@ html, body {
   color: #c4c7c5;
 }
 
-.send-btn .icon-send {
+.send-btn.mode-send .icon-send {
   display: block !important;
 }
 
-.send-btn .icon-mic {
+.send-btn.mode-send .icon-mic {
   display: none !important;
+}
+
+.send-btn.mode-mic .icon-send {
+  display: none !important;
+}
+
+.send-btn.mode-mic .icon-mic {
+  display: block !important;
 }
 
 .send-btn:hover {
   background: #37393b !important;
   color: #ffffff;
+}
+
+.send-btn.mode-mic {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #c4c7c5;
+}
+
+.send-btn.mode-mic:hover {
+  background: rgba(138, 180, 248, 0.15) !important;
+  border-color: rgba(138, 180, 248, 0.5) !important;
+  color: #8ab4f8;
 }
 
 .send-btn.mode-send {
@@ -2915,6 +2935,202 @@ html, body {
   background: rgba(239, 68, 68, 0.15);
   color: #f87171;
   border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* ==========================================================================
+   VOICE OVERLAY MODAL & ORBLOOM 3D WEBGL LIVING ORB
+   ========================================================================== */
+
+.voice-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(10, 11, 15, 0.78);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.25s ease;
+}
+
+.voice-modal.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.voice-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e3e3e3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 10001;
+}
+
+.voice-close-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  transform: scale(1.08);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.voice-orb-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  width: 100%;
+  max-width: 320px;
+  padding: 0 16px;
+}
+
+.voice-live-transcript {
+  min-height: 24px;
+  max-width: 280px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: #f1f3f4;
+  letter-spacing: -0.01em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+  transition: all 0.2s ease;
+  word-break: break-word;
+}
+
+.voice-live-transcript:empty {
+  display: none;
+}
+
+/* Orbloom Living 3D WebGL Orb Styles */
+.orb-motion {
+  --orb-diameter: 250px;
+  --orb-shell-blur: 15.8px;
+  position: relative;
+  width: var(--orb-diameter);
+  height: var(--orb-diameter);
+  contain: layout paint style;
+}
+
+.orb-motion[data-ambient-motion="true"] {
+  animation: orb-ambient-motion var(--orb-motion-duration, 7s) ease-in-out var(--orb-motion-delay, 0s) infinite;
+  will-change: transform;
+}
+
+.orb-shell,
+.orb-clip,
+.orb-canvas,
+.orb-fallback,
+.orb-chrome {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.orb-shell {
+  position: relative;
+}
+
+.orb-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 50%;
+  clip-path: circle(50% at 50% 50%);
+  -webkit-clip-path: circle(50% at 50% 50%);
+  mask-image: radial-gradient(closest-side, #000 calc(100% - 0.5px), transparent);
+  -webkit-mask-image: radial-gradient(closest-side, #000 calc(100% - 0.5px), transparent);
+}
+
+.orb-canvas {
+  position: relative;
+  z-index: 1;
+  clip-path: circle(50% at 50% 50%);
+  -webkit-clip-path: circle(50% at 50% 50%);
+}
+
+.orb-fallback {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  opacity: 0;
+  background:
+    radial-gradient(circle at 62% 42%, rgba(240, 245, 255, 0.75) 0 1px, transparent 4px),
+    radial-gradient(circle at 40% 52%, rgba(255, 255, 255, 0.8) 0 1px, transparent 5px),
+    radial-gradient(ellipse at 58% 62%, rgba(156, 178, 106, 0.5), transparent 23%),
+    radial-gradient(ellipse at 42% 32%, rgba(58, 92, 169, 0.48), transparent 22%),
+    radial-gradient(circle, #07100e 0 72%, rgba(154, 168, 157, 0.75) 97%, transparent 100%);
+}
+
+.orb-chrome {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0.35;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.7),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+    inset 0 0 var(--orb-shell-blur) rgba(255, 255, 255, 0.18);
+}
+
+.orb-motion[data-entrance="true"] {
+  animation-name: orb-entrance, orb-ambient-motion;
+  animation-duration: 600ms, var(--orb-motion-duration, 7s);
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1), ease-in-out;
+  animation-delay: var(--orb-entrance-delay, 0s), var(--orb-motion-delay, 0s);
+  animation-iteration-count: 1, infinite;
+  animation-fill-mode: backwards, none;
+}
+
+.orb-motion[data-playback-state="paused"] {
+  animation-play-state: paused;
+}
+
+@keyframes orb-ambient-motion {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(var(--orb-motion-distance, -7px)) scale(var(--orb-motion-scale, 1));
+  }
+}
+
+@keyframes orb-entrance {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-motion,
+  .orb-motion[data-ambient-motion="true"],
+  .orb-motion[data-entrance="true"] {
+    animation: none;
+  }
 }
 
 

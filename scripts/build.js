@@ -120,6 +120,22 @@ try {
   process.exit(1);
 }
 
+// 2e. Bundle Chrome MV3 Sidepanel Orbloom Living 3D Visualizer (ESM)
+console.log('📦 Bundling Orbloom 3D visualizer module for sidepanel (ESM)...');
+const orbloomEntry = path.join(ROOT_DIR, 'node_modules', 'orbloom', 'src', 'index.js');
+const orbloomOutfile = path.join(extensionDir, 'src', 'sidepanel', 'orbloom-bundle.js');
+
+try {
+  execSync(
+    `"${ESBUILD_BIN}" "${orbloomEntry}" --bundle --outfile="${orbloomOutfile}" --format=esm --platform=browser --target=es2022`,
+    { cwd: ROOT_DIR, stdio: 'inherit' }
+  );
+  console.log('✓ apps/extension orbloom visualizer bundled successfully as standalone ESM.\n');
+} catch (err) {
+  console.error('❌ Failed to bundle orbloom module with esbuild');
+  process.exit(1);
+}
+
 // 3. Validate All Required Production Build Artifacts
 console.log('🔍 Validating production build artifacts...');
 
@@ -134,7 +150,8 @@ const REQUIRED_ARTIFACTS = [
   { path: 'apps/extension/dist/content/content-main.js', desc: 'Bundled standalone content script (IIFE)' },
   { path: 'apps/extension/dist/offscreen/offscreen-main.js', desc: 'Bundled standalone offscreen host script (IIFE)' },
   { path: 'apps/extension/assets/models/version-RFB-320.onnx', desc: 'Locally bundled UltraFace-320 ONNX model weights' },
-  { path: 'apps/extension/dist/harness/harness-entry.js', desc: 'Benchmark harness bundle (IIFE, global __privapilot)' }
+  { path: 'apps/extension/dist/harness/harness-entry.js', desc: 'Benchmark harness bundle (IIFE, global __privapilot)' },
+  { path: 'apps/extension/src/sidepanel/orbloom-bundle.js', desc: 'Bundled standalone Orbloom 3D visualizer (ESM)' }
 ];
 
 for (const artifact of REQUIRED_ARTIFACTS) {

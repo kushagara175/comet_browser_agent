@@ -2443,6 +2443,141 @@ if (typeof document !== 'undefined') {
       }
     }
 
+    // Voice Mode & Orbloom Living 3D WebGL Setup
+    const voiceModal = document.getElementById('voiceModal');
+    const closeVoiceBtn = document.getElementById('closeVoiceBtn');
+    const voiceLiveTranscript = document.getElementById('voiceLiveTranscript');
+    let activeVoiceOrb = null;
+    let isVoiceActive = false;
+    let voiceRecognition = null;
+    let voiceFinalTranscript = '';
+
+    async function openVoiceMode() {
+      if (!voiceModal) return;
+      isVoiceActive = true;
+      voiceModal.classList.remove('hidden');
+      voiceModal.setAttribute('aria-hidden', 'false');
+      voiceFinalTranscript = '';
+      if (voiceLiveTranscript) {
+        voiceLiveTranscript.textContent = '';
+      }
+
+      // Initialize or activate Orbloom Living WebGL Orb
+      try {
+        if (!activeVoiceOrb) {
+          const { createOrb } = await import('./orbloom-bundle.js');
+          const canvas = voiceModal.querySelector('.orb-canvas');
+          if (canvas) {
+            activeVoiceOrb = createOrb(canvas, {
+              theme: 'spiral-pink-01',
+              state: 'idle',
+              quality: 'balanced',
+              reducedMotion: 'user'
+            });
+          }
+        }
+
+        if (activeVoiceOrb) {
+          activeVoiceOrb.resume?.();
+          activeVoiceOrb.setState('idle');
+          try {
+            await activeVoiceOrb.connectMicrophone();
+          } catch (micErr) {
+            console.warn('[PrivaPilot Voice] Microphone audio connection note:', micErr);
+          }
+        }
+      } catch (orbErr) {
+        console.warn('[PrivaPilot Voice] Failed to initialize Orbloom visualizer:', orbErr);
+      }
+
+      // Browser-native real-time Web Speech Recognition
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRec) {
+        try {
+          voiceRecognition = new SpeechRec();
+          voiceRecognition.continuous = true;
+          voiceRecognition.interimResults = true;
+          voiceRecognition.lang = 'en-US';
+
+          voiceRecognition.onresult = (event) => {
+            let interimTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+              const res = event.results[i];
+              if (res.isFinal) {
+                voiceFinalTranscript += (voiceFinalTranscript ? ' ' : '') + res[0].transcript.trim();
+              } else {
+                interimTranscript += res[0].transcript;
+              }
+            }
+            const currentSpoken = (voiceFinalTranscript + ' ' + interimTranscript).trim();
+            if (voiceLiveTranscript) {
+              voiceLiveTranscript.textContent = currentSpoken;
+            }
+            if (chatInput && currentSpoken) {
+              chatInput.value = currentSpoken;
+              updateSendBtn();
+            }
+            if (activeVoiceOrb) {
+              activeVoiceOrb.setState('speaking');
+            }
+          };
+
+          voiceRecognition.onerror = (e) => {
+            console.warn('[PrivaPilot Voice] Speech recognition event:', e?.error);
+          };
+
+          voiceRecognition.onend = () => {
+            if (isVoiceActive && voiceRecognition) {
+              try {
+                voiceRecognition.start();
+              } catch (_) {}
+            }
+          };
+
+          voiceRecognition.start();
+        } catch (recErr) {
+          console.warn('[PrivaPilot Voice] Speech recognition start error:', recErr);
+        }
+      }
+    }
+
+    function closeVoiceMode() {
+      if (!isVoiceActive) return;
+      isVoiceActive = false;
+
+      if (voiceModal) {
+        voiceModal.classList.add('hidden');
+        voiceModal.setAttribute('aria-hidden', 'true');
+      }
+
+      if (voiceRecognition) {
+        try {
+          voiceRecognition.stop();
+        } catch (_) {}
+        voiceRecognition = null;
+      }
+
+      if (activeVoiceOrb) {
+        try {
+          activeVoiceOrb.disconnectAudio();
+          activeVoiceOrb.setState('idle');
+          activeVoiceOrb.pause?.();
+        } catch (_) {}
+      }
+
+      updateSendBtn();
+      if (chatInput) {
+        chatInput.focus();
+      }
+    }
+
+    closeVoiceBtn?.addEventListener('click', closeVoiceMode);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isVoiceActive) {
+        closeVoiceMode();
+      }
+    });
+
     // Chat Form Submit & Input Handling
     if (chatForm && chatInput) {
       const sendBtn = document.getElementById('sendBtn');
@@ -2452,20 +2587,28 @@ if (typeof document !== 'undefined') {
         if (hasText) {
           sendBtn?.classList.add('mode-send');
           sendBtn?.classList.remove('mode-mic');
+          sendBtn?.setAttribute('title', 'Send Instruction');
+          sendBtn?.setAttribute('aria-label', 'Send Instruction');
         } else {
           sendBtn?.classList.add('mode-mic');
           sendBtn?.classList.remove('mode-send');
+          sendBtn?.setAttribute('title', 'Voice Input');
+          sendBtn?.setAttribute('aria-label', 'Voice Input');
         }
       }
+
+      updateSendBtn();
 
       ['input', 'keyup', 'change', 'paste', 'focus'].forEach(evt => {
         chatInput.addEventListener(evt, updateSendBtn);
       });
 
       sendBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
         if (sendBtn.classList.contains('mode-send')) {
-          e.preventDefault();
           chatForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        } else if (sendBtn.classList.contains('mode-mic')) {
+          openVoiceMode();
         }
       });
 
