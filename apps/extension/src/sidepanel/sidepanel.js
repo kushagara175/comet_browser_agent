@@ -2482,6 +2482,13 @@ if (typeof document !== 'undefined') {
     const voiceModeLabel = document.getElementById('voiceModeLabel');
     const voiceSendNowBtn = document.getElementById('voiceSendNowBtn');
 
+    // Bottom-right voice overlay mode dropdown elements
+    const voiceOverlayModeWrapper = document.getElementById('voiceOverlayModeWrapper');
+    const voiceOverlayModeBtn = document.getElementById('voiceOverlayModeBtn');
+    const voiceOverlayModeMenu = document.getElementById('voiceOverlayModeMenu');
+    const voiceOverlayModeLabel = document.getElementById('voiceOverlayModeLabel');
+    const voiceOverlayModeIcon = document.getElementById('voiceOverlayModeIcon');
+
     let activeVoiceOrb = null;
     let isVoiceActive = false;
     let voiceRecognition = null;
@@ -2510,7 +2517,13 @@ if (typeof document !== 'undefined') {
           iconSpan.textContent = currentVoiceMode === 'talk' ? '💬' : '🎙️';
         }
       }
-      document.querySelectorAll('.voice-mode-option').forEach((opt) => {
+      if (voiceOverlayModeLabel) {
+        voiceOverlayModeLabel.textContent = currentVoiceMode === 'talk' ? 'Live Conversation' : 'Voice to Text';
+      }
+      if (voiceOverlayModeIcon) {
+        voiceOverlayModeIcon.textContent = currentVoiceMode === 'talk' ? '💬' : '📝';
+      }
+      document.querySelectorAll('.voice-mode-option, .voice-overlay-mode-option').forEach((opt) => {
         if (opt.getAttribute('data-mode') === currentVoiceMode) {
           opt.classList.add('active');
         } else {
@@ -2528,6 +2541,7 @@ if (typeof document !== 'undefined') {
 
     updateVoiceModeUI();
 
+    // Chat bar dropdown handlers
     voiceModeBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
       const isHidden = voiceModeMenu?.classList.toggle('hidden');
@@ -2545,6 +2559,27 @@ if (typeof document !== 'undefined') {
         }
         voiceModeMenu?.classList.add('hidden');
         voiceModeBtn?.classList.remove('active');
+      });
+    });
+
+    // Voice overlay bottom-right dropdown handlers
+    voiceOverlayModeBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isHidden = voiceOverlayModeMenu?.classList.toggle('hidden');
+      voiceOverlayModeBtn.classList.toggle('menu-open', !isHidden);
+    });
+
+    document.querySelectorAll('.voice-overlay-mode-option').forEach((opt) => {
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const mode = opt.getAttribute('data-mode');
+        if (mode && (mode === 'dictate' || mode === 'talk')) {
+          currentVoiceMode = mode;
+          try { localStorage.setItem('privapilot_voice_mode', mode); } catch (_) {}
+          updateVoiceModeUI();
+        }
+        voiceOverlayModeMenu?.classList.add('hidden');
+        voiceOverlayModeBtn?.classList.remove('menu-open');
       });
     });
 
@@ -2573,6 +2608,10 @@ if (typeof document !== 'undefined') {
       if (!voiceModeWrapper?.contains(e.target)) {
         voiceModeMenu?.classList.add('hidden');
         voiceModeBtn?.classList.remove('active');
+      }
+      if (!voiceOverlayModeWrapper?.contains(e.target)) {
+        voiceOverlayModeMenu?.classList.add('hidden');
+        voiceOverlayModeBtn?.classList.remove('menu-open');
       }
     });
 
@@ -2845,36 +2884,40 @@ if (typeof document !== 'undefined') {
         voiceSendNowBtn.classList.add('hidden');
       }
 
+      // Synchronize voice mode UI state
+      updateVoiceModeUI();
+
       // Initialize or activate Orbloom Living WebGL Orb with vibrant celestial cyan theme
       try {
+        const { createOrb, createOrbTheme } = await import('./orbloom-bundle.js');
+        const vibrantTheme = createOrbTheme({
+          preset: 'spiral-cyan-03',
+          seed: 3.465,
+          colors: {
+            base: '#101632',
+            interior: '#050a18',
+            accents: ['#4CC9F0', '#7B5CFF', '#B8F1FF']
+          },
+          appearance: {
+            intensity: 1.45,
+            detail: 1.0,
+            glass: 0.42,
+            glow: 1.5,
+          },
+          motion: {
+            speed: 1.25,
+            drift: 0.85,
+          },
+          audioResponse: {
+            brightness: 1.95,
+            motion: 1.65,
+            pulse: 1.9,
+          }
+        });
+
         if (!activeVoiceOrb) {
-          const { createOrb, createOrbTheme } = await import('./orbloom-bundle.js');
           const canvas = voiceModal.querySelector('.orb-canvas');
           if (canvas) {
-            const vibrantTheme = createOrbTheme({
-              preset: 'spiral-cyan-03',
-              seed: 3.465,
-              colors: {
-                base: '#101632',
-                interior: '#050a18',
-                accents: ['#4CC9F0', '#7B5CFF', '#B8F1FF']
-              },
-              appearance: {
-                intensity: 1.45,
-                detail: 1.0,
-                glass: 0.42,
-                glow: 1.5,
-              },
-              motion: {
-                speed: 1.25,
-                drift: 0.85,
-              },
-              audioResponse: {
-                brightness: 1.95,
-                motion: 1.65,
-                pulse: 1.9,
-              }
-            });
             activeVoiceOrb = createOrb(canvas, {
               theme: vibrantTheme,
               state: 'listening',
@@ -2882,6 +2925,9 @@ if (typeof document !== 'undefined') {
               reducedMotion: 'user'
             });
           }
+        } else {
+          activeVoiceOrb.setTheme?.(vibrantTheme);
+          activeVoiceOrb.setQuality?.('high');
         }
 
         if (activeVoiceOrb) {
@@ -3069,6 +3115,13 @@ if (typeof document !== 'undefined') {
 
       if (voiceSendNowBtn) {
         voiceSendNowBtn.classList.add('hidden');
+      }
+
+      if (voiceOverlayModeMenu) {
+        voiceOverlayModeMenu.classList.add('hidden');
+      }
+      if (voiceOverlayModeBtn) {
+        voiceOverlayModeBtn.classList.remove('menu-open');
       }
 
       if (voiceRecognition) {

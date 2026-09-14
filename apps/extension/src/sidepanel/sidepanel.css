@@ -3232,6 +3232,133 @@ html, body {
   display: none !important;
 }
 
+/* Bottom-Right Voice Mode Dropdown inside Voice Modal Overlay */
+.voice-overlay-mode-wrapper {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10001;
+}
+
+.voice-overlay-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e3e3e3;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.voice-overlay-mode-chip:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(138, 180, 248, 0.45);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.voice-overlay-mode-chip.menu-open {
+  background: rgba(138, 180, 248, 0.18);
+  border-color: rgba(138, 180, 248, 0.55);
+  color: #8ab4f8;
+  box-shadow: 0 0 16px rgba(138, 180, 248, 0.25);
+}
+
+.voice-overlay-mode-chip svg {
+  transition: transform 0.2s ease;
+}
+
+.voice-overlay-mode-chip.menu-open svg {
+  transform: rotate(180deg);
+}
+
+.voice-overlay-mode-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  min-width: 220px;
+  background: rgba(15, 18, 26, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 10002;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.voice-overlay-mode-menu.hidden {
+  display: none !important;
+}
+
+.voice-overlay-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #d1d5db;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.voice-overlay-mode-option:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.voice-overlay-mode-option.active {
+  background: rgba(138, 180, 248, 0.15);
+  border-color: rgba(138, 180, 248, 0.35);
+  color: #8ab4f8;
+}
+
+.voice-overlay-mode-option .mode-icon {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.voice-overlay-mode-option .mode-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.voice-overlay-mode-option .mode-title {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.voice-overlay-mode-option .mode-desc {
+  font-size: 10.5px;
+  color: #9aa0a6;
+  line-height: 1.2;
+}
+
+.voice-overlay-mode-option.active .mode-desc {
+  color: #c2e7ff;
+}
+
+
 
 /* Orbloom Living 3D WebGL Orb Styles */
 .orb-motion {

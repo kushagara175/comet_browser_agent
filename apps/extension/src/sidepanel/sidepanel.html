@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PrivaPilot — Privacy Mission Control HUD</title>
-  <link rel="stylesheet" href="sidepanel.css?v=2.3.0" />
+  <link rel="stylesheet" href="sidepanel.css?v=2.3.1" />
 </head>
 <body>
   <div class="app-container">
@@ -632,7 +632,10 @@
             <span class="voice-thinking-dot"></span>
             <span class="voice-thinking-shimmer">Reasoning...</span>
           </div>
-          <div id="voiceModalModeSelector" class="voice-modal-mode-selector">
+          <button type="button" id="voiceSendNowBtn" class="voice-send-now-btn hidden">
+            <span>Done / Send ↵</span>
+          </button>
+          <div id="voiceModalModeSelector" class="voice-modal-mode-selector" style="display: none;">
             <button type="button" class="voice-modal-mode-pill active" data-mode="dictate">
               <span>📝 Voice to Text</span>
             </button>
@@ -640,16 +643,40 @@
               <span>💬 Live Conversation</span>
             </button>
           </div>
-          <button type="button" id="voiceSendNowBtn" class="voice-send-now-btn hidden">
-            <span>Done / Send ↵</span>
+        </div>
+
+        <!-- BOTTOM RIGHT DROPDOWN MENU FOR VOICE MODE SELECTION -->
+        <div id="voiceOverlayModeWrapper" class="voice-overlay-mode-wrapper">
+          <button type="button" id="voiceOverlayModeBtn" class="voice-overlay-mode-chip" title="Select Voice Mode">
+            <span id="voiceOverlayModeIcon" class="voice-overlay-mode-icon">📝</span>
+            <span id="voiceOverlayModeLabel" class="voice-overlay-mode-label">Voice to Text</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
           </button>
+          <div id="voiceOverlayModeMenu" class="voice-overlay-mode-menu hidden">
+            <button type="button" class="voice-overlay-mode-option active" data-mode="dictate">
+              <span class="mode-icon">📝</span>
+              <div class="mode-meta">
+                <span class="mode-title">Voice to Text</span>
+                <span class="mode-desc">Transcribes speech directly to chatbox</span>
+              </div>
+            </button>
+            <button type="button" class="voice-overlay-mode-option" data-mode="talk">
+              <span class="mode-icon">💬</span>
+              <div class="mode-meta">
+                <span class="mode-title">Live Conversation</span>
+                <span class="mode-desc">Interactive voice dialogue with AI speech</span>
+              </div>
+            </button>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
   <script src="waves-shader.js"></script>
-  <script type="module" src="sidepanel.js?v=2.3.0"></script>
+  <script type="module" src="sidepanel.js?v=2.3.1"></script>
 </body>
 </html>
 
