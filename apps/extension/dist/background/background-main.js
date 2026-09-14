@@ -15284,7 +15284,7 @@ function classifyActionRisk(proposal, elementName) {
 function stripNavigationPrefixFromGoal(goal) {
   if (!goal || typeof goal !== "string")
     return goal;
-  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s,]+|[a-zA-Z0-9_.-]+?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*)(.+)$/i);
+  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:(?:in|on|open)\s+(?:a\s+)?(?:new|another|fresh)\s+tab(?:,\s*|\s+and\s+)?)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s,]+|[a-zA-Z0-9_.-]+?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*)(.+)$/i);
   if (match && match[1]) {
     return match[1].trim();
   }
@@ -18907,7 +18907,7 @@ var WebExtensionAdapter = class {
       });
     });
   }
-  async navigateTab(tabId, url) {
+  async navigateTab(tabId, url, options) {
     const api = this.browserAPI;
     if (api && api.tabs) {
       let targetTabId = tabId && tabId > 0 ? tabId : 0;
@@ -18928,22 +18928,69 @@ var WebExtensionAdapter = class {
           targetTabId = normalTab.id;
         }
       }
-      if (targetTabId && api.tabs.update) {
-        await new Promise((resolve) => {
-          api.tabs.update(targetTabId, { url, active: true }, () => resolve());
-        });
-        const readyTab = await this.waitForTabReady(targetTabId, 1e4, url);
-        await this.ensureContentScript(targetTabId);
-        return { tabId: targetTabId, url: readyTab?.url || url };
-      }
-      if (!targetTabId && api.tabs.create) {
+      if (options?.createNewTab && api.tabs.create) {
         const createdTab = await new Promise((resolve) => {
-          api.tabs.create({ url, active: true }, (tab) => resolve(tab));
+          try {
+            api.tabs.create({ url, active: true }, (tab) => resolve(tab || null));
+          } catch (_) {
+            resolve(null);
+          }
         });
-        targetTabId = createdTab?.id || 0;
-        const readyTab = await this.waitForTabReady(targetTabId, 1e4, url);
-        await this.ensureContentScript(targetTabId);
-        return { tabId: targetTabId, url: readyTab?.url || url };
+        if (createdTab && createdTab.id) {
+          const readyTab = await this.waitForTabReady(createdTab.id, 1e4, url);
+          await this.ensureContentScript(createdTab.id);
+          return { tabId: createdTab.id, url: readyTab?.url || url };
+        }
+      }
+      let updateSucceeded = false;
+      if (targetTabId && api.tabs.update) {
+        updateSucceeded = await new Promise((resolve) => {
+          try {
+            api.tabs.update(targetTabId, { url, active: true }, (updatedTab) => {
+              if (api.runtime?.lastError || !updatedTab) {
+                resolve(false);
+              } else {
+                resolve(true);
+              }
+            });
+          } catch (_) {
+            resolve(false);
+          }
+        });
+        if (updateSucceeded) {
+          const readyTab = await this.waitForTabReady(targetTabId, 1e4, url);
+          if (readyTab && readyTab.url && !readyTab.url.startsWith("chrome://")) {
+            await this.ensureContentScript(targetTabId);
+            return { tabId: targetTabId, url: readyTab.url };
+          }
+        }
+      }
+      if (api.tabs.create) {
+        const oldTabId = targetTabId;
+        const createdTab = await new Promise((resolve) => {
+          try {
+            api.tabs.create({ url, active: true }, (tab) => {
+              resolve(tab || null);
+            });
+          } catch (_) {
+            resolve(null);
+          }
+        });
+        if (createdTab && createdTab.id) {
+          targetTabId = createdTab.id;
+          const readyTab = await this.waitForTabReady(targetTabId, 1e4, url);
+          await this.ensureContentScript(targetTabId);
+          if (oldTabId && oldTabId !== targetTabId && api.tabs.remove) {
+            try {
+              api.tabs.remove(oldTabId, () => {
+                if (api.runtime?.lastError) {
+                }
+              });
+            } catch (_) {
+            }
+          }
+          return { tabId: targetTabId, url: readyTab?.url || url };
+        }
       }
     }
     return { tabId: tabId || 0, url };
@@ -20650,7 +20697,7 @@ var RunCoordinator = class {
               targetUrl = "https://www.google.com";
             }
           }
-          if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1 && !hasNavigatedInitially) {
+          if (targetUrl && typeof this.browser.navigateTab === "function") {
             hasNavigatedInitially = true;
             const navAction = {
               actionId: `act_init_nav_${Date.now()}`,
@@ -20667,6 +20714,18 @@ var RunCoordinator = class {
             const navRes = await this.browser.navigateTab(activeTab?.id || 0, targetUrl);
             if (navRes && typeof navRes === "object" && navRes.tabId) {
               this.currentTabId = navRes.tabId;
+              activeTab.id = navRes.tabId;
+            }
+            if (navRes && navRes.url) {
+              activeTab.url = navRes.url;
+            }
+            if (isRestrictedBrowserUrl(activeTab?.url).isRestricted) {
+              await new Promise((r) => setTimeout(r, 600));
+              const reTab = await this.browser.getActiveTab(this.currentTabId);
+              if (reTab && reTab.url) {
+                activeTab = reTab;
+                this.currentTabId = reTab.id;
+              }
             }
             if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url") {
               this.transition("complete", `Navigated to ${targetUrl}`);
@@ -20702,6 +20761,23 @@ var RunCoordinator = class {
             this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
             continue;
           }
+          if (typeof this.httpClient?.requestGeneralChat === "function") {
+            this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Synthesizing response with reasoning model`);
+            try {
+              const chatRes = await this.httpClient.requestGeneralChat(goal, this.actionHistory);
+              if (chatRes && chatRes.reply) {
+                this.transition("complete", chatRes.reply);
+                return this.completeWithResult({
+                  success: true,
+                  state: "complete",
+                  stepCount: step,
+                  reply: chatRes.reply,
+                  message: chatRes.reply
+                });
+              }
+            } catch (_) {
+            }
+          }
           const errorMsg2 = `Capture blocked: ${restrictedCheck.reason}`;
           this.transition("blocked-local-only", errorMsg2);
           const res2 = {
@@ -20712,8 +20788,7 @@ var RunCoordinator = class {
           };
           return this.completeWithResult(res2);
         }
-        const isOnPageDirective = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|search|filter|find|type|fill|click|select|scroll|check|tell|count|how\s+many|submissions?)\b/i.test(goal);
-        if (step === 1 && !hasNavigatedInitially && !isOnPageDirective && typeof this.browser.navigateTab === "function") {
+        if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === "function") {
           const targetUrl = extractTargetUrlFromGoal(goal);
           if (targetUrl && activeTab?.url) {
             try {
@@ -20722,23 +20797,42 @@ var RunCoordinator = class {
               const isMissingWww = currentHost === "isro.gov.in" && targetHost === "www.isro.gov.in";
               const isDifferentSite = currentHost.replace(/^www\./, "") !== targetHost.replace(/^www\./, "");
               const isSubdomainOrRedirect = currentHost === targetHost || currentHost.endsWith("." + targetHost) || targetHost.endsWith("." + currentHost) || targetHost.includes("gmail.com") && currentHost.includes("google.com") || targetHost.includes("google.com") && currentHost.includes("google.com");
-              if ((isMissingWww || isDifferentSite) && !isSubdomainOrRedirect) {
+              const hasPathChange = (() => {
+                try {
+                  const cur = new URL(activeTab.url);
+                  const tgt = new URL(targetUrl);
+                  return tgt.pathname.length > 1 && cur.pathname !== tgt.pathname;
+                } catch (_) {
+                  return false;
+                }
+              })();
+              const isExplicitOnPageOnly = /\b(?:on\s+this\s+page|in\s+this\s+page|on\s+current\s+page|this\s+page|this\s+table)\b/i.test(goal) && !/^https?:\/\//i.test(goal.trim()) && !/\b(?:go\s+to|open|visit|navigate\s+to|launch)\b/i.test(goal);
+              if (!isExplicitOnPageOnly && ((isMissingWww || isDifferentSite || hasPathChange) && (!isSubdomainOrRedirect || hasPathChange))) {
                 hasNavigatedInitially = true;
+                const isExplicitNewTab = /\b(?:new\s+tab|another\s+tab|fresh\s+tab)\b/i.test(goal);
+                const isFromExistingWebpage = !isRestrictedBrowserUrl(activeTab.url).isRestricted;
+                const shouldOpenNewTab = isExplicitNewTab || isDifferentSite && isFromExistingWebpage;
                 const navAction = {
                   actionId: `act_init_nav_${Date.now()}`,
                   kind: "navigate",
                   confidence: 1,
                   risk: "safe",
-                  rationale: `Navigation to target website: ${targetUrl}`,
+                  rationale: shouldOpenNewTab ? `Opening new Chrome tab for target website: ${targetUrl}` : `Navigation to target website: ${targetUrl}`,
                   expectedPostcondition: { kind: "status_changed" }
                 };
                 this.actionHistory.push(navAction);
                 this.listeners.onActionProposed?.(navAction, this.currentRunId);
                 this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
-                this.transition("executing", `Navigating tab to ${targetUrl}...`);
-                const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
+                this.transition("executing", shouldOpenNewTab ? `Opening new tab for ${targetUrl}...` : `Navigating tab to ${targetUrl}...`);
+                const navRes = await this.browser.navigateTab(activeTab.id, targetUrl, { createNewTab: shouldOpenNewTab });
                 if (navRes && typeof navRes === "object" && navRes.tabId) {
                   this.currentTabId = navRes.tabId;
+                  activeTab.id = navRes.tabId;
+                }
+                if (navRes && navRes.url) {
+                  activeTab.url = navRes.url;
+                } else if (targetUrl) {
+                  activeTab.url = targetUrl;
                 }
                 if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url") {
                   this.transition("complete", `Navigated to ${targetUrl}`);
@@ -20773,7 +20867,7 @@ var RunCoordinator = class {
                 }
                 this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
                 continue;
-              } else if (isSubdomainOrRedirect && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url")) {
+              } else if (isSubdomainOrRedirect && !hasPathChange && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url")) {
                 this.transition("complete", `Already on ${targetUrl}`);
                 const navAction = {
                   actionId: `act_init_nav_${Date.now()}`,
@@ -20842,14 +20936,20 @@ var RunCoordinator = class {
             }
           }
           if (!domResponse || !domResponse.success) {
-            const isOnPageDirective2 = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|search|filter|find|type|fill|click|select|scroll|check|tell|count|how\s+many|submissions?)\b/i.test(goal);
-            let targetUrl = !isOnPageDirective2 ? extractTargetUrlFromGoal(goal) : void 0;
+            const isExplicitOnPageOnly = /\b(?:on\s+this\s+page|in\s+this\s+page|on\s+current\s+page|this\s+page|this\s+table)\b/i.test(goal) && !/^https?:\/\//i.test(goal.trim()) && !/\b(?:go\s+to|open|visit|navigate\s+to|launch)\b/i.test(goal);
+            let targetUrl = !isExplicitOnPageOnly ? extractTargetUrlFromGoal(goal) : void 0;
             if (targetUrl && typeof this.browser.navigateTab === "function" && step === 1 && !hasNavigatedInitially) {
               hasNavigatedInitially = true;
               this.transition("executing", `Navigating tab to ${targetUrl}...`);
               const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
               if (navRes && typeof navRes === "object" && navRes.tabId) {
                 this.currentTabId = navRes.tabId;
+                activeTab.id = navRes.tabId;
+              }
+              if (navRes && navRes.url) {
+                activeTab.url = navRes.url;
+              } else if (targetUrl) {
+                activeTab.url = targetUrl;
               }
               if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url") {
                 this.transition("complete", `Navigated to ${targetUrl}`);
@@ -21466,6 +21566,33 @@ var RunCoordinator = class {
           }
           execResponse = lastBatchResult || { success: allBatchSucceeded, semanticOutcomeVerified: allBatchSucceeded };
         } else {
+          if (proposal.kind === "type" && proposal.textToType && /^https?:\/\/[a-zA-Z0-9.-]+/i.test(proposal.textToType.trim())) {
+            try {
+              const urlObj = new URL(proposal.textToType.trim());
+              const currentHost = new URL(activeTab.url).hostname.toLowerCase();
+              if (urlObj.hostname.toLowerCase() !== currentHost && typeof this.browser.navigateTab === "function") {
+                this.transition("executing", `Opening new tab for ${urlObj.href}...`);
+                const navRes = await this.browser.navigateTab(activeTab.id, urlObj.href, { createNewTab: true });
+                if (navRes && typeof navRes === "object" && navRes.tabId) {
+                  this.currentTabId = navRes.tabId;
+                  activeTab.id = navRes.tabId;
+                }
+                if (navRes && navRes.url) {
+                  activeTab.url = navRes.url;
+                } else {
+                  activeTab.url = urlObj.href;
+                }
+                const subGoal = stripNavigationPrefixFromGoal(this.currentGoal || "");
+                if (subGoal && subGoal !== this.currentGoal) {
+                  this.currentGoal = subGoal;
+                  this.currentTaskContract = resolveTaskContract(subGoal);
+                }
+                await new Promise((r) => setTimeout(r, 600));
+                continue;
+              }
+            } catch (_) {
+            }
+          }
           try {
             execResponse = await this.browser.sendMessageToTab(activeTab.id, {
               type: "EXECUTE_ACTION",

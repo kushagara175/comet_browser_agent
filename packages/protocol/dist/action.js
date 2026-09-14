@@ -1101,7 +1101,7 @@ export function classifyActionRisk(proposal, elementName) {
 export function stripNavigationPrefixFromGoal(goal) {
     if (!goal || typeof goal !== 'string')
         return goal;
-    const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s,]+|[a-zA-Z0-9_.-]+?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*)(.+)$/i);
+    const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:(?:in|on|open)\s+(?:a\s+)?(?:new|another|fresh)\s+tab(?:,\s*|\s+and\s+)?)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s,]+|[a-zA-Z0-9_.-]+?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*)(.+)$/i);
     if (match && match[1]) {
         return match[1].trim();
     }

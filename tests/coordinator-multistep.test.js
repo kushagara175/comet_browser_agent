@@ -760,5 +760,86 @@ test('Coordinator Multi-Step: Scenario 13 - Starts on chrome://newtab, navigates
   assert.ok(result.message?.includes('Ministry of Education'));
 });
 
+test('Coordinator Multi-Step: Scenario 14 - Starts on existing website (Wikipedia), opens new tab for SIH, searches for 171, and finishes with retrieval answer', async () => {
+  const navigatedCalls = [];
+  let currentUrl = 'https://en.wikipedia.org/wiki/Special:Search?search=Smart+India+Hackathon';
+  let currentTabId = 101;
+
+  const browser = createFakeBrowserAdapter({
+    elements: [
+      {
+        localId: 'el_sih_search',
+        role: 'input',
+        sanitizedName: 'Search Problem Statement',
+        coarseBounds: [0.3, 0.4, 0.4, 0.05],
+        state: ['visible', 'enabled'],
+        actionCapabilities: ['type', 'click']
+      }
+    ]
+  });
+
+  browser.getActiveTab = async (preferredId) => ({
+    id: preferredId || currentTabId,
+    url: currentUrl,
+    title: currentUrl.includes('sih') ? 'Smart India Hackathon Portal' : 'Wikipedia Search Results',
+    status: 'complete'
+  });
+
+  browser.navigateTab = async (tabId, url, options) => {
+    navigatedCalls.push({ tabId, url, options });
+    if (options?.createNewTab) {
+      currentTabId = 202; // New tab ID
+    }
+    currentUrl = url;
+    return { tabId: currentTabId, url };
+  };
+
+  browser.waitForTabReady = async (tabId, timeoutMs, expectedUrl) => ({
+    id: tabId,
+    url: currentUrl,
+    title: 'Smart India Hackathon Portal',
+    status: 'complete'
+  });
+
+  browser.ensureContentScript = async (tabId) => true;
+
+  const step1TypeSih = {
+    actionId: 'act_type_sih',
+    kind: 'type',
+    targetLocalId: 'el_sih_search',
+    textToType: '171',
+    pressEnter: true,
+    confidence: 0.98,
+    risk: 'safe',
+    rationale: 'Type 171 into SIH search box'
+  };
+
+  const step2FinishAnswer = {
+    actionId: 'act_finish_retrieval',
+    kind: 'finish',
+    reply: 'Problem Statement 171: Smart Water Management, Ministry of Jal Shakti, Software Category.',
+    confidence: 1.0,
+    risk: 'safe',
+    rationale: 'Extracted PS details from SIH table'
+  };
+
+  const httpClient = createSequenceHttpClient([step1TypeSih, step2FinishAnswer]);
+  const coordinator = new RunCoordinator(browser, httpClient);
+
+  const result = await coordinator.startRun(
+    'Go to https://sih.gov.in/sih2024PS, search for "171", and tell me its title, organization, and category',
+    { maxSteps: 5 }
+  );
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.state, 'complete');
+  assert.strictEqual(navigatedCalls.length, 1);
+  assert.strictEqual(navigatedCalls[0].url, 'https://sih.gov.in/sih2024PS');
+  assert.strictEqual(navigatedCalls[0].options?.createNewTab, true);
+  assert.ok(result.message?.includes('Problem Statement 171'));
+  assert.ok(result.message?.includes('Ministry of Jal Shakti'));
+});
+
+
 
 

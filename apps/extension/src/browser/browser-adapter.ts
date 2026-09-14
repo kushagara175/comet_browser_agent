@@ -23,7 +23,7 @@ export interface BrowserAdapter {
   sendMessageToTab<T = any>(tabId: number, message: any): Promise<T>;
   sendMessageToRuntime<T = any>(message: any): Promise<T>;
   getActiveTab(preferredTabId?: number): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string }>;
-  navigateTab?(tabId: number, url: string): Promise<{ tabId: number; url?: string } | void>;
+  navigateTab?(tabId: number, url: string, options?: { createNewTab?: boolean }): Promise<{ tabId: number; url?: string } | void>;
   waitForTabReady?(tabId: number, timeoutMs?: number, expectedUrl?: string): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string } | null>;
   ensureContentScript?(tabId: number): Promise<boolean>;
   getStorage<T>(key: string): Promise<T | null>;
@@ -423,7 +423,11 @@ export class WebExtensionAdapter implements BrowserAdapter {
     });
   }
 
-  async navigateTab(tabId: number, url: string): Promise<{ tabId: number; url?: string }> {
+  async navigateTab(
+    tabId: number,
+    url: string,
+    options?: { createNewTab?: boolean }
+  ): Promise<{ tabId: number; url?: string }> {
     const api = this.browserAPI;
     if (api && api.tabs) {
       let targetTabId = tabId && tabId > 0 ? tabId : 0;
@@ -447,6 +451,22 @@ export class WebExtensionAdapter implements BrowserAdapter {
           ) || tabs[0];
         if (normalTab && normalTab.id) {
           targetTabId = normalTab.id;
+        }
+      }
+
+      // If opening in a new tab was requested (e.g. switching to a different website from an existing active page)
+      if (options?.createNewTab && api.tabs.create) {
+        const createdTab = await new Promise<any>((resolve) => {
+          try {
+            api.tabs.create({ url, active: true }, (tab: any) => resolve(tab || null));
+          } catch (_) {
+            resolve(null);
+          }
+        });
+        if (createdTab && createdTab.id) {
+          const readyTab = await this.waitForTabReady(createdTab.id, 10000, url);
+          await this.ensureContentScript(createdTab.id);
+          return { tabId: createdTab.id, url: readyTab?.url || url };
         }
       }
 

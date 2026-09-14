@@ -394,7 +394,7 @@ export class WebExtensionAdapter {
             });
         });
     }
-    async navigateTab(tabId, url) {
+    async navigateTab(tabId, url, options) {
         const api = this.browserAPI;
         if (api && api.tabs) {
             let targetTabId = tabId && tabId > 0 ? tabId : 0;
@@ -418,22 +418,73 @@ export class WebExtensionAdapter {
                     targetTabId = normalTab.id;
                 }
             }
-            if (targetTabId && api.tabs.update) {
-                await new Promise((resolve) => {
-                    api.tabs.update(targetTabId, { url, active: true }, () => resolve());
-                });
-                const readyTab = await this.waitForTabReady(targetTabId, 10000, url);
-                await this.ensureContentScript(targetTabId);
-                return { tabId: targetTabId, url: readyTab?.url || url };
-            }
-            if (!targetTabId && api.tabs.create) {
+            // If opening in a new tab was requested (e.g. switching to a different website from an existing active page)
+            if (options?.createNewTab && api.tabs.create) {
                 const createdTab = await new Promise((resolve) => {
-                    api.tabs.create({ url, active: true }, (tab) => resolve(tab));
+                    try {
+                        api.tabs.create({ url, active: true }, (tab) => resolve(tab || null));
+                    }
+                    catch (_) {
+                        resolve(null);
+                    }
                 });
-                targetTabId = createdTab?.id || 0;
-                const readyTab = await this.waitForTabReady(targetTabId, 10000, url);
-                await this.ensureContentScript(targetTabId);
-                return { tabId: targetTabId, url: readyTab?.url || url };
+                if (createdTab && createdTab.id) {
+                    const readyTab = await this.waitForTabReady(createdTab.id, 10000, url);
+                    await this.ensureContentScript(createdTab.id);
+                    return { tabId: createdTab.id, url: readyTab?.url || url };
+                }
+            }
+            let updateSucceeded = false;
+            if (targetTabId && api.tabs.update) {
+                updateSucceeded = await new Promise((resolve) => {
+                    try {
+                        api.tabs.update(targetTabId, { url, active: true }, (updatedTab) => {
+                            if (api.runtime?.lastError || !updatedTab) {
+                                resolve(false);
+                            }
+                            else {
+                                resolve(true);
+                            }
+                        });
+                    }
+                    catch (_) {
+                        resolve(false);
+                    }
+                });
+                if (updateSucceeded) {
+                    const readyTab = await this.waitForTabReady(targetTabId, 10000, url);
+                    if (readyTab && readyTab.url && !readyTab.url.startsWith('chrome://')) {
+                        await this.ensureContentScript(targetTabId);
+                        return { tabId: targetTabId, url: readyTab.url };
+                    }
+                }
+            }
+            // If tabs.update failed (e.g. Chrome blocks updating chrome:// surfaces)
+            // or if targetTabId remained on a restricted URL, open in a fresh active tab!
+            if (api.tabs.create) {
+                const oldTabId = targetTabId;
+                const createdTab = await new Promise((resolve) => {
+                    try {
+                        api.tabs.create({ url, active: true }, (tab) => {
+                            resolve(tab || null);
+                        });
+                    }
+                    catch (_) {
+                        resolve(null);
+                    }
+                });
+                if (createdTab && createdTab.id) {
+                    targetTabId = createdTab.id;
+                    const readyTab = await this.waitForTabReady(targetTabId, 10000, url);
+                    await this.ensureContentScript(targetTabId);
+                    if (oldTabId && oldTabId !== targetTabId && api.tabs.remove) {
+                        try {
+                            api.tabs.remove(oldTabId, () => { if (api.runtime?.lastError) { } });
+                        }
+                        catch (_) { }
+                    }
+                    return { tabId: targetTabId, url: readyTab?.url || url };
+                }
             }
         }
         return { tabId: tabId || 0, url };

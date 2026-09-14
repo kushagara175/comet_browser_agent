@@ -24,7 +24,9 @@ export interface BrowserAdapter {
         windowId?: number;
         status?: string;
     }>;
-    navigateTab?(tabId: number, url: string): Promise<{
+    navigateTab?(tabId: number, url: string, options?: {
+        createNewTab?: boolean;
+    }): Promise<{
         tabId: number;
         url?: string;
     } | void>;
@@ -68,7 +70,9 @@ export declare class WebExtensionAdapter implements BrowserAdapter {
         windowId?: number;
         status?: string;
     }>;
-    navigateTab(tabId: number, url: string): Promise<{
+    navigateTab(tabId: number, url: string, options?: {
+        createNewTab?: boolean;
+    }): Promise<{
         tabId: number;
         url?: string;
     }>;

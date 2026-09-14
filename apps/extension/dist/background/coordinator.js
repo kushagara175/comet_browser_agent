@@ -1107,7 +1107,7 @@ export class RunCoordinator {
                             targetUrl = 'https://www.google.com';
                         }
                     }
-                    if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1 && !hasNavigatedInitially) {
+                    if (targetUrl && typeof this.browser.navigateTab === 'function') {
                         hasNavigatedInitially = true;
                         const navAction = {
                             actionId: `act_init_nav_${Date.now()}`,
@@ -1124,6 +1124,19 @@ export class RunCoordinator {
                         const navRes = await this.browser.navigateTab(activeTab?.id || 0, targetUrl);
                         if (navRes && typeof navRes === 'object' && navRes.tabId) {
                             this.currentTabId = navRes.tabId;
+                            activeTab.id = navRes.tabId;
+                        }
+                        if (navRes && navRes.url) {
+                            activeTab.url = navRes.url;
+                        }
+                        // If still restricted, poll tab once more to give Chrome time to settle
+                        if (isRestrictedBrowserUrl(activeTab?.url).isRestricted) {
+                            await new Promise((r) => setTimeout(r, 600));
+                            const reTab = await this.browser.getActiveTab(this.currentTabId);
+                            if (reTab && reTab.url) {
+                                activeTab = reTab;
+                                this.currentTabId = reTab.id;
+                            }
                         }
                         if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url') {
                             this.transition('complete', `Navigated to ${targetUrl}`);
@@ -1159,6 +1172,24 @@ export class RunCoordinator {
                         this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
                         continue;
                     }
+                    // If on a restricted surface without navigation capability, synthesize answer with reasoning model
+                    if (typeof this.httpClient?.requestGeneralChat === 'function') {
+                        this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Synthesizing response with reasoning model`);
+                        try {
+                            const chatRes = await this.httpClient.requestGeneralChat(goal, this.actionHistory);
+                            if (chatRes && chatRes.reply) {
+                                this.transition('complete', chatRes.reply);
+                                return this.completeWithResult({
+                                    success: true,
+                                    state: 'complete',
+                                    stepCount: step,
+                                    reply: chatRes.reply,
+                                    message: chatRes.reply
+                                });
+                            }
+                        }
+                        catch (_) { }
+                    }
                     const errorMsg = `Capture blocked: ${restrictedCheck.reason}`;
                     this.transition('blocked-local-only', errorMsg);
                     const res = {
@@ -1169,10 +1200,8 @@ export class RunCoordinator {
                     };
                     return this.completeWithResult(res);
                 }
-                // If on step 1, check if user's goal specifies navigating to a different domain from scratch
-                // Guard: Never navigate away if user is performing an on-page action on the current active tab
-                const isOnPageDirective = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|search|filter|find|type|fill|click|select|scroll|check|tell|count|how\s+many|submissions?)\b/i.test(goal);
-                if (step === 1 && !hasNavigatedInitially && !isOnPageDirective && typeof this.browser.navigateTab === 'function') {
+                // If on step 1, check if user's goal specifies navigating to a target domain/URL
+                if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === 'function') {
                     const targetUrl = extractTargetUrlFromGoal(goal);
                     if (targetUrl && activeTab?.url) {
                         try {
@@ -1185,23 +1214,50 @@ export class RunCoordinator {
                                 targetHost.endsWith('.' + currentHost) ||
                                 (targetHost.includes('gmail.com') && currentHost.includes('google.com')) ||
                                 (targetHost.includes('google.com') && currentHost.includes('google.com'));
-                            if ((isMissingWww || isDifferentSite) && !isSubdomainOrRedirect) {
+                            const hasPathChange = (() => {
+                                try {
+                                    const cur = new URL(activeTab.url);
+                                    const tgt = new URL(targetUrl);
+                                    return tgt.pathname.length > 1 && cur.pathname !== tgt.pathname;
+                                }
+                                catch (_) {
+                                    return false;
+                                }
+                            })();
+                            // Guard against navigating away ONLY if the user explicitly commanded an action strictly on the current page
+                            // and did not supply an explicit URL or navigation verb
+                            const isExplicitOnPageOnly = /\b(?:on\s+this\s+page|in\s+this\s+page|on\s+current\s+page|this\s+page|this\s+table)\b/i.test(goal) &&
+                                !/^https?:\/\//i.test(goal.trim()) &&
+                                !/\b(?:go\s+to|open|visit|navigate\s+to|launch)\b/i.test(goal);
+                            if (!isExplicitOnPageOnly && ((isMissingWww || isDifferentSite || hasPathChange) && (!isSubdomainOrRedirect || hasPathChange))) {
                                 hasNavigatedInitially = true;
+                                const isExplicitNewTab = /\b(?:new\s+tab|another\s+tab|fresh\s+tab)\b/i.test(goal);
+                                const isFromExistingWebpage = !isRestrictedBrowserUrl(activeTab.url).isRestricted;
+                                const shouldOpenNewTab = isExplicitNewTab || (isDifferentSite && isFromExistingWebpage);
                                 const navAction = {
                                     actionId: `act_init_nav_${Date.now()}`,
                                     kind: 'navigate',
                                     confidence: 1.0,
                                     risk: 'safe',
-                                    rationale: `Navigation to target website: ${targetUrl}`,
+                                    rationale: shouldOpenNewTab
+                                        ? `Opening new Chrome tab for target website: ${targetUrl}`
+                                        : `Navigation to target website: ${targetUrl}`,
                                     expectedPostcondition: { kind: 'status_changed' }
                                 };
                                 this.actionHistory.push(navAction);
                                 this.listeners.onActionProposed?.(navAction, this.currentRunId);
                                 this.currentMaxSteps = Math.max(this.currentMaxSteps, 5);
-                                this.transition('executing', `Navigating tab to ${targetUrl}...`);
-                                const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
+                                this.transition('executing', shouldOpenNewTab ? `Opening new tab for ${targetUrl}...` : `Navigating tab to ${targetUrl}...`);
+                                const navRes = await this.browser.navigateTab(activeTab.id, targetUrl, { createNewTab: shouldOpenNewTab });
                                 if (navRes && typeof navRes === 'object' && navRes.tabId) {
                                     this.currentTabId = navRes.tabId;
+                                    activeTab.id = navRes.tabId;
+                                }
+                                if (navRes && navRes.url) {
+                                    activeTab.url = navRes.url;
+                                }
+                                else if (targetUrl) {
+                                    activeTab.url = targetUrl;
                                 }
                                 if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url') {
                                     this.transition('complete', `Navigated to ${targetUrl}`);
@@ -1237,7 +1293,7 @@ export class RunCoordinator {
                                 this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
                                 continue;
                             }
-                            else if (isSubdomainOrRedirect && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url')) {
+                            else if (isSubdomainOrRedirect && !hasPathChange && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url')) {
                                 this.transition('complete', `Already on ${targetUrl}`);
                                 const navAction = {
                                     actionId: `act_init_nav_${Date.now()}`,
@@ -1311,14 +1367,23 @@ export class RunCoordinator {
                         catch (_) { }
                     }
                     if (!domResponse || !domResponse.success) {
-                        const isOnPageDirective = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|search|filter|find|type|fill|click|select|scroll|check|tell|count|how\s+many|submissions?)\b/i.test(goal);
-                        let targetUrl = !isOnPageDirective ? extractTargetUrlFromGoal(goal) : undefined;
+                        const isExplicitOnPageOnly = /\b(?:on\s+this\s+page|in\s+this\s+page|on\s+current\s+page|this\s+page|this\s+table)\b/i.test(goal) &&
+                            !/^https?:\/\//i.test(goal.trim()) &&
+                            !/\b(?:go\s+to|open|visit|navigate\s+to|launch)\b/i.test(goal);
+                        let targetUrl = !isExplicitOnPageOnly ? extractTargetUrlFromGoal(goal) : undefined;
                         if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1 && !hasNavigatedInitially) {
                             hasNavigatedInitially = true;
                             this.transition('executing', `Navigating tab to ${targetUrl}...`);
                             const navRes = await this.browser.navigateTab(activeTab.id, targetUrl);
                             if (navRes && typeof navRes === 'object' && navRes.tabId) {
                                 this.currentTabId = navRes.tabId;
+                                activeTab.id = navRes.tabId;
+                            }
+                            if (navRes && navRes.url) {
+                                activeTab.url = navRes.url;
+                            }
+                            else if (targetUrl) {
+                                activeTab.url = targetUrl;
                             }
                             if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url') {
                                 this.transition('complete', `Navigated to ${targetUrl}`);
@@ -1981,6 +2046,36 @@ export class RunCoordinator {
                     execResponse = lastBatchResult || { success: allBatchSucceeded, semanticOutcomeVerified: allBatchSucceeded };
                 }
                 else {
+                    // Defensive safeguard: If model proposes typing a full URL into an input on a different website,
+                    // intercept and navigate directly in a new tab instead of typing a URL into a third-party form!
+                    if (proposal.kind === 'type' && proposal.textToType && /^https?:\/\/[a-zA-Z0-9.-]+/i.test(proposal.textToType.trim())) {
+                        try {
+                            const urlObj = new URL(proposal.textToType.trim());
+                            const currentHost = new URL(activeTab.url).hostname.toLowerCase();
+                            if (urlObj.hostname.toLowerCase() !== currentHost && typeof this.browser.navigateTab === 'function') {
+                                this.transition('executing', `Opening new tab for ${urlObj.href}...`);
+                                const navRes = await this.browser.navigateTab(activeTab.id, urlObj.href, { createNewTab: true });
+                                if (navRes && typeof navRes === 'object' && navRes.tabId) {
+                                    this.currentTabId = navRes.tabId;
+                                    activeTab.id = navRes.tabId;
+                                }
+                                if (navRes && navRes.url) {
+                                    activeTab.url = navRes.url;
+                                }
+                                else {
+                                    activeTab.url = urlObj.href;
+                                }
+                                const subGoal = stripNavigationPrefixFromGoal(this.currentGoal || '');
+                                if (subGoal && subGoal !== this.currentGoal) {
+                                    this.currentGoal = subGoal;
+                                    this.currentTaskContract = resolveTaskContract(subGoal);
+                                }
+                                await new Promise((r) => setTimeout(r, 600));
+                                continue;
+                            }
+                        }
+                        catch (_) { }
+                    }
                     try {
                         execResponse = await this.browser.sendMessageToTab(activeTab.id, {
                             type: 'EXECUTE_ACTION',
