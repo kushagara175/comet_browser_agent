@@ -31,13 +31,30 @@ export declare class OverlayRenderer {
     showAgentWorkingGlow(label?: string): void;
     hideAgentWorkingGlow(): void;
     /**
+     * Minimal SVG action icons (no tacky emojis).
+     */
+    private static readonly MINIMAL_ICONS;
+    /**
      * Ensures the visual AI agent cursor element exists in the DOM.
      */
     ensureCursor(): HTMLElement;
     /**
-     * Smoothly glides the AI agent cursor to the target element's position with cubic Bézier easing.
+     * Switches the pointer shape to match human cursor conventions (arrow, link hand, text caret).
+     */
+    setCursorPointerType(type: 'arrow' | 'hand' | 'caret'): void;
+    private updateCursorBadge;
+    /**
+     * Glides the cursor along a natural human curved trajectory to the target element.
      */
     glideCursorTo(el: HTMLElement, actionKind?: string, extraText?: string, durationMs?: number): Promise<void>;
+    /**
+     * Simulates a physical human mouse press down and release.
+     */
+    animateClickPress(): Promise<void>;
+    /**
+     * Simulates a physical human mouse drag from a source element to a destination element.
+     */
+    animateDrag(sourceEl: HTMLElement, destEl: HTMLElement): Promise<void>;
     /**
      * Spawns an animated click ripple at the cursor's current location.
      */
@@ -47,7 +64,8 @@ export declare class OverlayRenderer {
      */
     triggerTypingBadge(): void;
     /**
-     * Smoothly fades out and parks the agent cursor.
+     * Parks or fades out the agent cursor after an extended idle delay.
+     * Default delay is 15s so cursor remains resting on screen like a real user's mouse!
      */
     hideCursor(delayMs?: number): void;
     /**

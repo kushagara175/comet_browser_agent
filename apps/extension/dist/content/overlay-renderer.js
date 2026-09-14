@@ -237,7 +237,7 @@ export class OverlayRenderer {
         animation: privapilot-dot-pulse 1.6s ease-in-out infinite !important;
       }
 
-      /* Animated AI Ghost Cursor */
+      /* Realistic Human AI Cursor */
       .privapilot-agent-cursor {
         position: fixed !important;
         top: 0 !important;
@@ -245,71 +245,87 @@ export class OverlayRenderer {
         z-index: 2147483647 !important;
         pointer-events: none !important;
         opacity: 0;
-        transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease-out;
+        transition: opacity 0.25s ease-out;
         will-change: transform, opacity;
+        filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 6px rgba(59, 130, 246, 0.45));
       }
 
-      .privapilot-cursor-pointer {
+      .privapilot-cursor-icon {
         display: block !important;
-        width: 30px !important;
-        height: 30px !important;
-        filter: drop-shadow(0 3px 10px rgba(37, 99, 235, 0.75)) drop-shadow(0 0 18px rgba(96, 165, 250, 0.9)) !important;
         transform-origin: 0 0;
+        transition: transform 0.08s ease-out;
+      }
+
+      .privapilot-cursor-pressing .privapilot-cursor-icon {
+        transform: scale(0.82) translate(1px, 1px) !important;
       }
 
       .privapilot-cursor-badge {
         position: absolute !important;
-        top: 20px !important;
-        left: 22px !important;
+        top: 18px !important;
+        left: 18px !important;
         display: inline-flex !important;
         align-items: center !important;
         gap: 5px !important;
-        background: rgba(10, 15, 30, 0.92) !important;
-        border: 1px solid rgba(96, 165, 250, 0.7) !important;
-        color: #ffffff !important;
+        background: rgba(15, 23, 42, 0.92) !important;
+        border: 1px solid rgba(255, 255, 255, 0.16) !important;
+        color: #f1f5f9 !important;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-        font-size: 11px !important;
-        font-weight: 700 !important;
-        padding: 2.5px 8px !important;
-        border-radius: 9999px !important;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 10px rgba(59, 130, 246, 0.5) !important;
+        font-size: 10px !important;
+        font-weight: 600 !important;
+        padding: 2px 6px !important;
+        border-radius: 4px !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
         white-space: nowrap !important;
         pointer-events: none !important;
+        letter-spacing: 0.2px !important;
         transition: border-color 0.2s, box-shadow 0.2s !important;
+      }
+
+      .privapilot-cursor-badge-icon {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        color: #60a5fa !important;
+        line-height: 1 !important;
+      }
+
+      .privapilot-cursor-badge-icon svg {
+        display: block !important;
       }
 
       .privapilot-cursor-ripple {
         position: absolute !important;
-        top: 3px !important;
-        left: 3px !important;
-        width: 8px !important;
-        height: 8px !important;
+        top: 1px !important;
+        left: 1px !important;
+        width: 6px !important;
+        height: 6px !important;
         border-radius: 50% !important;
-        border: 2.5px solid #10b981 !important;
-        box-shadow: 0 0 12px #10b981 !important;
+        border: 2px solid #38bdf8 !important;
         pointer-events: none !important;
         transform: translate(-50%, -50%) scale(0.2) !important;
         opacity: 0 !important;
       }
 
       .privapilot-cursor-ripple.privapilot-ripple-active {
-        animation: privapilot-ripple-expand 0.48s cubic-bezier(0.1, 0.9, 0.2, 1) forwards !important;
+        animation: privapilot-human-ripple 0.38s cubic-bezier(0.1, 0.8, 0.2, 1) forwards !important;
       }
 
-      @keyframes privapilot-ripple-expand {
+      @keyframes privapilot-human-ripple {
         0% {
-          opacity: 1;
+          opacity: 0.9;
           transform: translate(-50%, -50%) scale(0.3);
-          border-color: #60a5fa;
+          border-color: #38bdf8;
+          box-shadow: 0 0 6px #38bdf8;
         }
         50% {
-          border-color: #10b981;
-          box-shadow: 0 0 20px #10b981;
+          border-color: #34d399;
+          box-shadow: 0 0 10px #34d399;
         }
         100% {
           opacity: 0;
-          transform: translate(-50%, -50%) scale(5.5);
-          border-color: #10b981;
+          transform: translate(-50%, -50%) scale(4.2);
+          border-color: #34d399;
         }
       }
 
@@ -442,6 +458,18 @@ export class OverlayRenderer {
         }
     }
     /**
+     * Minimal SVG action icons (no tacky emojis).
+     */
+    static MINIMAL_ICONS = {
+        CLICK: '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="3"/><path d="M8 1v2.5M8 12.5v2.5M1 8h2.5M12.5 8h2.5"/></svg>',
+        TYPE: '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M11.5 2.5l2 2-7.5 7.5H4v-2l7.5-7.5zM3 13.5h10"/></svg>',
+        SELECT: '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg>',
+        HOVER: '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="2.5"/><path d="M1 8s3-5 7-5 7 5 7 5-3 5-7 5-7-5-7-5z"/></svg>',
+        SCROLL: '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3v10M4 9l4 4 4-4"/></svg>',
+        UPLOAD: '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 11V3M5 6l3-3 3 3M3 13h10"/></svg>',
+        DRAG: '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3h6M5 8h6M5 13h6"/></svg>'
+    };
+    /**
      * Ensures the visual AI agent cursor element exists in the DOM.
      */
     ensureCursor() {
@@ -453,21 +481,23 @@ export class OverlayRenderer {
             cursor.setAttribute('data-privapilot-ignore', 'true');
             cursor.setAttribute('aria-hidden', 'true');
             cursor.innerHTML = `
-        <svg class="privapilot-cursor-pointer" viewBox="0 0 32 32" width="30" height="30">
-          <defs>
-            <linearGradient id="privapilot-cursor-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#93c5fd" />
-              <stop offset="45%" stop-color="#3b82f6" />
-              <stop offset="100%" stop-color="#1d4ed8" />
-            </linearGradient>
-          </defs>
-          <path d="M 3 3 L 11 26 L 15 16 L 25 12 Z" fill="url(#privapilot-cursor-grad)" stroke="#ffffff" stroke-width="1.8" stroke-linejoin="round" />
-          <circle cx="11.5" cy="11.5" r="2.2" fill="#ffffff" />
-          <circle cx="11.5" cy="11.5" r="1.1" fill="#38bdf8" />
+        <svg class="privapilot-cursor-icon privapilot-cursor-arrow" viewBox="0 0 24 24" width="20" height="20" style="display: block; overflow: visible;">
+          <path d="M 3 2 L 3 19 L 7.5 14.5 L 11.5 22 L 14.2 20.5 L 10.2 13 L 16 13 Z"
+                fill="#0f172a" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round" />
+        </svg>
+        <svg class="privapilot-cursor-icon privapilot-cursor-hand" viewBox="0 0 24 24" width="20" height="20" style="display: none; overflow: visible;">
+          <path d="M 8.5 2.5 C 7.4 2.5 6.5 3.4 6.5 4.5 L 6.5 11.5 L 5 10 C 4.1 9.1 2.7 9.1 1.8 10 C 0.9 10.9 0.9 12.3 1.8 13.2 L 6 17.5 C 7.5 19 9.5 20.5 12 20.5 L 15.5 20.5 C 18.5 20.5 19.5 18.5 19.5 15.5 L 19.5 9 C 19.5 7.9 18.6 7 17.5 7 C 17 7 16.2 7.2 15.8 7.5 L 15.8 6.5 C 15.8 5.4 14.9 4.5 13.8 4.5 C 13.3 4.5 12.6 4.7 12.2 5 L 12.2 4.5 C 12.2 3.4 11.3 2.5 10.2 2.5 C 9.7 2.5 9 2.7 8.5 2.5 Z"
+                fill="#0f172a" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round" />
+        </svg>
+        <svg class="privapilot-cursor-icon privapilot-cursor-caret" viewBox="0 0 24 24" width="18" height="18" style="display: none; overflow: visible;">
+          <path d="M 6 3 L 14 3 M 10 3 L 10 19 M 6 19 L 14 19"
+                fill="none" stroke="#0f172a" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M 6 3 L 14 3 M 10 3 L 10 19 M 6 19 L 14 19"
+                fill="none" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" />
         </svg>
         <div class="privapilot-overlay privapilot-cursor-ripple" data-privapilot-ignore="true"></div>
         <div class="privapilot-overlay privapilot-cursor-badge" data-privapilot-ignore="true">
-          <span class="privapilot-cursor-badge-icon">⚡</span>
+          <span class="privapilot-cursor-badge-icon">${OverlayRenderer.MINIMAL_ICONS.CLICK}</span>
           <span class="privapilot-cursor-badge-text">Click</span>
         </div>
       `;
@@ -478,9 +508,66 @@ export class OverlayRenderer {
         return this.cursorEl;
     }
     /**
-     * Smoothly glides the AI agent cursor to the target element's position with cubic Bézier easing.
+     * Switches the pointer shape to match human cursor conventions (arrow, link hand, text caret).
      */
-    async glideCursorTo(el, actionKind = 'CLICK', extraText, durationMs = 360) {
+    setCursorPointerType(type) {
+        if (!this.cursorEl)
+            return;
+        const arrow = this.cursorEl.querySelector('.privapilot-cursor-arrow');
+        const hand = this.cursorEl.querySelector('.privapilot-cursor-hand');
+        const caret = this.cursorEl.querySelector('.privapilot-cursor-caret');
+        if (arrow)
+            arrow.style.display = type === 'arrow' ? 'block' : 'none';
+        if (hand)
+            hand.style.display = type === 'hand' ? 'block' : 'none';
+        if (caret)
+            caret.style.display = type === 'caret' ? 'block' : 'none';
+    }
+    updateCursorBadge(actionKind, extraText) {
+        if (!this.cursorEl)
+            return;
+        const iconEl = this.cursorEl.querySelector('.privapilot-cursor-badge-icon');
+        const textEl = this.cursorEl.querySelector('.privapilot-cursor-badge-text');
+        const kindUpper = (actionKind || 'CLICK').toUpperCase();
+        let svgIcon = OverlayRenderer.MINIMAL_ICONS.CLICK;
+        let label = 'Click';
+        if (kindUpper.includes('TYPE')) {
+            svgIcon = OverlayRenderer.MINIMAL_ICONS.TYPE;
+            label = extraText ? `Type "${extraText.slice(0, 20)}${extraText.length > 20 ? '...' : ''}"` : 'Type';
+        }
+        else if (kindUpper.includes('CLICK')) {
+            svgIcon = OverlayRenderer.MINIMAL_ICONS.CLICK;
+            label = 'Click';
+        }
+        else if (kindUpper.includes('SELECT')) {
+            svgIcon = OverlayRenderer.MINIMAL_ICONS.SELECT;
+            label = 'Select';
+        }
+        else if (kindUpper.includes('HOVER')) {
+            svgIcon = OverlayRenderer.MINIMAL_ICONS.HOVER;
+            label = 'Hover';
+        }
+        else if (kindUpper.includes('SCROLL')) {
+            svgIcon = OverlayRenderer.MINIMAL_ICONS.SCROLL;
+            label = 'Scroll';
+        }
+        else if (kindUpper.includes('UPLOAD')) {
+            svgIcon = OverlayRenderer.MINIMAL_ICONS.UPLOAD;
+            label = 'Upload';
+        }
+        else if (kindUpper.includes('DRAG')) {
+            svgIcon = OverlayRenderer.MINIMAL_ICONS.DRAG;
+            label = 'Drag';
+        }
+        if (iconEl)
+            iconEl.innerHTML = svgIcon;
+        if (textEl)
+            textEl.textContent = label;
+    }
+    /**
+     * Glides the cursor along a natural human curved trajectory to the target element.
+     */
+    async glideCursorTo(el, actionKind = 'CLICK', extraText, durationMs) {
         if (typeof document === 'undefined' || !document.body)
             return;
         const cursor = this.ensureCursor();
@@ -489,58 +576,109 @@ export class OverlayRenderer {
             this.cursorDismissTimer = null;
         }
         const rect = el.getBoundingClientRect();
-        // Compute target coordinates (tip lands comfortably on target element)
-        const targetX = Math.round(rect.left + Math.min(Math.max(rect.width * 0.35, 8), 40));
-        const targetY = Math.round(rect.top + Math.min(Math.max(rect.height * 0.5, 8), 26));
-        // Update badge icon & label
-        const iconEl = cursor.querySelector('.privapilot-cursor-badge-icon');
-        const textEl = cursor.querySelector('.privapilot-cursor-badge-text');
-        let icon = '⚡';
-        let text = 'Click';
-        const kindUpper = (actionKind || 'CLICK').toUpperCase();
-        if (kindUpper.includes('TYPE')) {
-            icon = '✍️';
-            text = extraText ? `Type "${extraText.slice(0, 16)}${extraText.length > 16 ? '...' : ''}"` : 'Typing...';
+        const tagName = (el.tagName || '').toUpperCase();
+        const role = (el.getAttribute?.('role') || '').toLowerCase();
+        const isClickable = tagName === 'BUTTON' || tagName === 'A' || role === 'button' || role === 'link' || role === 'tab';
+        const isTextInput = tagName === 'INPUT' || tagName === 'TEXTAREA' || el.isContentEditable;
+        // Realistic target coordinates: human clicks inside element with natural slight offset
+        const targetX = Math.round(rect.left + Math.min(Math.max(rect.width * 0.35, 6), 35));
+        const targetY = Math.round(rect.top + Math.min(Math.max(rect.height * 0.5, 6), 22));
+        // Update pointer shape to match element type
+        if (isClickable) {
+            this.setCursorPointerType('hand');
         }
-        else if (kindUpper.includes('CLICK')) {
-            icon = '⚡';
-            text = 'Click';
-        }
-        else if (kindUpper.includes('SELECT')) {
-            icon = '📋';
-            text = 'Select';
-        }
-        else if (kindUpper.includes('HOVER')) {
-            icon = '👁️';
-            text = 'Hover';
-        }
-        else if (kindUpper.includes('SCROLL')) {
-            icon = '📜';
-            text = 'Scroll';
-        }
-        else if (kindUpper.includes('UPLOAD')) {
-            icon = '📁';
-            text = 'Upload';
-        }
-        else if (kindUpper.includes('DRAG')) {
-            icon = '✋';
-            text = 'Drag';
+        else if (isTextInput) {
+            this.setCursorPointerType('caret');
         }
         else {
-            icon = '🎯';
-            text = actionKind;
+            this.setCursorPointerType('arrow');
         }
-        if (iconEl)
-            iconEl.textContent = icon;
-        if (textEl)
-            textEl.textContent = text;
-        cursor.style.transition = `transform ${durationMs}ms cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease-out`;
-        cursor.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
+        // Update minimal vector icon and text label
+        this.updateCursorBadge(actionKind, extraText);
+        // Make cursor visible at starting point
         cursor.style.opacity = '1';
-        this.currentCursorX = targetX;
-        this.currentCursorY = targetY;
-        // Await gliding completion
-        await new Promise((resolve) => setTimeout(resolve, durationMs));
+        const startX = this.currentCursorX;
+        const startY = this.currentCursorY;
+        const dx = targetX - startX;
+        const dy = targetY - startY;
+        const dist = Math.hypot(dx, dy);
+        // Dynamic duration based on human movement distance: small move ~240ms, long move ~420ms
+        const totalDuration = durationMs !== undefined ? durationMs : Math.min(Math.max(Math.round(dist * 0.42), 240), 440);
+        // Headless test or instantaneous duration check
+        if (totalDuration <= 20) {
+            cursor.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
+            this.currentCursorX = targetX;
+            this.currentCursorY = targetY;
+            return;
+        }
+        // Natural curved human trajectory (Bézier control points)
+        const nx = -dy / (dist || 1);
+        const ny = dx / (dist || 1);
+        const arcHeight = Math.min(Math.max(dist * 0.16, 12), 85) * (Math.random() > 0.45 ? 1 : -1);
+        const cp1x = startX + dx * 0.35 + nx * arcHeight;
+        const cp1y = startY + dy * 0.35 + ny * arcHeight;
+        const cp2x = startX + dx * 0.78 + nx * (arcHeight * 0.4);
+        const cp2y = startY + dy * 0.78 + ny * (arcHeight * 0.4);
+        const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        await new Promise((resolve) => {
+            const getRaf = () => {
+                if (typeof requestAnimationFrame === 'function')
+                    return requestAnimationFrame;
+                return (cb) => setTimeout(() => cb(Date.now()), 16);
+            };
+            const step = (now) => {
+                const elapsed = Math.max(0, now - startTime);
+                const progress = Math.min(1, elapsed / totalDuration);
+                // Human velocity easing (cubic ease-in-out)
+                const t = progress < 0.5
+                    ? 4 * progress * progress * progress
+                    : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+                // Cubic Bézier calculation
+                const oneMinusT = 1 - t;
+                const x = Math.round(oneMinusT * oneMinusT * oneMinusT * startX +
+                    3 * oneMinusT * oneMinusT * t * cp1x +
+                    3 * oneMinusT * t * t * cp2x +
+                    t * t * t * targetX);
+                const y = Math.round(oneMinusT * oneMinusT * oneMinusT * startY +
+                    3 * oneMinusT * oneMinusT * t * cp1y +
+                    3 * oneMinusT * t * t * cp2y +
+                    t * t * t * targetY);
+                cursor.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+                if (progress < 1) {
+                    getRaf()(step);
+                }
+                else {
+                    cursor.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
+                    this.currentCursorX = targetX;
+                    this.currentCursorY = targetY;
+                    resolve();
+                }
+            };
+            getRaf()(step);
+        });
+    }
+    /**
+     * Simulates a physical human mouse press down and release.
+     */
+    async animateClickPress() {
+        if (!this.cursorEl)
+            return;
+        this.cursorEl.classList.add('privapilot-cursor-pressing');
+        this.triggerClickRipple();
+        await new Promise((r) => setTimeout(r, 85));
+        this.cursorEl.classList.remove('privapilot-cursor-pressing');
+    }
+    /**
+     * Simulates a physical human mouse drag from a source element to a destination element.
+     */
+    async animateDrag(sourceEl, destEl) {
+        await this.glideCursorTo(sourceEl, 'DRAG', 'Grabbing');
+        if (this.cursorEl)
+            this.cursorEl.classList.add('privapilot-cursor-pressing');
+        await this.glideCursorTo(destEl, 'DRAG', 'Dropping');
+        if (this.cursorEl)
+            this.cursorEl.classList.remove('privapilot-cursor-pressing');
+        this.triggerClickRipple();
     }
     /**
      * Spawns an animated click ripple at the cursor's current location.
@@ -567,16 +705,17 @@ export class OverlayRenderer {
             badge.style.boxShadow = '0 0 14px rgba(56, 189, 248, 0.75)';
             setTimeout(() => {
                 if (badge) {
-                    badge.style.borderColor = 'rgba(96, 165, 250, 0.7)';
-                    badge.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.4), 0 0 10px rgba(59, 130, 246, 0.5)';
+                    badge.style.borderColor = 'rgba(255, 255, 255, 0.16)';
+                    badge.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.35)';
                 }
             }, 400);
         }
     }
     /**
-     * Smoothly fades out and parks the agent cursor.
+     * Parks or fades out the agent cursor after an extended idle delay.
+     * Default delay is 15s so cursor remains resting on screen like a real user's mouse!
      */
-    hideCursor(delayMs = 600) {
+    hideCursor(delayMs = 15000) {
         if (this.cursorDismissTimer) {
             clearTimeout(this.cursorDismissTimer);
             this.cursorDismissTimer = null;

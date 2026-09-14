@@ -250,11 +250,10 @@ test('Agent Cursor: glideCursorTo() calculates target coordinates and updates ac
   const cursor = renderer.ensureCursor();
   assert.equal(cursor.style.opacity, '1', 'Cursor should be visible');
   assert.ok(cursor.style.transform.includes('translate3d'), 'Cursor should have 3D transform set');
-  assert.ok(cursor.style.transition.includes('cubic-bezier'), 'Cursor should use cubic-bezier glide');
 
   const icon = cursor.querySelector('.privapilot-cursor-badge-icon');
   const text = cursor.querySelector('.privapilot-cursor-badge-text');
-  assert.equal(icon?.textContent, '⚡');
+  assert.ok(icon?.innerHTML?.includes('<svg'), 'Icon should be clean vector SVG');
   assert.equal(text?.textContent, 'Click');
 });
 
@@ -277,8 +276,28 @@ test('Agent Cursor: glideCursorTo() formats type action with snippet text', asyn
   const cursor = renderer.ensureCursor();
   const icon = cursor.querySelector('.privapilot-cursor-badge-icon');
   const text = cursor.querySelector('.privapilot-cursor-badge-text');
-  assert.equal(icon?.textContent, '✍️');
+  assert.ok(icon?.innerHTML?.includes('<svg'), 'Icon should be clean vector SVG');
   assert.ok(text?.textContent?.includes('Smart India Hack'), 'Should truncate and format typed snippet');
+});
+
+test('Agent Cursor: setCursorPointerType() switches between arrow, hand, and caret', () => {
+  setupMockDocument();
+  const renderer = new OverlayRenderer();
+  renderer.ensureCursor();
+  assert.doesNotThrow(() => {
+    renderer.setCursorPointerType('hand');
+    renderer.setCursorPointerType('caret');
+    renderer.setCursorPointerType('arrow');
+  });
+});
+
+test('Agent Cursor: animateClickPress() simulates physical mouse press and release', async () => {
+  setupMockDocument();
+  const renderer = new OverlayRenderer();
+  renderer.ensureCursor();
+  await assert.doesNotReject(async () => {
+    await renderer.animateClickPress();
+  });
 });
 
 test('Agent Cursor: triggerClickRipple() and triggerTypingBadge() operate safely', () => {

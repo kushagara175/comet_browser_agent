@@ -298,14 +298,21 @@ export async function handleMessage(message: any): Promise<any> {
       // Capture safe pre-action semantic snapshot BEFORE execution
       const preSnapshot = SemanticStateVerifier.captureSnapshot(targetEl, document);
 
-      // 3. Dispatch synthetic DOM action
+      // 3. Dispatch synthetic DOM action with physical click/drag simulation
+      if (proposal.kind === 'click' && targetEl) {
+        await overlay.animateClickPress();
+      } else if (proposal.kind === 'drag_and_drop' && targetEl) {
+        const destEl = (proposal as any).destinationLocalId ? currentElementMap.get((proposal as any).destinationLocalId) : null;
+        if (destEl) {
+          await overlay.animateDrag(targetEl, destEl);
+        }
+      }
+
       const execResult = ActionExecutor.execute(proposal, currentElementMap);
 
-      // Visual feedback: Trigger click ripple / typing badge and flash dispatched ring
+      // Visual feedback: Flash green dispatched ring on target and trigger typing badge
       if (targetEl && execResult.success) {
-        if (proposal.kind === 'click') {
-          overlay.triggerClickRipple();
-        } else if (proposal.kind === 'type') {
+        if (proposal.kind === 'type') {
           overlay.triggerTypingBadge();
         }
         overlay.flashActionDispatched();
@@ -342,9 +349,9 @@ export async function handleMessage(message: any): Promise<any> {
         }
       };
     } finally {
-      // Re-enable external user interaction and smoothly park/hide agent cursor
+      // Re-enable external user interaction and keep cursor resting naturally on screen
       overlay.disableSafetyShield();
-      overlay.hideCursor(800);
+      overlay.hideCursor(15000);
     }
   }
 
