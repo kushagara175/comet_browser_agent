@@ -21969,6 +21969,27 @@ var RunCoordinator = class {
             }
           }
         }
+        if ((proposal.kind === "finish" || proposal.kind === "answer") && step < maxSteps) {
+          const sm2 = sanitized.pageState?.scrollMetrics;
+          const isArticleReadingGoal = /\b(?:instruments?|payloads?|specifications?|requirements?|details?|read\s+(?:the\s+)?article|tell\s+me\s+what\s+(?:instruments?|payloads?|details?))\b/i.test(this.currentGoal || "");
+          const hasNeverScrolled = !this.actionHistory.some((a) => a.kind === "scroll");
+          const isAtTopOfLongPage = Boolean(sm2 && sm2.scrollableBelow && sm2.maxScrollTop > 800 && sm2.scrollTop < 250);
+          if (isArticleReadingGoal && hasNeverScrolled && isAtTopOfLongPage) {
+            console.log(`[Coordinator] Grounded reading scroll: Navigated to long article at top; scrolling down smoothly to locate content before finishing.`);
+            proposal = {
+              actionId: `act_grounded_scroll_${Date.now()}`,
+              kind: "scroll",
+              scrollDirection: "down",
+              confidence: 0.98,
+              risk: "safe",
+              reasoning: proposal.reasoning || `\u{1F441}\uFE0F Observation: Navigated to article. Currently at the top of page (Scroll: ${sm2?.scrollTop || 0}px / ${sm2?.maxScrollTop}px).
+\u{1F3AF} User Intent: Locate and read the requested section from the page.
+\u26A1 Action Selection: Smoothly scroll down the article to bring the content into view for reading.`,
+              rationale: `Scrolling down article smoothly to locate and ground the requested content.`
+            };
+            riskLevel = "safe";
+          }
+        }
         if (proposal.kind === "finish" || proposal.kind === "answer") {
           const terminalCheck = this.currentTaskContract ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory) : { satisfied: true, reason: "Goal completed" };
           const isAnswerOrConversational = proposal.kind === "answer" || Boolean(proposal.reply) || this.currentTaskContract?.isAnswerGoal || this.currentTaskContract?.goalPattern === "conversational_query";

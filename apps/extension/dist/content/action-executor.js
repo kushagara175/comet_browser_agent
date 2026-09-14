@@ -52,26 +52,87 @@ export class ActionExecutor {
             };
         }
         if (proposal.kind === 'scroll') {
-            if (typeof window !== 'undefined') {
-                const delta = proposal.scrollDirection === 'up' ? -400 : 400;
-                if (proposal.scrollDirection === 'top') {
-                    window.scrollTo(0, 0);
-                    document.documentElement?.scrollTo(0, 0);
-                    document.body?.scrollTo(0, 0);
+            const doc = typeof document !== 'undefined' ? document : null;
+            const win = typeof window !== 'undefined' ? window : null;
+            const vh = win?.innerHeight || 800;
+            const readingDelta = Math.max(350, Math.round(vh * 0.65));
+            const delta = proposal.scrollDirection === 'up' ? -readingDelta : readingDelta;
+            if (proposal.targetLocalId) {
+                const targetEl = elementMap?.get(proposal.targetLocalId) ||
+                    (doc ? (doc.querySelector(`[data-privapilot-id="${proposal.targetLocalId}"]`) ||
+                        doc.querySelector(`[data-som-id="${proposal.targetLocalId}"]`)) : null);
+                if (targetEl && typeof targetEl.scrollIntoView === 'function') {
+                    try {
+                        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+                    }
+                    catch (_) {
+                        targetEl.scrollIntoView();
+                    }
                 }
-                else if (proposal.scrollDirection === 'bottom') {
-                    const maxScroll = Math.max(document.body?.scrollHeight || 0, document.documentElement?.scrollHeight || 0, 10000);
-                    window.scrollTo(0, maxScroll);
-                    document.documentElement?.scrollTo(0, maxScroll);
-                    document.body?.scrollTo(0, maxScroll);
+                else if (win) {
+                    try {
+                        win.scrollBy({ top: delta, left: 0, behavior: 'smooth' });
+                    }
+                    catch (_) {
+                        win.scrollBy(0, delta);
+                    }
                 }
-                else {
-                    const prevY = window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0;
-                    window.scrollBy(0, delta);
-                    const newY = window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0;
-                    if (newY === prevY) {
-                        const scrollable = document.querySelector('main, [role="main"], .main-content, #main, .content, .container, body');
-                        if (scrollable && typeof scrollable.scrollBy === 'function') {
+            }
+            else if (proposal.scrollDirection === 'top') {
+                if (win) {
+                    try {
+                        win.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+                    }
+                    catch (_) {
+                        win.scrollTo(0, 0);
+                    }
+                }
+                try {
+                    doc?.documentElement?.scrollTo?.({ top: 0, left: 0, behavior: 'smooth' });
+                }
+                catch (_) { }
+                try {
+                    doc?.body?.scrollTo?.({ top: 0, left: 0, behavior: 'smooth' });
+                }
+                catch (_) { }
+            }
+            else if (proposal.scrollDirection === 'bottom') {
+                const maxScroll = Math.max(doc?.body?.scrollHeight || 0, doc?.documentElement?.scrollHeight || 0, 10000);
+                if (win) {
+                    try {
+                        win.scrollTo({ top: maxScroll, left: 0, behavior: 'smooth' });
+                    }
+                    catch (_) {
+                        win.scrollTo(0, maxScroll);
+                    }
+                }
+                try {
+                    doc?.documentElement?.scrollTo?.({ top: maxScroll, left: 0, behavior: 'smooth' });
+                }
+                catch (_) { }
+                try {
+                    doc?.body?.scrollTo?.({ top: maxScroll, left: 0, behavior: 'smooth' });
+                }
+                catch (_) { }
+            }
+            else {
+                const prevY = win?.scrollY || doc?.documentElement?.scrollTop || doc?.body?.scrollTop || 0;
+                if (win) {
+                    try {
+                        win.scrollBy({ top: delta, left: 0, behavior: 'smooth' });
+                    }
+                    catch (_) {
+                        win.scrollBy(0, delta);
+                    }
+                }
+                const newY = win?.scrollY || doc?.documentElement?.scrollTop || doc?.body?.scrollTop || 0;
+                if (newY === prevY && doc) {
+                    const scrollable = doc.querySelector('main, [role="main"], article, .mw-parser-output, .main-content, #main, .content, .container, body');
+                    if (scrollable && typeof scrollable.scrollBy === 'function') {
+                        try {
+                            scrollable.scrollBy({ top: delta, left: 0, behavior: 'smooth' });
+                        }
+                        catch (_) {
                             scrollable.scrollBy(0, delta);
                         }
                     }

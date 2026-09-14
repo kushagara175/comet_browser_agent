@@ -2008,7 +2008,7 @@ if (typeof document !== 'undefined') {
         if (!act) return 'Action completed';
         const kind = (act.kind || '').toLowerCase();
         if (kind === 'scroll') {
-          const dir = act.direction || (act.scrollDeltaY && act.scrollDeltaY < 0 ? 'up' : 'down');
+          const dir = act.scrollDirection || act.direction || (act.scrollDeltaY && act.scrollDeltaY < 0 ? 'up' : 'down');
           return `Scrolled ${dir}`;
         }
         if (kind === 'click') {

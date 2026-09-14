@@ -309,6 +309,10 @@ export async function handleMessage(message: any): Promise<any> {
       }
 
       const execResult = ActionExecutor.execute(proposal, currentElementMap);
+      if (proposal.kind === 'scroll') {
+        // Allow browser smooth scroll interpolation to glide realistically and settle
+        await new Promise((r) => setTimeout(r, 450));
+      }
 
       // Visual feedback: Flash green dispatched ring on target and trigger typing badge
       if (targetEl && execResult.success) {

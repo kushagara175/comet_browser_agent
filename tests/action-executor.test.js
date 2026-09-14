@@ -683,3 +683,65 @@ test('ActionExecutor: Rejects typing into sensitive inputs (password, OTP, card,
   assert.strictEqual(resBlockedRisk.success, false);
   assert.ok(resBlockedRisk.message?.includes('Action blocked by client safety policy'));
 });
+
+test('ActionExecutor: Executes smooth reading scroll down and up realistically', () => {
+  let scrollByCalled = false;
+  let scrollByOptions = null;
+  const originalWindow = global.window;
+  global.window = {
+    innerHeight: 900,
+    scrollY: 0,
+    scrollBy: (opts) => {
+      scrollByCalled = true;
+      scrollByOptions = opts;
+    },
+    scrollTo: () => {}
+  };
+
+  try {
+    const res = ActionExecutor.execute({
+      actionId: 'act_scroll_1',
+      kind: 'scroll',
+      scrollDirection: 'down',
+      confidence: 0.95,
+      risk: 'safe',
+      rationale: 'Scroll down article'
+    }, new Map());
+
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(res.message, 'Scrolled down');
+    assert.strictEqual(scrollByCalled, true);
+    assert.strictEqual(scrollByOptions?.behavior, 'smooth');
+    assert.ok(scrollByOptions?.top > 400, 'Reading delta should be proportional to viewport height');
+  } finally {
+    global.window = originalWindow;
+  }
+});
+
+test('ActionExecutor: Scrolls target element into view smoothly when targetLocalId is provided', () => {
+  let scrollIntoViewCalled = false;
+  let scrollIntoViewOptions = null;
+
+  const targetHeading = {
+    scrollIntoView: (opts) => {
+      scrollIntoViewCalled = true;
+      scrollIntoViewOptions = opts;
+    }
+  };
+
+  const res = ActionExecutor.execute({
+    actionId: 'act_scroll_target',
+    kind: 'scroll',
+    targetLocalId: 'el_heading_instruments',
+    scrollDirection: 'down',
+    confidence: 0.98,
+    risk: 'safe',
+    rationale: 'Scroll to instruments heading'
+  }, new Map([['el_heading_instruments', targetHeading]]));
+
+  assert.strictEqual(res.success, true);
+  assert.strictEqual(scrollIntoViewCalled, true);
+  assert.strictEqual(scrollIntoViewOptions?.behavior, 'smooth');
+  assert.strictEqual(scrollIntoViewOptions?.block, 'center');
+});
+

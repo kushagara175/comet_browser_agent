@@ -2231,6 +2231,31 @@ export class RunCoordinator {
         }
       }
 
+      // Grounded Reading Guard: If the user asked to read or find specific details in an article
+      // (e.g. instruments, payloads, specifications, requirements), but the agent just landed at
+      // the top of a long article (scrollTop < 250) and has never scrolled, smoothly scroll down
+      // the article first so the agent grounds and reveals the content realistically on screen!
+      if ((proposal.kind === 'finish' || proposal.kind === 'answer') && step < maxSteps) {
+        const sm = sanitized.pageState?.scrollMetrics;
+        const isArticleReadingGoal = /\b(?:instruments?|payloads?|specifications?|requirements?|details?|read\s+(?:the\s+)?article|tell\s+me\s+what\s+(?:instruments?|payloads?|details?))\b/i.test(this.currentGoal || '');
+        const hasNeverScrolled = !this.actionHistory.some(a => a.kind === 'scroll');
+        const isAtTopOfLongPage = Boolean(sm && sm.scrollableBelow && sm.maxScrollTop > 800 && sm.scrollTop < 250);
+
+        if (isArticleReadingGoal && hasNeverScrolled && isAtTopOfLongPage) {
+          console.log(`[Coordinator] Grounded reading scroll: Navigated to long article at top; scrolling down smoothly to locate content before finishing.`);
+          proposal = {
+            actionId: `act_grounded_scroll_${Date.now()}`,
+            kind: 'scroll',
+            scrollDirection: 'down',
+            confidence: 0.98,
+            risk: 'safe',
+            reasoning: proposal.reasoning || `👁️ Observation: Navigated to article. Currently at the top of page (Scroll: ${sm?.scrollTop || 0}px / ${sm?.maxScrollTop}px).\n🎯 User Intent: Locate and read the requested section from the page.\n⚡ Action Selection: Smoothly scroll down the article to bring the content into view for reading.`,
+            rationale: `Scrolling down article smoothly to locate and ground the requested content.`
+          };
+          riskLevel = 'safe';
+        }
+      }
+
       if (proposal.kind === 'finish' || proposal.kind === 'answer') {
         const terminalCheck = this.currentTaskContract
           ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory)
