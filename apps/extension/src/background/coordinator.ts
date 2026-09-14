@@ -1357,7 +1357,7 @@ export class RunCoordinator {
           }
         }
 
-        if (targetUrl && typeof this.browser.navigateTab === 'function' && step === 1 && !hasNavigatedInitially) {
+        if (targetUrl && typeof this.browser.navigateTab === 'function') {
           hasNavigatedInitially = true;
           const navAction: ActionProposal = {
             actionId: `act_init_nav_${Date.now()}`,
@@ -1375,6 +1375,20 @@ export class RunCoordinator {
           const navRes = await this.browser.navigateTab(activeTab?.id || 0, targetUrl);
           if (navRes && typeof navRes === 'object' && navRes.tabId) {
             this.currentTabId = navRes.tabId;
+            activeTab.id = navRes.tabId;
+          }
+          if (navRes && navRes.url) {
+            activeTab.url = navRes.url;
+          }
+
+          // If still restricted, poll tab once more to give Chrome time to settle
+          if (isRestrictedBrowserUrl(activeTab?.url).isRestricted) {
+            await new Promise((r) => setTimeout(r, 600));
+            const reTab = await this.browser.getActiveTab(this.currentTabId);
+            if (reTab && reTab.url) {
+              activeTab = reTab;
+              this.currentTabId = reTab.id;
+            }
           }
 
           if (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url') {
@@ -1412,6 +1426,24 @@ export class RunCoordinator {
           }
           this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
           continue;
+        }
+
+        // If on a restricted surface without navigation capability, synthesize answer with reasoning model
+        if (typeof (this.httpClient as any)?.requestGeneralChat === 'function') {
+          this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Synthesizing response with reasoning model`);
+          try {
+            const chatRes = await this.httpClient.requestGeneralChat(goal, this.actionHistory as any);
+            if (chatRes && chatRes.reply) {
+              this.transition('complete', chatRes.reply);
+              return this.completeWithResult({
+                success: true,
+                state: 'complete',
+                stepCount: step,
+                reply: chatRes.reply,
+                message: chatRes.reply
+              });
+            }
+          } catch (_) {}
         }
 
         const errorMsg = `Capture blocked: ${restrictedCheck.reason}`;
