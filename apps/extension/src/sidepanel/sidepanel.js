@@ -2666,10 +2666,7 @@ if (typeof document !== 'undefined') {
         return;
       }
       try {
-        window.speechSynthesis.cancel();
-        if (window.speechSynthesis.paused) {
-          try { window.speechSynthesis.resume(); } catch (_) {}
-        }
+        try { window.speechSynthesis.resume(); } catch (_) {}
 
         const clean = (text || '')
           .replace(/https?:\/\/\S+/gi, '')
@@ -2687,23 +2684,33 @@ if (typeof document !== 'undefined') {
         const sentences = clean.match(/[^.!?]+[.!?]+/g);
         const spokenText = sentences && sentences.length > 0
           ? sentences.slice(0, 3).join(' ')
-          : (clean.length > 250 ? clean.slice(0, 250) + '...' : clean);
+          : (clean.length > 280 ? clean.slice(0, 280) + '...' : clean);
 
         const utterance = new SpeechSynthesisUtterance(spokenText);
         activeSpeechUtterance = utterance; // Prevent Chrome V8 garbage collection!
         utterance.rate = 1.05;
         utterance.pitch = 1.0;
 
-        const voices = window.speechSynthesis.getVoices();
-        if (voices && voices.length > 0) {
-          const preferred = voices.find((v) =>
-            (v.name.includes('Natural') || v.name.includes('Google') || v.lang === 'en-US' || v.lang?.startsWith('en')) &&
-            !v.name.includes('Whisper')
-          );
-          if (preferred) utterance.voice = preferred;
+        const assignVoice = () => {
+          try {
+            const voices = window.speechSynthesis.getVoices();
+            if (voices && voices.length > 0) {
+              const preferred = voices.find((v) =>
+                (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Siri') || v.lang === 'en-US' || v.lang?.startsWith('en')) &&
+                !v.name.includes('Whisper')
+              );
+              if (preferred) utterance.voice = preferred;
+            }
+          } catch (_) {}
+        };
+        assignVoice();
+        if (typeof window.speechSynthesis.onvoiceschanged !== 'undefined') {
+          window.speechSynthesis.onvoiceschanged = assignVoice;
         }
 
         let finished = false;
+        let startedSpeaking = false;
+
         const handleFinish = () => {
           if (finished) return;
           finished = true;
@@ -2711,11 +2718,13 @@ if (typeof document !== 'undefined') {
           activeSpeechUtterance = null;
           if (activeVoiceOrb) {
             activeVoiceOrb.setAudioLevel(0);
+            activeVoiceOrb.setState('listening');
           }
           onDone?.();
         };
 
         utterance.onstart = () => {
+          startedSpeaking = true;
           isAiSpeaking = true;
           activeVoiceOrb?.setState('speaking');
         };
@@ -2735,12 +2744,20 @@ if (typeof document !== 'undefined') {
           if (window.speechSynthesis.paused) {
             try { window.speechSynthesis.resume(); } catch (_) {}
           }
-          if (!window.speechSynthesis.speaking) {
+          if (startedSpeaking && !window.speechSynthesis.speaking) {
             clearInterval(watchdog);
             handleFinish();
           }
-        }, 600);
+        }, 500);
 
+        setTimeout(() => {
+          if (!startedSpeaking && !finished) {
+            clearInterval(watchdog);
+            handleFinish();
+          }
+        }, 5000);
+
+        try { window.speechSynthesis.resume(); } catch (_) {}
         window.speechSynthesis.speak(utterance);
       } catch (err) {
         console.warn('[PrivaPilot Voice] TTS playback note:', err);
@@ -3049,13 +3066,29 @@ if (typeof document !== 'undefined') {
       runVoiceAudioLoop();
 
       // Browser-native real-time Web Speech Recognition
-      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRec) {
+      function initSpeechRecognition() {
+        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRec || !isVoiceActive) return;
+
+        if (voiceRecognition) {
+          try {
+            voiceRecognition.onresult = null;
+            voiceRecognition.onend = null;
+            voiceRecognition.onerror = null;
+            voiceRecognition.abort?.();
+          } catch (_) {}
+          voiceRecognition = null;
+        }
+
         try {
           voiceRecognition = new SpeechRec();
           voiceRecognition.continuous = true;
           voiceRecognition.interimResults = true;
           voiceRecognition.lang = 'en-US';
+
+          voiceRecognition.onstart = () => {
+            speechRecErrored = false;
+          };
 
           voiceRecognition.onspeechstart = () => {
             if (isAiSpeaking || isVoiceThinking) return;
@@ -3087,49 +3120,55 @@ if (typeof document !== 'undefined') {
             }, 450);
 
             let interimTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
+            let sessionFinal = '';
+            for (let i = 0; i < event.results.length; ++i) {
               const res = event.results[i];
               if (res.isFinal) {
-                voiceFinalTranscript += (voiceFinalTranscript ? ' ' : '') + res[0].transcript.trim();
+                sessionFinal += res[0].transcript + ' ';
               } else {
                 interimTranscript += res[0].transcript;
               }
             }
-            const currentSpoken = (voiceFinalTranscript + (interimTranscript ? ' ' + interimTranscript : '')).trim();
+
+            const currentSpoken = ((voiceFinalTranscript ? voiceFinalTranscript + ' ' : '') + sessionFinal + interimTranscript)
+              .replace(/\s+/g, ' ')
+              .trim();
+
+            if (!currentSpoken) return;
             lastSpokenPrompt = currentSpoken;
 
             if (voiceLiveTranscript) {
               voiceLiveTranscript.textContent = currentSpoken;
             }
-            if (voiceSendNowBtn && currentSpoken) {
+            if (voiceSendNowBtn) {
               voiceSendNowBtn.classList.remove('hidden');
             }
-            if (chatInput && currentSpoken) {
+            if (chatInput) {
               chatInput.value = currentSpoken;
               updateSendBtn();
             }
 
-            // Inactivity trigger: 1.2s of clean silence following spoken words
+            // Inactivity trigger: 1.4s of clean silence following spoken words
             clearTimeout(silenceAutoCloseTimer);
-            if (currentSpoken) {
-              silenceAutoCloseTimer = setTimeout(() => {
-                if (!isVoiceActive || !lastSpokenPrompt.trim()) return;
+            silenceAutoCloseTimer = setTimeout(() => {
+              if (!isVoiceActive || !lastSpokenPrompt.trim() || isAiSpeaking || isVoiceThinking) return;
 
-                if (currentVoiceMode === 'dictate') {
-                  // Mode 1: Dictate -> Auto-close and populate chat ready to send
-                  closeVoiceMode();
-                } else if (currentVoiceMode === 'talk') {
-                  // Mode 2: Talk / Conversation -> Transition to thinking & speak reply!
-                  handleTalkModeConversationTurn(lastSpokenPrompt.trim());
+              if (currentVoiceMode === 'dictate') {
+                // Mode 1: Dictate -> Keep chatInput populated, ready to send
+                if (chatInput) {
+                  chatInput.value = lastSpokenPrompt.trim();
+                  updateSendBtn();
                 }
-              }, 1200);
-            }
+              } else if (currentVoiceMode === 'talk') {
+                // Mode 2: Talk / Conversation -> Transition to thinking & speak reply!
+                handleTalkModeConversationTurn(lastSpokenPrompt.trim());
+              }
+            }, 1400);
           };
 
           voiceRecognition.onerror = (e) => {
             console.warn('[PrivaPilot Voice] Speech recognition event:', e?.error);
             if (e?.error === 'no-speech') {
-              // Harmless pause from user, ignore and keep alive
               return;
             }
             if (e?.error === 'not-allowed' || e?.error === 'audio-capture' || e?.error === 'service-not-allowed') {
@@ -3140,11 +3179,19 @@ if (typeof document !== 'undefined') {
           };
 
           voiceRecognition.onend = () => {
-            // Only restart if still active, not speaking or thinking, and no terminal error occurred
-            if (isVoiceActive && voiceRecognition && !speechRecErrored && !isAiSpeaking && !isVoiceThinking) {
-              try {
-                voiceRecognition.start();
-              } catch (_) {}
+            if (lastSpokenPrompt) {
+              voiceFinalTranscript = lastSpokenPrompt;
+            }
+            if (isVoiceActive && !speechRecErrored && !isAiSpeaking && !isVoiceThinking) {
+              setTimeout(() => {
+                if (isVoiceActive && !speechRecErrored && !isAiSpeaking && !isVoiceThinking) {
+                  try {
+                    voiceRecognition?.start();
+                  } catch (_) {
+                    initSpeechRecognition();
+                  }
+                }
+              }, 120);
             }
           };
 
@@ -3153,6 +3200,8 @@ if (typeof document !== 'undefined') {
           console.warn('[PrivaPilot Voice] Speech recognition start error:', recErr);
         }
       }
+
+      initSpeechRecognition();
     }
 
     function closeVoiceMode() {
