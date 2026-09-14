@@ -12,8 +12,8 @@
     <div class="valley-img-bg"></div>
     <canvas id="shaderCanvas" class="shader-bg-canvas"></canvas>
 
-    <!-- VIEW 0: Loading Splash -->
-    <div id="loadingView" class="loading-wrapper">
+    <!-- VIEW 0: Loading Splash (Hidden by default for instant HUD boot) -->
+    <div id="loadingView" class="loading-wrapper hidden" style="display: none;">
       <div class="loading-logo-wrap">
         <img src="../../assets/export.png" width="80" height="80" alt="PrivaPilot Logo" class="export-logo-img" />
       </div>
@@ -22,8 +22,8 @@
       </div>
     </div>
 
-    <!-- VIEW 1: AI Mission Control HUD -->
-    <div id="aiWorkerView" class="ai-panel hidden">
+    <!-- VIEW 1: AI Mission Control HUD (Instant Ready) -->
+    <div id="aiWorkerView" class="ai-panel">
       <!-- Top Header & Status Bar (Clean Minimal Gemini Style) -->
       <div class="ai-header">
         <div class="header-left">

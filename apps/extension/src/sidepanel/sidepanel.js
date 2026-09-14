@@ -649,15 +649,12 @@ if (typeof document !== 'undefined') {
       window.initWavesShader(shaderCanvas);
     }
 
-    // Auto transition to mission control HUD after brief splash
+    // Immediate HUD activation with zero splash delay
     if (loadingView && aiWorkerView) {
-      const dismissSplash = () => {
-        loadingView.classList.add('hidden');
-        aiWorkerView.classList.remove('hidden');
-        setTimeout(() => chatInput?.focus(), 50);
-      };
-      setTimeout(dismissSplash, 200);
-      loadingView.addEventListener('click', dismissSplash);
+      loadingView.classList.add('hidden');
+      loadingView.style.display = 'none';
+      aiWorkerView.classList.remove('hidden');
+      setTimeout(() => chatInput?.focus(), 50);
     }
 
     // Top-left logo button: starts fresh new chat session cleanly without loading screen flicker
