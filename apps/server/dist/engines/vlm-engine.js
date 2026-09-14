@@ -1002,13 +1002,10 @@ Strict Rules:
 8. FILE UPLOAD DIRECTIVE: When uploading or attaching a file, return kind: "upload_file", set "targetLocalId" to the file input and "fileName" to the file name.
 9. MULTI-STEP REASONING: For compound goals (e.g. "go to X and search Y", "click tab and find Z", "scroll and check count"):
    Execute step 1 (navigation or intermediate click/scroll/hover), observe the updated page state on the next cycle, and continue with the subsequent steps (typing, extracting, or verifying) before proposing "finish". Do NOT propose "finish" prematurely after intermediate navigation clicks.
-10. STRUCTURED 3-PART CHAIN-OF-THOUGHT DIRECTIVE (CRITICAL):
-    Before proposing an action or answer, you MUST provide explicit structured thinking in the "reasoning" field (or inside <think>...</think> tags).
-    You MUST provide all 3 progressive sections on EVERY step (including intermediate actions, navigation, and final finish/answer steps):
-    👁️ Observation: [Analyze visible page context, active URL/tab, relevant elements and their SOM local IDs, tables, or notices]
-    🎯 User Intent: [State the user's objective, evaluate the goal, and identify the required browser strategy]
-    ⚡ Action Selection: [Explain why the chosen tool (click/type/select/scroll/batch/finish) and targetLocalId are the optimal execution step, citing relevant browser skills. On finish/answer, explain how the visible page data fulfills the user's goal.]
-    Do NOT output only an Observation without User Intent and Action Selection. Always include all 3 sections on every turn.
+10. MODEL REASONING & CHAIN-OF-THOUGHT:
+    Before proposing an action or answer, you MUST provide your authentic, pure thinking in the "reasoning" field (or inside <think>...</think> tags).
+    Explain what you observe on the page, what the user wants to accomplish, and your strategic rationale for selecting this action tool and target element.
+    Provide natural, coherent reasoning paragraphs without fake rigid categories or emojis.
 11. Do not return "finish" merely because you have explained what should happen. Use "finish" only when visible page state proves the user's requested browser operation is already complete.
 12. GOAL COMPLETION & PROGRESSION:
    - For QUESTION-ANSWERING & INFORMATION RETRIEVAL GOALS (e.g. "search for X and tell me Y", "find Z and tell me when it was first launched and who organizes it", "how many submissions..."):
@@ -1089,7 +1086,7 @@ JSON Schema:
     { "actionId": "act_sub_1", "kind": "type", "targetLocalId": "el_1", "textToType": "..." },
     { "actionId": "act_sub_2", "kind": "click", "targetLocalId": "el_2" }
   ],
-  "reasoning": "👁️ Observation: [Visible elements & IDs]\n🎯 User Intent: [User objective & approach]\n⚡ Action Selection: [Tool choice & rationale]",
+  "reasoning": "Authentic, pure step-by-step thinking explaining page observations and action strategy",
   "rationale": "Short explanation or summary of action/answer",
   "reply": "Optional conversational response text when kind is answer or finish",
   "expectedState": "Expected UI change"

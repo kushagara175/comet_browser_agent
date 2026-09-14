@@ -20365,10 +20365,11 @@ var RunCoordinator = class {
     return this.lastRunResult;
   }
   completeWithResult(res) {
+    const finalReasoning = res.reasoning || res.proposal?.reasoning || res.proposal?.thought || this.lastActionProposal?.reasoning || this.lastActionProposal?.thought || Array.isArray(res.steps) && (res.steps.find((s) => s.proposal?.reasoning)?.proposal?.reasoning || res.steps.find((s) => s.proposal?.rationale)?.proposal?.rationale) || res.proposal?.rationale || this.lastActionProposal?.rationale || void 0;
     const finalRes = {
       ...res,
       reply: res.reply || res.proposal?.reply || (res.proposal?.kind === "answer" ? res.proposal.rationale || res.message : void 0),
-      reasoning: res.reasoning || res.proposal?.reasoning || this.lastActionProposal?.reasoning || void 0,
+      reasoning: finalReasoning,
       runId: res.runId || this.currentRunId || void 0
     };
     this.lastRunResult = finalRes;

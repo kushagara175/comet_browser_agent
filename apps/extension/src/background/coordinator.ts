@@ -277,10 +277,21 @@ export class RunCoordinator {
   }
 
   private completeWithResult(res: CoordinatorRunResult): CoordinatorRunResult {
+    const finalReasoning =
+      res.reasoning ||
+      res.proposal?.reasoning ||
+      (res.proposal as any)?.thought ||
+      this.lastActionProposal?.reasoning ||
+      (this.lastActionProposal as any)?.thought ||
+      (Array.isArray(res.steps) && (res.steps.find((s: any) => s.proposal?.reasoning)?.proposal?.reasoning || res.steps.find((s: any) => s.proposal?.rationale)?.proposal?.rationale)) ||
+      res.proposal?.rationale ||
+      this.lastActionProposal?.rationale ||
+      undefined;
+
     const finalRes: CoordinatorRunResult = {
       ...res,
       reply: res.reply || res.proposal?.reply || (res.proposal?.kind === 'answer' ? (res.proposal.rationale || res.message) : undefined),
-      reasoning: res.reasoning || res.proposal?.reasoning || this.lastActionProposal?.reasoning || undefined,
+      reasoning: finalReasoning,
       runId: res.runId || this.currentRunId || undefined
     };
     this.lastRunResult = finalRes;

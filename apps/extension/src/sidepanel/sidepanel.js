@@ -365,7 +365,7 @@ export function sanitizeReasoningText(raw) {
     'analyzed visible page context and formulated response.',
     'action executed successfully'
   ];
-  if (FAKE_STRINGS.some(fake => clean.toLowerCase() === fake || clean.toLowerCase().startsWith(fake))) {
+  if (FAKE_STRINGS.some(fake => clean.toLowerCase() === fake)) {
     return '';
   }
   return clean;
@@ -378,7 +378,7 @@ export function collectAllStepReasoning(res) {
   const parts = [];
   if (Array.isArray(res?.steps) && res.steps.length > 0) {
     for (const s of res.steps) {
-      const r = s.proposal?.reasoning || s.reasoning;
+      const r = s.proposal?.reasoning || s.proposal?.thought || s.proposal?.rationale || s.reasoning;
       if (r && typeof r === 'string' && r.trim()) {
         const trimmed = r.trim();
         if (!parts.includes(trimmed)) {
@@ -388,7 +388,7 @@ export function collectAllStepReasoning(res) {
     }
   }
   if (parts.length === 0) {
-    const fallback = res?.reasoning || res?.proposal?.reasoning || res?.proposal?.rationale || '';
+    const fallback = res?.reasoning || res?.proposal?.reasoning || res?.proposal?.thought || res?.proposal?.rationale || res?.message || '';
     if (fallback && typeof fallback === 'string' && fallback.trim()) {
       parts.push(fallback.trim());
     }
@@ -479,10 +479,14 @@ export function formatReasoningIntoLinesHtml(rawText) {
       ? `<strong class="thought-category" style="color: #93c5fd; font-weight: 600; margin-right: 5px;">${escapeHtml(item.category)}:</strong>`
       : '';
 
-    return `<div class="thought-line" style="display: flex; align-items: baseline; gap: 7px; font-size: 11.5px; color: #cbd5e1; line-height: 1.5; padding: 2px 0;"><span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">${item.icon}</span><span class="thought-body" style="flex: 1; word-break: break-word;">${categoryHtml}${escapedBody}</span></div>`;
+    const iconHtml = (item.icon && item.icon !== '▸' && item.icon !== '•')
+      ? `<span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">${item.icon}</span>`
+      : '';
+
+    return `<div class="thought-line" style="display: flex; align-items: baseline; gap: 7px; font-size: 12px; color: #cbd5e1; line-height: 1.6; padding: 2px 0;">${iconHtml}<span class="thought-body" style="flex: 1; word-break: break-word;">${categoryHtml}${escapedBody}</span></div>`;
   }).join('');
 
-  return `<div class="thought-lines-container" style="display: flex; flex-direction: column; gap: 5px; padding: 2px 0;">${linesHtml}</div>`;
+  return `<div class="thought-lines-container" style="display: flex; flex-direction: column; gap: 4px; padding: 2px 0;">${linesHtml}</div>`;
 }
 
 /**
@@ -1016,8 +1020,18 @@ if (typeof document !== 'undefined') {
           } else {
             conversationHistory.push({ role: 'assistant', content: msg.text });
             const agentBubble = document.createElement('div');
-            const thinkingHtml = msg.reasoning
-              ? renderThinkingAccordion(msg.reasoning, msg.durationSeconds || 2)
+            let thoughtContent = msg.reasoning;
+            if (!thoughtContent && Array.isArray(msg.steps) && msg.steps.length > 0) {
+              thoughtContent = collectAllStepReasoning({ steps: msg.steps });
+            }
+            if (!thoughtContent && (msg.isAction || msg.text?.startsWith('✓ '))) {
+              const cleanActionText = (msg.text || '').replace(/^[✓\s]+/, '').trim();
+              if (cleanActionText && !cleanActionText.toLowerCase().startsWith('action done')) {
+                thoughtContent = `Executed ${cleanActionText} on page.`;
+              }
+            }
+            const thinkingHtml = thoughtContent
+              ? renderThinkingAccordion(thoughtContent, msg.durationSeconds || 2, { open: false })
               : '';
 
             if (msg.isAction || msg.text?.startsWith('✓ ')) {
@@ -2093,18 +2107,6 @@ if (typeof document !== 'undefined') {
         const formattedHtml = renderMarkdown(modelReply);
         const actionSuggestions = extractActionSuggestions(modelReply);
 
-        const executedSteps = res.steps ? res.steps.filter(s => s.executed) : [];
-        const stepsHtml = executedSteps.length > 0 ? `
-          <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 7px;">
-            ${executedSteps.map(s => `
-              <div style="font-size: 10.5px; color: #94a3b8; display: flex; align-items: center; gap: 6px;">
-                <span style="background: rgba(148, 163, 184, 0.15); padding: 1px 5px; border-radius: 4px; font-weight: 600;">Step ${s.step}</span>
-                <span>${escapeHtml(getCleanActionLabel(s.proposal))}</span>
-              </div>
-            `).join('')}
-          </div>
-        ` : '';
-
         agentBubble.innerHTML = `
           ${modelDisconnected ? `
             <div style="padding: 6px 8px; margin-bottom: 5px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; color: #b45309; font-size: 10.5px; font-weight: 600;">
@@ -2112,7 +2114,6 @@ if (typeof document !== 'undefined') {
             </div>
           ` : ''}
           ${thinkingHtml}
-          ${stepsHtml}
           <div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 4px;">${formattedHtml}</div>
           ${actionSuggestions.length > 0 ? `
             <div class="chat-action-chips" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;">
@@ -2327,12 +2328,19 @@ if (typeof document !== 'undefined') {
       const agentBubble = document.createElement('div');
       agentBubble.className = 'chat-msg agent';
       agentBubble.innerHTML = `
-        <div class="monologue-block group" data-state="collapsed">
-          <div class="monologue-toggle-btn">
+        <div class="monologue-block group" data-state="expanded">
+          <button type="button" class="monologue-toggle-btn" aria-expanded="true">
             <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
             <span class="monologue-title thinking-shimmer-text">Thinking...</span>
+          </button>
+          <div class="monologue-drawer" style="display: block;">
+            <div class="monologue-content">
+              <div class="thought-line live-thought-line" style="padding: 2px 0;">
+                <span class="thought-body thinking-shimmer-text">Analyzing page elements and planning action...</span>
+              </div>
+            </div>
           </div>
         </div>
       `;
@@ -2847,12 +2855,19 @@ if (typeof document !== 'undefined') {
       const agentBubble = document.createElement('div');
       agentBubble.className = 'chat-msg agent';
       agentBubble.innerHTML = `
-        <div class="monologue-block group" data-state="collapsed">
-          <div class="monologue-toggle-btn">
+        <div class="monologue-block group" data-state="expanded">
+          <button type="button" class="monologue-toggle-btn" aria-expanded="true">
             <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
             <span class="monologue-title thinking-shimmer-text">Thinking...</span>
+          </button>
+          <div class="monologue-drawer" style="display: block;">
+            <div class="monologue-content">
+              <div class="thought-line live-thought-line" style="padding: 2px 0;">
+                <span class="thought-body thinking-shimmer-text">Thinking...</span>
+              </div>
+            </div>
           </div>
         </div>
       `;
@@ -2928,24 +2943,12 @@ if (typeof document !== 'undefined') {
             res?.message ||
             'I am listening. How can I help you?').trim();
 
-          const realReasoning = res?.reasoning || res?.proposal?.reasoning || res?.proposal?.rationale || '';
-          activeSession.messages.push({
-            role: 'agent',
-            text: rawReply,
-            reasoning: realReasoning,
-            durationSeconds: 2,
-            isVoice: true
-          });
-          activeSession.updatedAt = Date.now();
-          saveChatSessions();
-          renderRecentChatsMenu();
+          const realReasoning = res?.reasoning || res?.proposal?.reasoning || res?.proposal?.thought || res?.proposal?.rationale || '';
+          if (!res) res = { success: true, reply: rawReply, reasoning: realReasoning };
+          if (!res.reply && rawReply) res.reply = rawReply;
+          if (!res.reasoning && realReasoning) res.reasoning = realReasoning;
 
           conversationHistory.push({ role: 'user', content: promptText });
-          conversationHistory.push({ role: 'assistant', content: rawReply });
-          if (conversationHistory.length > 20) {
-            conversationHistory = conversationHistory.slice(-20);
-          }
-
           renderActionResult(agentBubble, res, 2);
 
           if (voiceLiveTranscript) {
@@ -3485,23 +3488,31 @@ if (typeof document !== 'undefined') {
               addAuditEntry('AGENT', message.message, 'info');
             }
             const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
-            const shimmerText = lastAgentBubble?.querySelector('.thinking-shimmer-text');
-            if (shimmerText) {
-              if (message.state === 'awaiting-reasoning') {
-                shimmerText.textContent = 'Reasoning...';
-              } else if (message.state === 'capturing') {
-                shimmerText.textContent = 'Perceiving page...';
-              } else if (message.state === 'executing') {
-                shimmerText.textContent = 'Executing action...';
-              }
+            const shimmerTitle = lastAgentBubble?.querySelector('.monologue-title.thinking-shimmer-text') || lastAgentBubble?.querySelector('.thinking-shimmer-text');
+            const liveBody = lastAgentBubble?.querySelector('.live-thought-line .thought-body');
+            let stateLabel = 'Thinking...';
+            let detailLabel = 'Thinking...';
+            if (message.state === 'awaiting-reasoning') {
+              stateLabel = 'Reasoning...';
+              detailLabel = 'Analyzing page elements and planning action...';
+            } else if (message.state === 'capturing') {
+              stateLabel = 'Perceiving page...';
+              detailLabel = 'Perceiving active page elements and layout...';
+            } else if (message.state === 'executing') {
+              stateLabel = 'Executing action...';
+              detailLabel = 'Executing action safely on page...';
             }
+            if (shimmerTitle) shimmerTitle.textContent = stateLabel;
+            if (liveBody) liveBody.textContent = detailLabel;
           }
 
           if (message.type === 'COORDINATOR_STEP_PROGRESS') {
             if (message.message) {
               addAuditEntry(`STEP ${message.step}/${message.maxSteps}`, message.message, 'info');
+              const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
+              const liveBody = lastAgentBubble?.querySelector('.live-thought-line .thought-body');
+              if (liveBody) liveBody.textContent = message.message;
             }
-            // Step telemetry is recorded for the Inspector tab, not dumped into user-facing thoughts
           }
 
           if (message.type === 'COORDINATOR_ACTION_PROPOSED') {
@@ -3511,11 +3522,15 @@ if (typeof document !== 'undefined') {
               addAuditEntry('PLAN', `${actDesc}: ${act.rationale || 'Executing action'}`, 'pass');
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
               if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
-                const shimmerText = lastAgentBubble.querySelector('.thinking-shimmer-text');
-                if (shimmerText) {
-                  const targetDesc = act.sanitizedTargetName || act.targetLocalId || '';
-                  const shortTarget = targetDesc ? ` on ${targetDesc}` : '';
-                  shimmerText.textContent = `Executing ${(act.kind || 'action').toUpperCase()}${shortTarget}...`;
+                const shimmerTitle = lastAgentBubble.querySelector('.monologue-title.thinking-shimmer-text') || lastAgentBubble.querySelector('.thinking-shimmer-text');
+                const liveBody = lastAgentBubble.querySelector('.live-thought-line .thought-body');
+                const targetDesc = act.sanitizedTargetName || act.targetLocalId || '';
+                const shortTarget = targetDesc ? ` on ${targetDesc}` : '';
+                if (shimmerTitle) {
+                  shimmerTitle.textContent = `Executing ${(act.kind || 'action').toUpperCase()}${shortTarget}...`;
+                }
+                if (liveBody) {
+                  liveBody.textContent = act.rationale || `Executing ${(act.kind || 'action').toUpperCase()}${shortTarget}...`;
                 }
               }
             }

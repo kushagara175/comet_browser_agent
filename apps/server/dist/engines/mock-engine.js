@@ -12,11 +12,7 @@ export class MockReasoningEngine {
             const count = payload.elements?.length || 0;
             return {
                 ...proposal,
-                reasoning: [
-                    `👁️ Observation: Analyzed viewport containing ${count} interactive element${count === 1 ? '' : 's'}.`,
-                    `🎯 User Intent: Aligning execution strategy for: "${payload.goal || ''}".`,
-                    `⚡ Action Selection: Selecting ${proposal.kind} on ${targetDesc} (${proposal.rationale}).`
-                ].join('\n')
+                reasoning: `Analyzed viewport containing ${count} interactive element${count === 1 ? '' : 's'}. Aligning execution strategy for: "${payload.goal || ''}". Selecting ${proposal.kind} on ${targetDesc} (${proposal.rationale}).`
             };
         }
         return proposal;

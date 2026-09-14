@@ -1293,11 +1293,13 @@ html, body {
 .monologue-content {
   max-height: 240px;
   overflow-y: auto;
-  padding-left: 10px;
-  border-left: 1.5px solid rgba(138, 180, 248, 0.25);
+  padding-left: 0 !important;
+  border-left: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: #cbd5e1;
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.6;
   word-break: break-word;
   user-select: text;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -1306,18 +1308,22 @@ html, body {
 .thought-lines-container {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   padding: 2px 0;
+  background: transparent !important;
+  border: none !important;
 }
 
 .thought-line {
   display: flex;
   align-items: baseline;
   gap: 7px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: #cbd5e1;
-  line-height: 1.5;
+  line-height: 1.6;
   padding: 1px 0;
+  background: transparent !important;
+  border: none !important;
 }
 
 .thought-icon {
