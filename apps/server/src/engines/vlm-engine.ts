@@ -1356,11 +1356,22 @@ ${promptSuffix}`;
   }
 
   /**
-   * Bounded fetch. Reports an abort as a timeout and a transport failure by its
-   * OS error code, so probe diagnostics say what actually happened instead of
-   * the opaque "fetch failed".
+   * Bounded fetch with one automatic retry on transient TCP connect failures.
+   *
+   * Node.js undici's internal connectTimeout is 10 s by default. Cloud endpoints
+   * (e.g. Azure AI Foundry) routinely need longer on the first cold TLS handshake,
+   * producing UND_ERR_CONNECT_TIMEOUT before the AbortController timeout fires.
+   * A single retry with a fresh AbortController succeeds because the TCP connection
+   * pool is now warmed and the second attempt reuses the established socket.
+   *
+   * @param retries Number of remaining retry attempts (default: 1 for inference, 0 for probes).
    */
-  private async fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    timeoutMs: number,
+    retries = 1
+  ): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -1369,7 +1380,21 @@ ${promptSuffix}`;
       if (controller.signal.aborted) {
         throw new Error(`timed out after ${timeoutMs}ms`);
       }
-      throw new Error(err?.cause?.code || err?.message || 'connection failed');
+      const errCode: string = err?.cause?.code || err?.message || 'connection failed';
+      // Retry once on transient TCP-level failures (cold-start connect timeout,
+      // connection reset, or OS-level timeout). Do not retry on logic errors.
+      if (
+        retries > 0 &&
+        (errCode.includes('CONNECT_TIMEOUT') ||
+          errCode.includes('ECONNRESET') ||
+          errCode.includes('ETIMEDOUT') ||
+          errCode.includes('UND_ERR_CONNECT'))
+      ) {
+        clearTimeout(timer);
+        console.warn(`[PrivaPilot:VLM] Transient TCP failure (${errCode}), retrying once…`);
+        return this.fetchWithTimeout(url, init, timeoutMs, retries - 1);
+      }
+      throw new Error(errCode);
     } finally {
       clearTimeout(timer);
     }
