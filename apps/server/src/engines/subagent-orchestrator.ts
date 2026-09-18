@@ -390,21 +390,9 @@ export function resolveEntityUrl(entity: string, goal: string): string {
 }
 
 export function getPortalGroundedKnowledge(title: string, goal: string, url?: string): string {
-  const lower = (title + ' ' + goal).toLowerCase();
-  if (lower.includes('iphone 16')) {
-    if (lower.includes('amazon')) {
-      return '- Product: Apple iPhone 16 (128 GB, Teal / Ultramarine / Pink / White / Black)\n- Listed Price: ₹79,900 on Amazon India\n- Availability: In Stock (Prime 1-Day Delivery)\n- Offers: Up to ₹5,000 instant bank discount on ICICI and HDFC cards, No-Cost EMI available.';
-    }
-    if (lower.includes('flipkart')) {
-      return '- Product: Apple iPhone 16 (128 GB)\n- Listed Price: ₹75,999 (effective deal price with instant bank discount, ₹79,900 regular MRP)\n- Availability: In Stock\n- Offers: 5% Unlimited Cashback on Flipkart Axis Bank Card, exchange bonus up to ₹35,000.';
-    }
+  if (url) {
+    return `- Target Portal: ${url}\n- Context Query: ${goal}`;
   }
-  if (lower.includes('indigo')) {
-    return '- Domestic Baggage: 15 kg check-in baggage, 7 kg cabin handbag.\n- Cancellation: ₹3,000–₹3,500 cancellation fee per passenger if cancelled >2 hours prior to departure.';
-  }
-  if (lower.includes('air india')) {
-    return '- Domestic Baggage: 15 kg check-in allowance, 7 kg cabin baggage.\n- Cancellation: ₹3,000–₹3,500 fee depending on fare bucket (Flexi fares allow free date changes).';
-  }
-  return url ? `Target portal URL: ${url}` : '';
+  return '';
 }
 

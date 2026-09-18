@@ -2992,11 +2992,15 @@ export class RunCoordinator {
         const cleanedQuery = encodeURIComponent(goal.replace(/\b(?:compare|prices?|across|on|and|vs\.?|versus|both|details?|deploy|two|sub-?agents?|swarm|parallel)\b/gi, ' ')
             .replace(/\s+/g, ' ')
             .trim() || 'iPhone 16');
+        const isFlightQuery = /\b(?:flight|flights|airline|airlines|ticket|tickets|fare|fares)\b/i.test(goal);
         const getTargetUrl = (ent) => {
             if (ent === 'amazon')
                 return `https://www.amazon.in/s?k=${cleanedQuery}`;
             if (ent === 'flipkart')
                 return `https://www.flipkart.com/search?q=${cleanedQuery}`;
+            if (isFlightQuery) {
+                return `https://www.google.com/search?q=${encodeURIComponent(ent + ' flights ' + decodeURIComponent(cleanedQuery))}`;
+            }
             if (ent === 'indigo')
                 return 'https://www.goindigo.in';
             if (ent === 'air india')
@@ -3012,11 +3016,17 @@ export class RunCoordinator {
         const targetUrl1 = getTargetUrl(targetEntities[0]);
         const targetUrl2 = getTargetUrl(targetEntities[1]);
         // Open live browser tabs immediately so the user sees both sub-agents deployed in real time
+        let tab1Id = this.currentTabId || 0;
+        let tab2Id = 0;
         if (this.browser && typeof this.browser.navigateTab === 'function') {
             if (this.currentTabId) {
-                this.browser.navigateTab(this.currentTabId, targetUrl1).catch(() => { });
+                const n1 = await this.browser.navigateTab(this.currentTabId, targetUrl1).catch(() => null);
+                if (n1 && typeof n1 === 'object' && n1.tabId)
+                    tab1Id = n1.tabId;
             }
-            this.browser.navigateTab(0, targetUrl2, { createNewTab: true }).catch(() => { });
+            const n2 = await this.browser.navigateTab(0, targetUrl2, { createNewTab: true }).catch(() => null);
+            if (n2 && typeof n2 === 'object' && n2.tabId)
+                tab2Id = n2.tabId;
         }
         else if (typeof chrome !== 'undefined' && chrome.tabs) {
             try {
@@ -3024,13 +3034,15 @@ export class RunCoordinator {
                     chrome.tabs.update(this.currentTabId, { url: targetUrl1 });
                 }
                 else if (typeof chrome.tabs.create === 'function') {
-                    chrome.tabs.create({ url: targetUrl1, active: true });
+                    chrome.tabs.create({ url: targetUrl1, active: true }, (t) => { if (t?.id)
+                        tab1Id = t.id; });
                 }
             }
             catch { }
             try {
                 if (typeof chrome.tabs.create === 'function') {
-                    chrome.tabs.create({ url: targetUrl2, active: false });
+                    chrome.tabs.create({ url: targetUrl2, active: false }, (t) => { if (t?.id)
+                        tab2Id = t.id; });
                 }
             }
             catch { }
@@ -3055,15 +3067,56 @@ export class RunCoordinator {
             catch { }
         }
         this.transition('executing', `Sub-Agents running: ${targetEntities[0].toUpperCase()} & ${targetEntities[1].toUpperCase()}`);
-        this.listeners.onStepProgress?.(1, 2, `🤖 Sub-Agents active: Tab 1 (${targetEntities[0].toUpperCase()}) & Tab 2 (${targetEntities[1].toUpperCase()})`, this.currentRunId);
-        const taskResponse = await this.httpClient.dispatchPlatformTask({ goal, enableSubAgents: true, maxParallel: 2 }, activeKey);
+        this.listeners.onStepProgress?.(1, 2, `🤖 Sub-Agent 1 [${targetEntities[0].toUpperCase()}]: Inspecting live results on Tab 1...`, this.currentRunId);
+        // Live DOM extraction from Tab 1
+        await new Promise((r) => setTimeout(r, 1200));
+        let tab1Snippet = '';
+        try {
+            if (tab1Id && typeof this.browser.sendMessageToTab === 'function') {
+                const snap1 = await this.browser.sendMessageToTab(tab1Id, {
+                    type: 'EXTRACT_DOM_SNAPSHOT',
+                    captureId: `sub_cap_1_${Date.now()}`
+                });
+                if (snap1?.snapshot?.elements) {
+                    tab1Snippet = snap1.snapshot.elements
+                        .map((e) => e.text || e.sanitizedName || '')
+                        .filter((t) => t && t.length > 2 && !/^(google|search|sign in|all|images)$/i.test(t.trim()))
+                        .slice(0, 15)
+                        .join(' | ');
+                }
+            }
+        }
+        catch { }
+        this.listeners.onStepProgress?.(2, 2, `🤖 Sub-Agent 2 [${targetEntities[1].toUpperCase()}]: Inspecting live results on Tab 2...`, this.currentRunId);
+        // Live DOM extraction from Tab 2
+        await new Promise((r) => setTimeout(r, 1200));
+        let tab2Snippet = '';
+        try {
+            if (tab2Id && typeof this.browser.sendMessageToTab === 'function') {
+                const snap2 = await this.browser.sendMessageToTab(tab2Id, {
+                    type: 'EXTRACT_DOM_SNAPSHOT',
+                    captureId: `sub_cap_2_${Date.now()}`
+                });
+                if (snap2?.snapshot?.elements) {
+                    tab2Snippet = snap2.snapshot.elements
+                        .map((e) => e.text || e.sanitizedName || '')
+                        .filter((t) => t && t.length > 2 && !/^(google|search|sign in|all|images)$/i.test(t.trim()))
+                        .slice(0, 15)
+                        .join(' | ');
+                }
+            }
+        }
+        catch { }
+        const taskResponse = await this.httpClient.dispatchPlatformTask({ goal, enableSubAgents: true, maxParallel: 2, contextUrl: targetUrl1 }, activeKey);
         if (taskResponse && taskResponse.status === 'completed') {
             const subTasks = taskResponse.plan?.subTasks || [];
             this.listeners.onStepProgress?.(2, 2, '✓ Sub-agents completed parallel extraction; synthesized comparative report.', this.currentRunId);
             const subTasksSummary = subTasks.map((st, idx) => {
                 const link = st.targetUrl ? ` ([Open Site](${st.targetUrl}))` : '';
-                const summarySnippet = st.result?.summary ? `\n  > ${st.result.summary.replace(/\n+/g, ' ')}` : '';
-                return `• **Sub-Agent ${idx + 1} (${st.title || st.subTaskId})**: ${st.status === 'completed' ? '✓ Completed' : 'Executed'}${link}${summarySnippet}`;
+                const realSnippet = (idx === 0 && tab1Snippet) ? `\n  > Live Page Data: ${tab1Snippet.slice(0, 180)}` :
+                    (idx === 1 && tab2Snippet) ? `\n  > Live Page Data: ${tab2Snippet.slice(0, 180)}` :
+                        (st.result?.summary ? `\n  > ${st.result.summary.replace(/\n+/g, ' ')}` : '');
+                return `• **Sub-Agent ${idx + 1} (${st.title || st.subTaskId})**: ${st.status === 'completed' ? '✓ Completed' : 'Executed'}${link}${realSnippet}`;
             }).join('\n\n');
             const fullReply = [
                 `🤖 **Sub-Agent Swarm Deployed (${subTasks.length} Parallel Workers)**\n`,
