@@ -548,12 +548,16 @@ export class ActionExecutor {
                         targetEl.dispatchEvent(new KeyboardEventCtor('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
                         targetEl.dispatchEvent(new KeyboardEventCtor('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
                         targetEl.dispatchEvent(new KeyboardEventCtor('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-                        // Detect if this input is a client-side filter / search input or inside an ASP.NET wrapper form
-                        const isSearchFilterInput = (targetEl.getAttribute?.('type') || '').toLowerCase() === 'search' ||
-                            targetEl.hasAttribute?.('aria-controls') ||
-                            Boolean(targetEl.closest?.('.dataTables_filter, .dataTable, .table-filter, [class*="filter" i]'));
                         const form = targetEl.form || (typeof targetEl.closest === 'function' ? targetEl.closest('form') : null);
-                        const isAspnetWrapperForm = Boolean(form && (form.id === 'aspnetForm' || form.name === 'aspnetForm' || (form.getAttribute?.('action') || '').includes('.aspx')));
+                        const formAction = (form?.getAttribute?.('action') || '').toLowerCase();
+                        const isECommerceOrSearchForm = Boolean(form && (formAction.includes('/s') ||
+                            formAction.includes('search') ||
+                            (form.id && /search|nav-search|header-search/i.test(form.id))));
+                        // Detect if this input is a client-side filter / search input or inside an ASP.NET wrapper form
+                        const isSearchFilterInput = !isECommerceOrSearchForm && (((targetEl.getAttribute?.('type') || '').toLowerCase() === 'search' && !form) ||
+                            (targetEl.hasAttribute?.('aria-controls') && !form) ||
+                            Boolean(targetEl.closest?.('.dataTables_filter, .dataTable, .table-filter, [class*="filter" i]')));
+                        const isAspnetWrapperForm = Boolean(form && (form.id === 'aspnetForm' || form.name === 'aspnetForm' || formAction.includes('.aspx')));
                         // Dispatch HTML5 'search' event for DataTables / instant table filters
                         if (EventCtor) {
                             try {

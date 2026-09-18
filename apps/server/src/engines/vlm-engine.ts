@@ -1286,6 +1286,7 @@ Strict Rules:
     - When searching on e-commerce sites (Amazon, Flipkart) or search portals:
       ALWAYS submit the search by setting "pressEnter": true on the "type" action, or by clicking the search submit button (e.g. magnifying glass or "Go").
     - NEVER click on autocomplete suggestion dropdowns! Autocomplete dropdowns are ephemeral and frequently misidentified with persistent header links (such as "Registry & Gifting", "Sell", "Customer Service"). Clicking them leads to wrong pages and infinite loops.
+    - NEVER click "Returns & Orders" ("nav-orders"), "Customer Service", "Cart", or account links when trying to search! "Returns" on Amazon refers to merchandise returns and past orders (which requires login), NOT search results. To search, ALWAYS target the search submit button (magnifying glass, "Go", "#nav-search-submit-button") or set "pressEnter": true on the search input!
     - Once a search has been typed and submitted, DO NOT re-type the search query into the search input if the page is currently navigating or loading.
     - When the search results page loads (e.g. /s?k= or /search?q=), inspect the visible product listings and prices directly and summarize them to the user.
 21. CLOSED-LOOP SCREEN VERIFICATION DIRECTIVE:
