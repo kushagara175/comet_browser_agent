@@ -1,6 +1,6 @@
 import { SanitizedElement } from './payload.js';
 import { StructuredTaskIntent, FormFieldAssignment } from './grounding.js';
-export type ActionKind = 'observe' | 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'extract' | 'answer' | 'request_user_confirmation' | 'request_user_input' | 'batch' | 'spawn_subagents' | 'finish' | 'blocked';
+export type ActionKind = 'observe' | 'navigate' | 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'extract' | 'answer' | 'request_user_confirmation' | 'request_user_input' | 'batch' | 'spawn_subagents' | 'finish' | 'blocked';
 export type RiskLevel = 'safe' | 'protected' | 'blocked';
 export type ExpectedPostcondition = {
     readonly kind: 'dialog_visible';
@@ -61,7 +61,7 @@ export declare function parseFormFieldAssignments(text: string): FormFieldAssign
 export declare function resolveTaskContract(goal: string): TaskContract;
 export interface AtomicActionProposal {
     readonly actionId: string;
-    readonly kind: 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'observe' | 'extract' | 'answer';
+    readonly kind: 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'observe' | 'extract' | 'answer' | 'navigate';
     readonly targetLocalId?: string;
     readonly destinationLocalId?: string;
     readonly textToType?: string;
@@ -70,6 +70,9 @@ export interface AtomicActionProposal {
     readonly pressEnter?: boolean;
     readonly fileName?: string;
     readonly rationale?: string;
+    readonly url?: string;
+    readonly targetUrl?: string;
+    readonly createNewTab?: boolean;
 }
 export interface ActionProposal {
     readonly actionId: string;
@@ -100,6 +103,9 @@ export interface ActionProposal {
     readonly inputKey?: string;
     readonly subTasks?: ReadonlyArray<any>;
     readonly coordinates?: readonly [number, number];
+    readonly url?: string;
+    readonly targetUrl?: string;
+    readonly createNewTab?: boolean;
 }
 export interface ActionExecutionResult {
     readonly actionId: string;

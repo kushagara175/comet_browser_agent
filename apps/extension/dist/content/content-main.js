@@ -1423,6 +1423,22 @@
           message: `Scrolled ${proposal.scrollDirection || "down"}`
         };
       }
+      if (proposal.kind === "navigate") {
+        const navUrl = proposal.url || proposal.targetUrl || "";
+        if (navUrl && typeof window !== "undefined") {
+          try {
+            window.location.href = navUrl;
+          } catch (_) {
+          }
+          return {
+            actionId: proposal.actionId,
+            success: true,
+            timestamp,
+            semanticOutcomeVerified: true,
+            message: `Navigating to ${navUrl}`
+          };
+        }
+      }
       if (proposal.risk === "blocked") {
         return {
           actionId: proposal.actionId,

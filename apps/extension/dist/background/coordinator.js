@@ -2524,6 +2524,32 @@ export class RunCoordinator {
                             userApproved: true,
                             rationale: sub.rationale || proposal.rationale
                         };
+                        if (sub.kind === 'navigate') {
+                            const navUrl = sub.url || sub.targetUrl || '';
+                            if (navUrl && typeof this.browser.navigateTab === 'function') {
+                                const shouldOpenNewTab = Boolean(sub.createNewTab);
+                                this.transition('executing', `Navigating to ${navUrl}...`);
+                                const navRes = await this.browser.navigateTab(activeTab.id, navUrl, { createNewTab: shouldOpenNewTab });
+                                if (navRes && typeof navRes === 'object' && navRes.tabId && !shouldOpenNewTab) {
+                                    this.currentTabId = navRes.tabId;
+                                    activeTab.id = navRes.tabId;
+                                }
+                                if (navRes && navRes.url && !shouldOpenNewTab) {
+                                    activeTab.url = navRes.url;
+                                }
+                                else if (!shouldOpenNewTab) {
+                                    activeTab.url = navUrl;
+                                }
+                                if (typeof this.browser.waitForTabReady === 'function') {
+                                    await this.browser.waitForTabReady(activeTab.id, 8000);
+                                }
+                                if (typeof this.browser.ensureContentScript === 'function') {
+                                    await this.browser.ensureContentScript(activeTab.id);
+                                }
+                                lastBatchResult = { success: true, semanticOutcomeVerified: true, message: `Navigated to ${navUrl}` };
+                                continue;
+                            }
+                        }
                         try {
                             lastBatchResult = await this.browser.sendMessageToTab(activeTab.id, {
                                 type: 'EXECUTE_ACTION',
@@ -2602,6 +2628,38 @@ export class RunCoordinator {
                             }
                         }
                         catch (_) { }
+                    }
+                    if (proposal.kind === 'navigate') {
+                        const targetUrl = proposal.url || proposal.targetUrl || '';
+                        if (targetUrl && typeof this.browser.navigateTab === 'function') {
+                            const shouldOpenNewTab = Boolean(proposal.createNewTab);
+                            this.transition('executing', `Navigating to ${targetUrl}...`);
+                            const navRes = await this.browser.navigateTab(activeTab.id, targetUrl, { createNewTab: shouldOpenNewTab });
+                            if (navRes && typeof navRes === 'object' && navRes.tabId && !shouldOpenNewTab) {
+                                this.currentTabId = navRes.tabId;
+                                activeTab.id = navRes.tabId;
+                            }
+                            if (navRes && navRes.url && !shouldOpenNewTab) {
+                                activeTab.url = navRes.url;
+                            }
+                            else if (!shouldOpenNewTab) {
+                                activeTab.url = targetUrl;
+                            }
+                            if (typeof this.browser.waitForTabReady === 'function') {
+                                await this.browser.waitForTabReady(activeTab.id, 8000);
+                            }
+                            if (typeof this.browser.ensureContentScript === 'function') {
+                                await this.browser.ensureContentScript(activeTab.id);
+                            }
+                            execResponse = {
+                                success: true,
+                                semanticOutcomeVerified: true,
+                                message: `Navigated to ${targetUrl}${shouldOpenNewTab ? ' in new tab' : ''}`
+                            };
+                            this.recordActionHistory(proposal);
+                            await new Promise((r) => setTimeout(r, 600));
+                            continue;
+                        }
                     }
                     try {
                         execResponse = await this.browser.sendMessageToTab(activeTab.id, {

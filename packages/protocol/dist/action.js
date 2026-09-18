@@ -525,6 +525,7 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
     'coordinates',
     'url',
     'targetUrl',
+    'createNewTab',
     'description'
 ]);
 export const ALLOWED_ATOMIC_ACTION_KEYS = new Set([
@@ -551,10 +552,12 @@ export const ALLOWED_ATOMIC_ACTION_KEYS = new Set([
     'thought',
     'url',
     'targetUrl',
+    'createNewTab',
     'description'
 ]);
 const VALID_ACTION_KINDS = new Set([
     'observe',
+    'navigate',
     'click',
     'hover',
     'type',
@@ -860,6 +863,29 @@ export function validateActionProposal(proposal, validElements) {
             return { isValid: false, errorMessage: 'selectOptionValue contains prohibited script patterns' };
         }
     }
+    // Navigate action requirements
+    if (kind === 'navigate') {
+        const navUrl = proposal.url || proposal.targetUrl;
+        if (typeof navUrl !== 'string' || navUrl.length === 0 || navUrl.length > 2000) {
+            return { isValid: false, errorMessage: 'Action kind "navigate" requires a valid "url" or "targetUrl" (up to 2000 chars)' };
+        }
+        if (hasProhibitedScriptPattern(navUrl)) {
+            return { isValid: false, errorMessage: 'navigate url contains prohibited script patterns' };
+        }
+    }
+    else if (proposal.url !== undefined) {
+        if (typeof proposal.url !== 'string' || proposal.url.length > 2000 || hasProhibitedScriptPattern(proposal.url)) {
+            return { isValid: false, errorMessage: 'Field "url" must be a valid string up to 2000 characters without scripts' };
+        }
+    }
+    else if (proposal.targetUrl !== undefined) {
+        if (typeof proposal.targetUrl !== 'string' || proposal.targetUrl.length > 2000 || hasProhibitedScriptPattern(proposal.targetUrl)) {
+            return { isValid: false, errorMessage: 'Field "targetUrl" must be a valid string up to 2000 characters without scripts' };
+        }
+    }
+    if (proposal.createNewTab !== undefined && typeof proposal.createNewTab !== 'boolean') {
+        return { isValid: false, errorMessage: 'Field "createNewTab" must be a boolean' };
+    }
     // 9b. userApproved & pressEnter validation
     if (proposal.userApproved !== undefined && typeof proposal.userApproved !== 'boolean') {
         return { isValid: false, errorMessage: 'Field "userApproved" must be a boolean' };
@@ -906,7 +932,8 @@ export function validateActionProposal(proposal, validElements) {
             'observe',
             'extract',
             'answer',
-            'request_user_input'
+            'request_user_input',
+            'navigate'
         ]);
         for (let i = 0; i < proposal.batchActions.length; i++) {
             const sub = proposal.batchActions[i];
@@ -946,6 +973,15 @@ export function validateActionProposal(proposal, validElements) {
                 }
                 if (hasProhibitedScriptPattern(sub.selectOptionValue)) {
                     return { isValid: false, errorMessage: `batchActions[${i}] selectOptionValue contains prohibited script patterns` };
+                }
+            }
+            if (sub.kind === 'navigate') {
+                const subUrl = sub.url || sub.targetUrl;
+                if (typeof subUrl !== 'string' || subUrl.length === 0 || subUrl.length > 2000) {
+                    return { isValid: false, errorMessage: `batchActions[${i}] navigate action requires "url" or "targetUrl"` };
+                }
+                if (hasProhibitedScriptPattern(subUrl)) {
+                    return { isValid: false, errorMessage: `batchActions[${i}] url contains prohibited script patterns` };
                 }
             }
             if (sub.scrollDirection !== undefined && !VALID_SCROLL_DIRECTIONS.has(sub.scrollDirection)) {

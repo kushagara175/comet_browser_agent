@@ -16286,6 +16286,7 @@ var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "coordinates",
   "url",
   "targetUrl",
+  "createNewTab",
   "description"
 ]);
 var ALLOWED_ATOMIC_ACTION_KEYS = /* @__PURE__ */ new Set([
@@ -16312,10 +16313,12 @@ var ALLOWED_ATOMIC_ACTION_KEYS = /* @__PURE__ */ new Set([
   "thought",
   "url",
   "targetUrl",
+  "createNewTab",
   "description"
 ]);
 var VALID_ACTION_KINDS = /* @__PURE__ */ new Set([
   "observe",
+  "navigate",
   "click",
   "hover",
   "type",
@@ -16591,6 +16594,26 @@ function validateActionProposal(proposal, validElements) {
       return { isValid: false, errorMessage: "selectOptionValue contains prohibited script patterns" };
     }
   }
+  if (kind === "navigate") {
+    const navUrl = proposal.url || proposal.targetUrl;
+    if (typeof navUrl !== "string" || navUrl.length === 0 || navUrl.length > 2e3) {
+      return { isValid: false, errorMessage: 'Action kind "navigate" requires a valid "url" or "targetUrl" (up to 2000 chars)' };
+    }
+    if (hasProhibitedScriptPattern(navUrl)) {
+      return { isValid: false, errorMessage: "navigate url contains prohibited script patterns" };
+    }
+  } else if (proposal.url !== void 0) {
+    if (typeof proposal.url !== "string" || proposal.url.length > 2e3 || hasProhibitedScriptPattern(proposal.url)) {
+      return { isValid: false, errorMessage: 'Field "url" must be a valid string up to 2000 characters without scripts' };
+    }
+  } else if (proposal.targetUrl !== void 0) {
+    if (typeof proposal.targetUrl !== "string" || proposal.targetUrl.length > 2e3 || hasProhibitedScriptPattern(proposal.targetUrl)) {
+      return { isValid: false, errorMessage: 'Field "targetUrl" must be a valid string up to 2000 characters without scripts' };
+    }
+  }
+  if (proposal.createNewTab !== void 0 && typeof proposal.createNewTab !== "boolean") {
+    return { isValid: false, errorMessage: 'Field "createNewTab" must be a boolean' };
+  }
   if (proposal.userApproved !== void 0 && typeof proposal.userApproved !== "boolean") {
     return { isValid: false, errorMessage: 'Field "userApproved" must be a boolean' };
   }
@@ -16634,7 +16657,8 @@ function validateActionProposal(proposal, validElements) {
       "observe",
       "extract",
       "answer",
-      "request_user_input"
+      "request_user_input",
+      "navigate"
     ]);
     for (let i = 0; i < proposal.batchActions.length; i++) {
       const sub = proposal.batchActions[i];
@@ -16674,6 +16698,15 @@ function validateActionProposal(proposal, validElements) {
         }
         if (hasProhibitedScriptPattern(sub.selectOptionValue)) {
           return { isValid: false, errorMessage: `batchActions[${i}] selectOptionValue contains prohibited script patterns` };
+        }
+      }
+      if (sub.kind === "navigate") {
+        const subUrl = sub.url || sub.targetUrl;
+        if (typeof subUrl !== "string" || subUrl.length === 0 || subUrl.length > 2e3) {
+          return { isValid: false, errorMessage: `batchActions[${i}] navigate action requires "url" or "targetUrl"` };
+        }
+        if (hasProhibitedScriptPattern(subUrl)) {
+          return { isValid: false, errorMessage: `batchActions[${i}] url contains prohibited script patterns` };
         }
       }
       if (sub.scrollDirection !== void 0 && !VALID_SCROLL_DIRECTIONS.has(sub.scrollDirection)) {
@@ -23082,6 +23115,31 @@ var RunCoordinator = class {
               userApproved: true,
               rationale: sub.rationale || proposal.rationale
             };
+            if (sub.kind === "navigate") {
+              const navUrl = sub.url || sub.targetUrl || "";
+              if (navUrl && typeof this.browser.navigateTab === "function") {
+                const shouldOpenNewTab = Boolean(sub.createNewTab);
+                this.transition("executing", `Navigating to ${navUrl}...`);
+                const navRes = await this.browser.navigateTab(activeTab.id, navUrl, { createNewTab: shouldOpenNewTab });
+                if (navRes && typeof navRes === "object" && navRes.tabId && !shouldOpenNewTab) {
+                  this.currentTabId = navRes.tabId;
+                  activeTab.id = navRes.tabId;
+                }
+                if (navRes && navRes.url && !shouldOpenNewTab) {
+                  activeTab.url = navRes.url;
+                } else if (!shouldOpenNewTab) {
+                  activeTab.url = navUrl;
+                }
+                if (typeof this.browser.waitForTabReady === "function") {
+                  await this.browser.waitForTabReady(activeTab.id, 8e3);
+                }
+                if (typeof this.browser.ensureContentScript === "function") {
+                  await this.browser.ensureContentScript(activeTab.id);
+                }
+                lastBatchResult = { success: true, semanticOutcomeVerified: true, message: `Navigated to ${navUrl}` };
+                continue;
+              }
+            }
             try {
               lastBatchResult = await this.browser.sendMessageToTab(activeTab.id, {
                 type: "EXECUTE_ACTION",
@@ -23151,6 +23209,37 @@ var RunCoordinator = class {
                 continue;
               }
             } catch (_) {
+            }
+          }
+          if (proposal.kind === "navigate") {
+            const targetUrl = proposal.url || proposal.targetUrl || "";
+            if (targetUrl && typeof this.browser.navigateTab === "function") {
+              const shouldOpenNewTab = Boolean(proposal.createNewTab);
+              this.transition("executing", `Navigating to ${targetUrl}...`);
+              const navRes = await this.browser.navigateTab(activeTab.id, targetUrl, { createNewTab: shouldOpenNewTab });
+              if (navRes && typeof navRes === "object" && navRes.tabId && !shouldOpenNewTab) {
+                this.currentTabId = navRes.tabId;
+                activeTab.id = navRes.tabId;
+              }
+              if (navRes && navRes.url && !shouldOpenNewTab) {
+                activeTab.url = navRes.url;
+              } else if (!shouldOpenNewTab) {
+                activeTab.url = targetUrl;
+              }
+              if (typeof this.browser.waitForTabReady === "function") {
+                await this.browser.waitForTabReady(activeTab.id, 8e3);
+              }
+              if (typeof this.browser.ensureContentScript === "function") {
+                await this.browser.ensureContentScript(activeTab.id);
+              }
+              execResponse = {
+                success: true,
+                semanticOutcomeVerified: true,
+                message: `Navigated to ${targetUrl}${shouldOpenNewTab ? " in new tab" : ""}`
+              };
+              this.recordActionHistory(proposal);
+              await new Promise((r) => setTimeout(r, 600));
+              continue;
             }
           }
           try {

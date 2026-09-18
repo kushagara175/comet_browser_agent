@@ -146,6 +146,23 @@ export class ActionExecutor {
                 message: `Scrolled ${proposal.scrollDirection || 'down'}`
             };
         }
+        // 1b. Navigate Action
+        if (proposal.kind === 'navigate') {
+            const navUrl = proposal.url || proposal.targetUrl || '';
+            if (navUrl && typeof window !== 'undefined') {
+                try {
+                    window.location.href = navUrl;
+                }
+                catch (_) { }
+                return {
+                    actionId: proposal.actionId,
+                    success: true,
+                    timestamp,
+                    semanticOutcomeVerified: true,
+                    message: `Navigating to ${navUrl}`
+                };
+            }
+        }
         // 2. Risk check
         if (proposal.risk === 'blocked') {
             return {

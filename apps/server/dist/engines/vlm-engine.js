@@ -771,10 +771,20 @@ export class VlmReasoningEngine {
                     if (!s.actionId)
                         s.actionId = `act_sub_${idx + 1}_${Date.now()}`;
                     if (!s.kind) {
-                        if (s.textToType || s.text || s.input)
+                        if (s.url || s.targetUrl || s.href || s.link)
+                            s.kind = 'navigate';
+                        else if (s.textToType || s.text || s.input)
                             s.kind = 'type';
                         else
                             s.kind = 'click';
+                    }
+                    if (s.kind === 'navigate') {
+                        if (!s.url && s.targetUrl)
+                            s.url = s.targetUrl;
+                        if (!s.url && s.href)
+                            s.url = s.href;
+                        if (!s.url && s.link)
+                            s.url = s.link;
                     }
                     if (!s.targetLocalId && (s.target || s.elementId || s.element || s.id)) {
                         s.targetLocalId = String(s.target || s.elementId || s.element || s.id);
@@ -800,6 +810,16 @@ export class VlmReasoningEngine {
                 if (!parsed.userInputPrompt && (parsed.prompt || parsed.question || parsed.message)) {
                     parsed.userInputPrompt = String(parsed.prompt || parsed.question || parsed.message).slice(0, 500);
                 }
+            }
+            // If kind is navigate or has navigation URL
+            if (parsed.kind === 'navigate' || parsed.action === 'navigate' || parsed.actionType === 'navigate' || (!parsed.kind && (parsed.url || parsed.targetUrl))) {
+                parsed.kind = 'navigate';
+                if (!parsed.url && parsed.targetUrl)
+                    parsed.url = parsed.targetUrl;
+                if (!parsed.url && parsed.href)
+                    parsed.url = parsed.href;
+                if (!parsed.url && parsed.link)
+                    parsed.url = parsed.link;
             }
             // If kind is missing, infer kind from fields
             if (!parsed.kind) {
@@ -1003,7 +1023,8 @@ export class VlmReasoningEngine {
 You are PrivaPilot's Centralized Reasoning Agent for browser automation and conversational assistance.
 You receive a sanitized screenshot (with all sensitive PII intentionally blacked out or blurred) and a compact list of interactive elements with local IDs (e.g. "el_1", "el_2").
 
-Available Browser Action Tools (13 tools):
+Available Browser Action Tools (14 tools):
+- "navigate": Navigate the browser tab to a website URL (requires url or targetUrl; optional createNewTab: boolean).
 - "click": Click buttons, links, tabs, checkboxes, radio buttons, or cards (requires targetLocalId).
 - "type": Enter text into input fields, search bars, or textareas (requires targetLocalId, textToType; optional pressEnter).
 - "select": Select an option from standard or custom dropdowns (requires targetLocalId, selectOptionValue).
@@ -1031,6 +1052,12 @@ Strict Rules:
 1. Return ONLY schema-valid JSON for one single next action or answer.
 2. Target elements using "targetLocalId" ONLY for interaction actions ("click", "type", "select", "hover", "drag_and_drop", "upload_file"). NEVER invent CSS selectors, XPath, or JavaScript.
 3. Classify risk as "safe" (read/navigate/preview/filter/hover/drag/upload/finish/answer) or "protected" (submit/delete/pay/sign).
+3b. NAVIGATION & MULTI-TAB DIRECTIVE:
+    - You have direct access to the "navigate" tool:
+      { "actionId": "act_nav_1", "kind": "navigate", "url": "https://www.flipkart.com/search?q=iPhone+16", "rationale": "Navigate to Flipkart to inspect product listings", "createNewTab": true }
+    - When the user's goal involves checking, searching, or comparing another website (e.g. Flipkart, Amazon, Wikipedia, GitHub) that is NOT the current active page, you MUST return kind: "navigate" with "url" (or "targetUrl") set to the destination URL!
+    - Set "createNewTab": true when comparing across multiple sites or deploying parallel sub-agent workflows.
+    - NEVER tell the user "please open Flipkart in a new tab for me"! YOU are the browser agent: propose kind: "navigate" and the browser will open it automatically.
 4. SEARCH / FILTER / INPUT DIRECTIVE: When the user's goal asks to search, filter, type, fill, enter, write, or set text in a search box or text input (role: "input" or "textarea"), you MUST return kind: "type", target that input's local ID, and set "textToType" to ONLY the exact search query or entity (e.g. "iPhone 16", "171", "Chandrayaan-3"). DO NOT include conversational wrapper phrases like "in the search bar" or "and analyze the price" in "textToType". When searching on web portals, Wikipedia, or search engines, set "pressEnter": true so the search is executed immediately. Do NOT propose "click", "observe", "wait", or a prose plan when the intention is to enter text or filter.
 5. SELECT DIRECTIVE: When selecting an option from a dropdown (role: "select"), you MUST return kind: "select", target that select's local ID, and provide "selectOptionValue" with the desired option value.
 6. HOVER DIRECTIVE: When hovering or inspecting flyouts/dropdown menus, return kind: "hover", and target that element's local ID.
