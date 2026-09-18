@@ -14042,7 +14042,8 @@ function toSanitizedNetworkPayload(context) {
     screenshot: context.sanitizedScreenshotDataUrl,
     elements: context.elements,
     pageState: context.pageState,
-    ...context.redactionManifest ? { redactionManifest: context.redactionManifest } : {}
+    ...context.redactionManifest ? { redactionManifest: context.redactionManifest } : {},
+    ...context.history ? { history: context.history } : {}
   };
 }
 
@@ -20945,6 +20946,7 @@ var RunCoordinator = class {
   currentRunId = "";
   currentTabId;
   lastGoal = "";
+  conversationHistory = [];
   previousSnapshot = null;
   previousUrl = "";
   lastExecutedProposal = null;
@@ -20977,6 +20979,16 @@ var RunCoordinator = class {
       runId: res.runId || this.currentRunId || void 0
     };
     this.lastRunResult = finalRes;
+    if (this.currentGoal && !this.conversationHistory.some((m) => m.role === "user" && m.content === this.currentGoal)) {
+      this.conversationHistory.push({ role: "user", content: this.currentGoal });
+    }
+    const replyText = finalRes.reply || finalRes.message;
+    if (replyText && typeof replyText === "string") {
+      this.conversationHistory.push({ role: "assistant", content: replyText });
+    }
+    if (this.conversationHistory.length > 20) {
+      this.conversationHistory = this.conversationHistory.slice(-20);
+    }
     if (this.currentTabId && typeof this.browser.sendMessageToTab === "function") {
       this.browser.sendMessageToTab(this.currentTabId, {
         type: "SET_ACTIVE_BORDER",
@@ -21685,10 +21697,31 @@ var RunCoordinator = class {
       this.transition("idle", "Previous run preempted by new user request");
       await new Promise((r) => setTimeout(r, 40));
     }
+    if (options?.history && Array.isArray(options.history) && options.history.length > 0) {
+      this.conversationHistory = options.history.map((h) => ({
+        role: h.role === "assistant" ? "assistant" : "user",
+        content: String(h.content || "")
+      }));
+    }
     const RETRY_PATTERN = /^(?:do\s+again|try\s+again|retry|redo|do\s+it\s+again|again|run\s+again|repeat|one\s+more\s+time|once\s+more)[.!]?$/i;
+    const AFFIRMATIVE_PATTERN = /^(?:yeah|yes|yup|sure|ok|okay|proceed|continue|do\s+it|go\s+ahead|yep|please\s+do|yes\s+please|confirm|right)(?:\s+(?:please|go\s+ahead|do\s+it|proceed|continue|bro))?[.!]?$/i;
     let effectiveGoal = (goal || "").trim();
     if (RETRY_PATTERN.test(effectiveGoal) && this.lastGoal) {
       effectiveGoal = this.lastGoal;
+    } else if (AFFIRMATIVE_PATTERN.test(effectiveGoal)) {
+      const lastAssistantMsg = [...this.conversationHistory].reverse().find((m) => m.role === "assistant")?.content || "";
+      const lastUserGoal = [...this.conversationHistory].reverse().find((m) => m.role === "user" && !AFFIRMATIVE_PATTERN.test(m.content.trim()))?.content || this.lastGoal || "";
+      if (lastAssistantMsg) {
+        const tabOpenMatch = lastAssistantMsg.match(/(?:open|navigate\s+to|check)\s+([a-zA-Z0-9.-]+(?:\.(?:com|in|org|net|co|io))?)\b/i);
+        const proposedSite = tabOpenMatch ? tabOpenMatch[1] : "";
+        if (proposedSite || lastUserGoal && isSubAgentSwarmGoal(lastUserGoal)) {
+          effectiveGoal = lastUserGoal ? `${lastUserGoal} - Proceed with opening ${proposedSite || "target site"} in a new tab` : `Open ${proposedSite} in a new tab to continue user request`;
+        } else {
+          effectiveGoal = `Proceed with assistant proposal: ${lastAssistantMsg.slice(0, 200)} (Context: ${lastUserGoal || "User request"})`;
+        }
+      } else if (this.lastGoal) {
+        effectiveGoal = this.lastGoal;
+      }
     } else if (effectiveGoal) {
       this.lastGoal = effectiveGoal;
     }
@@ -21724,7 +21757,7 @@ var RunCoordinator = class {
     const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|hi\s+there|hello\s+there|greetings|good\s+(?:morning|afternoon|evening|day)|who\s+are\s+you|what\s+can\s+you\s+do)\s*[!.?]*$/i;
     if (PURE_GREETING_PATTERN.test((goal || "").trim())) {
       this.transition("awaiting-reasoning", "Synthesizing response with reasoning model...");
-      const chatRes = await this.httpClient.requestGeneralChat(goal);
+      const chatRes = await this.httpClient.requestGeneralChat(goal, this.conversationHistory);
       const answerAction = {
         actionId: `act_greet_${Date.now()}`,
         kind: "answer",
@@ -21942,7 +21975,7 @@ var RunCoordinator = class {
           if (typeof this.httpClient?.requestGeneralChat === "function") {
             this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Synthesizing response with reasoning model`);
             try {
-              const chatRes = await this.httpClient.requestGeneralChat(goal, this.actionHistory);
+              const chatRes = await this.httpClient.requestGeneralChat(goal, this.conversationHistory);
               if (chatRes && chatRes.reply) {
                 this.transition("complete", chatRes.reply);
                 return this.completeWithResult({
@@ -22219,7 +22252,7 @@ var RunCoordinator = class {
           const isActionDirective = isSensitiveGoal || /\b(?:click|type|select|press|submit|navigate|go\s+to|open|fill|scroll|search|find|compare|filter|check|analyze|lookup|price|count|read|inspect)\b/i.test(goal);
           if (!isActionDirective) {
             this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Synthesizing answer with reasoning model`);
-            const chatRes = await this.httpClient.requestGeneralChat(goal, this.actionHistory);
+            const chatRes = await this.httpClient.requestGeneralChat(goal, this.conversationHistory);
             const answerAction = {
               actionId: `act_reply_${Date.now()}`,
               kind: "answer",
@@ -22491,6 +22524,9 @@ var RunCoordinator = class {
           this.transition("sending-sanitized-context", `Step ${step}/${maxSteps}: Transmitting sanitized context`);
           this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Awaiting reasoning action`);
           try {
+            if (this.conversationHistory && this.conversationHistory.length > 0) {
+              sanitized.history = this.conversationHistory;
+            }
             proposal = await this.httpClient.requestReasoningAction(sanitized);
           } catch (err) {
             console.warn("[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:", err?.message || err);
@@ -24130,7 +24166,8 @@ async function handleSidepanelRequest(message) {
     return coordinator.startRun(message.goal || "Safe assistance", {
       runId: message.runId,
       maxSteps: message.maxSteps,
-      tabId: message.tabId
+      tabId: message.tabId,
+      history: message.history
     });
   }
   if (message.type === "GENERAL_CHAT") {
@@ -24236,7 +24273,8 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       coordinator.startRun(message.goal || "Safe assistance", {
         runId: message.runId,
         maxSteps: message.maxSteps,
-        tabId: message.tabId
+        tabId: message.tabId,
+        history: message.history
       }).then((result) => {
         sendResponse(result);
       }).catch((err) => {

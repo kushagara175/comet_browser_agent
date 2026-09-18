@@ -185,6 +185,7 @@ export interface SanitizedContext {
   readonly payloadDigestSha256: string;
   readonly timestamp: number;
   readonly redactionManifest?: RedactionManifest;
+  readonly history?: ReadonlyArray<{ readonly role: 'user' | 'assistant'; readonly content: string }>;
 }
 
 /**
@@ -198,6 +199,7 @@ export interface SanitizedNetworkPayload {
   readonly elements: ReadonlyArray<SanitizedElement>;
   readonly pageState: SanitizedPageState;
   readonly redactionManifest?: RedactionManifest;
+  readonly history?: ReadonlyArray<{ readonly role: 'user' | 'assistant'; readonly content: string }>;
 }
 
 /**
@@ -211,7 +213,8 @@ export function toSanitizedNetworkPayload(context: SanitizedContext): SanitizedN
     screenshot: context.sanitizedScreenshotDataUrl,
     elements: context.elements,
     pageState: context.pageState,
-    ...(context.redactionManifest ? { redactionManifest: context.redactionManifest } : {})
+    ...(context.redactionManifest ? { redactionManifest: context.redactionManifest } : {}),
+    ...(context.history ? { history: context.history } : {})
   };
 }
 

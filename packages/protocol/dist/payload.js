@@ -16,7 +16,8 @@ export function toSanitizedNetworkPayload(context) {
         screenshot: context.sanitizedScreenshotDataUrl,
         elements: context.elements,
         pageState: context.pageState,
-        ...(context.redactionManifest ? { redactionManifest: context.redactionManifest } : {})
+        ...(context.redactionManifest ? { redactionManifest: context.redactionManifest } : {}),
+        ...(context.history ? { history: context.history } : {})
     };
 }
 export function calculateBase64ByteLength(dataUrlOrBase64) {

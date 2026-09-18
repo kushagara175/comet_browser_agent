@@ -147,6 +147,10 @@ export interface SanitizedContext {
     readonly payloadDigestSha256: string;
     readonly timestamp: number;
     readonly redactionManifest?: RedactionManifest;
+    readonly history?: ReadonlyArray<{
+        readonly role: 'user' | 'assistant';
+        readonly content: string;
+    }>;
 }
 /**
  * Closed Network Payload schema sent over the wire to Centralized Reasoning Server.
@@ -159,6 +163,10 @@ export interface SanitizedNetworkPayload {
     readonly elements: ReadonlyArray<SanitizedElement>;
     readonly pageState: SanitizedPageState;
     readonly redactionManifest?: RedactionManifest;
+    readonly history?: ReadonlyArray<{
+        readonly role: 'user' | 'assistant';
+        readonly content: string;
+    }>;
 }
 /**
  * Converts verified SanitizedContext into canonical wire-ready SanitizedNetworkPayload.

@@ -29,6 +29,10 @@ export interface CoordinatorRunOptions {
     readonly maxStaleRetries?: number;
     readonly runId?: string;
     readonly tabId?: number;
+    readonly history?: ReadonlyArray<{
+        readonly role: 'user' | 'assistant';
+        readonly content: string;
+    }>;
 }
 export interface CoordinatorListeners {
     onStateChange?(state: AgentState, message?: string, runId?: string): void;
@@ -134,6 +138,7 @@ export declare class RunCoordinator {
     private currentRunId;
     private currentTabId?;
     private lastGoal;
+    private conversationHistory;
     private previousSnapshot;
     private previousUrl;
     private lastExecutedProposal;

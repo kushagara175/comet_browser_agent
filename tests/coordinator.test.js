@@ -585,3 +585,52 @@ test('Coordinator: Preserves and propagates proposal.reasoning to listeners and 
   assert.ok(result.reasoning);
   assert.strictEqual(result.reasoning, 'Observed interactive element el_btn_1. Chosen to satisfy user goal.');
 });
+
+test('Coordinator: Resolves affirmative user responses using conversation history', async () => {
+  const browser = createFakeBrowserAdapter();
+  let requestedSanitizedContext = null;
+
+  const reasoningHttpClient = {
+    async requestReasoningAction(sanitized) {
+      requestedSanitizedContext = sanitized;
+      return {
+        actionId: 'act_nav_1',
+        kind: 'navigate',
+        url: 'https://www.flipkart.com/search?q=iPhone+16',
+        createNewTab: true,
+        confidence: 0.98,
+        risk: 'safe',
+        rationale: 'Open Flipkart in separate tab'
+      };
+    },
+    async dispatchPlatformTask() {
+      return {
+        taskId: 'test_task_1',
+        status: 'completed',
+        plan: {
+          shouldDecompose: true,
+          rationale: 'Decomposed into parallel workers',
+          subTasks: [
+            { subTaskId: 'sub_1', title: 'Amazon', status: 'completed', result: { summary: 'Amazon price ₹79,900' } },
+            { subTaskId: 'sub_2', title: 'Flipkart', status: 'completed', result: { summary: 'Flipkart price ₹79,900' } }
+          ]
+        },
+        finalSynthesis: 'Both platforms list iPhone 16 at ₹79,900.'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, reasoningHttpClient, undefined, { defaultMaxSteps: 1 });
+
+  // User says "yeah" with conversation history proposing Flipkart in a separate tab
+  const history = [
+    { role: 'user', content: 'Check iPhone 16 on Amazon and Flipkart' },
+    { role: 'assistant', content: 'To complete your request, I will need to open Flipkart.com in a separate tab to check for iPhone 16 listings there. Would you like me to proceed with that?' }
+  ];
+
+  const result = await coordinator.startRun('yeah', { history });
+
+  assert.ok(result);
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.state, 'complete');
+});

@@ -68,6 +68,7 @@ export interface CoordinatorRunOptions {
   readonly maxStaleRetries?: number;
   readonly runId?: string;
   readonly tabId?: number;
+  readonly history?: ReadonlyArray<{ readonly role: 'user' | 'assistant'; readonly content: string }>;
 }
 
 export interface CoordinatorListeners {
@@ -263,6 +264,7 @@ export class RunCoordinator {
   private currentRunId: string = '';
   private currentTabId?: number;
   private lastGoal: string = '';
+  private conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
   private previousSnapshot: SanitizedContext | null = null;
   private previousUrl: string = '';
   private lastExecutedProposal: ActionProposal | null = null;
@@ -316,6 +318,18 @@ export class RunCoordinator {
       runId: res.runId || this.currentRunId || undefined
     };
     this.lastRunResult = finalRes;
+
+    if (this.currentGoal && !this.conversationHistory.some(m => m.role === 'user' && m.content === this.currentGoal)) {
+      this.conversationHistory.push({ role: 'user', content: this.currentGoal });
+    }
+    const replyText = finalRes.reply || finalRes.message;
+    if (replyText && typeof replyText === 'string') {
+      this.conversationHistory.push({ role: 'assistant', content: replyText });
+    }
+    if (this.conversationHistory.length > 20) {
+      this.conversationHistory = this.conversationHistory.slice(-20);
+    }
+
     if (this.currentTabId && typeof this.browser.sendMessageToTab === 'function') {
       this.browser.sendMessageToTab(this.currentTabId, {
         type: 'SET_ACTIVE_BORDER',
@@ -1253,10 +1267,39 @@ export class RunCoordinator {
       await new Promise((r) => setTimeout(r, 40));
     }
 
+    if (options?.history && Array.isArray(options.history) && options.history.length > 0) {
+      this.conversationHistory = options.history.map((h) => ({
+        role: h.role === 'assistant' ? 'assistant' : 'user',
+        content: String(h.content || '')
+      }));
+    }
+
     const RETRY_PATTERN = /^(?:do\s+again|try\s+again|retry|redo|do\s+it\s+again|again|run\s+again|repeat|one\s+more\s+time|once\s+more)[.!]?$/i;
+    const AFFIRMATIVE_PATTERN = /^(?:yeah|yes|yup|sure|ok|okay|proceed|continue|do\s+it|go\s+ahead|yep|please\s+do|yes\s+please|confirm|right)(?:\s+(?:please|go\s+ahead|do\s+it|proceed|continue|bro))?[.!]?$/i;
     let effectiveGoal = (goal || '').trim();
+
     if (RETRY_PATTERN.test(effectiveGoal) && this.lastGoal) {
       effectiveGoal = this.lastGoal;
+    } else if (AFFIRMATIVE_PATTERN.test(effectiveGoal)) {
+      // Affirmative continuation: recover context and pending proposal from conversation history
+      const lastAssistantMsg = [...this.conversationHistory].reverse().find(m => m.role === 'assistant')?.content || '';
+      const lastUserGoal = [...this.conversationHistory].reverse().find(m => m.role === 'user' && !AFFIRMATIVE_PATTERN.test(m.content.trim()))?.content || this.lastGoal || '';
+
+      if (lastAssistantMsg) {
+        // Detect proposed sites or URLs in the assistant's previous message (e.g. "open Flipkart.com in a separate tab")
+        const tabOpenMatch = lastAssistantMsg.match(/(?:open|navigate\s+to|check)\s+([a-zA-Z0-9.-]+(?:\.(?:com|in|org|net|co|io))?)\b/i);
+        const proposedSite = tabOpenMatch ? tabOpenMatch[1] : '';
+
+        if (proposedSite || (lastUserGoal && isSubAgentSwarmGoal(lastUserGoal))) {
+          effectiveGoal = lastUserGoal
+            ? `${lastUserGoal} - Proceed with opening ${proposedSite || 'target site'} in a new tab`
+            : `Open ${proposedSite} in a new tab to continue user request`;
+        } else {
+          effectiveGoal = `Proceed with assistant proposal: ${lastAssistantMsg.slice(0, 200)} (Context: ${lastUserGoal || 'User request'})`;
+        }
+      } else if (this.lastGoal) {
+        effectiveGoal = this.lastGoal;
+      }
     } else if (effectiveGoal) {
       this.lastGoal = effectiveGoal;
     }
@@ -1298,7 +1341,7 @@ export class RunCoordinator {
     const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|hi\s+there|hello\s+there|greetings|good\s+(?:morning|afternoon|evening|day)|who\s+are\s+you|what\s+can\s+you\s+do)\s*[!.?]*$/i;
     if (PURE_GREETING_PATTERN.test((goal || '').trim())) {
       this.transition('awaiting-reasoning', 'Synthesizing response with reasoning model...');
-      const chatRes = await this.httpClient.requestGeneralChat(goal);
+      const chatRes = await this.httpClient.requestGeneralChat(goal, this.conversationHistory as any);
       const answerAction: ActionProposal = {
         actionId: `act_greet_${Date.now()}`,
         kind: 'answer' as any,
@@ -1542,7 +1585,7 @@ export class RunCoordinator {
         if (typeof (this.httpClient as any)?.requestGeneralChat === 'function') {
           this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Synthesizing response with reasoning model`);
           try {
-            const chatRes = await this.httpClient.requestGeneralChat(goal, this.actionHistory as any);
+            const chatRes = await this.httpClient.requestGeneralChat(goal, this.conversationHistory as any);
             if (chatRes && chatRes.reply) {
               this.transition('complete', chatRes.reply);
               return this.completeWithResult({
@@ -1856,7 +1899,7 @@ export class RunCoordinator {
         const isActionDirective = isSensitiveGoal || /\b(?:click|type|select|press|submit|navigate|go\s+to|open|fill|scroll|search|find|compare|filter|check|analyze|lookup|price|count|read|inspect)\b/i.test(goal);
         if (!isActionDirective) {
           this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Synthesizing answer with reasoning model`);
-          const chatRes = await this.httpClient.requestGeneralChat(goal, this.actionHistory as any);
+          const chatRes = await this.httpClient.requestGeneralChat(goal, this.conversationHistory as any);
           const answerAction: ActionProposal = {
             actionId: `act_reply_${Date.now()}`,
             kind: 'answer' as any,
@@ -2167,6 +2210,9 @@ export class RunCoordinator {
         this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Awaiting reasoning action`);
 
         try {
+          if (this.conversationHistory && this.conversationHistory.length > 0) {
+            (sanitized as any).history = this.conversationHistory;
+          }
           proposal = await this.httpClient.requestReasoningAction(sanitized);
         } catch (err: any) {
           console.warn('[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:', err?.message || err);

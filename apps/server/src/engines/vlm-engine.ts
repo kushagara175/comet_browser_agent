@@ -688,6 +688,18 @@ export class VlmReasoningEngine {
       userMessage.images = images;
     }
 
+    const historyMessages: any[] = [];
+    if (Array.isArray(payload.history) && payload.history.length > 0) {
+      for (const h of payload.history.slice(-8)) {
+        if ((h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string' && h.content.trim()) {
+          historyMessages.push({
+            role: h.role,
+            content: h.content.slice(0, 2000)
+          });
+        }
+      }
+    }
+
     const post = (messages: any[], temperature: number) =>
       this.fetchWithTimeout(
         chatUrl,
@@ -705,12 +717,12 @@ export class VlmReasoningEngine {
         this.inferenceTimeoutMs
       );
 
-    let response = await post([{ role: 'system', content: systemPrompt }, userMessage], 0.1);
+    let response = await post([{ role: 'system', content: systemPrompt }, ...historyMessages, userMessage], 0.1);
 
     if (!response.ok && userMessage.images) {
       // Fallback: retry text-only if the model does not accept images
       delete userMessage.images;
-      response = await post([{ role: 'system', content: systemPrompt }, userMessage], 0.1);
+      response = await post([{ role: 'system', content: systemPrompt }, ...historyMessages, userMessage], 0.1);
     }
 
     if (!response.ok) {
@@ -778,9 +790,21 @@ export class VlmReasoningEngine {
     }
 
     const messages: any[] = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: contentArray }
+      { role: 'system', content: systemPrompt }
     ];
+
+    if (Array.isArray(payload.history) && payload.history.length > 0) {
+      for (const h of payload.history.slice(-8)) {
+        if ((h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string' && h.content.trim()) {
+          messages.push({
+            role: h.role,
+            content: h.content.slice(0, 2000)
+          });
+        }
+      }
+    }
+
+    messages.push({ role: 'user', content: contentArray });
 
     const isOpenRouter = endpoint.includes('openrouter.ai');
     const post = (msgs: any[], temperature: number) => {
@@ -1229,6 +1253,11 @@ Strict Rules:
     - When the user's goal involves checking, searching, or comparing another website (e.g. Flipkart, Amazon, Wikipedia, GitHub) that is NOT the current active page, you MUST return kind: "navigate" with "url" (or "targetUrl") set to the destination URL!
     - Set "createNewTab": true when comparing across multiple sites or deploying parallel sub-agent workflows.
     - NEVER tell the user "please open Flipkart in a new tab for me"! YOU are the browser agent: propose kind: "navigate" and the browser will open it automatically.
+3c. MULTI-TURN CONVERSATION & AFFIRMATIVE FOLLOW-UP DIRECTIVE:
+    - When recent conversation history shows you proposed an action (e.g. "To complete your request, I will need to open Flipkart.com in a separate tab... Would you like me to proceed with that?"), and the user responds affirmatively ("yeah", "yes", "sure", "proceed", "ok"):
+      THIS IS A DIRECT INSTRUCTION TO EXECUTE THAT ACTION IMMEDIATELY!
+      Propose kind: "navigate" with the target URL (e.g. "https://www.flipkart.com/search?q=iPhone+16", createNewTab: true) or the confirmed interaction.
+      DO NOT treat affirmative replies as isolated greetings or repeat what is visible on the current tab.
 4. SEARCH / FILTER / INPUT DIRECTIVE: When the user's goal asks to search, filter, type, fill, enter, write, or set text in a search box or text input (role: "input" or "textarea"), you MUST return kind: "type", target that input's local ID, and set "textToType" to ONLY the exact search query or entity (e.g. "iPhone 16", "171", "Chandrayaan-3"). DO NOT include conversational wrapper phrases like "in the search bar" or "and analyze the price" in "textToType". When searching on web portals, Wikipedia, or search engines, set "pressEnter": true so the search is executed immediately. Do NOT propose "click", "observe", "wait", or a prose plan when the intention is to enter text or filter.
 5. SELECT DIRECTIVE: When selecting an option from a dropdown (role: "select"), you MUST return kind: "select", target that select's local ID, and provide "selectOptionValue" with the desired option value.
 6. HOVER DIRECTIVE: When hovering or inspecting flyouts/dropdown menus, return kind: "hover", and target that element's local ID.
@@ -1355,6 +1384,10 @@ JSON Schema:
     }));
 
     const pageState = payload.pageState || { title: 'Active Page', viewport: [1280, 800] };
+    const pageTitle = pageState.title || 'Active Page';
+    const domainStr = (pageState as any).domain ? ` [Domain: ${(pageState as any).domain}]` : '';
+    const routeStr = (pageState as any).routeFingerprint ? ` [Route: ${(pageState as any).routeFingerprint}]` : '';
+    const currentUrlStr = (pageState as any).url ? ` [URL: ${(pageState as any).url}]` : '';
     const landmarks: string[] = [];
     if ((pageState as any).scrollMetrics) {
       const sm = (pageState as any).scrollMetrics;
@@ -1428,14 +1461,15 @@ IMPORTANT PRIVACY INSTRUCTION: All redacted values and blackened regions are per
 
     const promptSuffix = 'Analyze the layout and return the JSON action proposal. If the goal has already been achieved by the visible page state and landmarks, return kind "finish".';
 
-    const pageTitle = pageState.title || 'Active Web Page';
-    const domainStr = (pageState as any).domain ? ` | Domain: ${(pageState as any).domain}` : '';
-    const routeStr = pageState.routeFingerprint ? ` | Route: ${pageState.routeFingerprint}` : '';
-    const currentUrlStr = (pageState as any).url ? `\nPage URL: ${(pageState as any).url}` : '';
+    let historyBlock = '';
+    if (Array.isArray(payload.history) && payload.history.length > 0) {
+      const recent = payload.history.slice(-4).map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}`).join('\n');
+      historyBlock = `\nRecent Conversation History:\n${recent}\n`;
+    }
 
     return `Active Web Page: "${pageTitle}"${domainStr}${routeStr}${currentUrlStr}
 User Goal: ${payload.goal || 'Inspect page'}
-${redactionBlock}${stateDeltaBlock}${landmarksBlock}Active Viewport Elements:
+${historyBlock}${redactionBlock}${stateDeltaBlock}${landmarksBlock}Active Viewport Elements:
 ${JSON.stringify(compactElements, null, 2)}
 
 ${promptSuffix}`;

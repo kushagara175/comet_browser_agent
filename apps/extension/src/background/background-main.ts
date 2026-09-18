@@ -79,7 +79,8 @@ async function handleSidepanelRequest(message: any): Promise<any> {
     return coordinator.startRun(message.goal || 'Safe assistance', {
       runId: message.runId,
       maxSteps: message.maxSteps,
-      tabId: message.tabId
+      tabId: message.tabId,
+      history: message.history
     });
   }
 
@@ -208,7 +209,8 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       coordinator.startRun(message.goal || 'Safe assistance', {
         runId: message.runId,
         maxSteps: message.maxSteps,
-        tabId: message.tabId
+        tabId: message.tabId,
+        history: message.history
       }).then((result) => {
         sendResponse(result);
       }).catch((err) => {
