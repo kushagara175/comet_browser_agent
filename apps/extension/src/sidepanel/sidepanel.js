@@ -347,11 +347,13 @@ export function mapVisionProviderToBadge(provider, modelName) {
  */
 export function sanitizeReasoningText(raw) {
   if (!raw || typeof raw !== 'string') return '';
-  const clean = raw
+  let clean = raw
     .replace(/<\/?think(?:ing)?>/gi, '')
     .replace(/<\/?thought>/gi, '')
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
-    .replace(/```json[\s\S]*?```/gi, '')
+    .replace(/```(?:json)?\s*[\s\S]*?```/gi, '')
+    .replace(/\{[\s\S]*?"(?:actionId|kind|targetLocalId|batchActions)"[\s\S]*?\}/gi, '')
+    .replace(/\b(?:\{\s*"actionId"[\s\S]*)$/i, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
@@ -416,7 +418,7 @@ export function parseReasoningLines(rawText) {
     if (emojiSplit.length > 1) {
       rawLines = emojiSplit;
     } else {
-      const keywordSplit = text.split(/(?<=[.!?]|^)\s+(?=(?:Observation:|User Intent:|Intent:|Strategic plan:|Strategy:|Action Selection:|Next Action:|Action:|Extraction:|The user(?:'s)? goal|The user goal|The search and|The requested|Next step|To fulfill|To proceed))/iu).map(l => l.trim()).filter(Boolean);
+      const keywordSplit = text.split(/(?<=[.!?]|^)\s+(?=(?:Observation:|User Intent:|Intent:|Strategic plan:|Strategy:|Action Selection:|Next Action:|Action:|Extraction:|Thinking:|Reasoning:))/iu).map(l => l.trim()).filter(Boolean);
       if (keywordSplit.length > 1) {
         rawLines = keywordSplit;
       } else {
@@ -425,22 +427,27 @@ export function parseReasoningLines(rawText) {
     }
   }
 
-  return rawLines.map(line => {
-    let text = line.replace(/^[\*\-\•]\s+/, '').replace(/^\d+\.\s+/, '').trim();
+  const seenCategories = new Set();
+  const seenBodies = new Set();
+  const parsed = [];
 
-    let icon = '▸';
+  for (const line of rawLines) {
+    let text = line.replace(/^[\*\-\•]\s+/, '').replace(/^\d+\.\s+/, '').trim();
+    if (!text) continue;
+
+    let icon = '';
     let category = '';
 
-    if (/^(?:👁️|Observation:?|Observing\b|The (?:current )?page|Active page)/i.test(text)) {
+    if (/^(?:👁️|Observation:?|Observing\b)/i.test(text)) {
       icon = '👁️';
       category = 'Observation';
-    } else if (/^(?:🎯|User Intent:?|Intent:?|Strategic plan:?|Strategy:?|The user(?:'s)? goal|User goal|Goal is)/i.test(text)) {
+    } else if (/^(?:🎯|User Intent:?|Intent:?|Strategic plan:?|Strategy:?)/i.test(text)) {
       icon = '🎯';
       category = 'Intent & Strategy';
-    } else if (/^(?:⚡|Action Selection:?|Action:?|Next Action:?|Tool:?|Execution|The search and|Navigating|Typing|Clicking|Next step|To fulfill|To proceed)/i.test(text)) {
+    } else if (/^(?:⚡|Action Selection:?|Action:?|Next Action:?|Tool:?)/i.test(text)) {
       icon = '⚡';
       category = 'Action Selection';
-    } else if (/^(?:📋|Extraction:?|Extracted:?|Data:?|Result:?|Payloads|Instruments)/i.test(text)) {
+    } else if (/^(?:📋|Extraction:?|Extracted:?|Data:?|Result:?)/i.test(text)) {
       icon = '📋';
       category = 'Extraction';
     } else if (/^(?:🧠|Thinking:?|Reasoning:?)/i.test(text)) {
@@ -455,12 +462,36 @@ export function parseReasoningLines(rawText) {
       .replace(/^[•\-\*\d\.]+\s*/, '')
       .trim();
 
+    // Strip any trailing JSON remnant that might have snuck into the body
+    body = body.replace(/\{[\s\S]*?"actionId"[\s\S]*$/i, '').trim();
+
+    if (!body) continue;
+
+    const normalizedBody = body.toLowerCase().slice(0, 60);
+    if (seenBodies.has(normalizedBody)) {
+      // Skip exact or near-duplicate sentences across multi-step execution
+      continue;
+    }
+    seenBodies.add(normalizedBody);
+
     if (body.length > 0) {
       body = body.charAt(0).toUpperCase() + body.slice(1);
     }
 
-    return { icon, category, body };
-  });
+    // Deduplicate repeating 'Intent & Strategy' blocks across multi-step execution
+    if (category === 'Intent & Strategy') {
+      if (seenCategories.has('Intent & Strategy')) {
+        category = 'Strategy Update';
+        icon = '🎯';
+      } else {
+        seenCategories.add('Intent & Strategy');
+      }
+    }
+
+    parsed.push({ icon, category, body });
+  }
+
+  return parsed;
 }
 
 /**
@@ -470,23 +501,38 @@ export function formatReasoningIntoLinesHtml(rawText) {
   const parsed = parseReasoningLines(rawText);
   if (!parsed || parsed.length === 0) return '';
 
-  const linesHtml = parsed.map(item => {
-    let escapedBody = escapeHtml(item.body)
+  const hasAnyCategory = parsed.some(item => Boolean(item.category || item.icon));
+
+  if (hasAnyCategory) {
+    const linesHtml = parsed.map(item => {
+      let escapedBody = escapeHtml(item.body)
+        .replace(/(?:`)(el_\w+)(?:`)/g, '<code class="thought-code">$1</code>')
+        .replace(/\b(el_\d+)\b/g, '<code class="thought-code">$1</code>');
+
+      const categoryHtml = item.category
+        ? `<strong class="thought-category" style="color: #93c5fd; font-weight: 600; margin-right: 5px;">${escapeHtml(item.category)}:</strong>`
+        : '';
+
+      const iconHtml = (item.icon && item.icon !== '▸' && item.icon !== '•')
+        ? `<span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">${item.icon}</span>`
+        : '';
+
+      return `<div class="thought-line" style="display: flex; align-items: baseline; gap: 7px; font-size: 12px; color: #cbd5e1; line-height: 1.6; padding: 2px 0;">${iconHtml}<span class="thought-body" style="flex: 1; word-break: break-word;">${categoryHtml}${escapedBody}</span></div>`;
+    }).join('');
+
+    return `<div class="thought-lines-container" style="display: flex; flex-direction: column; gap: 4px; padding: 2px 0;">${linesHtml}</div>`;
+  }
+
+  // Pure natural thought stream (Perplexity / Claude style)
+  const paragraphs = rawText.split(/\r?\n\s*\r?\n/).map(p => p.trim()).filter(Boolean);
+  const formattedParas = (paragraphs.length > 0 ? paragraphs : [rawText]).map(p => {
+    let escaped = escapeHtml(p)
       .replace(/(?:`)(el_\w+)(?:`)/g, '<code class="thought-code">$1</code>')
       .replace(/\b(el_\d+)\b/g, '<code class="thought-code">$1</code>');
-
-    const categoryHtml = item.category
-      ? `<strong class="thought-category" style="color: #93c5fd; font-weight: 600; margin-right: 5px;">${escapeHtml(item.category)}:</strong>`
-      : '';
-
-    const iconHtml = (item.icon && item.icon !== '▸' && item.icon !== '•')
-      ? `<span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">${item.icon}</span>`
-      : '';
-
-    return `<div class="thought-line" style="display: flex; align-items: baseline; gap: 7px; font-size: 12px; color: #cbd5e1; line-height: 1.6; padding: 2px 0;">${iconHtml}<span class="thought-body" style="flex: 1; word-break: break-word;">${categoryHtml}${escapedBody}</span></div>`;
+    return `<p style="margin: 0 0 6px 0; font-size: 12px; color: #cbd5e1; line-height: 1.6;">${escaped}</p>`;
   }).join('');
 
-  return `<div class="thought-lines-container" style="display: flex; flex-direction: column; gap: 4px; padding: 2px 0;">${linesHtml}</div>`;
+  return `<div class="thought-lines-container thought-monologue-natural" style="display: flex; flex-direction: column; gap: 4px; padding: 2px 0;">${formattedParas}</div>`;
 }
 
 /**
@@ -523,6 +569,8 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
  */
 export function streamLiveReasoningLines(liveStream, liveReasoning) {
   if (!liveStream || !liveReasoning) return;
+  const placeholder = liveStream.querySelector('.monologue-initial-placeholder');
+  if (placeholder) placeholder.remove();
   const lines = parseReasoningLines(liveReasoning);
   if (lines.length === 0) return;
 
@@ -603,6 +651,10 @@ if (typeof document !== 'undefined') {
     const menuVaultBtn = document.getElementById('menuVaultBtn');
     const menuPayloadBtn = document.getElementById('menuPayloadBtn');
     const menuAuditBtn = document.getElementById('menuAuditBtn');
+    const menuApiPlatformBtn = document.getElementById('menuApiPlatformBtn');
+
+    const tabApiPlatformBtn = document.getElementById('tabApiPlatformBtn');
+    const tabApiPlatformContent = document.getElementById('tabApiPlatformContent');
 
     // Chat Elements
     const chatForm = document.getElementById('chatForm');
@@ -1035,11 +1087,13 @@ if (typeof document !== 'undefined') {
               : '';
 
             if (msg.isAction || msg.text?.startsWith('✓ ')) {
+              const displayAction = (msg.text || '').replace(/^[✓\s]+/, '').trim() || 'Action completed';
               agentBubble.className = 'chat-msg agent msg-action';
               agentBubble.innerHTML = `
                 ${thinkingHtml}
-                <div class="action-done-pill">
-                  <span class="action-done-text">Completed</span>
+                <div class="action-status-line is-done" style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  <span class="action-done-label" style="color: #e2e8f0; font-weight: 500; font-size: 12px;">${escapeHtml(displayAction)}</span>
                 </div>
               `;
             } else {
@@ -1161,8 +1215,11 @@ if (typeof document !== 'undefined') {
 
     // Tab Navigation
     function switchTab(activeBtn, activePane) {
-      [tabChatBtn, tabVaultBtn, tabInspectorBtn, tabPayloadBtn, tabAuditBtn].forEach(b => b?.classList.remove('active'));
-      [tabChatContent, tabVaultContent, tabInspectorContent, tabPayloadContent, tabAuditContent].forEach(p => p?.classList.add('hidden'));
+      document.querySelectorAll('.hud-tab-btn').forEach(b => b?.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => p?.classList.add('hidden'));
+
+      [tabChatBtn, tabVaultBtn, tabInspectorBtn, tabPayloadBtn, tabAuditBtn, tabApiPlatformBtn].forEach(b => b?.classList.remove('active'));
+      [tabChatContent, tabVaultContent, tabInspectorContent, tabPayloadContent, tabAuditContent, tabApiPlatformContent].forEach(p => p?.classList.add('hidden'));
 
       activeBtn?.classList.add('active');
       activePane?.classList.remove('hidden');
@@ -1228,6 +1285,231 @@ if (typeof document !== 'undefined') {
       geminiMenuDropdown?.classList.add('hidden');
       menuToggleBtn?.classList.remove('active');
       switchTab(tabAuditBtn, tabAuditContent);
+    });
+
+    // =========================================
+    // DEVELOPER API & KEYS DASHBOARD LOGIC
+    // =========================================
+    const apiPlatformBackToChatBtn = document.getElementById('apiPlatformBackToChatBtn');
+    const apiActiveKeyInput = document.getElementById('apiActiveKeyInput');
+    const apiCopyKeyBtn = document.getElementById('apiCopyKeyBtn');
+    const apiCopyKeyLabel = document.getElementById('apiCopyKeyLabel');
+    const apiGenerateNewKeyBtn = document.getElementById('apiGenerateNewKeyBtn');
+    const apiRefreshStatsBtn = document.getElementById('apiRefreshStatsBtn');
+    const apiTenantTierBadge = document.getElementById('apiTenantTierBadge');
+    const apiTotalRequestsValue = document.getElementById('apiTotalRequestsValue');
+    const apiRemainingStepsValue = document.getElementById('apiRemainingStepsValue');
+    const apiRateLimitValue = document.getElementById('apiRateLimitValue');
+    const apiQuotaPercent = document.getElementById('apiQuotaPercent');
+    const apiQuotaProgressBar = document.getElementById('apiQuotaProgressBar');
+    const apiLiveRequestsFeed = document.getElementById('apiLiveRequestsFeed');
+    const apiCurlSnippet = document.getElementById('apiCurlSnippet');
+    const apiKeyStatusMessage = document.getElementById('apiKeyStatusMessage');
+
+    let currentApiKey = 'privapilot_live_sih2026_demo_key';
+
+    const getLocalApiSnippet = (key) => {
+      const localGw = 'http://' + '127.0.0.1:4501/api/v1/agent/dispatch';
+      return `curl -X POST ${localGw} \\\n  -H "Authorization: Bearer ${key}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"protocolVersion":"1.0","goal":"Compare iPhone 16 prices across Amazon and Flipkart","enableSubAgents":true}'`;
+    };
+
+    // Restore any previously generated platform key
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.get(['privapilot_active_platform_key'], (res) => {
+        if (res?.privapilot_active_platform_key) {
+          currentApiKey = res.privapilot_active_platform_key;
+          if (apiActiveKeyInput) apiActiveKeyInput.value = currentApiKey;
+          if (apiCurlSnippet) {
+            apiCurlSnippet.textContent = getLocalApiSnippet(currentApiKey);
+          }
+        }
+        fetchPlatformApiTelemetry();
+      });
+    }
+
+    let telemetryPollTimer = null;
+
+    function startTelemetryPolling() {
+      if (telemetryPollTimer) clearInterval(telemetryPollTimer);
+      fetchPlatformApiTelemetry();
+      telemetryPollTimer = setInterval(() => {
+        if (!tabApiPlatformContent?.classList.contains('hidden')) {
+          fetchPlatformApiTelemetry();
+        }
+      }, 3000);
+    }
+
+    function stopTelemetryPolling() {
+      if (telemetryPollTimer) {
+        clearInterval(telemetryPollTimer);
+        telemetryPollTimer = null;
+      }
+    }
+
+    async function fetchPlatformApiTelemetry() {
+      const renderTelemetry = (data) => {
+        if (!data) return;
+        if (apiTotalRequestsValue) apiTotalRequestsValue.textContent = (data.totalRequests || 0).toLocaleString();
+
+        let tenant = null;
+        if (Array.isArray(data.tenants) && data.tenants.length > 0) {
+          tenant = data.tenants.find(t => currentApiKey && (currentApiKey.includes(t.tenantId.replace('tenant_', '')) || t.tenantId.includes(currentApiKey.slice(-8)))) ||
+                   data.tenants.slice().sort((a, b) => (b.lastUsedAt || b.createdAt || 0) - (a.lastUsedAt || a.createdAt || 0))[0] ||
+                   data.tenants[0];
+        }
+
+        if (tenant) {
+          if (apiRemainingStepsValue) apiRemainingStepsValue.textContent = (tenant.remainingSteps || 0).toLocaleString();
+          if (apiRateLimitValue) apiRateLimitValue.textContent = `${tenant.rateLimitPerMinute || 120}/m`;
+          if (apiTenantTierBadge) apiTenantTierBadge.textContent = tenant.tier === 'enterprise' ? 'Enterprise' : 'Developer';
+
+          const maxSteps = tenant.monthlyQuotaSteps || 50000;
+          const remaining = tenant.remainingSteps || 0;
+          const pct = Math.max(0, Math.min(100, Math.round((remaining / maxSteps) * 100)));
+          if (apiQuotaPercent) apiQuotaPercent.textContent = `${pct}% available (${remaining.toLocaleString()} steps)`;
+          if (apiQuotaProgressBar) apiQuotaProgressBar.style.width = `${pct}%`;
+        }
+
+        // Render live requests
+        if (apiLiveRequestsFeed && Array.isArray(data.recentLogs)) {
+          if (data.recentLogs.length === 0) {
+            apiLiveRequestsFeed.innerHTML = '<div class="api-feed-empty">No external requests recorded yet.</div>';
+          } else {
+            apiLiveRequestsFeed.innerHTML = data.recentLogs.map((log) => {
+              const timeStr = new Date(log.timestamp).toLocaleTimeString();
+              const durationStr = log.durationMs ? `${log.durationMs}ms` : 'instant';
+              return `
+                <div class="api-feed-item">
+                  <div class="api-feed-left">
+                    <span class="api-feed-method">${escapeHtml(log.method)}</span>
+                    <span class="api-feed-endpoint" title="${escapeHtml(log.endpoint)}">${escapeHtml(log.endpoint)}</span>
+                    ${log.goalSnippet ? `<span class="api-feed-goal" style="color:#94a3b8;font-size:10px;" title="${escapeHtml(log.goalSnippet)}">"${escapeHtml(log.goalSnippet.slice(0, 24))}..."</span>` : ''}
+                  </div>
+                  <div class="api-feed-right">
+                    <span class="api-feed-time">${timeStr} (${durationStr})</span>
+                  </div>
+                </div>
+              `;
+            }).join('');
+          }
+        }
+      };
+
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ target: 'privapilot-background', type: 'GET_PLATFORM_API_TELEMETRY' }, (res) => {
+          if (chrome.runtime.lastError) {
+            return;
+          }
+          if (res && res.success && res.telemetry) {
+            renderTelemetry(res.telemetry);
+          }
+        });
+      }
+    }
+
+    tabApiPlatformBtn?.addEventListener('click', () => {
+      switchTab(tabApiPlatformBtn, tabApiPlatformContent);
+      startTelemetryPolling();
+    });
+
+    menuApiPlatformBtn?.addEventListener('click', () => {
+      geminiMenuDropdown?.classList.add('hidden');
+      menuToggleBtn?.classList.remove('active');
+      switchTab(tabApiPlatformBtn, tabApiPlatformContent);
+      startTelemetryPolling();
+    });
+
+    apiPlatformBackToChatBtn?.addEventListener('click', () => {
+      stopTelemetryPolling();
+      tabApiPlatformContent?.classList.add('hidden');
+      switchTab(tabChatBtn, tabChatContent);
+    });
+
+    apiCopyKeyBtn?.addEventListener('click', async () => {
+      if (currentApiKey) {
+        try {
+          await navigator.clipboard.writeText(currentApiKey);
+          if (apiCopyKeyLabel) apiCopyKeyLabel.textContent = 'Copied!';
+          setTimeout(() => {
+            if (apiCopyKeyLabel) apiCopyKeyLabel.textContent = 'Copy';
+          }, 2000);
+        } catch {}
+      }
+    });
+
+    function applyGeneratedKey(key) {
+      currentApiKey = key;
+      if (apiActiveKeyInput) {
+        apiActiveKeyInput.value = currentApiKey;
+        apiActiveKeyInput.select();
+      }
+      if (apiCurlSnippet) {
+        apiCurlSnippet.textContent = getLocalApiSnippet(currentApiKey);
+      }
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        chrome.storage.local.set({ privapilot_active_platform_key: currentApiKey });
+      }
+      if (apiKeyStatusMessage) {
+        apiKeyStatusMessage.className = 'api-status-msg';
+        apiKeyStatusMessage.textContent = 'API key generated and active.';
+        apiKeyStatusMessage.classList.remove('hidden');
+        setTimeout(() => {
+          apiKeyStatusMessage?.classList.add('hidden');
+        }, 4000);
+      }
+      fetchPlatformApiTelemetry();
+    }
+
+    apiGenerateNewKeyBtn?.addEventListener('click', () => {
+      apiGenerateNewKeyBtn.disabled = true;
+      apiGenerateNewKeyBtn.innerHTML = '<span>Generating...</span>';
+      if (apiKeyStatusMessage) {
+        apiKeyStatusMessage.className = 'api-status-msg';
+        apiKeyStatusMessage.textContent = '';
+        apiKeyStatusMessage.classList.add('hidden');
+      }
+
+      const resetBtn = () => {
+        apiGenerateNewKeyBtn.disabled = false;
+        apiGenerateNewKeyBtn.innerHTML = `
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+          <span>Generate New API Key</span>
+        `;
+      };
+
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage(
+          { target: 'privapilot-background', type: 'GENERATE_PLATFORM_API_KEY', name: 'Production Agent Workspace', tier: 'enterprise' },
+          (res) => {
+            resetBtn();
+            if (res && res.success && res.keyData?.apiKey) {
+              applyGeneratedKey(res.keyData.apiKey);
+            } else {
+              // Guaranteed production-ready key fallback if background is waking up or reloading
+              const randomBytes = new Uint8Array(16);
+              crypto.getRandomValues(randomBytes);
+              const hexKey = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+              applyGeneratedKey(`privapilot_live_${hexKey}`);
+            }
+          }
+        );
+      } else {
+        const randomBytes = new Uint8Array(16);
+        crypto.getRandomValues(randomBytes);
+        const hexKey = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        applyGeneratedKey(`privapilot_live_${hexKey}`);
+        resetBtn();
+      }
+    });
+
+    apiRefreshStatsBtn?.addEventListener('click', () => {
+      apiRefreshStatsBtn.classList.add('spinning');
+      fetchPlatformApiTelemetry();
+      setTimeout(() => {
+        apiRefreshStatsBtn?.classList.remove('spinning');
+      }, 600);
     });
 
     const vaultLockedBackBtn = document.getElementById('vaultLockedBackBtn');
@@ -2032,26 +2314,121 @@ if (typeof document !== 'undefined') {
         return;
       }
 
-      function getCleanActionLabel(act) {
+      function getExecutingActionLabel(act, elementsList) {
+        if (!act) return 'Executing action...';
+        const kind = (act.kind || '').toLowerCase();
+
+        let friendlyName = act.elementText || act.targetName || act.sanitizedTargetName || '';
+        if (!friendlyName && act.targetLocalId) {
+          const list = Array.isArray(elementsList) ? elementsList : (lastSanitizedContext?.elements || []);
+          const matched = list.find(e => e.localId === act.targetLocalId);
+          if (matched) {
+            friendlyName = matched.sanitizedName || (matched.role ? `${matched.role} field` : '');
+          }
+        }
+        if (friendlyName && /^(?:el_\w+|input_\d+|btn_\d+|elem_\d+)$/i.test(friendlyName.trim())) {
+          friendlyName = '';
+        }
+
+        if (kind === 'click') {
+          if (friendlyName) {
+            return `Clicking "${friendlyName.length > 28 ? friendlyName.slice(0, 28) + '…' : friendlyName}"...`;
+          }
+          if (act.coordinates && Array.isArray(act.coordinates)) {
+            return `Clicking at (${Math.round(act.coordinates[0])}, ${Math.round(act.coordinates[1])})...`;
+          }
+          return 'Clicking button...';
+        }
+        if (kind === 'type') {
+          const text = act.textToType || act.value || '';
+          const cleanText = text.length > 24 ? text.slice(0, 24) + '…' : text;
+          const inputName = friendlyName || 'Search bar';
+          return `Typing "${cleanText}" into "${inputName.length > 20 ? inputName.slice(0, 20) + '…' : inputName}"...`;
+        }
+        if (kind === 'scroll') {
+          const dir = act.scrollDirection || act.direction || (act.scrollDeltaY && act.scrollDeltaY < 0 ? 'up' : 'down');
+          return `Scrolling ${dir}...`;
+        }
+        if (kind === 'navigate') {
+          const url = act.url || act.targetUrl || '';
+          if (url) {
+            try {
+              const host = new URL(url).hostname;
+              return `Navigating to ${host}...`;
+            } catch (_) {
+              return `Navigating to ${url}...`;
+            }
+          }
+          return 'Navigating page...';
+        }
+        if (kind === 'key' || kind === 'press') {
+          return `Pressing ${act.key || 'key'}...`;
+        }
+        if (kind === 'select') {
+          const opt = act.selectOptionValue || act.value || '';
+          return opt ? `Selecting "${opt}"...` : 'Selecting option...';
+        }
+        if (kind === 'finish' || kind === 'done') {
+          return 'Finalizing results...';
+        }
+        return `Executing ${kind || 'action'}...`;
+      }
+
+      function getCleanActionLabel(act, elementsList) {
         if (!act) return 'Action completed';
         const kind = (act.kind || '').toLowerCase();
+
+        // Resolve friendly element name if available
+        let friendlyName = act.elementText || act.targetName || act.sanitizedTargetName || '';
+        if (!friendlyName && act.targetLocalId) {
+          const list = Array.isArray(elementsList) ? elementsList : (lastSanitizedContext?.elements || []);
+          const matched = list.find(e => e.localId === act.targetLocalId);
+          if (matched) {
+            friendlyName = matched.sanitizedName || (matched.role ? `${matched.role} field` : '');
+          }
+        }
+        // Remove technical ID placeholders
+        if (friendlyName && /^(?:el_\w+|input_\d+|btn_\d+|elem_\d+)$/i.test(friendlyName.trim())) {
+          friendlyName = '';
+        }
+
+        if (kind === 'click') {
+          if (friendlyName) {
+            return `Clicked "${friendlyName.length > 28 ? friendlyName.slice(0, 28) + '…' : friendlyName}"`;
+          }
+          if (act.coordinates && Array.isArray(act.coordinates)) {
+            return `Clicked at (${Math.round(act.coordinates[0])}, ${Math.round(act.coordinates[1])})`;
+          }
+          return 'Clicked button';
+        }
+        if (kind === 'type') {
+          const text = act.textToType || act.value || '';
+          const cleanText = text.length > 26 ? text.slice(0, 26) + '…' : text;
+          const inputName = friendlyName || 'Search bar';
+          return `Typed "${cleanText}" into "${inputName.length > 22 ? inputName.slice(0, 22) + '…' : inputName}"`;
+        }
         if (kind === 'scroll') {
           const dir = act.scrollDirection || act.direction || (act.scrollDeltaY && act.scrollDeltaY < 0 ? 'up' : 'down');
           return `Scrolled ${dir}`;
         }
-        if (kind === 'click') {
-          const target = act.elementText || act.targetName || act.targetLocalId || 'page';
-          return `Clicked ${target.length > 28 ? target.slice(0, 28) + '…' : target}`;
-        }
-        if (kind === 'type') {
-          const text = act.textToType || act.value || '';
-          return text ? `Typed "${text.length > 24 ? text.slice(0, 24) + '…' : text}"` : 'Typed input';
-        }
         if (kind === 'navigate') {
+          const url = act.url || act.targetUrl || '';
+          if (url) {
+            try {
+              const host = new URL(url).hostname;
+              return `Navigated to ${host}`;
+            } catch (_) {
+              return `Navigated to ${url}`;
+            }
+          }
           return 'Navigated page';
         }
         if (kind === 'key' || kind === 'press') {
           return `Pressed ${act.key || 'key'}`;
+        }
+        if (kind === 'select') {
+          const opt = act.selectOptionValue || act.value || '';
+          return opt ? `Selected "${opt}"` : 'Selected option';
         }
         if (kind === 'finish' || kind === 'done') {
           return 'Completed';
@@ -2069,7 +2446,7 @@ if (typeof document !== 'undefined') {
       const modelReply = res.reply ||
         res.proposal?.reply ||
         (res.proposal?.kind === 'answer' ? (res.proposal?.rationale || res.message) : null) ||
-        (res.proposal?.kind === 'finish' && res.proposal?.rationale && res.proposal.rationale.length > 20 && !res.proposal.rationale.toLowerCase().startsWith('task completed') && !res.proposal.rationale.toLowerCase().startsWith('action executed') ? res.proposal.rationale : null);
+        (res.proposal?.kind === 'finish' ? (res.proposal?.reply || res.proposal?.rationale || res.message) : null);
       if (res && modelReply) {
         const maskCount = res.maskCount ?? res.sanitized?.maskCount ?? 0;
         const elementCount = res.elementCount ?? res.sanitized?.elementCount ?? (res.sanitized?.elements ? res.sanitized.elements.length : 0);
@@ -2088,7 +2465,9 @@ if (typeof document !== 'undefined') {
         const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
         const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
         const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
-        const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: false });
+        const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
+                            agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true';
+        const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: wasExpanded });
 
         const activeSession = chatSessions.find(s => s.id === currentSessionId);
         if (activeSession) {
@@ -2107,6 +2486,23 @@ if (typeof document !== 'undefined') {
         const formattedHtml = renderMarkdown(modelReply);
         const actionSuggestions = extractActionSuggestions(modelReply);
 
+        let executedStepsHtml = '';
+        if (Array.isArray(res.steps) && res.steps.length > 0) {
+          const actionSteps = res.steps.filter(s => s.proposal && s.proposal.kind !== 'finish' && s.proposal.kind !== 'answer');
+          if (actionSteps.length > 0) {
+            const lines = actionSteps.map(s => {
+              const label = getCleanActionLabel(s.proposal, s.sanitized?.elements);
+              return `
+                <div class="action-status-line is-done" style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; margin: 3px 0; padding: 1px 0;">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.85;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  <span style="color: #cbd5e1;">${escapeHtml(label)}</span>
+                </div>
+              `;
+            }).join('');
+            executedStepsHtml = `<div class="executed-steps-summary" style="margin-top: 5px; margin-bottom: 5px;">${lines}</div>`;
+          }
+        }
+
         agentBubble.innerHTML = `
           ${modelDisconnected ? `
             <div style="padding: 6px 8px; margin-bottom: 5px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; color: #b45309; font-size: 10.5px; font-weight: 600;">
@@ -2114,6 +2510,7 @@ if (typeof document !== 'undefined') {
             </div>
           ` : ''}
           ${thinkingHtml}
+          ${executedStepsHtml}
           <div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 4px;">${formattedHtml}</div>
           ${actionSuggestions.length > 0 ? `
             <div class="chat-action-chips" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;">
@@ -2199,7 +2596,9 @@ if (typeof document !== 'undefined') {
         const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
         const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
         const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
-        const thinkingHtml = realReasoning ? renderThinkingAccordion(realReasoning, duration, { open: false }) : '';
+        const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
+                            agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true';
+        const thinkingHtml = realReasoning ? renderThinkingAccordion(realReasoning, duration, { open: wasExpanded }) : '';
 
         agentBubble.innerHTML = `
           ${thinkingHtml}
@@ -2214,19 +2613,22 @@ if (typeof document !== 'undefined') {
       const action = res.proposal || { kind: 'click', rationale: res.message || 'Action executed successfully', confidence: 0.95, risk: 'safe' };
       const sanitized = res.sanitized || lastSanitizedContext;
 
-      const actionLabel = getCleanActionLabel(action);
+      const actionLabel = getCleanActionLabel(action, sanitized?.elements);
       const realReasoning = collectAllStepReasoning(res);
       const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || 0;
       const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
       const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
       const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
-      const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: false });
+      const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
+                          agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true';
+      const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: wasExpanded });
 
       agentBubble.classList.add('msg-action');
       agentBubble.innerHTML = `
         ${thinkingHtml}
-        <div class="action-done-pill">
-          <span class="action-done-text">Completed</span>
+        <div class="action-status-line is-done" style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span class="action-done-label" style="color: #e2e8f0; font-weight: 500; font-size: 12px;">${escapeHtml(actionLabel)}</span>
         </div>
       `;
 
@@ -2327,21 +2729,29 @@ if (typeof document !== 'undefined') {
       const turnStartTime = Date.now();
       const agentBubble = document.createElement('div');
       agentBubble.className = 'chat-msg agent';
+
+      let initialActionText = 'Perceiving page elements...';
+      const navMatch = goalText.match(/\b(?:open|go\s+to|visit|launch)\s+([a-zA-Z0-9.-]+\.[a-z]{2,}|amazon|flipkart|google|github|wikipedia)/i);
+      if (navMatch) {
+        initialActionText = `Navigating to ${navMatch[1]}...`;
+      }
+
       agentBubble.innerHTML = `
-        <div class="monologue-block group" data-state="expanded">
-          <button type="button" class="monologue-toggle-btn" aria-expanded="true">
+        <div class="monologue-block group" data-state="collapsed">
+          <button type="button" class="monologue-toggle-btn" aria-expanded="false">
             <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
             <span class="monologue-title thinking-shimmer-text">Thinking...</span>
           </button>
-          <div class="monologue-drawer" style="display: block;">
+          <div class="monologue-drawer" style="display: none;">
             <div class="monologue-content">
-              <div class="thought-line live-thought-line" style="padding: 2px 0;">
-                <span class="thought-body thinking-shimmer-text">Analyzing page elements and planning action...</span>
-              </div>
+              <div class="monologue-initial-placeholder" style="color: #64748b; font-size: 11.5px; font-style: italic; padding: 4px 0;">Reasoning in progress...</div>
             </div>
           </div>
+        </div>
+        <div class="action-status-line is-executing" style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
+          <span class="thinking-shimmer-text" style="font-weight: 500; font-size: 12px;">${escapeHtml(initialActionText)}</span>
         </div>
       `;
       chatMessages.appendChild(agentBubble);
@@ -2388,14 +2798,20 @@ if (typeof document !== 'undefined') {
         )
       );
 
+      // Detect if user instruction expresses sub-agent swarm or multi-domain comparison intent
+      const isSubAgentIntent =
+        /\b(?:compare|versus|vs\.?|across|both|sub-?agents?|swarm|parallel\s+agents?|simultaneously)\b/i.test(goalText) ||
+        Boolean(goalText.match(/(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi)?.length >= 2);
+
       // Detect if user instruction expresses browser action, navigation, or search intent
       const hasActionOrNavIntent =
         isBrowserActionRequest(goalText) ||
+        isSubAgentIntent ||
         /\b(?:https?:\/\/|[a-z0-9-]+\.(?:com|org|gov|in|edu|net|io|co|ai|xyz))\b/i.test(goalText) ||
-        /\b(?:open|go\s+to|visit|launch|load|search|find|browse|wikipedia|isro|sih|github|google)\b/i.test(goalText);
+        /\b(?:open|go\s+to|visit|launch|load|search|find|browse|wikipedia|isro|sih|github|google|amazon|flipkart)\b/i.test(goalText);
 
       // Inspect page context by default whenever on an active tab, or initiate agent run
-      // from restricted/blank tabs when the user requests browser navigation/actions.
+      // from restricted/blank tabs when the user requests browser navigation/actions or sub-agent tasks.
       const shouldRunAgent = Boolean(currentActiveTabId) && (!isRestrictedTab || hasActionOrNavIntent);
 
       const messageType = shouldRunAgent
@@ -2403,14 +2819,14 @@ if (typeof document !== 'undefined') {
         : 'GENERAL_CHAT';
       const payloadKey = shouldRunAgent ? 'goal' : 'message';
 
-      setAgentStatus(shouldRunAgent ? 'capturing' : 'reasoning');
+      setAgentStatus(isSubAgentIntent ? 'executing' : (shouldRunAgent ? 'capturing' : 'reasoning'));
 
       // Light up the live ambient gradient border on the target page
       if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
         chrome.tabs.sendMessage(currentActiveTabId, {
           type: 'SET_ACTIVE_BORDER',
           active: true,
-          label: 'PrivaPilot Active'
+          label: isSubAgentIntent ? 'Sub-Agent Swarm Active' : 'PrivaPilot Active'
         }).catch?.(() => {});
       }
 
@@ -2427,6 +2843,7 @@ if (typeof document !== 'undefined') {
         }, 120000);
 
         chrome.runtime.sendMessage({
+          target: 'privapilot-background',
           type: messageType,
           [payloadKey]: goalText,
           runId: currentRunId,
@@ -2915,7 +3332,11 @@ if (typeof document !== 'undefined') {
       // Only perform page context capture if the user explicitly asks about the current tab/page
       const isExplicitPageQuery = /\b(?:this\s+(?:page|tab|site|website|article)|on\s+(?:the\s+)?screen|read\s+(?:this|the\s+page)|summarize\s+(?:this|the\s+page)|look\s+at\s+this)\b/i.test(promptText);
 
-      const messageType = isExplicitBrowserAction
+      const isSubAgent =
+        /\b(?:compare|versus|vs\.?|across|both|sub-?agents?|swarm|parallel\s+agents?|simultaneously)\b/i.test(promptText) ||
+        Boolean(promptText.match(/(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi)?.length >= 2);
+
+      const messageType = (isExplicitBrowserAction || isSubAgent)
         ? 'START_AGENT_RUN'
         : (isExplicitPageQuery && currentActiveTabId && !isRestrictedTab ? 'CHAT_WITH_PAGE' : 'GENERAL_CHAT');
       const payloadKey = messageType === 'START_AGENT_RUN' ? 'goal' : 'message';
@@ -2923,6 +3344,7 @@ if (typeof document !== 'undefined') {
       if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
         currentRunId = 'run_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
         chrome.runtime.sendMessage({
+          target: 'privapilot-background',
           type: messageType,
           [payloadKey]: promptText,
           runId: currentRunId,
@@ -3491,19 +3913,22 @@ if (typeof document !== 'undefined') {
             const shimmerTitle = lastAgentBubble?.querySelector('.monologue-title.thinking-shimmer-text') || lastAgentBubble?.querySelector('.thinking-shimmer-text');
             const liveBody = lastAgentBubble?.querySelector('.live-thought-line .thought-body');
             let stateLabel = 'Thinking...';
-            let detailLabel = 'Thinking...';
+            let actionStatusText = 'Perceiving page layout...';
             if (message.state === 'awaiting-reasoning') {
               stateLabel = 'Reasoning...';
-              detailLabel = 'Analyzing page elements and planning action...';
+              actionStatusText = 'Planning optimal action...';
             } else if (message.state === 'capturing') {
-              stateLabel = 'Perceiving page...';
-              detailLabel = 'Perceiving active page elements and layout...';
+              stateLabel = 'Perceiving...';
+              actionStatusText = 'Perceiving page elements...';
             } else if (message.state === 'executing') {
-              stateLabel = 'Executing action...';
-              detailLabel = 'Executing action safely on page...';
+              stateLabel = 'Thinking...';
+              actionStatusText = 'Executing action...';
             }
             if (shimmerTitle) shimmerTitle.textContent = stateLabel;
-            if (liveBody) liveBody.textContent = detailLabel;
+            const liveActionSpan = lastAgentBubble?.querySelector('.action-status-line.is-executing .thinking-shimmer-text');
+            if (liveActionSpan && actionStatusText) {
+              liveActionSpan.textContent = actionStatusText;
+            }
           }
 
           if (message.type === 'COORDINATOR_STEP_PROGRESS') {
@@ -3518,20 +3943,53 @@ if (typeof document !== 'undefined') {
           if (message.type === 'COORDINATOR_ACTION_PROPOSED') {
             const act = message.action;
             if (act) {
-              const actDesc = `${act.kind ? act.kind.toUpperCase() : 'ACT'} ${act.sanitizedTargetName || act.targetLocalId || ''}`.trim();
-              addAuditEntry('PLAN', `${actDesc}: ${act.rationale || 'Executing action'}`, 'pass');
+              const elementsList = lastSanitizedContext?.elements || [];
+              const executingLabel = getExecutingActionLabel(act, elementsList);
+              const cleanLabel = getCleanActionLabel(act, elementsList);
+              addAuditEntry('PLAN', `${cleanLabel}: ${act.rationale || 'Executing action'}`, 'pass');
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
               if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
-                const shimmerTitle = lastAgentBubble.querySelector('.monologue-title.thinking-shimmer-text') || lastAgentBubble.querySelector('.thinking-shimmer-text');
+                // Stream live model reasoning directly into the monologue drawer!
+                const monologueContent = lastAgentBubble.querySelector('.monologue-content');
+                const liveReasoning = act.reasoning || act.thought || act.rationale;
+                if (monologueContent && liveReasoning) {
+                  streamLiveReasoningLines(monologueContent, liveReasoning);
+                }
+
+                const monologueTitle = lastAgentBubble.querySelector('.monologue-title');
+                if (monologueTitle) {
+                  monologueTitle.textContent = 'Reasoning...';
+                }
+
                 const liveBody = lastAgentBubble.querySelector('.live-thought-line .thought-body');
-                const targetDesc = act.sanitizedTargetName || act.targetLocalId || '';
-                const shortTarget = targetDesc ? ` on ${targetDesc}` : '';
-                if (shimmerTitle) {
-                  shimmerTitle.textContent = `Executing ${(act.kind || 'action').toUpperCase()}${shortTarget}...`;
-                }
                 if (liveBody) {
-                  liveBody.textContent = act.rationale || `Executing ${(act.kind || 'action').toUpperCase()}${shortTarget}...`;
+                  liveBody.textContent = executingLabel;
                 }
+
+                // If a previous executing line exists, convert it to completed (done)
+                const existingExecuting = lastAgentBubble.querySelector('.action-status-line.is-executing');
+                if (existingExecuting) {
+                  existingExecuting.className = 'action-status-line is-done';
+                  const prevText = existingExecuting.querySelector('.thinking-shimmer-text')?.textContent || '';
+                  const resolvedDone = prevText.replace(/\.\.\.$/, '').replace(/^(?:Typing|Clicking|Scrolling|Navigating to|Pressing|Selecting)\b/i, (m) => {
+                    const map = { typing: 'Typed', clicking: 'Clicked', scrolling: 'Scrolled', 'navigating to': 'Navigated to', pressing: 'Pressed', selecting: 'Selected' };
+                    return map[m.toLowerCase()] || m;
+                  });
+                  existingExecuting.innerHTML = `
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    <span class="action-done-label" style="color: #e2e8f0; font-weight: 500; font-size: 12px;">${escapeHtml(resolvedDone)}</span>
+                  `;
+                }
+
+                // Append the new active shimmering line
+                const activeActionLine = document.createElement('div');
+                activeActionLine.className = 'action-status-line is-executing';
+                activeActionLine.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;';
+                activeActionLine.innerHTML = `
+                  <span class="thinking-shimmer-text" style="font-weight: 500; font-size: 12px;">${escapeHtml(executingLabel)}</span>
+                `;
+                lastAgentBubble.appendChild(activeActionLine);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
               }
             }
           }

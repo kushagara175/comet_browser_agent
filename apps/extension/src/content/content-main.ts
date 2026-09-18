@@ -114,7 +114,7 @@ export async function handleMessage(message: any): Promise<any> {
   }
 
   if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
-    overlay.showAgentWorkingGlow(message.label || 'PrivaPilot Perceiving Page');
+    overlay.hideAgentWorkingGlow();
     const extracted = extractor.extractSnapshot(document);
     const captureId = message.captureId || `cap_${Date.now()}`;
     currentCaptureId = captureId;

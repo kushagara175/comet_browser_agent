@@ -5,6 +5,7 @@ import {
   tokenizeSemanticText,
   normalizeSemanticText
 } from './grounding.js';
+import { extractSearchQueryFromGoal } from './domain-playbooks.js';
 
 export type ActionKind =
   | 'observe'
@@ -21,6 +22,7 @@ export type ActionKind =
   | 'request_user_confirmation'
   | 'request_user_input'
   | 'batch'
+  | 'spawn_subagents'
   | 'finish'
   | 'blocked';
 
@@ -377,6 +379,13 @@ export function resolveTaskContract(goal: string): TaskContract {
       else if (cleanGoal.includes('chat')) targetPhrase = 'chatbox';
     }
 
+    if (requestedValue) {
+      const cleanedVal = extractSearchQueryFromGoal(requestedValue);
+      if (cleanedVal && cleanedVal.length > 0) {
+        requestedValue = cleanedVal;
+      }
+    }
+
     return {
       supported: true,
       goalPattern: 'search_filter',
@@ -608,6 +617,8 @@ export interface ActionProposal {
   readonly batchActions?: ReadonlyArray<AtomicActionProposal>;
   readonly userInputPrompt?: string;
   readonly inputKey?: string;
+  readonly subTasks?: ReadonlyArray<any>;
+  readonly coordinates?: readonly [number, number];
 }
 
 export interface ActionExecutionResult {
@@ -653,7 +664,9 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
   'thought',
   'batchActions',
   'userInputPrompt',
-  'inputKey'
+  'inputKey',
+  'subTasks',
+  'coordinates'
 ]);
 
 const VALID_ACTION_KINDS = new Set([
@@ -671,6 +684,7 @@ const VALID_ACTION_KINDS = new Set([
   'request_user_confirmation',
   'request_user_input',
   'batch',
+  'spawn_subagents',
   'finish',
   'blocked'
 ]);
@@ -935,9 +949,16 @@ export function validateActionProposal(
     }
   }
 
-  // Actions requiring targetLocalId
+  // coordinates validation
+  if (proposal.coordinates !== undefined) {
+    if (!Array.isArray(proposal.coordinates) || proposal.coordinates.length !== 2 || typeof proposal.coordinates[0] !== 'number' || typeof proposal.coordinates[1] !== 'number') {
+      return { isValid: false, errorMessage: 'Field "coordinates" must be a tuple of two numbers [x, y]' };
+    }
+  }
+
+  // Actions requiring targetLocalId (click can alternatively use coordinates)
   if (kind === 'click' || kind === 'hover' || kind === 'type' || kind === 'select' || kind === 'upload_file') {
-    if (!proposal.targetLocalId || typeof proposal.targetLocalId !== 'string') {
+    if ((!proposal.targetLocalId || typeof proposal.targetLocalId !== 'string') && !(kind === 'click' && Array.isArray(proposal.coordinates) && proposal.coordinates.length === 2)) {
       return { isValid: false, errorMessage: `Action kind "${kind}" requires a valid "targetLocalId"` };
     }
   }

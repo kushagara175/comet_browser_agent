@@ -95,7 +95,7 @@ Honest state, updated as work lands. **No performance number appears in this rep
 
 | Component | State |
 | :--- | :--- |
-| Monorepo build & test suite | ✅ Clean build, 339/339 unit & integration tests passing (`npm test`) across 40 suites |
+| Monorepo build & test suite | ✅ Clean build, 355/355 unit & integration tests passing (`npm test`) across 44 suites |
 | Protocol & type-enforced privacy boundary | ✅ `packages/protocol/` (`RedactionManifest`, `E2EStepTrace`, `TaskContract`) |
 | Deterministic PII detectors (DOM + regex + Luhn + Verhoeff) | ✅ `packages/pii-rules/` |
 | Server gateway, closed schema, canary scanner | ✅ `apps/server/` (native Node.js `node:http`, closed schema, 10MB limit) |

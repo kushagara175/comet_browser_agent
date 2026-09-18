@@ -528,3 +528,63 @@ test('Sidepanel UI Integrity: Contains menuVaultBtn, PIN lock screen, change PIN
   assert.ok(html.includes('id="vaultLockedBackBtn"'), 'vaultLockedBackBtn present');
   assert.ok(html.includes('id="vaultBackToChatBtn"'), 'vaultBackToChatBtn present');
 });
+
+test('Form Autofill: Matches multiple fields on a registration page (name, email, address, phone) from user vault profile', () => {
+  const profile = {
+    fullName: 'Kushagra Singh',
+    email: 'kushagra@example.com',
+    phone: '+91 98765 43210',
+    address: '123 Cyber Way',
+    organization: 'SIH Innovation Lab',
+    dateOfBirth: '18 Sep 2000'
+  };
+
+  const fields = [
+    { id: 'fullName', placeholder: 'Full Name' },
+    { id: 'userEmail', placeholder: 'Email Address', type: 'email' },
+    { id: 'currentAddress', placeholder: 'Current Address' },
+    { id: 'userMobile', placeholder: 'Contact Number', type: 'tel' },
+    { id: 'dateOfBirth', placeholder: 'Date of Birth', type: 'date' }
+  ];
+
+  const matches = fields.map(f => matchFieldToVault(f, profile, [], 'example.com'));
+  assert.strictEqual(matches[0].matched, true);
+  assert.strictEqual(matches[0].valueToFill, 'Kushagra Singh');
+  assert.strictEqual(matches[1].matched, true);
+  assert.strictEqual(matches[1].valueToFill, 'kushagra@example.com');
+  assert.strictEqual(matches[2].matched, true);
+  assert.strictEqual(matches[2].valueToFill, '123 Cyber Way');
+  assert.strictEqual(matches[3].matched, true);
+  assert.strictEqual(matches[3].valueToFill, '+91 98765 43210');
+  assert.strictEqual(matches[4].matched, true);
+  assert.strictEqual(matches[4].valueToFill, '18 Sep 2000');
+});
+
+test('Form Autofill: Matches heterogeneous DemoQA form fields (usernumber, dob, permanentAddress) with demo fallback', () => {
+  const emptyProfile = {
+    fullName: '',
+    email: '',
+    phone: '',
+    organization: ''
+  };
+
+  const fields = [
+    { id: 'firstName', placeholder: 'First Name' },
+    { id: 'lastName', placeholder: 'Last Name' },
+    { id: 'userNumber', placeholder: 'Mobile (10 Digits)' },
+    { id: 'dateOfBirthInput', placeholder: 'Date of Birth' },
+    { id: 'permanentAddress', placeholder: 'Permanent Address' }
+  ];
+
+  const matches = fields.map(f => matchFieldToVault(f, emptyProfile, [], 'demoqa.com', true));
+  assert.strictEqual(matches[0].matched, true);
+  assert.strictEqual(matches[0].valueToFill, 'John');
+  assert.strictEqual(matches[1].matched, true);
+  assert.strictEqual(matches[1].valueToFill, 'Doe');
+  assert.strictEqual(matches[2].matched, true);
+  assert.strictEqual(matches[2].valueToFill, '9876543210');
+  assert.strictEqual(matches[3].matched, true);
+  assert.strictEqual(matches[3].valueToFill, '18 Sep 2000');
+  assert.strictEqual(matches[4].matched, true);
+  assert.strictEqual(matches[4].valueToFill, '123 Main Street, Suite 100');
+});

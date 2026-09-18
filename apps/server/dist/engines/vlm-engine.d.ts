@@ -52,6 +52,7 @@ export interface ChatResult {
 export declare function buildProviderAuthHeaders(endpoint: string, apiKey?: string): Record<string, string>;
 export declare function stripThinkingTags(raw: string): string;
 export declare function extractThinking(raw: string): string;
+export declare function cleanServerReasoning(str: string): string;
 export declare function sanitizeProhibitedText(text: string): string;
 export declare class VlmReasoningEngine {
     private config;
@@ -115,9 +116,15 @@ export declare class VlmReasoningEngine {
     private buildUserPrompt;
     private isLocalAddress;
     /**
-     * Bounded fetch. Reports an abort as a timeout and a transport failure by its
-     * OS error code, so probe diagnostics say what actually happened instead of
-     * the opaque "fetch failed".
+     * Bounded fetch with one automatic retry on transient TCP connect failures.
+     *
+     * Node.js undici's internal connectTimeout is 10 s by default. Cloud endpoints
+     * (e.g. Azure AI Foundry) routinely need longer on the first cold TLS handshake,
+     * producing UND_ERR_CONNECT_TIMEOUT before the AbortController timeout fires.
+     * A single retry with a fresh AbortController succeeds because the TCP connection
+     * pool is now warmed and the second attempt reuses the established socket.
+     *
+     * @param retries Number of remaining retry attempts (default: 1 for inference, 0 for probes).
      */
     private fetchWithTimeout;
     private fetchJson;

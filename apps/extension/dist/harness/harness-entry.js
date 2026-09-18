@@ -14102,7 +14102,59 @@ as ORT format: ${n}`);
     "patient",
     "health",
     "doctor_note",
-    "clinical"
+    "clinical",
+    // Phone & Mobile
+    "phone",
+    "mobile",
+    "contact",
+    "tel",
+    "cell",
+    "phonenumber",
+    "phone_number",
+    "usernumber",
+    "user_number",
+    "mobile_number",
+    "contact_number",
+    "cellphone",
+    // Address & Location
+    "address",
+    "street",
+    "city",
+    "state",
+    "zip",
+    "zipcode",
+    "pincode",
+    "pin_code",
+    "postal",
+    "postal_code",
+    "currentaddress",
+    "permanentaddress",
+    "current_address",
+    "permanent_address",
+    // Date of Birth
+    "dob",
+    "birth",
+    "birthday",
+    "bday",
+    "dateofbirth",
+    "date_of_birth",
+    // Name & Identity
+    "firstname",
+    "lastname",
+    "fullname",
+    "name",
+    "fname",
+    "lname",
+    "first_name",
+    "last_name",
+    "user_name",
+    "applicant_name",
+    // Account Handles
+    "username",
+    "user_id",
+    "userid",
+    "user_handle",
+    "user_profile"
   ];
   var SENSITIVE_AUTOCOMPLETE_VALUES = [
     "current-password",
@@ -14118,7 +14170,21 @@ as ORT format: ${n}`);
     "bday",
     "bday-day",
     "bday-month",
-    "bday-year"
+    "bday-year",
+    "tel",
+    "tel-national",
+    "tel-country-code",
+    "postal-code",
+    "street-address",
+    "address-line1",
+    "address-line2",
+    "address-level1",
+    "address-level2",
+    "name",
+    "given-name",
+    "family-name",
+    "username",
+    "email"
   ];
 
   // ../../packages/pii-rules/dist/regex-patterns.js
@@ -14126,7 +14192,15 @@ as ORT format: ${n}`);
   var CANARY_REGEX = /\b(?:SECRET_CANARY[A-Za-z0-9_]*|CANARY_PRIVAPILOT[A-Za-z0-9_]*)\b/g;
   var MEDICAL_REGEX = /\b(?:medical note|clinical diagnosis|prescription info|patient record|doctor note)\b[^\n.,;]*/gi;
   var HANDLE_REGEX = /(?:^|(?<=\s|[([{"']))(@[A-Za-z0-9_]{1,30})\b/g;
+  var DELIVERY_ADDRESS_REGEX = /(?:^|(?<=\s|[([{"']))(?:Deliver(?:y|ing)?\s+to|Ship\s+to|Shipping\s+to|Delivered\s+to)\s+([^\n\r<]{3,80})/gi;
+  var HOME_WORK_LOCATION_REGEX = /\b(?:HOME|WORK|OFFICE|OTHER)\s+(?:at\s+|-\s+)([^\n\r<]{3,80})/gi;
+  var PINCODE_IN_CONTEXT_REGEX = /\b(?:pin(?:\s*code)?[\s:]*|postal\s*code[\s:]*|[,\-]\s*)([1-9][0-9]{5})\b/gi;
+  var LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt|Sector|Block|Pocket|Street|St\.|Road|Rd\.|Cross|Main|Nagar|Colony|Enclave|Vihar|Kunj|Society|Layout|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Bhavan|Bhawan)\b[^\n\r,;]{2,60}/gi;
+  var ACCOUNT_GREETING_REGEX = /\b(?:Hello|Hi|Welcome),\s+([A-Za-z0-9_]{2,30})\b/gi;
+  var STREET_ADDRESS_REGEX = /\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir)\b[^\n\r,;]*/gi;
+  var DATE_OF_BIRTH_REGEX = /\b(?:\d{1,2}[\s/-](?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s/-]\d{2,4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b/gi;
   var EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+  var STANDARD_PHONE_REGEX = /(?:^|(?<!\d))(?:\+?1[\s.-]?)?\(?([0-9]{3})\)?[\s.-]?([0-9]{3})[\s.-]?([0-9]{4})(?!\d)\b/g;
   var INDIAN_PHONE_REGEX = /(?:^|(?<!\d))(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)\b/g;
   var INTL_PHONE_REGEX = /\b\+(?:[1-9]\d{0,2})[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{1,4}[\s.-]?\d{1,9}\b/g;
   var PAN_REGEX = /\b[A-Z]{5}[0-9]{4}[A-Z]\b/g;
@@ -14170,6 +14244,65 @@ as ORT format: ${n}`);
           category: "username",
           startIndex: handleStart,
           endIndex: handleStart + match[1].length,
+          matchedLength: match[1].length,
+          confidence: 0.95
+        });
+      }
+    }
+    for (const match of text.matchAll(DELIVERY_ADDRESS_REGEX)) {
+      if (match.index !== void 0) {
+        matches.push({
+          category: "address",
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+          matchedLength: match[0].length,
+          confidence: 0.95
+        });
+      }
+    }
+    for (const match of text.matchAll(HOME_WORK_LOCATION_REGEX)) {
+      if (match.index !== void 0) {
+        matches.push({
+          category: "address",
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+          matchedLength: match[0].length,
+          confidence: 0.95
+        });
+      }
+    }
+    for (const match of text.matchAll(LOCALITY_ADDRESS_REGEX)) {
+      if (match.index !== void 0) {
+        matches.push({
+          category: "address",
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+          matchedLength: match[0].length,
+          confidence: 0.92
+        });
+      }
+    }
+    for (const match of text.matchAll(PINCODE_IN_CONTEXT_REGEX)) {
+      if (match.index !== void 0 && match[1]) {
+        const pinOffset = match[0].indexOf(match[1]);
+        const pinStart = match.index + pinOffset;
+        matches.push({
+          category: "address",
+          startIndex: pinStart,
+          endIndex: pinStart + match[1].length,
+          matchedLength: match[1].length,
+          confidence: 0.96
+        });
+      }
+    }
+    for (const match of text.matchAll(ACCOUNT_GREETING_REGEX)) {
+      if (match.index !== void 0 && match[1]) {
+        const nameOffset = match[0].indexOf(match[1]);
+        const nameStart = match.index + nameOffset;
+        matches.push({
+          category: "username",
+          startIndex: nameStart,
+          endIndex: nameStart + match[1].length,
           matchedLength: match[1].length,
           confidence: 0.95
         });
@@ -14256,6 +14389,54 @@ as ORT format: ${n}`);
         }
       }
     }
+    for (const match of text.matchAll(STANDARD_PHONE_REGEX)) {
+      if (match.index !== void 0) {
+        const start = match.index;
+        const end = match.index + match[0].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+        if (!alreadyCovered) {
+          matches.push({
+            category: "phone",
+            startIndex: start,
+            endIndex: end,
+            matchedLength: match[0].length,
+            confidence: 0.92
+          });
+        }
+      }
+    }
+    for (const match of text.matchAll(STREET_ADDRESS_REGEX)) {
+      if (match.index !== void 0) {
+        const start = match.index;
+        const end = match.index + match[0].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+        if (!alreadyCovered) {
+          matches.push({
+            category: "address",
+            startIndex: start,
+            endIndex: end,
+            matchedLength: match[0].length,
+            confidence: 0.94
+          });
+        }
+      }
+    }
+    for (const match of text.matchAll(DATE_OF_BIRTH_REGEX)) {
+      if (match.index !== void 0) {
+        const start = match.index;
+        const end = match.index + match[0].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+        if (!alreadyCovered) {
+          matches.push({
+            category: "date_of_birth",
+            startIndex: start,
+            endIndex: end,
+            matchedLength: match[0].length,
+            confidence: 0.95
+          });
+        }
+      }
+    }
     for (const match of text.matchAll(CVV_CONTEXT_REGEX)) {
       if (match.index !== void 0 && match[1]) {
         const cvvStart = match.index + match[0].indexOf(match[1]);
@@ -14321,6 +14502,14 @@ as ORT format: ${n}`);
           cat = "date_of_birth";
         else if (autoVal === "one-time-code")
           cat = "auth_code";
+        else if (autoVal.startsWith("tel"))
+          cat = "phone";
+        else if (autoVal.includes("address") || autoVal.includes("postal-code"))
+          cat = "address";
+        else if (autoVal.includes("name") || autoVal === "username")
+          cat = "username";
+        else if (autoVal === "email")
+          cat = "email";
         return {
           isSensitive: true,
           category: cat,
@@ -14328,6 +14517,22 @@ as ORT format: ${n}`);
           confidence: 1
         };
       }
+    }
+    if (type === "email" || autocomplete === "email") {
+      return {
+        isSensitive: true,
+        category: "email",
+        reason: "type/autocomplete email",
+        confidence: 0.95
+      };
+    }
+    if (type === "tel" || autocomplete === "tel") {
+      return {
+        isSensitive: true,
+        category: "phone",
+        reason: "type/autocomplete tel",
+        confidence: 0.95
+      };
     }
     const combinedTokens = `${name2} ${id2} ${placeholder} ${ariaLabel} ${labelText}`.toLowerCase();
     for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
@@ -14340,6 +14545,10 @@ as ORT format: ${n}`);
           cat = "credit_card";
         else if (keyword.includes("cvv") || keyword.includes("cvc"))
           cat = "cvv";
+        else if (keyword.includes("email") || keyword.includes("mail"))
+          cat = "email";
+        else if (keyword.includes("phone") || keyword.includes("mobile") || keyword.includes("contact") || keyword.includes("tel") || keyword.includes("cell") || keyword.includes("usernumber"))
+          cat = "phone";
         else if (keyword.includes("pan"))
           cat = "national_id";
         else if (keyword.includes("aadhaar") || keyword.includes("aadhar"))
@@ -14352,6 +14561,12 @@ as ORT format: ${n}`);
           cat = "auth_code";
         else if (keyword.includes("medical") || keyword.includes("diagnosis") || keyword.includes("prescription") || keyword.includes("patient") || keyword.includes("health") || keyword.includes("doctor_note") || keyword.includes("clinical"))
           cat = "uninspectable";
+        else if (keyword.includes("address") || keyword.includes("street") || keyword.includes("city") || keyword.includes("state") || keyword.includes("zip") || keyword.includes("postal") || keyword.includes("pincode"))
+          cat = "address";
+        else if (keyword.includes("dob") || keyword.includes("birth") || keyword.includes("bday"))
+          cat = "date_of_birth";
+        else if (keyword.includes("name") || keyword.includes("fname") || keyword.includes("lname") || keyword.includes("user") || keyword.includes("applicant"))
+          cat = "username";
         return {
           isSensitive: true,
           category: cat,
@@ -14360,21 +14575,28 @@ as ORT format: ${n}`);
         };
       }
     }
-    if (type === "email" || autocomplete === "email") {
-      return {
-        isSensitive: true,
-        category: "email",
-        reason: "type/autocomplete email",
-        confidence: 0.9
-      };
-    }
-    if (type === "tel" || autocomplete === "tel") {
-      return {
-        isSensitive: true,
-        category: "phone",
-        reason: "type/autocomplete tel",
-        confidence: 0.9
-      };
+    if (desc.value && typeof desc.value === "string") {
+      const trimmedVal = desc.value.trim();
+      if (trimmedVal.length > 0) {
+        const piiMatches = scanTextForPII(trimmedVal);
+        if (piiMatches.length > 0) {
+          return {
+            isSensitive: true,
+            category: piiMatches[0].category,
+            reason: `live value matches PII (${piiMatches[0].category})`,
+            confidence: 0.95
+          };
+        }
+        const isSearchBox = combinedTokens.includes("search") || combinedTokens.includes("filter") || combinedTokens.includes("find") || type === "search";
+        if (!isSearchBox && (desc.tagName === "textarea" || desc.tagName === "input" && type !== "submit" && type !== "button" && type !== "checkbox" && type !== "radio")) {
+          return {
+            isSensitive: true,
+            category: "username",
+            reason: `live input value in form field: "${desc.name || desc.id || desc.placeholder || "input"}"`,
+            confidence: 0.85
+          };
+        }
+      }
     }
     return {
       isSensitive: false,
@@ -14394,6 +14616,12 @@ as ORT format: ${n}`);
     let result = "";
     let lastIndex = 0;
     for (const match of matches) {
+      if (match.startIndex < lastIndex) {
+        if (match.endIndex > lastIndex) {
+          lastIndex = match.endIndex;
+        }
+        continue;
+      }
       result += text.substring(lastIndex, match.startIndex);
       result += `[REDACTED_${match.category.toUpperCase()}]`;
       lastIndex = match.endIndex;
@@ -14506,7 +14734,7 @@ as ORT format: ${n}`);
       let surfaceCounter = 0;
       const processDocumentLevel = (currentDoc, offset = { x: 0, y: 0 }, depth = 0) => {
         const candidates = currentDoc.querySelectorAll(
-          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed]'
+          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [contenteditable="true"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed]'
         );
         candidates.forEach((node) => {
           const el2 = node;
@@ -14522,25 +14750,34 @@ as ORT format: ${n}`);
           const tag = el2.tagName.toLowerCase();
           const roleAttr = (typeof el2.getAttribute === "function" ? el2.getAttribute("role") || "" : "").toLowerCase();
           const ariaHasPopup = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-haspopup") || "" : "").toLowerCase();
-          if (tag === "button" || roleAttr === "button") role = "button";
-          else if (tag === "a" || roleAttr === "link") role = "link";
-          else if (roleAttr === "tab") role = "tab";
-          else if (roleAttr === "menuitem") role = "menuitem";
-          else if (roleAttr === "combobox" || roleAttr === "listbox" || ariaHasPopup === "listbox") role = "select";
-          else if (tag === "input") {
+          if (tag === "input") {
             const type = (typeof el2.getAttribute === "function" ? el2.getAttribute("type") || "text" : "text").toLowerCase();
             if (type === "checkbox") role = "checkbox";
             else if (type === "radio") role = "radio";
+            else if (type === "button" || type === "submit" || type === "reset") role = "button";
             else role = "input";
-          } else if (tag === "select") role = "select";
-          else if (tag === "textarea") role = "textarea";
+          } else if (tag === "textarea" || roleAttr === "searchbox" || el2.isContentEditable || el2.getAttribute?.("contenteditable") === "true") {
+            role = "textarea";
+          } else if (tag === "select" || roleAttr === "listbox" || !el2.matches?.("input") && (roleAttr === "combobox" || ariaHasPopup === "listbox")) {
+            role = "select";
+          } else if (tag === "button" || roleAttr === "button") {
+            role = "button";
+          } else if (tag === "a" || roleAttr === "link") {
+            role = "link";
+          } else if (roleAttr === "tab") {
+            role = "tab";
+          } else if (roleAttr === "menuitem") {
+            role = "menuitem";
+          }
           const caps = ["click", "hover"];
-          if (role === "input" || role === "textarea") {
-            caps.push("type");
+          if (role === "input" || role === "textarea" || tag === "input" || tag === "textarea" || el2.isContentEditable) {
             const inputType = (typeof el2.getAttribute === "function" ? el2.getAttribute("type") || "" : "").toLowerCase();
+            if (inputType !== "checkbox" && inputType !== "radio" && inputType !== "button" && inputType !== "submit" && inputType !== "image") {
+              caps.push("type");
+            }
             if (inputType === "file") caps.push("upload");
           }
-          if (role === "select") caps.push("select");
+          if (role === "select" || tag === "select" || roleAttr === "combobox") caps.push("select");
           const isDraggable = el2.getAttribute?.("draggable") === "true" || el2.getAttribute?.("role") === "slider" || typeof el2.getAttribute === "function" && el2.getAttribute("aria-grabbed") !== null;
           if (isDraggable) caps.push("drag");
           let rawName = "";
@@ -14576,7 +14813,31 @@ as ORT format: ${n}`);
             const ariaControls = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-controls") || "" : "").trim();
             rawName = associatedLabelText || ariaLabel || placeholder || title || (typeAttr === "search" ? "Search" : "") || (ariaControls.toLowerCase().includes("table") ? "Search" : "") || nameAttr || role;
           } else {
-            rawName = el2.innerText?.trim() || (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-label")?.trim() || el2.getAttribute("title")?.trim() : "") || role;
+            const textContent = el2.innerText?.trim() || "";
+            const aria = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-label")?.trim() || el2.getAttribute("title")?.trim() : "") || "";
+            let childName = "";
+            if (!textContent && !aria) {
+              const svgChild = el2.querySelector("svg");
+              if (svgChild) {
+                childName = svgChild.getAttribute("aria-label") || svgChild.querySelector("title")?.textContent?.trim() || "";
+              }
+              if (!childName) {
+                const imgChild = el2.querySelector("img");
+                if (imgChild) {
+                  childName = imgChild.getAttribute("alt") || imgChild.getAttribute("title") || "";
+                }
+              }
+              if (!childName && typeof el2.getAttribute === "function" && el2.getAttribute("type") === "submit") {
+                childName = "Submit";
+              }
+              if (!childName) {
+                const searchForm = typeof el2.closest === "function" ? el2.closest('form, [role="search"]') : null;
+                if (searchForm) {
+                  childName = "Search";
+                }
+              }
+            }
+            rawName = textContent || aria || childName || role;
           }
           let containerContext;
           try {
@@ -14620,7 +14881,10 @@ as ORT format: ${n}`);
             verticalOffset,
             inViewport
           });
-          if (tag === "input" || tag === "textarea" || tag === "select") {
+          const isEditable = tag === "input" || tag === "textarea" || tag === "select" || el2.isContentEditable || el2.getAttribute("contenteditable") === "true";
+          if (isEditable) {
+            const liveVal = el2.value !== void 0 ? el2.value : el2.textContent || void 0;
+            const liveValueStr = typeof liveVal === "string" ? liveVal : void 0;
             domElements.push({
               id: localId,
               descriptor: {
@@ -14631,10 +14895,28 @@ as ORT format: ${n}`);
                 autocomplete: el2.getAttribute("autocomplete") || void 0,
                 placeholder: el2.getAttribute("placeholder") || void 0,
                 ariaLabel: el2.getAttribute("aria-label") || void 0,
-                associatedLabelText: associatedLabelText || void 0
+                associatedLabelText: associatedLabelText || void 0,
+                value: liveValueStr
               },
               boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
             });
+            if (liveValueStr && liveValueStr.trim().length > 0 && rect.width > 0 && rect.height > 0) {
+              const inputValTrimmed = liveValueStr.trim();
+              const valMatches = scanTextForPII(inputValTrimmed);
+              const boxX = rect.x + offset.x;
+              const boxY = rect.y + offset.y;
+              textNodes.push({
+                id: `input_val_${localId}`,
+                text: inputValTrimmed,
+                boundingClientRect: { x: boxX, y: boxY, width: rect.width, height: rect.height },
+                matchedRanges: [{
+                  category: valMatches.length > 0 ? valMatches[0].category : "username",
+                  startIndex: 0,
+                  endIndex: inputValTrimmed.length,
+                  rects: [{ x: boxX, y: boxY, width: rect.width, height: rect.height }]
+                }]
+              });
+            }
           }
         });
         const textWalker = currentDoc.createTreeWalker ? currentDoc.createTreeWalker(currentDoc.body || currentDoc, SHOW_TEXT_FILTER) : null;
@@ -14653,11 +14935,24 @@ as ORT format: ${n}`);
                 const nodeId = `txt_${depth}_${textIdx}`;
                 const isAccountIdentity = Boolean(
                   typeof parent.closest === "function" && parent.closest(
-                    '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i]'
+                    '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [title*="profile" i], [title*="account" i], [class*="account" i], [class*="profile" i], [class*="user" i], [data-testid*="account" i], [data-testid*="profile" i]'
+                  )
+                );
+                const isDeliveryAddressContainer = Boolean(
+                  typeof parent.closest === "function" && parent.closest(
+                    '[class*="deliver" i], [id*="deliver" i], [class*="address" i], [id*="address" i], [class*="location" i], [id*="location" i], [class*="pincode" i], [id*="pincode" i]'
                   )
                 );
                 let matches = scanTextForPII(content);
-                if (matches.length === 0 && isAccountIdentity && trimmed.length > 1 && trimmed.length < 80) {
+                if (matches.length === 0 && isDeliveryAddressContainer && trimmed.length > 2 && trimmed.length < 120 && /\b(?:home|work|office|deliver|katra|nagar|colony|road|street|\d{5,6})\b/i.test(trimmed)) {
+                  matches = [{
+                    category: "address",
+                    startIndex: 0,
+                    endIndex: content.length,
+                    matchedLength: content.length,
+                    confidence: 0.95
+                  }];
+                } else if (matches.length === 0 && isAccountIdentity && trimmed.length > 1 && trimmed.length < 80 && !/^(?:login|sign in|sign up|register|cart|orders|notifications|help|wishlist|explore|become a seller)$/i.test(trimmed)) {
                   matches = [{
                     category: "username",
                     startIndex: 0,
@@ -14746,7 +15041,7 @@ as ORT format: ${n}`);
           const alt = (el2.getAttribute?.("alt") || "").toLowerCase();
           const ariaLabel = (el2.getAttribute?.("aria-label") || "").toLowerCase();
           const src = (el2.getAttribute?.("src") || el2.getAttribute?.("srcset") || "").toLowerCase();
-          const isAvatar = classText.includes("avatar") || classText.includes("profile") || testId.includes("avatar") || testId.includes("useravatar") || alt.includes("avatar") || alt.includes("profile") || ariaLabel.includes("avatar") || ariaLabel.includes("profile") || ariaLabel.includes("account") || src.includes("profile_images") || src.includes("avatar") || src.includes("avatars.githubusercontent") || src.includes("googleusercontent.com") || Boolean(typeof el2.closest === "function" && el2.closest('[data-testid*="UserAvatar" i], [data-testid*="avatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i]'));
+          const isAvatar = classText.includes("avatar") || classText.includes("profile") || classText.includes("user-pic") || classText.includes("user-img") || classText.includes("user-photo") || classText.includes("user-image") || classText.includes("author-img") || classText.includes("gravatar") || testId.includes("avatar") || testId.includes("useravatar") || testId.includes("profile-pic") || alt.includes("avatar") || alt.includes("profile") || alt.includes("user photo") || alt.includes("author") || ariaLabel.includes("avatar") || ariaLabel.includes("profile") || ariaLabel.includes("account") || src.includes("profile_images") || src.includes("avatar") || src.includes("gravatar.com") || src.includes("avatars.githubusercontent") || src.includes("googleusercontent.com") || Boolean(typeof el2.closest === "function" && el2.closest('[data-testid*="UserAvatar" i], [data-testid*="avatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i], [data-testid*="user-profile" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [class*="account" i], [class*="profile" i], [class*="user-info" i], [class*="user-header" i], [class*="user-badge" i]'));
           const isVisualMedia = tagName === "IMG" || tagName === "SVG" || role === "img" || isAvatar;
           if (!isVisualMedia) return;
           imageElements.push({
@@ -14875,6 +15170,15 @@ as ORT format: ${n}`);
               });
               processDocumentLevel(innerDoc, iframeOffset, depth + 1);
             } else {
+              const fSrc = typeof f.getAttribute === "function" ? f.getAttribute("src") : f.src || "";
+              const fName = typeof f.getAttribute === "function" ? f.getAttribute("name") : f.name || "";
+              const fTitle = typeof f.getAttribute === "function" ? f.getAttribute("title") : f.title || "";
+              const fClass = typeof f.getAttribute === "function" ? f.getAttribute("class") : f.className || "";
+              const adMarkers = `${f.id || ""} ${fName || ""} ${fTitle || ""} ${fClass || ""} ${fSrc || ""}`.toLowerCase();
+              const isAdFrame = /\b(?:google_ad|googlesyndication|doubleclick|adnxs|adservice|ad-slot|adsystem|ads-|aswift|taboola|outbrain|criteo|pubmatic|rubicon|adform|advertisement|banner-ad)\b|google_ads_iframe|godaddy/i.test(adMarkers);
+              if (isAdFrame) {
+                return;
+              }
               surfaces.push({
                 id: `ifr_${surfaceCounter}`,
                 surfaceType: "iframe",

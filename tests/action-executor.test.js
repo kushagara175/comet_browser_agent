@@ -99,6 +99,19 @@ class MockNode extends EventTarget {
     }
     return result;
   }
+
+  closest(selector) {
+    if (this._mockClosest && typeof this._mockClosest === 'function') return this._mockClosest(selector);
+    if (this.parentNode && typeof this.parentNode.closest === 'function') {
+      return this.parentNode.closest(selector);
+    }
+    return null;
+  }
+
+  querySelectorAll(selector) {
+    if (this._mockChildren) return this._mockChildren;
+    return [];
+  }
 }
 
 class MockInputElement extends MockNode {
@@ -743,5 +756,43 @@ test('ActionExecutor: Scrolls target element into view smoothly when targetLocal
   assert.strictEqual(scrollIntoViewCalled, true);
   assert.strictEqual(scrollIntoViewOptions?.behavior, 'smooth');
   assert.strictEqual(scrollIntoViewOptions?.block, 'center');
+});
+
+test('ActionExecutor: Self-heals when typing targets a submit button in a form containing an editable text input', () => {
+  const doc = new MockDocument();
+
+  const form = doc.createElement('form');
+  const textInput = doc.createElement('input');
+  textInput.setAttribute('type', 'text');
+  textInput.setAttribute('name', 'search_query');
+  textInput.setAttribute('placeholder', 'Search iPhone 16');
+
+  const submitBtn = doc.createElement('input');
+  submitBtn.setAttribute('type', 'submit');
+  submitBtn.setAttribute('value', 'Google Search');
+
+  form._mockChildren = [textInput, submitBtn];
+  submitBtn._mockClosest = (sel) => (sel.includes('form') ? form : null);
+  textInput._mockClosest = (sel) => (sel.includes('form') ? form : null);
+
+  const elementMap = new Map([
+    ['el_text_input', textInput],
+    ['el_submit_btn', submitBtn]
+  ]);
+
+  // Model accidentally sends type on the submit button 'el_submit_btn'
+  const res = ActionExecutor.execute({
+    actionId: 'act_type_accidentally_on_submit',
+    kind: 'type',
+    targetLocalId: 'el_submit_btn',
+    textToType: 'iPhone 16',
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Search for iPhone 16'
+  }, elementMap);
+
+  assert.strictEqual(res.success, true, 'Self-healing should succeed instead of crashing');
+  assert.strictEqual(textInput.value, 'iPhone 16', 'Text should be typed into the actual editable input');
+  assert.strictEqual(textInput._focused, true, 'Text input should be focused');
 });
 

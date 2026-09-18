@@ -19,6 +19,7 @@ export interface UserProfileData {
   state?: string;
   postalCode?: string;
   country?: string;
+  dateOfBirth?: string;
   githubUrl?: string;
   linkedinUrl?: string;
   customNotes?: string;
@@ -45,6 +46,22 @@ export interface PersonalVaultState {
 const VAULT_STORAGE_KEY = 'privapilot_personal_vault_v1';
 export const DEFAULT_VAULT_PIN = '1234';
 
+export const DEMO_USER_PROFILE: UserProfileData = {
+  fullName: 'John Doe',
+  firstName: 'John',
+  lastName: 'Doe',
+  email: 'john.doe@example.com',
+  phone: '9876543210',
+  organization: 'Acme Technologies',
+  address: '123 Main Street, Suite 100',
+  city: 'San Francisco',
+  state: 'California',
+  postalCode: '94105',
+  country: 'United States',
+  dateOfBirth: '18 Sep 2000',
+  githubUrl: 'https://github.com/johndoe'
+};
+
 export const DEFAULT_USER_PROFILE: UserProfileData = {
   fullName: 'Kushagra Singh',
   firstName: 'Kushagra',
@@ -57,6 +74,7 @@ export const DEFAULT_USER_PROFILE: UserProfileData = {
   state: 'Delhi',
   postalCode: '110001',
   country: 'India',
+  dateOfBirth: '18 Sep 2000',
   githubUrl: 'https://github.com/kushagara175'
 };
 

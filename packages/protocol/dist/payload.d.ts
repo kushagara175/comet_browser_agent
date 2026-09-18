@@ -70,9 +70,28 @@ export interface ScrollMetrics {
     readonly pixelsBelow: number;
     readonly pixelsAbove: number;
 }
+export interface StateDelta {
+    readonly previousAction?: {
+        readonly kind: string;
+        readonly targetName?: string;
+        readonly targetLocalId?: string;
+        readonly textToType?: string;
+        readonly expectedState?: string;
+    };
+    readonly urlChanged: boolean;
+    readonly previousUrl?: string;
+    readonly currentUrl: string;
+    readonly elementsAddedCount: number;
+    readonly elementsRemovedCount: number;
+    readonly scrollDeltaY: number;
+    readonly dialogOpened?: string;
+    readonly observedOutcome: string;
+    readonly verificationPassed: boolean;
+}
 export interface SanitizedPageState {
     readonly title: string;
     readonly viewport: readonly [number, number];
+    readonly url?: string;
     readonly visibleDialogCount?: number;
     readonly dialogTitles?: ReadonlyArray<string>;
     readonly statusSummaries?: ReadonlyArray<string>;
@@ -85,6 +104,7 @@ export interface SanitizedPageState {
     readonly contentSummaries?: ReadonlyArray<string>;
     readonly domain?: string;
     readonly scrollMetrics?: ScrollMetrics;
+    readonly stateDelta?: StateDelta;
 }
 export interface RedactionManifest {
     readonly manifestVersion: '1.0';

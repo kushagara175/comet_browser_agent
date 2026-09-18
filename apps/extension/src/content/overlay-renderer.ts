@@ -223,26 +223,7 @@ export class OverlayRenderer {
       }
 
       .privapilot-badge-pill {
-        position: fixed !important;
-        top: 12px !important;
-        right: 18px !important;
-        pointer-events: none !important;
-        z-index: 2147483647 !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        gap: 7px !important;
-        background: rgba(10, 15, 30, 0.88) !important;
-        backdrop-filter: blur(16px) saturate(180%) !important;
-        -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
-        border: 1px solid rgba(96, 165, 250, 0.5) !important;
-        color: #e0f2fe !important;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-        font-size: 11px !important;
-        font-weight: 600 !important;
-        padding: 5px 12px !important;
-        border-radius: 9999px !important;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(59, 130, 246, 0.45) !important;
-        letter-spacing: 0.3px !important;
+        display: none !important;
       }
 
       .privapilot-pulse-dot {
@@ -424,24 +405,6 @@ export class OverlayRenderer {
       glow.setAttribute('data-privapilot-ignore', 'true');
       glow.setAttribute('aria-hidden', 'true');
 
-      const badge = document.createElement('div');
-      badge.className = 'privapilot-overlay privapilot-badge-pill';
-      badge.setAttribute('data-privapilot-ignore', 'true');
-      badge.setAttribute('aria-hidden', 'true');
-
-      const dot = document.createElement('span');
-      dot.className = 'privapilot-pulse-dot';
-      dot.setAttribute('data-privapilot-ignore', 'true');
-
-      const text = document.createElement('span');
-      text.className = 'privapilot-badge-text';
-      text.textContent = label;
-      text.setAttribute('data-privapilot-ignore', 'true');
-
-      badge.appendChild(dot);
-      badge.appendChild(text);
-      glow.appendChild(badge);
-
       glow.style.opacity = '0';
       document.body.appendChild(glow);
       void glow.offsetHeight;
@@ -450,8 +413,6 @@ export class OverlayRenderer {
       this.workingGlowEl = glow;
     } else {
       this.workingGlowEl.style.opacity = '1';
-      const text = this.workingGlowEl.querySelector('.privapilot-badge-text');
-      if (text) text.textContent = label;
     }
 
     // Auto-dismiss watchdog after 45 seconds

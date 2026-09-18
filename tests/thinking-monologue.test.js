@@ -5,7 +5,8 @@ import {
   parseReasoningLines,
   formatReasoningIntoLinesHtml,
   renderThinkingAccordion,
-  collectAllStepReasoning
+  collectAllStepReasoning,
+  streamLiveReasoningLines
 } from '../apps/extension/src/sidepanel/sidepanel.js';
 
 test('Thinking: sanitizeReasoningText strips think tags and filters fake canned strings', () => {
@@ -154,5 +155,67 @@ test('Thinking: parseReasoningLines strips repetitive duplicate category labels'
   // Ensure Observation: is only in the strong tag once
   const occurrences = (formatted.match(/Observation:/g) || []).length;
   assert.equal(occurrences, 1, `Expected "Observation:" to appear exactly once, but appeared ${occurrences} times in: ${formatted}`);
+});
+
+test('Thinking: sanitizeReasoningText strips raw un-fenced JSON and trailing actionId blobs', () => {
+  const leakedJson = `🎯 Intent & Strategy: The user goal is to search for 'iPhone 16' on Flipkart and analyze its price.
+{"actionId": "act_2", "kind": "finish", "confidence": 1.0, "risk": "safe", "reasoning": "🎯 Intent & Strategy"}`;
+
+  const clean = sanitizeReasoningText(leakedJson);
+  assert.ok(!clean.includes('"actionId"'), 'Must strip leaked actionId JSON');
+  assert.ok(!clean.includes('"kind": "finish"'), 'Must strip leaked kind JSON');
+  assert.ok(clean.includes("The user goal is to search for 'iPhone 16'"));
+});
+
+test('Thinking: parseReasoningLines deduplicates repeating Intent & Strategy and duplicate lines', () => {
+  const multiStepText = `🎯 Intent & Strategy: The user goal is to search for 'iPhone 16' on Flipkart and analyze its price.
+⚡ Action Selection: Type 'iPhone 16' into search input.
+🎯 Intent & Strategy: The user goal is to search for 'iPhone 16' on Flipkart and analyze its price.
+⚡ Action Selection: Conclude search analysis.`;
+
+  const parsed = parseReasoningLines(multiStepText);
+  const intents = parsed.filter(p => p.category === 'Intent & Strategy');
+  assert.equal(intents.length, 1, 'Repeating identical Intent & Strategy must be deduplicated');
+});
+
+test('Thinking: streamLiveReasoningLines removes placeholder and appends live lines', () => {
+  const children = [];
+  let placeholderRemoved = false;
+  const mockPlaceholder = {
+    className: 'monologue-initial-placeholder',
+    remove() { placeholderRemoved = true; }
+  };
+  const mockLiveStream = {
+    children,
+    querySelector(selector) {
+      if (selector === '.monologue-initial-placeholder') return placeholderRemoved ? null : mockPlaceholder;
+      return null;
+    },
+    appendChild(child) {
+      children.push(child);
+    },
+    closest() { return null; }
+  };
+
+  const prevDoc = global.document;
+  global.document = {
+    createElement(tag) {
+      return {
+        tag,
+        className: '',
+        style: {},
+        innerHTML: '',
+        textContent: ''
+      };
+    }
+  };
+
+  try {
+    streamLiveReasoningLines(mockLiveStream, '👁️ Observation: Found el_1\n⚡ Action Selection: Click el_1');
+    assert.ok(placeholderRemoved, 'Initial placeholder should be removed');
+    assert.equal(children.length, 2, 'Should have streamed 2 thought lines');
+  } finally {
+    global.document = prevDoc;
+  }
 });
 

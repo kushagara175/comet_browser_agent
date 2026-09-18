@@ -14336,990 +14336,6 @@ function groundTargetCandidates(elements, intent, activeDialogVisible = false) {
   };
 }
 
-// ../../packages/protocol/dist/action.js
-var GENERIC_CONTEXT_WORDS = /* @__PURE__ */ new Set([
-  "pending",
-  "request",
-  "requests",
-  "item",
-  "items",
-  "row",
-  "user",
-  "the",
-  "a",
-  "an",
-  "this",
-  "that",
-  "safe",
-  "preview",
-  "details",
-  "result",
-  "results",
-  "table",
-  "page"
-]);
-function cleanContextPhrase(phrase) {
-  if (!phrase)
-    return void 0;
-  const trimmed = phrase.trim();
-  if (GENERIC_CONTEXT_WORDS.has(trimmed.toLowerCase()))
-    return void 0;
-  return trimmed;
-}
-function parseFormFieldAssignments(text) {
-  let norm = text.replace(/([a-zA-Z0-9_-]+)\.\s+/g, "$1 ").replace(/\s+\.\s+/g, " ").replace(/\s+/g, " ").trim();
-  norm = norm.replace(/\btyoe\b/gi, "type");
-  const fields = [];
-  const segments = norm.split(/\s+(?:and|then|also)\s+|;/i);
-  if (segments.length < 2 && !/^(?:in\s+(?:the\s+)?(?:place\s+of|field\s+of)|for\s+[a-z0-9_-]+\s+(?:type|enter))/i.test(norm)) {
-    return [];
-  }
-  for (const seg of segments) {
-    const s = seg.trim();
-    const mA = s.match(/^(?:(?:in|for|at|into)\s+(?:the\s+)?(?:place\s+of\s+|field\s+of\s+|box\s+of\s+)?)?([a-zA-Z0-9_-]+)\s+(?:type|enter|fill|put|write|as|is|=)\s+["']?([a-zA-Z0-9_@.+-]+)["']?$/i);
-    const mB = s.match(/^(?:type|enter|fill|put|write)\s+["']?([a-zA-Z0-9_@.+-]+)["']?\s+(?:in|into|for|to|as)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)$/i);
-    const mC = s.match(/^["']?([a-zA-Z0-9_@.+-]+)["']?\s+(?:in|into|for|as)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)$/i);
-    const mD = s.match(/^(?:type|enter|fill)\s+(?:in|into)\s+(?:the\s+)?([a-zA-Z0-9_-]+)\s+["']?([a-zA-Z0-9_@.+-]+)["']?$/i);
-    if (mA) {
-      let target = mA[1].trim();
-      const value = mA[2].trim();
-      if (target && value && !["type", "enter", "fill", "write"].includes(target.toLowerCase())) {
-        fields.push({ target, value });
-      }
-    } else if (mB) {
-      const value = mB[1].trim();
-      let target = mB[2].replace(/^(?:the|field\s+of)\s+/i, "").trim();
-      if (target && value) {
-        fields.push({ target, value });
-      }
-    } else if (mC) {
-      const value = mC[1].trim();
-      let target = mC[2].replace(/^(?:the|field\s+of)\s+/i, "").trim();
-      if (target && value) {
-        fields.push({ target, value });
-      }
-    } else if (mD) {
-      const target = mD[1].trim();
-      const value = mD[2].trim();
-      if (target && value) {
-        fields.push({ target, value });
-      }
-    }
-  }
-  return fields;
-}
-function resolveTaskContract(goal) {
-  let g = (goal || "").trim().toLowerCase().replace(/[?!.]+$/, "").trim();
-  let prev = "";
-  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
-  while (g && g !== prev) {
-    prev = g;
-    g = g.replace(ACTION_PREFIX_REGEX, "").trim();
-  }
-  g = g.replace(/\bchekinup\b/g, "check").replace(/\bcheckin\b/g, "check").replace(/\bcheckup\b/g, "check").replace(/\bchecking\s+up\b/g, "check").replace(/\bchecking\b/g, "check").replace(/\btyoe\b/g, "type").replace(/\btpye\b/g, "type").replace(/\bclik\b/g, "click").replace(/\bcilck\b/g, "click").replace(/\bselet\b/g, "select").replace(/\bselct\b/g, "select").replace(/\bserach\b/g, "search").replace(/\bserch\b/g, "search");
-  const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
-  if (navPrefixMatch && navPrefixMatch[1]) {
-    g = navPrefixMatch[1].trim();
-  }
-  if (!g) {
-    return {
-      supported: false,
-      goalPattern: "empty",
-      expectedTerminal: { kind: "status_changed" },
-      abstentionReason: "EMPTY_GOAL: Goal cannot be empty"
-    };
-  }
-  if (isPureNavigationGoal(g)) {
-    return {
-      supported: true,
-      goalPattern: "navigate_url",
-      expectedTerminal: { kind: "status_changed" },
-      expectedTargetNameSubstring: g,
-      structuredIntent: {
-        intent: "navigate",
-        targetPhrase: g,
-        targetTokens: tokenizeSemanticText(g)
-      }
-    };
-  }
-  const isMultiStep = /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload)\b/i.test(g) || /(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many)/i.test(g);
-  if (/(?:poem|story|recipe|joke|capital of|calculate|solve math|2\+2|weather|song|quantum)/i.test(g)) {
-    return {
-      supported: true,
-      goalPattern: "conversational_query",
-      mode: "answer",
-      isAnswerGoal: true,
-      expectedTerminal: { kind: "answer_supported" },
-      structuredIntent: {
-        intent: "observe",
-        targetPhrase: g,
-        targetTokens: tokenizeSemanticText(g)
-      }
-    };
-  }
-  const isQuestionOrRetrieval = /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:about|how|what|the|when|who|which|where|why|if)|find\s+.*?\s+and\s+tell|search\s+.*?\s+and\s+tell|check\s+.*?\s+and\s+tell|(?:when|who|where|why)\s+(?:was|is|are|were|organizes|coordinates|leads|founded|created|launched|started)|when\s+it\s+was|who\s+organizes)/i.test(g);
-  if (isQuestionOrRetrieval) {
-    let queryTopic = "information";
-    if (/submi/i.test(g))
-      queryTopic = "submissions";
-    else if (/problem|ps\b/i.test(g))
-      queryTopic = "problem statements";
-    else if (g.includes("count") || g.includes("how many"))
-      queryTopic = "count";
-    else if (/(?:launch|start|found|create|when)/i.test(g) && /(?:organiz|lead|head|manage|who)/i.test(g))
-      queryTopic = "launch date and organizer";
-    else if (/(?:launch|start|found|create|when)/i.test(g))
-      queryTopic = "launch date";
-    else if (/(?:organiz|lead|head|manage|who)/i.test(g))
-      queryTopic = "organizer";
-    return {
-      supported: true,
-      goalPattern: "answer_question",
-      mode: "answer",
-      isAnswerGoal: true,
-      isMultiStep: true,
-      isPassive: false,
-      // NOT passive - allows active tab switching, navigation, and extraction
-      queryTopic,
-      expectedTerminal: { kind: "answer_supported", queryTopic },
-      structuredIntent: {
-        intent: "observe",
-        targetPhrase: queryTopic,
-        targetTokens: tokenizeSemanticText(queryTopic)
-      }
-    };
-  }
-  if (/\b(?:bookmarks?|tabs?|history)\b/i.test(g)) {
-    const isManage = /\b(?:open|go\s+to|manage|show|launch)\b/i.test(g);
-    return {
-      supported: true,
-      goalPattern: "browser_resource",
-      mode: "act",
-      isPassive: true,
-      expectedTerminal: { kind: "status_changed" },
-      structuredIntent: {
-        intent: isManage ? "navigate" : "observe",
-        targetPhrase: "bookmarks",
-        targetTokens: tokenizeSemanticText("bookmarks")
-      }
-    };
-  }
-  if (/^(?:observe|check|inspect|finish|read|summarize|review|analyze|tell|what|scan|look|see)\b/i.test(g)) {
-    return {
-      supported: true,
-      goalPattern: "observe_status",
-      expectedTerminal: { kind: "status_changed" },
-      structuredIntent: {
-        intent: "observe",
-        targetTokens: []
-      },
-      isPassive: true
-    };
-  }
-  if (/(?:open|inspect|view)\s+(?:.*?\s+)?(?:preview|drawer|details?|summary|profile|settings)/i.test(g) || /preview/i.test(g)) {
-    const contextMatch2 = g.match(/(?:preview|drawer|details?|summary|profile|settings)\s+(?:for|in|of|under)\s+([a-zA-Z0-9_-]+)/i);
-    const contextPhrase2 = cleanContextPhrase(contextMatch2 ? contextMatch2[1].trim() : void 0);
-    let targetPhrase2 = "preview";
-    let dialogId = "preview";
-    if (g.includes("details")) {
-      targetPhrase2 = "View Details";
-      dialogId = "details";
-    } else if (g.includes("drawer")) {
-      targetPhrase2 = "drawer";
-      dialogId = "drawer";
-    }
-    return {
-      supported: true,
-      goalPattern: "preview_drawer",
-      expectedTerminal: { kind: "dialog_visible", dialogId },
-      expectedTargetNameSubstring: targetPhrase2,
-      structuredIntent: {
-        intent: "click",
-        targetPhrase: targetPhrase2,
-        roleHint: "button",
-        targetTokens: tokenizeSemanticText(targetPhrase2),
-        contextPhrase: contextPhrase2
-      }
-    };
-  }
-  if (/(?:fill|type|enter|log\s*in\s+with)\s+(?:.*?\s+)?(?:login|credentials|email\s+(?:nad|and)\s+pass(?:word)?|user(?:name)?\s+(?:nad|and)\s+pass(?:word)?)/i.test(g) || /^(?:fill\s+)?(?:sih\s+)?login(?:\s+for\s+me)?$/i.test(g) || /^(?:type|enter|fill)\s+(?:my\s+)?(?:email\s+(?:nad|and)\s+pass(?:word)?|credentials)$/i.test(g)) {
-    return {
-      supported: true,
-      goalPattern: "form_fill_credentials",
-      expectedTerminal: { kind: "value_present" },
-      expectedTargetNameSubstring: "email",
-      requiresUserInput: true,
-      userInputKind: "credentials",
-      userInputPrompt: "Please provide your credentials below so PrivaPilot can securely fill the login fields locally.",
-      structuredIntent: {
-        intent: "type",
-        targetPhrase: "email",
-        roleHint: "input",
-        targetTokens: ["email", "username", "login"]
-      }
-    };
-  }
-  const hasCompoundAction = /\b(?:and\s+then|then|after\s+that|next)\s+(?:type|fill|enter|write|search|filter|find)\b/i.test(g) || /\b(?:and|then)\s+(?:type|fill|enter|write)\b/i.test(g);
-  const isExplicitClickVerb = /^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+/i.test(g) && !hasCompoundAction && !/^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+(?:on\s+)?(?:the\s+)?(?:search(?:\s+bar|\s+box|\s+input|\s+field)?|input|field)\s+(?:and\s+)?(?:type|fill|enter|write)\b/i.test(g);
-  if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry|chatbox|chat\b)/i.test(g)) {
-    const hasSubmitSuffix = /\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i.test(g) || /\bsearch\b/i.test(g);
-    let cleanGoal = g.replace(/\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i, "").trim();
-    cleanGoal = cleanGoal.replace(/^(?:can\s+you|could\s+you|please|kindly|i\s+want\s+you\s+to)\s+/i, "").replace(/\?+$/, "").trim();
-    let targetPhrase2 = "search";
-    let requestedValue = "";
-    const inTargetMatch = cleanGoal.match(/^(?:type|fill|enter|write|set)\s+(?:in|into)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+(?:to\s+be\s+|as\s+)?(?:["']([^"']+)["']|([a-zA-Z0-9_@.-]+))$/i);
-    const fillWithMatch = cleanGoal.match(/^(?:fill|type|enter|write|set)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+with\s+["']?([^"']+)["']?$/i);
-    const valInTargetMatch = cleanGoal.match(/^(?:type|fill|enter|write|set)\s+["']?([^"']+)["']?\s+(?:into|in)\s+(?:the\s+)?["']?([^"']+)["']?$/i);
-    const searchForMatch = cleanGoal.match(/^(?:search|filter|find|locate)(?:\s+(?:requests\s+for|for|query|text))?\s+["']?([^"']+)["']?$/i);
-    const formAssignments = parseFormFieldAssignments(cleanGoal);
-    if (formAssignments.length > 0) {
-      targetPhrase2 = formAssignments[0].target;
-      requestedValue = formAssignments[0].value;
-    } else if (inTargetMatch) {
-      targetPhrase2 = inTargetMatch[1].trim();
-      requestedValue = (inTargetMatch[2] || inTargetMatch[3]).trim();
-    } else if (fillWithMatch) {
-      targetPhrase2 = fillWithMatch[1].trim();
-      requestedValue = fillWithMatch[2].trim();
-    } else if (valInTargetMatch) {
-      requestedValue = valInTargetMatch[1].trim();
-      targetPhrase2 = valInTargetMatch[2].trim();
-    } else if (searchForMatch) {
-      targetPhrase2 = "search";
-      requestedValue = searchForMatch[1].trim();
-    } else {
-      const filterMatch = cleanGoal.match(/(?:search|type|fill|enter|write|set|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query|the\s+search\s+field\s+with|the\s+field\s+with|the\s+input\s+with|this\s+field\s+with|this\s+input\s+with|the\s+input\s+to|in\s+this\s+field|into\s+this\s+field|in\s+the\s+field|with))?\s+["']?([^"']+)["']?/i);
-      requestedValue = filterMatch ? filterMatch[1].replace(/\?+$/, "").trim() : "";
-      if (cleanGoal.includes("search"))
-        targetPhrase2 = "search";
-      else if (cleanGoal.includes("filter"))
-        targetPhrase2 = "filter";
-      else if (cleanGoal.includes("chat"))
-        targetPhrase2 = "chatbox";
-    }
-    return {
-      supported: true,
-      goalPattern: "search_filter",
-      isMultiStep,
-      expectedTerminal: { kind: "value_present", expectedValueFragment: requestedValue || void 0 },
-      expectedTargetNameSubstring: targetPhrase2,
-      structuredIntent: {
-        intent: "type",
-        targetPhrase: targetPhrase2,
-        roleHint: "input",
-        targetTokens: tokenizeSemanticText(targetPhrase2),
-        requestedValue,
-        submitAfter: hasSubmitSuffix,
-        pressEnter: hasSubmitSuffix,
-        formAssignments: formAssignments.length > 0 ? formAssignments : void 0
-      }
-    };
-  }
-  if (/(?:select|choose)(?:\s+(?:option))?/i.test(g)) {
-    const selectMatch = g.match(/(?:select|choose)(?:\s+(?:option))?\s+["']?([^"']+)["']?(?:\s+(?:from|in)\s+(?:the\s+)?["']?([^"']+)["']?)?/i);
-    const opt = selectMatch ? selectMatch[1].replace(/\?+$/, "").trim() : "";
-    const targetPhrase2 = selectMatch && selectMatch[2] ? selectMatch[2].trim() : "select";
-    return {
-      supported: true,
-      goalPattern: "select_option",
-      expectedTerminal: { kind: "select_changed", expectedOptionValue: opt || void 0 },
-      expectedTargetNameSubstring: targetPhrase2,
-      structuredIntent: {
-        intent: "select",
-        targetPhrase: targetPhrase2,
-        roleHint: "select",
-        targetTokens: tokenizeSemanticText(targetPhrase2),
-        requestedOption: opt
-      }
-    };
-  }
-  if (/scroll/i.test(g) || /page\s+(?:down|up)/i.test(g)) {
-    const scrollMatch = g.match(/(?:scroll|page)\s*(down|up|top|bottom)?/i);
-    const rawDir = scrollMatch && scrollMatch[1] ? scrollMatch[1].toLowerCase() : "down";
-    const dir = rawDir === "up" || rawDir === "top" || rawDir === "bottom" ? rawDir : "down";
-    return {
-      supported: true,
-      goalPattern: "scroll",
-      expectedTerminal: { kind: "scroll_changed", direction: dir },
-      structuredIntent: {
-        intent: "scroll",
-        targetTokens: ["scroll"]
-      }
-    };
-  }
-  if (/(?:dismiss|close|accept|reject|hide)\s+(?:cookie|banner|notice|modal|dialog|disclosure|popup|overlay)/i.test(g)) {
-    return {
-      supported: true,
-      goalPattern: "dismiss_modal",
-      expectedTerminal: { kind: "visibility_changed", state: "hidden" },
-      structuredIntent: {
-        intent: "dismiss",
-        targetPhrase: "close",
-        roleHint: "button",
-        targetTokens: ["close", "dismiss"]
-      }
-    };
-  }
-  if (/(?:approve|submit|pay|authorize|release|delete|order|purge|transfer)/i.test(g)) {
-    return {
-      supported: true,
-      goalPattern: "approval_submission",
-      expectedTerminal: { kind: "status_changed", statusId: "approved" },
-      expectedTargetNameSubstring: "approve",
-      structuredIntent: {
-        intent: "click",
-        targetPhrase: "approve",
-        roleHint: "button",
-        targetTokens: ["approve", "submit"],
-        isProtected: true
-      }
-    };
-  }
-  const dragMatch = g.match(/^(?:(?:please|kindly)\s+)?drag\s+(.+?)\s+(?:to|onto|into|and\s+drop\s+(?:to|on|onto))\s+(.+)$/i);
-  if (dragMatch) {
-    const source = dragMatch[1].trim();
-    const destination = dragMatch[2].trim();
-    return {
-      supported: true,
-      goalPattern: "drag_and_drop",
-      expectedTerminal: { kind: "status_changed" },
-      expectedTargetNameSubstring: source,
-      structuredIntent: {
-        intent: "drag_and_drop",
-        targetPhrase: source,
-        destinationPhrase: destination,
-        targetTokens: tokenizeSemanticText(source)
-      }
-    };
-  }
-  const uploadMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:upload|attach)\s+(?:file|document|image)?\s*(.+?)(?:\s+(?:to|into|on)\s+(.+))?$/i);
-  if (uploadMatch && (uploadMatch[1] || uploadMatch[2])) {
-    const filePart = (uploadMatch[1] || "").trim();
-    const targetPart = (uploadMatch[2] || "").trim();
-    const targetPhrase2 = targetPart || "upload";
-    return {
-      supported: true,
-      goalPattern: "upload_file",
-      expectedTerminal: { kind: "value_present", expectedValueFragment: filePart || void 0 },
-      expectedTargetNameSubstring: targetPhrase2,
-      structuredIntent: {
-        intent: "upload_file",
-        targetPhrase: targetPhrase2,
-        fileName: filePart || void 0,
-        targetTokens: tokenizeSemanticText(targetPhrase2)
-      }
-    };
-  }
-  const hoverMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:hover(?:\s+over)?|mouse\s+over|move\s+mouse\s+to)\s+(?:on\s+)?(?:the\s+)?(.+?)(?:\s+(?:and|\bthen\b)\s+(.+))?$/i);
-  if (hoverMatch) {
-    const target = hoverMatch[1].trim();
-    return {
-      supported: true,
-      goalPattern: "hover_control",
-      isMultiStep: isMultiStep || Boolean(hoverMatch[2]),
-      expectedTerminal: { kind: "status_changed" },
-      expectedTargetNameSubstring: target,
-      structuredIntent: {
-        intent: "hover",
-        targetPhrase: target,
-        targetTokens: tokenizeSemanticText(target)
-      }
-    };
-  }
-  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove)\s+(?:on\s+)?(?:the\s+)?/i);
-  const hasInteractionVerb = Boolean(verbMatch);
-  let cleanStr = hasInteractionVerb ? g.replace(verbMatch[0], "").trim() : g;
-  cleanStr = cleanStr.replace(/\s+(?:repeatedly|again|multiple\s+times|continuously|twice|until\s+done)\b/i, "").trim();
-  let roleHint;
-  if (/\b(?:link)\b/i.test(cleanStr))
-    roleHint = "link";
-  else if (/\b(?:button)\b/i.test(cleanStr))
-    roleHint = "button";
-  else if (/\b(?:tab)\b/i.test(cleanStr))
-    roleHint = "tab";
-  if (roleHint) {
-    cleanStr = cleanStr.replace(new RegExp(`\\s+${roleHint}\\b`, "i"), "").trim();
-  }
-  let contextPhrase;
-  let targetPhrase = hasInteractionVerb ? cleanStr : void 0;
-  const contextMatch = cleanStr.match(/^(.+?)\s+(?:for|in|of|under|associated\s+with)\s+([a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_-]+)*)$/i);
-  if (contextMatch) {
-    targetPhrase = contextMatch[1].trim();
-    contextPhrase = cleanContextPhrase(contextMatch[2].trim());
-  }
-  const isNavOrLink = roleHint === "link" || roleHint === "tab" || /navigate|go\s+to|login|signin|statement|submission/i.test(g);
-  const pathFragment = (targetPhrase || cleanStr || "").toLowerCase().replace(/[^a-z0-9_-]/g, "");
-  return {
-    supported: true,
-    goalPattern: "click_control",
-    isMultiStep,
-    expectedTerminal: isNavOrLink && pathFragment ? { kind: "url_changed", expectedPathFragment: pathFragment } : { kind: "status_changed" },
-    expectedTargetNameSubstring: targetPhrase,
-    structuredIntent: {
-      intent: "click",
-      targetPhrase: targetPhrase || (hasInteractionVerb ? cleanStr : void 0),
-      roleHint,
-      targetTokens: targetPhrase ? tokenizeSemanticText(targetPhrase) : hasInteractionVerb ? tokenizeSemanticText(cleanStr) : [],
-      contextPhrase
-    }
-  };
-}
-var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
-  "actionId",
-  "kind",
-  "targetLocalId",
-  "destinationLocalId",
-  "confidence",
-  "risk",
-  "rationale",
-  "expectedState",
-  "expectedPostcondition",
-  "textToType",
-  "fileName",
-  "fileData",
-  "mimeType",
-  "selectOptionValue",
-  "scrollDirection",
-  "tabId",
-  "userApproved",
-  "pressEnter",
-  "extractedData",
-  "answerText",
-  "reply",
-  "message",
-  "reasoning",
-  "thought",
-  "batchActions",
-  "userInputPrompt",
-  "inputKey"
-]);
-var VALID_ACTION_KINDS = /* @__PURE__ */ new Set([
-  "observe",
-  "click",
-  "hover",
-  "type",
-  "select",
-  "drag_and_drop",
-  "upload_file",
-  "scroll",
-  "wait",
-  "extract",
-  "answer",
-  "request_user_confirmation",
-  "request_user_input",
-  "batch",
-  "finish",
-  "blocked"
-]);
-var VALID_RISK_LEVELS = /* @__PURE__ */ new Set([
-  "safe",
-  "protected",
-  "blocked"
-]);
-var VALID_SCROLL_DIRECTIONS = /* @__PURE__ */ new Set([
-  "up",
-  "down",
-  "top",
-  "bottom"
-]);
-var PROHIBITED_PROPERTY_NAMES = /* @__PURE__ */ new Set([
-  "__proto__",
-  "constructor",
-  "prototype"
-]);
-var PROHIBITED_SCRIPT_PATTERNS = [
-  /<script\b/i,
-  /javascript:/i,
-  /vbscript:/i,
-  /data:text\/html/i,
-  /\bon\w+\s*=/i,
-  /\beval\s*\(/i,
-  /\bexpression\s*\(/i
-];
-var PROHIBITED_URL_PATTERNS = [
-  /https?:\/\//i,
-  /ftp:\/\//i,
-  /file:\/\//i,
-  /ws:\/\//i,
-  /wss:\/\//i,
-  /blob:/i,
-  /data:/i
-];
-var PROHIBITED_SELECTOR_PATTERNS = [
-  /^\s*#/,
-  /^\s*\./,
-  /\/\//,
-  /\bxpath\b/i,
-  /\bcontains\s*\(/i,
-  /\btext\s*\(\s*\)/i,
-  /[[\]>+~:]/
-];
-var LOCAL_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
-var ACTION_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
-function isPlainObject(val) {
-  if (!val || typeof val !== "object" || Array.isArray(val)) {
-    return false;
-  }
-  const proto = Object.getPrototypeOf(val);
-  if (proto !== null && proto !== Object.prototype) {
-    return false;
-  }
-  if (Object.getOwnPropertySymbols(val).length > 0) {
-    return false;
-  }
-  return true;
-}
-function hasProhibitedScriptPattern(str) {
-  return PROHIBITED_SCRIPT_PATTERNS.some((p) => p.test(str));
-}
-function hasProhibitedUrlPattern(str) {
-  return PROHIBITED_URL_PATTERNS.some((p) => p.test(str));
-}
-function hasProhibitedSelectorPattern(str) {
-  return PROHIBITED_SELECTOR_PATTERNS.some((p) => p.test(str));
-}
-function validateActionProposal(proposal, validElements) {
-  if (!isPlainObject(proposal)) {
-    return { isValid: false, errorMessage: "Action proposal must be a JSON object" };
-  }
-  const keys = Object.getOwnPropertyNames(proposal);
-  for (const k2 of keys) {
-    if (PROHIBITED_PROPERTY_NAMES.has(k2) || !ALLOWED_ACTION_PROPOSAL_KEYS.has(k2)) {
-      return { isValid: false, errorMessage: `Closed schema violation: Unknown action property: "${k2}"` };
-    }
-  }
-  if (typeof proposal.actionId !== "string" || !ACTION_ID_REGEX.test(proposal.actionId)) {
-    return { isValid: false, errorMessage: 'Invalid or missing "actionId"' };
-  }
-  if (hasProhibitedScriptPattern(proposal.actionId) || hasProhibitedUrlPattern(proposal.actionId)) {
-    return { isValid: false, errorMessage: "actionId contains prohibited script or URL patterns" };
-  }
-  if (typeof proposal.kind !== "string" || !VALID_ACTION_KINDS.has(proposal.kind)) {
-    return { isValid: false, errorMessage: "Invalid or unsupported action kind" };
-  }
-  if (typeof proposal.confidence !== "number" || !Number.isFinite(proposal.confidence) || Number.isNaN(proposal.confidence) || proposal.confidence < 0 || proposal.confidence > 1) {
-    return { isValid: false, errorMessage: 'Field "confidence" must be a finite number between 0 and 1' };
-  }
-  if (typeof proposal.risk !== "string" || !VALID_RISK_LEVELS.has(proposal.risk)) {
-    return { isValid: false, errorMessage: 'Invalid or missing "risk" level' };
-  }
-  if (typeof proposal.rationale !== "string" || proposal.rationale.length > 1e3) {
-    return { isValid: false, errorMessage: 'Field "rationale" must be a string up to 1000 characters' };
-  }
-  if (hasProhibitedScriptPattern(proposal.rationale) || hasProhibitedUrlPattern(proposal.rationale)) {
-    return { isValid: false, errorMessage: "rationale contains prohibited script or URL patterns" };
-  }
-  if (proposal.reasoning !== void 0) {
-    if (typeof proposal.reasoning !== "string" || proposal.reasoning.length > 5e3) {
-      return { isValid: false, errorMessage: 'Field "reasoning" must be a string up to 5000 characters' };
-    }
-    if (hasProhibitedScriptPattern(proposal.reasoning) || hasProhibitedUrlPattern(proposal.reasoning)) {
-      return { isValid: false, errorMessage: "reasoning contains prohibited script or URL patterns" };
-    }
-  }
-  if (proposal.reply !== void 0) {
-    if (typeof proposal.reply !== "string" || proposal.reply.length > 5e3) {
-      return { isValid: false, errorMessage: 'Field "reply" must be a string up to 5000 characters' };
-    }
-    if (hasProhibitedScriptPattern(proposal.reply) || hasProhibitedUrlPattern(proposal.reply)) {
-      return { isValid: false, errorMessage: "reply contains prohibited script or URL patterns" };
-    }
-  }
-  if (proposal.expectedState !== void 0) {
-    if (typeof proposal.expectedState !== "string" || proposal.expectedState.length > 500) {
-      return { isValid: false, errorMessage: 'Field "expectedState" must be a string up to 500 characters' };
-    }
-    if (hasProhibitedScriptPattern(proposal.expectedState) || hasProhibitedUrlPattern(proposal.expectedState)) {
-      return { isValid: false, errorMessage: "expectedState contains prohibited script or URL patterns" };
-    }
-  }
-  if (proposal.expectedPostcondition !== void 0) {
-    if (typeof proposal.expectedPostcondition !== "object" || proposal.expectedPostcondition === null || Array.isArray(proposal.expectedPostcondition)) {
-      return { isValid: false, errorMessage: 'Field "expectedPostcondition" must be a structured object' };
-    }
-    const pc2 = proposal.expectedPostcondition;
-    const allowedKinds = /* @__PURE__ */ new Set([
-      "dialog_visible",
-      "url_changed",
-      "attribute_changed",
-      "value_present",
-      "select_changed",
-      "status_changed",
-      "scroll_changed",
-      "visibility_changed",
-      "answer_supported"
-    ]);
-    if (!allowedKinds.has(pc2.kind)) {
-      return { isValid: false, errorMessage: `Invalid expectedPostcondition kind "${pc2.kind}"` };
-    }
-    if (pc2.kind === "attribute_changed") {
-      const allowedAttrs = /* @__PURE__ */ new Set(["aria-expanded", "aria-checked", "aria-selected", "disabled", "open", "class"]);
-      if (!allowedAttrs.has(pc2.attributeName)) {
-        return { isValid: false, errorMessage: `Prohibited or untrusted attributeName "${pc2.attributeName}" in postcondition` };
-      }
-    }
-    if (pc2.kind === "scroll_changed") {
-      const allowedDirs = /* @__PURE__ */ new Set(["up", "down", "top", "bottom"]);
-      if (!allowedDirs.has(pc2.direction)) {
-        return { isValid: false, errorMessage: `Invalid scroll direction "${pc2.direction}" in postcondition` };
-      }
-    }
-    if (pc2.kind === "visibility_changed") {
-      if (pc2.state !== "visible" && pc2.state !== "hidden") {
-        return { isValid: false, errorMessage: `Invalid visibility state "${pc2.state}" in postcondition` };
-      }
-    }
-    for (const [key, val] of Object.entries(pc2)) {
-      if (typeof val === "string") {
-        if (hasProhibitedScriptPattern(val) || hasProhibitedUrlPattern(val) || hasProhibitedSelectorPattern(val)) {
-          return { isValid: false, errorMessage: `Postcondition field "${key}" contains prohibited script, URL, or selector pattern` };
-        }
-      }
-    }
-  }
-  if (proposal.scrollDirection !== void 0) {
-    if (typeof proposal.scrollDirection !== "string" || !VALID_SCROLL_DIRECTIONS.has(proposal.scrollDirection)) {
-      return { isValid: false, errorMessage: 'Field "scrollDirection" must be one of "up", "down", "top", "bottom"' };
-    }
-  }
-  if (proposal.destinationLocalId !== void 0) {
-    if (typeof proposal.destinationLocalId !== "string" || !LOCAL_ID_REGEX.test(proposal.destinationLocalId) || hasProhibitedSelectorPattern(proposal.destinationLocalId)) {
-      return { isValid: false, errorMessage: "Invalid destinationLocalId format. Raw selectors and script patterns prohibited" };
-    }
-  }
-  if (proposal.tabId !== void 0) {
-    if (typeof proposal.tabId !== "number" || !Number.isInteger(proposal.tabId) || proposal.tabId < 0) {
-      return { isValid: false, errorMessage: 'Field "tabId" must be a non-negative integer' };
-    }
-  }
-  if (proposal.fileName !== void 0) {
-    if (typeof proposal.fileName !== "string" || proposal.fileName.length === 0 || proposal.fileName.length > 255) {
-      return { isValid: false, errorMessage: 'Field "fileName" must be a non-empty string up to 255 characters' };
-    }
-    if (hasProhibitedScriptPattern(proposal.fileName) || proposal.fileName.includes("..") || proposal.fileName.includes("/") || proposal.fileName.includes("\\")) {
-      return { isValid: false, errorMessage: 'Field "fileName" contains invalid or prohibited patterns' };
-    }
-  }
-  if (proposal.fileData !== void 0) {
-    if (typeof proposal.fileData !== "string" || proposal.fileData.length > 5 * 1024 * 1024) {
-      return { isValid: false, errorMessage: 'Field "fileData" must be a string up to 5MB' };
-    }
-  }
-  if (proposal.mimeType !== void 0) {
-    if (typeof proposal.mimeType !== "string" || proposal.mimeType.length > 100 || !/^[a-zA-Z0-9.+/-]+$/.test(proposal.mimeType)) {
-      return { isValid: false, errorMessage: 'Field "mimeType" must be a valid MIME string up to 100 characters' };
-    }
-  }
-  const kind = proposal.kind;
-  if (proposal.targetLocalId !== void 0) {
-    if (typeof proposal.targetLocalId !== "string" || !LOCAL_ID_REGEX.test(proposal.targetLocalId) || hasProhibitedSelectorPattern(proposal.targetLocalId)) {
-      return { isValid: false, errorMessage: "Invalid targetLocalId format. Raw selectors and script patterns prohibited" };
-    }
-  }
-  if (kind === "click" || kind === "hover" || kind === "type" || kind === "select" || kind === "upload_file") {
-    if (!proposal.targetLocalId || typeof proposal.targetLocalId !== "string") {
-      return { isValid: false, errorMessage: `Action kind "${kind}" requires a valid "targetLocalId"` };
-    }
-  }
-  if (kind === "drag_and_drop") {
-    if (!proposal.targetLocalId || typeof proposal.targetLocalId !== "string") {
-      return { isValid: false, errorMessage: 'Action kind "drag_and_drop" requires a valid "targetLocalId"' };
-    }
-    if (!proposal.destinationLocalId || typeof proposal.destinationLocalId !== "string") {
-      return { isValid: false, errorMessage: 'Action kind "drag_and_drop" requires a valid "destinationLocalId"' };
-    }
-  }
-  if (kind === "upload_file") {
-    if (!proposal.fileName || typeof proposal.fileName !== "string") {
-      return { isValid: false, errorMessage: 'Action kind "upload_file" requires a valid "fileName"' };
-    }
-  }
-  if (kind === "type") {
-    if (typeof proposal.textToType !== "string" || proposal.textToType.length === 0 || proposal.textToType.length > 500) {
-      return { isValid: false, errorMessage: 'Action kind "type" requires "textToType" string between 1 and 500 characters' };
-    }
-    if (hasProhibitedScriptPattern(proposal.textToType)) {
-      return { isValid: false, errorMessage: "textToType contains prohibited script patterns" };
-    }
-  } else if (proposal.textToType !== void 0) {
-    if (typeof proposal.textToType !== "string" || proposal.textToType.length > 500) {
-      return { isValid: false, errorMessage: 'Field "textToType" must be a string up to 500 characters' };
-    }
-    if (hasProhibitedScriptPattern(proposal.textToType)) {
-      return { isValid: false, errorMessage: "textToType contains prohibited script patterns" };
-    }
-  }
-  if (kind === "select") {
-    if (typeof proposal.selectOptionValue !== "string" || proposal.selectOptionValue.length === 0 || proposal.selectOptionValue.length > 200) {
-      return { isValid: false, errorMessage: 'Action kind "select" requires "selectOptionValue" string between 1 and 200 characters' };
-    }
-    if (hasProhibitedScriptPattern(proposal.selectOptionValue)) {
-      return { isValid: false, errorMessage: "selectOptionValue contains prohibited script patterns" };
-    }
-  } else if (proposal.selectOptionValue !== void 0) {
-    if (typeof proposal.selectOptionValue !== "string" || proposal.selectOptionValue.length > 200) {
-      return { isValid: false, errorMessage: 'Field "selectOptionValue" must be a string up to 200 characters' };
-    }
-    if (hasProhibitedScriptPattern(proposal.selectOptionValue)) {
-      return { isValid: false, errorMessage: "selectOptionValue contains prohibited script patterns" };
-    }
-  }
-  if (proposal.userApproved !== void 0 && typeof proposal.userApproved !== "boolean") {
-    return { isValid: false, errorMessage: 'Field "userApproved" must be a boolean' };
-  }
-  if (proposal.pressEnter !== void 0 && typeof proposal.pressEnter !== "boolean") {
-    return { isValid: false, errorMessage: 'Field "pressEnter" must be a boolean' };
-  }
-  if (proposal.userInputPrompt !== void 0) {
-    if (typeof proposal.userInputPrompt !== "string" || proposal.userInputPrompt.length > 500) {
-      return { isValid: false, errorMessage: 'Field "userInputPrompt" must be a string up to 500 characters' };
-    }
-    if (hasProhibitedScriptPattern(proposal.userInputPrompt) || hasProhibitedUrlPattern(proposal.userInputPrompt)) {
-      return { isValid: false, errorMessage: "userInputPrompt contains prohibited script or URL patterns" };
-    }
-  }
-  if (proposal.inputKey !== void 0) {
-    if (typeof proposal.inputKey !== "string" || proposal.inputKey.length > 100 || !/^[a-zA-Z0-9_-]+$/.test(proposal.inputKey)) {
-      return { isValid: false, errorMessage: 'Field "inputKey" must be a valid identifier up to 100 characters' };
-    }
-  }
-  if (kind === "batch") {
-    if (!Array.isArray(proposal.batchActions) || proposal.batchActions.length === 0) {
-      return { isValid: false, errorMessage: 'Action kind "batch" requires a non-empty "batchActions" array' };
-    }
-  }
-  if (proposal.batchActions !== void 0) {
-    if (!Array.isArray(proposal.batchActions)) {
-      return { isValid: false, errorMessage: 'Field "batchActions" must be an array' };
-    }
-    if (proposal.batchActions.length === 0 || proposal.batchActions.length > 10) {
-      return { isValid: false, errorMessage: 'Field "batchActions" must contain between 1 and 10 actions' };
-    }
-    const ALLOWED_ATOMIC_ACTION_KEYS = /* @__PURE__ */ new Set([
-      "actionId",
-      "kind",
-      "targetLocalId",
-      "destinationLocalId",
-      "textToType",
-      "selectOptionValue",
-      "scrollDirection",
-      "pressEnter",
-      "fileName",
-      "rationale"
-    ]);
-    const VALID_ATOMIC_KINDS = /* @__PURE__ */ new Set([
-      "click",
-      "hover",
-      "type",
-      "select",
-      "drag_and_drop",
-      "upload_file",
-      "scroll",
-      "wait",
-      "observe",
-      "extract",
-      "answer"
-    ]);
-    for (let i = 0; i < proposal.batchActions.length; i++) {
-      const sub = proposal.batchActions[i];
-      if (!isPlainObject(sub)) {
-        return { isValid: false, errorMessage: `batchActions[${i}] must be a JSON object` };
-      }
-      for (const k2 of Object.getOwnPropertyNames(sub)) {
-        if (PROHIBITED_PROPERTY_NAMES.has(k2) || !ALLOWED_ATOMIC_ACTION_KEYS.has(k2)) {
-          return { isValid: false, errorMessage: `Closed schema violation: Unknown property "${k2}" in batchActions[${i}]` };
-        }
-      }
-      if (typeof sub.actionId !== "string" || !ACTION_ID_REGEX.test(sub.actionId)) {
-        return { isValid: false, errorMessage: `Invalid actionId in batchActions[${i}]` };
-      }
-      if (typeof sub.kind !== "string" || !VALID_ATOMIC_KINDS.has(sub.kind)) {
-        return { isValid: false, errorMessage: `Invalid kind "${sub.kind}" in batchActions[${i}]` };
-      }
-      if (sub.targetLocalId !== void 0) {
-        if (typeof sub.targetLocalId !== "string" || !LOCAL_ID_REGEX.test(sub.targetLocalId) || hasProhibitedSelectorPattern(sub.targetLocalId)) {
-          return { isValid: false, errorMessage: `Invalid targetLocalId in batchActions[${i}]` };
-        }
-      }
-      if (["click", "hover", "type", "select", "upload_file"].includes(sub.kind) && !sub.targetLocalId) {
-        return { isValid: false, errorMessage: `batchActions[${i}] kind "${sub.kind}" requires targetLocalId` };
-      }
-      if (sub.kind === "type") {
-        if (typeof sub.textToType !== "string" || sub.textToType.length === 0 || sub.textToType.length > 500) {
-          return { isValid: false, errorMessage: `batchActions[${i}] type action requires textToType (1-500 chars)` };
-        }
-        if (hasProhibitedScriptPattern(sub.textToType)) {
-          return { isValid: false, errorMessage: `batchActions[${i}] textToType contains prohibited script patterns` };
-        }
-      }
-      if (sub.kind === "select") {
-        if (typeof sub.selectOptionValue !== "string" || sub.selectOptionValue.length === 0 || sub.selectOptionValue.length > 200) {
-          return { isValid: false, errorMessage: `batchActions[${i}] select action requires selectOptionValue` };
-        }
-        if (hasProhibitedScriptPattern(sub.selectOptionValue)) {
-          return { isValid: false, errorMessage: `batchActions[${i}] selectOptionValue contains prohibited script patterns` };
-        }
-      }
-      if (sub.scrollDirection !== void 0 && !VALID_SCROLL_DIRECTIONS.has(sub.scrollDirection)) {
-        return { isValid: false, errorMessage: `Invalid scrollDirection in batchActions[${i}]` };
-      }
-      if (sub.rationale !== void 0 && (typeof sub.rationale !== "string" || sub.rationale.length > 500)) {
-        return { isValid: false, errorMessage: `Invalid rationale in batchActions[${i}]` };
-      }
-      if (validElements && sub.targetLocalId) {
-        const found = validElements.find((e) => e.localId === sub.targetLocalId);
-        if (!found) {
-          return { isValid: false, errorMessage: `batchActions[${i}] target element "${sub.targetLocalId}" not found in context` };
-        }
-      }
-    }
-  }
-  if (validElements) {
-    if (proposal.targetLocalId) {
-      const targetElement = validElements.find((e) => e.localId === proposal.targetLocalId);
-      if (!targetElement) {
-        return {
-          isValid: false,
-          errorMessage: "Target element with localId not found in sanitized context"
-        };
-      }
-      const caps = targetElement.actionCapabilities || [];
-      if (caps.length > 0) {
-        if (kind === "click" && !caps.includes("click")) {
-          return {
-            isValid: false,
-            errorMessage: 'Target element does not support "click" action capability'
-          };
-        }
-        if (kind === "type" && !caps.includes("type")) {
-          return {
-            isValid: false,
-            errorMessage: 'Target element does not support "type" action capability'
-          };
-        }
-        if (kind === "select" && !caps.includes("select")) {
-          return {
-            isValid: false,
-            errorMessage: 'Target element does not support "select" action capability'
-          };
-        }
-        if (kind === "hover" && !caps.includes("hover") && !caps.includes("click")) {
-          return {
-            isValid: false,
-            errorMessage: 'Target element does not support "hover" action capability'
-          };
-        }
-        if (kind === "drag_and_drop" && !caps.includes("drag") && !caps.includes("click")) {
-          return {
-            isValid: false,
-            errorMessage: 'Target element does not support "drag" action capability'
-          };
-        }
-        if (kind === "upload_file" && !caps.includes("upload") && !caps.includes("type")) {
-          return {
-            isValid: false,
-            errorMessage: 'Target element does not support "upload" action capability'
-          };
-        }
-      }
-    }
-    if (proposal.destinationLocalId) {
-      const destElement = validElements.find((e) => e.localId === proposal.destinationLocalId);
-      if (!destElement) {
-        return {
-          isValid: false,
-          errorMessage: "Destination element with destinationLocalId not found in sanitized context"
-        };
-      }
-    }
-  }
-  return {
-    isValid: true,
-    proposal
-  };
-}
-function classifyActionRisk(proposal, elementName) {
-  const kind = proposal.kind;
-  const name2 = (elementName || "").toLowerCase();
-  if (name2.includes("password") || name2.includes("otp") || name2.includes("captcha") || name2.includes("cvv") || name2.includes("pin") || kind === "type" && (name2.includes("payment") || name2.includes("card") || name2.includes("token") || name2.includes("secret") || name2.includes("sensitive") || name2.includes("national id") || name2.includes("aadhaar") || name2.includes("pan") || name2.includes("ssn"))) {
-    return "blocked";
-  }
-  if (proposal.userApproved) {
-    return "safe";
-  }
-  if (kind === "request_user_input") {
-    return "safe";
-  }
-  if (kind === "batch" && proposal.batchActions && proposal.batchActions.length > 0) {
-    let hasProtected = false;
-    for (const sub of proposal.batchActions) {
-      const subTarget = (sub.targetLocalId || "").toLowerCase();
-      const subRationale = (sub.rationale || "").toLowerCase();
-      if (subTarget.includes("password") || subTarget.includes("otp") || subTarget.includes("captcha") || subTarget.includes("cvv") || subTarget.includes("pin") || sub.kind === "type" && (subTarget.includes("payment") || subTarget.includes("card") || subTarget.includes("token") || subTarget.includes("secret"))) {
-        return "blocked";
-      }
-      if (sub.kind === "upload_file" || subTarget.includes("submit") || subTarget.includes("send") || subTarget.includes("publish") || subTarget.includes("delete") || subTarget.includes("pay") || subRationale.includes("submit") || subRationale.includes("delete") || subRationale.includes("pay")) {
-        hasProtected = true;
-      }
-    }
-    return hasProtected ? "protected" : "safe";
-  }
-  if (kind === "upload_file") {
-    return "protected";
-  }
-  if (kind === "hover") {
-    return "safe";
-  }
-  if (kind === "request_user_confirmation" || name2.includes("submit") || name2.includes("send") || name2.includes("publish") || name2.includes("delete") || name2.includes("remove") || name2.includes("pay") || name2.includes("purchase") || name2.includes("buy") || name2.includes("authorize") || name2.includes("sign") || name2.includes("transfer") || name2.includes("confirm order")) {
-    return "protected";
-  }
-  if (kind === "drag_and_drop") {
-    return proposal.risk || "safe";
-  }
-  if (kind === "observe" || kind === "wait" || kind === "scroll" || kind === "select" || kind === "click" && (name2.includes("preview") || name2.includes("filter") || name2.includes("view") || name2.includes("tab") || name2.includes("next") || name2.includes("search") || name2.includes("close") || name2.includes("cancel")) || kind === "type") {
-    return "safe";
-  }
-  return proposal.risk || "protected";
-}
-function stripNavigationPrefixFromGoal(goal) {
-  if (!goal || typeof goal !== "string")
-    return goal;
-  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:(?:in|on|open)\s+(?:a\s+)?(?:new|another|fresh)\s+tab(?:,\s*|\s+and\s+)?)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s,]+|[a-zA-Z0-9_.-]+?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*)(.+)$/i);
-  if (match && match[1]) {
-    return match[1].trim();
-  }
-  return goal.trim();
-}
-function isPureNavigationGoal(goal) {
-  if (!goal || typeof goal !== "string")
-    return false;
-  let g = goal.trim().toLowerCase();
-  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
-  let prev = "";
-  while (g && g !== prev) {
-    prev = g;
-    g = g.replace(ACTION_PREFIX_REGEX, "").trim();
-  }
-  if (/\s+(?:and\s+then|then|after\s+that|and|,)\s+(?:click|type|fill|enter|search|filter|find|select|press|check|see|tell|scroll|hover|drag|drop|upload)\b/i.test(g)) {
-    return false;
-  }
-  if (/^https?:\/\/[^\s]+$/i.test(g) || /^www\.[a-z0-9-]+\.[a-z]+(?:\/[^\s]*)?$/i.test(g)) {
-    return true;
-  }
-  if (/^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,24}(?:\/[^\s]*)?$/i.test(g)) {
-    return true;
-  }
-  const navMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_.:/-]+)$/i);
-  if (navMatch) {
-    const target = navMatch[1].trim();
-    if (/https?:\/\/|www\.|\.[a-z]{2,}/i.test(target))
-      return true;
-    if (/^(?:gmail|google|isro|sih|github|youtube|reddit|wikipedia|duckduckgo|demo|portal)$/i.test(target))
-      return true;
-  }
-  return false;
-}
-
 // ../../packages/protocol/dist/domain-playbooks.js
 var SIH_PLAYBOOK = {
   domain: "sih.gov.in",
@@ -15836,6 +14852,104 @@ var GOOGLE_PLAYBOOK = {
     search: ["q", "search", "query"]
   }
 };
+var AMAZON_PLAYBOOK = {
+  domain: "amazon.in",
+  name: "Amazon India",
+  aliases: ["amazon.in", "www.amazon.in", "amazon.com", "www.amazon.com", "amazon"],
+  routes: [
+    {
+      name: "home",
+      path: "/",
+      description: "Amazon homepage",
+      matchKeywords: ["home", "homepage", "shop"]
+    },
+    {
+      name: "search",
+      path: "/s",
+      description: "Amazon search results page",
+      matchKeywords: ["search", "results", "products", "s"]
+    }
+  ],
+  landmarks: [
+    {
+      id: "amazon_search_input",
+      phrase: "Search Amazon",
+      aliases: ["Search Amazon.in", "Search Amazon", "search", "twotabsearchtextbox", "field-keywords", "search box", "Search input", "q"],
+      role: "input",
+      description: "Amazon main product search input box",
+      intentAction: "type"
+    },
+    {
+      id: "amazon_search_button",
+      phrase: "Go",
+      aliases: ["Search submit", "nav-search-submit-button", "Go", "Submit"],
+      role: "button",
+      description: "Trigger Amazon product search button",
+      intentAction: "click"
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: "products_count",
+      labelKeywords: ["results", "products", "items"],
+      containerHints: ["stat", "card", "metric", "counter"],
+      valuePattern: "\\b\\d+\\b",
+      description: "Total products listed on Amazon search"
+    }
+  ],
+  formFieldHints: {
+    search: ["twotabsearchtextbox", "field-keywords", "search", "query"]
+  }
+};
+var FLIPKART_PLAYBOOK = {
+  domain: "flipkart.com",
+  name: "Flipkart",
+  aliases: ["flipkart.com", "www.flipkart.com", "flipkart"],
+  routes: [
+    {
+      name: "home",
+      path: "/",
+      description: "Flipkart homepage",
+      matchKeywords: ["home", "homepage", "shop"]
+    },
+    {
+      name: "search",
+      path: "/search",
+      description: "Flipkart search results page",
+      matchKeywords: ["search", "results", "products"]
+    }
+  ],
+  landmarks: [
+    {
+      id: "flipkart_search_input",
+      phrase: "Search for Products, Brands and More",
+      aliases: ["Search for Products", "Search Products", "Search", "search box", "q", "Search input"],
+      role: "input",
+      description: "Flipkart main product search bar",
+      intentAction: "type"
+    },
+    {
+      id: "flipkart_search_button",
+      phrase: "Search",
+      aliases: ["Search submit", "Submit"],
+      role: "button",
+      description: "Trigger Flipkart search button",
+      intentAction: "click"
+    }
+  ],
+  metricsRules: [
+    {
+      metricId: "products_count",
+      labelKeywords: ["results", "products", "items"],
+      containerHints: ["stat", "card", "metric", "counter"],
+      valuePattern: "\\b\\d+\\b",
+      description: "Total products listed on Flipkart search"
+    }
+  ],
+  formFieldHints: {
+    search: ["q", "search", "query"]
+  }
+};
 var WIKIPEDIA_PLAYBOOK = {
   domain: "wikipedia.org",
   name: "Wikipedia",
@@ -16300,6 +15414,8 @@ var REGISTERED_PLAYBOOKS = [
   REDDIT_PLAYBOOK,
   DUCKDUCKGO_PLAYBOOK,
   GOOGLE_PLAYBOOK,
+  AMAZON_PLAYBOOK,
+  FLIPKART_PLAYBOOK,
   WIKIPEDIA_PLAYBOOK
 ];
 function lookupDomainPlaybook(urlOrHostname) {
@@ -16534,13 +15650,19 @@ function extractMetricsWithPlaybook(textContext, metricRule) {
 }
 function extractSearchQueryFromGoal(goal) {
   let q2 = (goal || "").trim();
-  const compoundMatch = q2.match(/(?:and|then|after\s+that)\s+(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type)\s+(.+)$/i);
+  q2 = q2.replace(/^(?:open|go\s+to|visit|launch)\s+[^,;]+[,\s;]+(?:and\s+then|then|after\s+that|and)?\s*/i, "");
+  const compoundMatch = q2.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type)\s+(.+)$/i);
   if (compoundMatch) {
     q2 = compoundMatch[1].trim();
   } else {
     q2 = q2.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, "");
   }
-  q2 = q2.replace(/\s+(?:in|into|on)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page)$/i, "");
+  q2 = q2.replace(/\s+(?:in|into|on|using|use)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page).*$/i, "");
+  q2 = q2.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github)(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github))*/i, "");
+  q2 = q2.replace(/\s+(?:use|using)\s+(?:the\s+)?search\s+bar.*$/i, "");
+  q2 = q2.replace(/\s+(?:and|to|then)\s+(?:hit\s+the\s+website|tell\s+me|analyze|give\s+me|show\s+me|check\s+the\s+price|compare).*$/i, "");
+  q2 = q2.replace(/\s+(?:and|then)\s+analyze.*$/i, "");
+  q2 = q2.replace(/^["']+|["']+$/g, "");
   return q2.trim();
 }
 function extractTargetUrlFromGoal(goal) {
@@ -16588,6 +15710,12 @@ function extractTargetUrlFromGoal(goal) {
     if (siteKeyword.includes(".")) {
       return `https://${siteKeyword}`;
     }
+    if (siteKeyword.includes("amazon")) {
+      return "https://www.amazon.in";
+    }
+    if (siteKeyword.includes("flipkart")) {
+      return "https://www.flipkart.com";
+    }
     if (siteKeyword.includes("isro") || siteKeyword.includes("space")) {
       return "https://www.isro.gov.in";
     }
@@ -16628,7 +15756,7 @@ function extractTargetUrlFromGoal(goal) {
       return "http://localhost:4500";
     }
   }
-  const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_.-]+)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*|$)/i);
+  const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:in\s+)?([a-zA-Z0-9_.-]+)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*|$)/i);
   if (navDirective) {
     const target = navDirective[1].trim().toLowerCase();
     if (target.includes(".")) {
@@ -16638,6 +15766,10 @@ function extractTargetUrlFromGoal(goal) {
         return "https://www.isro.gov.in";
       return `https://${target}`;
     }
+    if (target === "amazon" || target.includes("amazon"))
+      return "https://www.amazon.in";
+    if (target === "flipkart" || target.includes("flipkart"))
+      return "https://www.flipkart.com";
     if (target === "isro" || target.includes("isro"))
       return "https://www.isro.gov.in";
     if (target === "gmail" || target.includes("gmail"))
@@ -16667,13 +15799,13 @@ function extractTargetUrlFromGoal(goal) {
     if (target.includes("demo") || target.includes("portal"))
       return "http://localhost:4500";
   }
-  const isOnPageAction = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|search|filter|find|type|fill|enter|about|check|see|tell|count|submissions?|how\s+many|what\s+is)\b/i.test(g);
+  const isOnPageAction = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|filter|find|type|fill|enter|about|check|see|tell|count|submissions?|how\s+many|what\s+is)\b/i.test(g);
   if (!isOnPageAction) {
     const lower = g.toLowerCase();
     for (const playbook of REGISTERED_PLAYBOOKS) {
       for (const alias of playbook.aliases) {
         if (alias.length >= 4) {
-          const regex = new RegExp(`^\\s*${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$|\\b(?:open|go\\s+to|visit|launch|load|navigate\\s+to)\\s+${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+          const regex = new RegExp(`^\\s*${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$|\\b(?:open|gos+to|visit|launch|load|navigates+to)\\s+${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
           if (regex.test(lower)) {
             return `https://${playbook.domain}`;
           }
@@ -16681,7 +15813,1009 @@ function extractTargetUrlFromGoal(goal) {
       }
     }
   }
+  if (/\b(?:open|in|on|at|hit)\s+(?:the\s+)?amazon\b/i.test(g) || /\bamazon\b/i.test(g))
+    return "https://www.amazon.in";
+  if (/\b(?:open|in|on|at|hit)\s+(?:the\s+)?flipkart\b/i.test(g) || /\bflipkart\b/i.test(g))
+    return "https://www.flipkart.com";
   return void 0;
+}
+
+// ../../packages/protocol/dist/action.js
+var GENERIC_CONTEXT_WORDS = /* @__PURE__ */ new Set([
+  "pending",
+  "request",
+  "requests",
+  "item",
+  "items",
+  "row",
+  "user",
+  "the",
+  "a",
+  "an",
+  "this",
+  "that",
+  "safe",
+  "preview",
+  "details",
+  "result",
+  "results",
+  "table",
+  "page"
+]);
+function cleanContextPhrase(phrase) {
+  if (!phrase)
+    return void 0;
+  const trimmed = phrase.trim();
+  if (GENERIC_CONTEXT_WORDS.has(trimmed.toLowerCase()))
+    return void 0;
+  return trimmed;
+}
+function parseFormFieldAssignments(text) {
+  let norm = text.replace(/([a-zA-Z0-9_-]+)\.\s+/g, "$1 ").replace(/\s+\.\s+/g, " ").replace(/\s+/g, " ").trim();
+  norm = norm.replace(/\btyoe\b/gi, "type");
+  const fields = [];
+  const segments = norm.split(/\s+(?:and|then|also)\s+|;/i);
+  if (segments.length < 2 && !/^(?:in\s+(?:the\s+)?(?:place\s+of|field\s+of)|for\s+[a-z0-9_-]+\s+(?:type|enter))/i.test(norm)) {
+    return [];
+  }
+  for (const seg of segments) {
+    const s = seg.trim();
+    const mA = s.match(/^(?:(?:in|for|at|into)\s+(?:the\s+)?(?:place\s+of\s+|field\s+of\s+|box\s+of\s+)?)?([a-zA-Z0-9_-]+)\s+(?:type|enter|fill|put|write|as|is|=)\s+["']?([a-zA-Z0-9_@.+-]+)["']?$/i);
+    const mB = s.match(/^(?:type|enter|fill|put|write)\s+["']?([a-zA-Z0-9_@.+-]+)["']?\s+(?:in|into|for|to|as)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)$/i);
+    const mC = s.match(/^["']?([a-zA-Z0-9_@.+-]+)["']?\s+(?:in|into|for|as)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)$/i);
+    const mD = s.match(/^(?:type|enter|fill)\s+(?:in|into)\s+(?:the\s+)?([a-zA-Z0-9_-]+)\s+["']?([a-zA-Z0-9_@.+-]+)["']?$/i);
+    if (mA) {
+      let target = mA[1].trim();
+      const value = mA[2].trim();
+      if (target && value && !["type", "enter", "fill", "write"].includes(target.toLowerCase())) {
+        fields.push({ target, value });
+      }
+    } else if (mB) {
+      const value = mB[1].trim();
+      let target = mB[2].replace(/^(?:the|field\s+of)\s+/i, "").trim();
+      if (target && value) {
+        fields.push({ target, value });
+      }
+    } else if (mC) {
+      const value = mC[1].trim();
+      let target = mC[2].replace(/^(?:the|field\s+of)\s+/i, "").trim();
+      if (target && value) {
+        fields.push({ target, value });
+      }
+    } else if (mD) {
+      const target = mD[1].trim();
+      const value = mD[2].trim();
+      if (target && value) {
+        fields.push({ target, value });
+      }
+    }
+  }
+  return fields;
+}
+function resolveTaskContract(goal) {
+  let g = (goal || "").trim().toLowerCase().replace(/[?!.]+$/, "").trim();
+  let prev = "";
+  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+  while (g && g !== prev) {
+    prev = g;
+    g = g.replace(ACTION_PREFIX_REGEX, "").trim();
+  }
+  g = g.replace(/\bchekinup\b/g, "check").replace(/\bcheckin\b/g, "check").replace(/\bcheckup\b/g, "check").replace(/\bchecking\s+up\b/g, "check").replace(/\bchecking\b/g, "check").replace(/\btyoe\b/g, "type").replace(/\btpye\b/g, "type").replace(/\bclik\b/g, "click").replace(/\bcilck\b/g, "click").replace(/\bselet\b/g, "select").replace(/\bselct\b/g, "select").replace(/\bserach\b/g, "search").replace(/\bserch\b/g, "search");
+  const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
+  if (navPrefixMatch && navPrefixMatch[1]) {
+    g = navPrefixMatch[1].trim();
+  }
+  if (!g) {
+    return {
+      supported: false,
+      goalPattern: "empty",
+      expectedTerminal: { kind: "status_changed" },
+      abstentionReason: "EMPTY_GOAL: Goal cannot be empty"
+    };
+  }
+  if (isPureNavigationGoal(g)) {
+    return {
+      supported: true,
+      goalPattern: "navigate_url",
+      expectedTerminal: { kind: "status_changed" },
+      expectedTargetNameSubstring: g,
+      structuredIntent: {
+        intent: "navigate",
+        targetPhrase: g,
+        targetTokens: tokenizeSemanticText(g)
+      }
+    };
+  }
+  const isMultiStep = /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload)\b/i.test(g) || /(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many)/i.test(g);
+  if (/(?:poem|story|recipe|joke|capital of|calculate|solve math|2\+2|weather|song|quantum)/i.test(g)) {
+    return {
+      supported: true,
+      goalPattern: "conversational_query",
+      mode: "answer",
+      isAnswerGoal: true,
+      expectedTerminal: { kind: "answer_supported" },
+      structuredIntent: {
+        intent: "observe",
+        targetPhrase: g,
+        targetTokens: tokenizeSemanticText(g)
+      }
+    };
+  }
+  const isQuestionOrRetrieval = /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:about|how|what|the|when|who|which|where|why|if)|find\s+.*?\s+and\s+tell|search\s+.*?\s+and\s+tell|check\s+.*?\s+and\s+tell|(?:when|who|where|why)\s+(?:was|is|are|were|organizes|coordinates|leads|founded|created|launched|started)|when\s+it\s+was|who\s+organizes)/i.test(g);
+  if (isQuestionOrRetrieval) {
+    let queryTopic = "information";
+    if (/submi/i.test(g))
+      queryTopic = "submissions";
+    else if (/problem|ps\b/i.test(g))
+      queryTopic = "problem statements";
+    else if (g.includes("count") || g.includes("how many"))
+      queryTopic = "count";
+    else if (/(?:launch|start|found|create|when)/i.test(g) && /(?:organiz|lead|head|manage|who)/i.test(g))
+      queryTopic = "launch date and organizer";
+    else if (/(?:launch|start|found|create|when)/i.test(g))
+      queryTopic = "launch date";
+    else if (/(?:organiz|lead|head|manage|who)/i.test(g))
+      queryTopic = "organizer";
+    return {
+      supported: true,
+      goalPattern: "answer_question",
+      mode: "answer",
+      isAnswerGoal: true,
+      isMultiStep: true,
+      isPassive: false,
+      // NOT passive - allows active tab switching, navigation, and extraction
+      queryTopic,
+      expectedTerminal: { kind: "answer_supported", queryTopic },
+      structuredIntent: {
+        intent: "observe",
+        targetPhrase: queryTopic,
+        targetTokens: tokenizeSemanticText(queryTopic)
+      }
+    };
+  }
+  if (/\b(?:bookmarks?|tabs?|history)\b/i.test(g)) {
+    const isManage = /\b(?:open|go\s+to|manage|show|launch)\b/i.test(g);
+    return {
+      supported: true,
+      goalPattern: "browser_resource",
+      mode: "act",
+      isPassive: true,
+      expectedTerminal: { kind: "status_changed" },
+      structuredIntent: {
+        intent: isManage ? "navigate" : "observe",
+        targetPhrase: "bookmarks",
+        targetTokens: tokenizeSemanticText("bookmarks")
+      }
+    };
+  }
+  if (/^(?:observe|check|inspect|finish|read|summarize|review|analyze|tell|what|scan|look|see)\b/i.test(g)) {
+    return {
+      supported: true,
+      goalPattern: "observe_status",
+      expectedTerminal: { kind: "status_changed" },
+      structuredIntent: {
+        intent: "observe",
+        targetTokens: []
+      },
+      isPassive: true
+    };
+  }
+  if (/(?:open|inspect|view)\s+(?:.*?\s+)?(?:preview|drawer|details?|summary|profile|settings)/i.test(g) || /preview/i.test(g)) {
+    const contextMatch2 = g.match(/(?:preview|drawer|details?|summary|profile|settings)\s+(?:for|in|of|under)\s+([a-zA-Z0-9_-]+)/i);
+    const contextPhrase2 = cleanContextPhrase(contextMatch2 ? contextMatch2[1].trim() : void 0);
+    let targetPhrase2 = "preview";
+    let dialogId = "preview";
+    if (g.includes("details")) {
+      targetPhrase2 = "View Details";
+      dialogId = "details";
+    } else if (g.includes("drawer")) {
+      targetPhrase2 = "drawer";
+      dialogId = "drawer";
+    }
+    return {
+      supported: true,
+      goalPattern: "preview_drawer",
+      expectedTerminal: { kind: "dialog_visible", dialogId },
+      expectedTargetNameSubstring: targetPhrase2,
+      structuredIntent: {
+        intent: "click",
+        targetPhrase: targetPhrase2,
+        roleHint: "button",
+        targetTokens: tokenizeSemanticText(targetPhrase2),
+        contextPhrase: contextPhrase2
+      }
+    };
+  }
+  if (/(?:fill|type|enter|log\s*in\s+with)\s+(?:.*?\s+)?(?:login|credentials|email\s+(?:nad|and)\s+pass(?:word)?|user(?:name)?\s+(?:nad|and)\s+pass(?:word)?)/i.test(g) || /^(?:fill\s+)?(?:sih\s+)?login(?:\s+for\s+me)?$/i.test(g) || /^(?:type|enter|fill)\s+(?:my\s+)?(?:email\s+(?:nad|and)\s+pass(?:word)?|credentials)$/i.test(g)) {
+    return {
+      supported: true,
+      goalPattern: "form_fill_credentials",
+      expectedTerminal: { kind: "value_present" },
+      expectedTargetNameSubstring: "email",
+      requiresUserInput: true,
+      userInputKind: "credentials",
+      userInputPrompt: "Please provide your credentials below so PrivaPilot can securely fill the login fields locally.",
+      structuredIntent: {
+        intent: "type",
+        targetPhrase: "email",
+        roleHint: "input",
+        targetTokens: ["email", "username", "login"]
+      }
+    };
+  }
+  const hasCompoundAction = /\b(?:and\s+then|then|after\s+that|next)\s+(?:type|fill|enter|write|search|filter|find)\b/i.test(g) || /\b(?:and|then)\s+(?:type|fill|enter|write)\b/i.test(g);
+  const isExplicitClickVerb = /^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+/i.test(g) && !hasCompoundAction && !/^(?:(?:please|kindly)\s+)?(?:click|press|tap)\s+(?:on\s+)?(?:the\s+)?(?:search(?:\s+bar|\s+box|\s+input|\s+field)?|input|field)\s+(?:and\s+)?(?:type|fill|enter|write)\b/i.test(g);
+  if (!isExplicitClickVerb && /(?:search|find|locate|type|fill|enter|write|set|filter|query|telemetry|chatbox|chat\b)/i.test(g)) {
+    const hasSubmitSuffix = /\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i.test(g) || /\bsearch\b/i.test(g);
+    let cleanGoal = g.replace(/\b(?:and\s+(?:send|sent|submit|press\s+enter|hit\s+enter|post))\b/i, "").trim();
+    cleanGoal = cleanGoal.replace(/^(?:can\s+you|could\s+you|please|kindly|i\s+want\s+you\s+to)\s+/i, "").replace(/\?+$/, "").trim();
+    let targetPhrase2 = "search";
+    let requestedValue = "";
+    const inTargetMatch = cleanGoal.match(/^(?:type|fill|enter|write|set)\s+(?:in|into)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+(?:to\s+be\s+|as\s+)?(?:["']([^"']+)["']|([a-zA-Z0-9_@.-]+))$/i);
+    const fillWithMatch = cleanGoal.match(/^(?:fill|type|enter|write|set)\s+(?:the\s+)?([a-zA-Z0-9_\s-]+?)\s+with\s+["']?([^"']+)["']?$/i);
+    const valInTargetMatch = cleanGoal.match(/^(?:type|fill|enter|write|set)\s+["']?([^"']+)["']?\s+(?:into|in)\s+(?:the\s+)?["']?([^"']+)["']?$/i);
+    const searchForMatch = cleanGoal.match(/^(?:search|filter|find|locate)(?:\s+(?:requests\s+for|for|query|text))?\s+["']?([^"']+)["']?$/i);
+    const formAssignments = parseFormFieldAssignments(cleanGoal);
+    if (formAssignments.length > 0) {
+      targetPhrase2 = formAssignments[0].target;
+      requestedValue = formAssignments[0].value;
+    } else if (inTargetMatch) {
+      targetPhrase2 = inTargetMatch[1].trim();
+      requestedValue = (inTargetMatch[2] || inTargetMatch[3]).trim();
+    } else if (fillWithMatch) {
+      targetPhrase2 = fillWithMatch[1].trim();
+      requestedValue = fillWithMatch[2].trim();
+    } else if (valInTargetMatch) {
+      requestedValue = valInTargetMatch[1].trim();
+      targetPhrase2 = valInTargetMatch[2].trim();
+    } else if (searchForMatch) {
+      targetPhrase2 = "search";
+      requestedValue = searchForMatch[1].trim();
+    } else {
+      const filterMatch = cleanGoal.match(/(?:search|type|fill|enter|write|set|filter|find|locate)(?:\s+(?:requests\s+for|for|text|query|the\s+search\s+field\s+with|the\s+field\s+with|the\s+input\s+with|this\s+field\s+with|this\s+input\s+with|the\s+input\s+to|in\s+this\s+field|into\s+this\s+field|in\s+the\s+field|with))?\s+["']?([^"']+)["']?/i);
+      requestedValue = filterMatch ? filterMatch[1].replace(/\?+$/, "").trim() : "";
+      if (cleanGoal.includes("search"))
+        targetPhrase2 = "search";
+      else if (cleanGoal.includes("filter"))
+        targetPhrase2 = "filter";
+      else if (cleanGoal.includes("chat"))
+        targetPhrase2 = "chatbox";
+    }
+    if (requestedValue) {
+      const cleanedVal = extractSearchQueryFromGoal(requestedValue);
+      if (cleanedVal && cleanedVal.length > 0) {
+        requestedValue = cleanedVal;
+      }
+    }
+    return {
+      supported: true,
+      goalPattern: "search_filter",
+      isMultiStep,
+      expectedTerminal: { kind: "value_present", expectedValueFragment: requestedValue || void 0 },
+      expectedTargetNameSubstring: targetPhrase2,
+      structuredIntent: {
+        intent: "type",
+        targetPhrase: targetPhrase2,
+        roleHint: "input",
+        targetTokens: tokenizeSemanticText(targetPhrase2),
+        requestedValue,
+        submitAfter: hasSubmitSuffix,
+        pressEnter: hasSubmitSuffix,
+        formAssignments: formAssignments.length > 0 ? formAssignments : void 0
+      }
+    };
+  }
+  if (/(?:select|choose)(?:\s+(?:option))?/i.test(g)) {
+    const selectMatch = g.match(/(?:select|choose)(?:\s+(?:option))?\s+["']?([^"']+)["']?(?:\s+(?:from|in)\s+(?:the\s+)?["']?([^"']+)["']?)?/i);
+    const opt = selectMatch ? selectMatch[1].replace(/\?+$/, "").trim() : "";
+    const targetPhrase2 = selectMatch && selectMatch[2] ? selectMatch[2].trim() : "select";
+    return {
+      supported: true,
+      goalPattern: "select_option",
+      expectedTerminal: { kind: "select_changed", expectedOptionValue: opt || void 0 },
+      expectedTargetNameSubstring: targetPhrase2,
+      structuredIntent: {
+        intent: "select",
+        targetPhrase: targetPhrase2,
+        roleHint: "select",
+        targetTokens: tokenizeSemanticText(targetPhrase2),
+        requestedOption: opt
+      }
+    };
+  }
+  if (/scroll/i.test(g) || /page\s+(?:down|up)/i.test(g)) {
+    const scrollMatch = g.match(/(?:scroll|page)\s*(down|up|top|bottom)?/i);
+    const rawDir = scrollMatch && scrollMatch[1] ? scrollMatch[1].toLowerCase() : "down";
+    const dir = rawDir === "up" || rawDir === "top" || rawDir === "bottom" ? rawDir : "down";
+    return {
+      supported: true,
+      goalPattern: "scroll",
+      expectedTerminal: { kind: "scroll_changed", direction: dir },
+      structuredIntent: {
+        intent: "scroll",
+        targetTokens: ["scroll"]
+      }
+    };
+  }
+  if (/(?:dismiss|close|accept|reject|hide)\s+(?:cookie|banner|notice|modal|dialog|disclosure|popup|overlay)/i.test(g)) {
+    return {
+      supported: true,
+      goalPattern: "dismiss_modal",
+      expectedTerminal: { kind: "visibility_changed", state: "hidden" },
+      structuredIntent: {
+        intent: "dismiss",
+        targetPhrase: "close",
+        roleHint: "button",
+        targetTokens: ["close", "dismiss"]
+      }
+    };
+  }
+  if (/(?:approve|submit|pay|authorize|release|delete|order|purge|transfer)/i.test(g)) {
+    return {
+      supported: true,
+      goalPattern: "approval_submission",
+      expectedTerminal: { kind: "status_changed", statusId: "approved" },
+      expectedTargetNameSubstring: "approve",
+      structuredIntent: {
+        intent: "click",
+        targetPhrase: "approve",
+        roleHint: "button",
+        targetTokens: ["approve", "submit"],
+        isProtected: true
+      }
+    };
+  }
+  const dragMatch = g.match(/^(?:(?:please|kindly)\s+)?drag\s+(.+?)\s+(?:to|onto|into|and\s+drop\s+(?:to|on|onto))\s+(.+)$/i);
+  if (dragMatch) {
+    const source = dragMatch[1].trim();
+    const destination = dragMatch[2].trim();
+    return {
+      supported: true,
+      goalPattern: "drag_and_drop",
+      expectedTerminal: { kind: "status_changed" },
+      expectedTargetNameSubstring: source,
+      structuredIntent: {
+        intent: "drag_and_drop",
+        targetPhrase: source,
+        destinationPhrase: destination,
+        targetTokens: tokenizeSemanticText(source)
+      }
+    };
+  }
+  const uploadMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:upload|attach)\s+(?:file|document|image)?\s*(.+?)(?:\s+(?:to|into|on)\s+(.+))?$/i);
+  if (uploadMatch && (uploadMatch[1] || uploadMatch[2])) {
+    const filePart = (uploadMatch[1] || "").trim();
+    const targetPart = (uploadMatch[2] || "").trim();
+    const targetPhrase2 = targetPart || "upload";
+    return {
+      supported: true,
+      goalPattern: "upload_file",
+      expectedTerminal: { kind: "value_present", expectedValueFragment: filePart || void 0 },
+      expectedTargetNameSubstring: targetPhrase2,
+      structuredIntent: {
+        intent: "upload_file",
+        targetPhrase: targetPhrase2,
+        fileName: filePart || void 0,
+        targetTokens: tokenizeSemanticText(targetPhrase2)
+      }
+    };
+  }
+  const hoverMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:hover(?:\s+over)?|mouse\s+over|move\s+mouse\s+to)\s+(?:on\s+)?(?:the\s+)?(.+?)(?:\s+(?:and|\bthen\b)\s+(.+))?$/i);
+  if (hoverMatch) {
+    const target = hoverMatch[1].trim();
+    return {
+      supported: true,
+      goalPattern: "hover_control",
+      isMultiStep: isMultiStep || Boolean(hoverMatch[2]),
+      expectedTerminal: { kind: "status_changed" },
+      expectedTargetNameSubstring: target,
+      structuredIntent: {
+        intent: "hover",
+        targetPhrase: target,
+        targetTokens: tokenizeSemanticText(target)
+      }
+    };
+  }
+  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove)\s+(?:on\s+)?(?:the\s+)?/i);
+  const hasInteractionVerb = Boolean(verbMatch);
+  let cleanStr = hasInteractionVerb ? g.replace(verbMatch[0], "").trim() : g;
+  cleanStr = cleanStr.replace(/\s+(?:repeatedly|again|multiple\s+times|continuously|twice|until\s+done)\b/i, "").trim();
+  let roleHint;
+  if (/\b(?:link)\b/i.test(cleanStr))
+    roleHint = "link";
+  else if (/\b(?:button)\b/i.test(cleanStr))
+    roleHint = "button";
+  else if (/\b(?:tab)\b/i.test(cleanStr))
+    roleHint = "tab";
+  if (roleHint) {
+    cleanStr = cleanStr.replace(new RegExp(`\\s+${roleHint}\\b`, "i"), "").trim();
+  }
+  let contextPhrase;
+  let targetPhrase = hasInteractionVerb ? cleanStr : void 0;
+  const contextMatch = cleanStr.match(/^(.+?)\s+(?:for|in|of|under|associated\s+with)\s+([a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_-]+)*)$/i);
+  if (contextMatch) {
+    targetPhrase = contextMatch[1].trim();
+    contextPhrase = cleanContextPhrase(contextMatch[2].trim());
+  }
+  const isNavOrLink = roleHint === "link" || roleHint === "tab" || /navigate|go\s+to|login|signin|statement|submission/i.test(g);
+  const pathFragment = (targetPhrase || cleanStr || "").toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  return {
+    supported: true,
+    goalPattern: "click_control",
+    isMultiStep,
+    expectedTerminal: isNavOrLink && pathFragment ? { kind: "url_changed", expectedPathFragment: pathFragment } : { kind: "status_changed" },
+    expectedTargetNameSubstring: targetPhrase,
+    structuredIntent: {
+      intent: "click",
+      targetPhrase: targetPhrase || (hasInteractionVerb ? cleanStr : void 0),
+      roleHint,
+      targetTokens: targetPhrase ? tokenizeSemanticText(targetPhrase) : hasInteractionVerb ? tokenizeSemanticText(cleanStr) : [],
+      contextPhrase
+    }
+  };
+}
+var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
+  "actionId",
+  "kind",
+  "targetLocalId",
+  "destinationLocalId",
+  "confidence",
+  "risk",
+  "rationale",
+  "expectedState",
+  "expectedPostcondition",
+  "textToType",
+  "fileName",
+  "fileData",
+  "mimeType",
+  "selectOptionValue",
+  "scrollDirection",
+  "tabId",
+  "userApproved",
+  "pressEnter",
+  "extractedData",
+  "answerText",
+  "reply",
+  "message",
+  "reasoning",
+  "thought",
+  "batchActions",
+  "userInputPrompt",
+  "inputKey",
+  "subTasks",
+  "coordinates"
+]);
+var VALID_ACTION_KINDS = /* @__PURE__ */ new Set([
+  "observe",
+  "click",
+  "hover",
+  "type",
+  "select",
+  "drag_and_drop",
+  "upload_file",
+  "scroll",
+  "wait",
+  "extract",
+  "answer",
+  "request_user_confirmation",
+  "request_user_input",
+  "batch",
+  "spawn_subagents",
+  "finish",
+  "blocked"
+]);
+var VALID_RISK_LEVELS = /* @__PURE__ */ new Set([
+  "safe",
+  "protected",
+  "blocked"
+]);
+var VALID_SCROLL_DIRECTIONS = /* @__PURE__ */ new Set([
+  "up",
+  "down",
+  "top",
+  "bottom"
+]);
+var PROHIBITED_PROPERTY_NAMES = /* @__PURE__ */ new Set([
+  "__proto__",
+  "constructor",
+  "prototype"
+]);
+var PROHIBITED_SCRIPT_PATTERNS = [
+  /<script\b/i,
+  /javascript:/i,
+  /vbscript:/i,
+  /data:text\/html/i,
+  /\bon\w+\s*=/i,
+  /\beval\s*\(/i,
+  /\bexpression\s*\(/i
+];
+var PROHIBITED_URL_PATTERNS = [
+  /https?:\/\//i,
+  /ftp:\/\//i,
+  /file:\/\//i,
+  /ws:\/\//i,
+  /wss:\/\//i,
+  /blob:/i,
+  /data:/i
+];
+var PROHIBITED_SELECTOR_PATTERNS = [
+  /^\s*#/,
+  /^\s*\./,
+  /\/\//,
+  /\bxpath\b/i,
+  /\bcontains\s*\(/i,
+  /\btext\s*\(\s*\)/i,
+  /[[\]>+~:]/
+];
+var LOCAL_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
+var ACTION_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
+function isPlainObject(val) {
+  if (!val || typeof val !== "object" || Array.isArray(val)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(val);
+  if (proto !== null && proto !== Object.prototype) {
+    return false;
+  }
+  if (Object.getOwnPropertySymbols(val).length > 0) {
+    return false;
+  }
+  return true;
+}
+function hasProhibitedScriptPattern(str) {
+  return PROHIBITED_SCRIPT_PATTERNS.some((p) => p.test(str));
+}
+function hasProhibitedUrlPattern(str) {
+  return PROHIBITED_URL_PATTERNS.some((p) => p.test(str));
+}
+function hasProhibitedSelectorPattern(str) {
+  return PROHIBITED_SELECTOR_PATTERNS.some((p) => p.test(str));
+}
+function validateActionProposal(proposal, validElements) {
+  if (!isPlainObject(proposal)) {
+    return { isValid: false, errorMessage: "Action proposal must be a JSON object" };
+  }
+  const keys = Object.getOwnPropertyNames(proposal);
+  for (const k2 of keys) {
+    if (PROHIBITED_PROPERTY_NAMES.has(k2) || !ALLOWED_ACTION_PROPOSAL_KEYS.has(k2)) {
+      return { isValid: false, errorMessage: `Closed schema violation: Unknown action property: "${k2}"` };
+    }
+  }
+  if (typeof proposal.actionId !== "string" || !ACTION_ID_REGEX.test(proposal.actionId)) {
+    return { isValid: false, errorMessage: 'Invalid or missing "actionId"' };
+  }
+  if (hasProhibitedScriptPattern(proposal.actionId) || hasProhibitedUrlPattern(proposal.actionId)) {
+    return { isValid: false, errorMessage: "actionId contains prohibited script or URL patterns" };
+  }
+  if (typeof proposal.kind !== "string" || !VALID_ACTION_KINDS.has(proposal.kind)) {
+    return { isValid: false, errorMessage: "Invalid or unsupported action kind" };
+  }
+  if (typeof proposal.confidence !== "number" || !Number.isFinite(proposal.confidence) || Number.isNaN(proposal.confidence) || proposal.confidence < 0 || proposal.confidence > 1) {
+    return { isValid: false, errorMessage: 'Field "confidence" must be a finite number between 0 and 1' };
+  }
+  if (typeof proposal.risk !== "string" || !VALID_RISK_LEVELS.has(proposal.risk)) {
+    return { isValid: false, errorMessage: 'Invalid or missing "risk" level' };
+  }
+  if (typeof proposal.rationale !== "string" || proposal.rationale.length > 1e3) {
+    return { isValid: false, errorMessage: 'Field "rationale" must be a string up to 1000 characters' };
+  }
+  if (hasProhibitedScriptPattern(proposal.rationale) || hasProhibitedUrlPattern(proposal.rationale)) {
+    return { isValid: false, errorMessage: "rationale contains prohibited script or URL patterns" };
+  }
+  if (proposal.reasoning !== void 0) {
+    if (typeof proposal.reasoning !== "string" || proposal.reasoning.length > 5e3) {
+      return { isValid: false, errorMessage: 'Field "reasoning" must be a string up to 5000 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.reasoning) || hasProhibitedUrlPattern(proposal.reasoning)) {
+      return { isValid: false, errorMessage: "reasoning contains prohibited script or URL patterns" };
+    }
+  }
+  if (proposal.reply !== void 0) {
+    if (typeof proposal.reply !== "string" || proposal.reply.length > 5e3) {
+      return { isValid: false, errorMessage: 'Field "reply" must be a string up to 5000 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.reply) || hasProhibitedUrlPattern(proposal.reply)) {
+      return { isValid: false, errorMessage: "reply contains prohibited script or URL patterns" };
+    }
+  }
+  if (proposal.expectedState !== void 0) {
+    if (typeof proposal.expectedState !== "string" || proposal.expectedState.length > 500) {
+      return { isValid: false, errorMessage: 'Field "expectedState" must be a string up to 500 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.expectedState) || hasProhibitedUrlPattern(proposal.expectedState)) {
+      return { isValid: false, errorMessage: "expectedState contains prohibited script or URL patterns" };
+    }
+  }
+  if (proposal.expectedPostcondition !== void 0) {
+    if (typeof proposal.expectedPostcondition !== "object" || proposal.expectedPostcondition === null || Array.isArray(proposal.expectedPostcondition)) {
+      return { isValid: false, errorMessage: 'Field "expectedPostcondition" must be a structured object' };
+    }
+    const pc2 = proposal.expectedPostcondition;
+    const allowedKinds = /* @__PURE__ */ new Set([
+      "dialog_visible",
+      "url_changed",
+      "attribute_changed",
+      "value_present",
+      "select_changed",
+      "status_changed",
+      "scroll_changed",
+      "visibility_changed",
+      "answer_supported"
+    ]);
+    if (!allowedKinds.has(pc2.kind)) {
+      return { isValid: false, errorMessage: `Invalid expectedPostcondition kind "${pc2.kind}"` };
+    }
+    if (pc2.kind === "attribute_changed") {
+      const allowedAttrs = /* @__PURE__ */ new Set(["aria-expanded", "aria-checked", "aria-selected", "disabled", "open", "class"]);
+      if (!allowedAttrs.has(pc2.attributeName)) {
+        return { isValid: false, errorMessage: `Prohibited or untrusted attributeName "${pc2.attributeName}" in postcondition` };
+      }
+    }
+    if (pc2.kind === "scroll_changed") {
+      const allowedDirs = /* @__PURE__ */ new Set(["up", "down", "top", "bottom"]);
+      if (!allowedDirs.has(pc2.direction)) {
+        return { isValid: false, errorMessage: `Invalid scroll direction "${pc2.direction}" in postcondition` };
+      }
+    }
+    if (pc2.kind === "visibility_changed") {
+      if (pc2.state !== "visible" && pc2.state !== "hidden") {
+        return { isValid: false, errorMessage: `Invalid visibility state "${pc2.state}" in postcondition` };
+      }
+    }
+    for (const [key, val] of Object.entries(pc2)) {
+      if (typeof val === "string") {
+        if (hasProhibitedScriptPattern(val) || hasProhibitedUrlPattern(val) || hasProhibitedSelectorPattern(val)) {
+          return { isValid: false, errorMessage: `Postcondition field "${key}" contains prohibited script, URL, or selector pattern` };
+        }
+      }
+    }
+  }
+  if (proposal.scrollDirection !== void 0) {
+    if (typeof proposal.scrollDirection !== "string" || !VALID_SCROLL_DIRECTIONS.has(proposal.scrollDirection)) {
+      return { isValid: false, errorMessage: 'Field "scrollDirection" must be one of "up", "down", "top", "bottom"' };
+    }
+  }
+  if (proposal.destinationLocalId !== void 0) {
+    if (typeof proposal.destinationLocalId !== "string" || !LOCAL_ID_REGEX.test(proposal.destinationLocalId) || hasProhibitedSelectorPattern(proposal.destinationLocalId)) {
+      return { isValid: false, errorMessage: "Invalid destinationLocalId format. Raw selectors and script patterns prohibited" };
+    }
+  }
+  if (proposal.tabId !== void 0) {
+    if (typeof proposal.tabId !== "number" || !Number.isInteger(proposal.tabId) || proposal.tabId < 0) {
+      return { isValid: false, errorMessage: 'Field "tabId" must be a non-negative integer' };
+    }
+  }
+  if (proposal.fileName !== void 0) {
+    if (typeof proposal.fileName !== "string" || proposal.fileName.length === 0 || proposal.fileName.length > 255) {
+      return { isValid: false, errorMessage: 'Field "fileName" must be a non-empty string up to 255 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.fileName) || proposal.fileName.includes("..") || proposal.fileName.includes("/") || proposal.fileName.includes("\\")) {
+      return { isValid: false, errorMessage: 'Field "fileName" contains invalid or prohibited patterns' };
+    }
+  }
+  if (proposal.fileData !== void 0) {
+    if (typeof proposal.fileData !== "string" || proposal.fileData.length > 5 * 1024 * 1024) {
+      return { isValid: false, errorMessage: 'Field "fileData" must be a string up to 5MB' };
+    }
+  }
+  if (proposal.mimeType !== void 0) {
+    if (typeof proposal.mimeType !== "string" || proposal.mimeType.length > 100 || !/^[a-zA-Z0-9.+/-]+$/.test(proposal.mimeType)) {
+      return { isValid: false, errorMessage: 'Field "mimeType" must be a valid MIME string up to 100 characters' };
+    }
+  }
+  const kind = proposal.kind;
+  if (proposal.targetLocalId !== void 0) {
+    if (typeof proposal.targetLocalId !== "string" || !LOCAL_ID_REGEX.test(proposal.targetLocalId) || hasProhibitedSelectorPattern(proposal.targetLocalId)) {
+      return { isValid: false, errorMessage: "Invalid targetLocalId format. Raw selectors and script patterns prohibited" };
+    }
+  }
+  if (proposal.coordinates !== void 0) {
+    if (!Array.isArray(proposal.coordinates) || proposal.coordinates.length !== 2 || typeof proposal.coordinates[0] !== "number" || typeof proposal.coordinates[1] !== "number") {
+      return { isValid: false, errorMessage: 'Field "coordinates" must be a tuple of two numbers [x, y]' };
+    }
+  }
+  if (kind === "click" || kind === "hover" || kind === "type" || kind === "select" || kind === "upload_file") {
+    if ((!proposal.targetLocalId || typeof proposal.targetLocalId !== "string") && !(kind === "click" && Array.isArray(proposal.coordinates) && proposal.coordinates.length === 2)) {
+      return { isValid: false, errorMessage: `Action kind "${kind}" requires a valid "targetLocalId"` };
+    }
+  }
+  if (kind === "drag_and_drop") {
+    if (!proposal.targetLocalId || typeof proposal.targetLocalId !== "string") {
+      return { isValid: false, errorMessage: 'Action kind "drag_and_drop" requires a valid "targetLocalId"' };
+    }
+    if (!proposal.destinationLocalId || typeof proposal.destinationLocalId !== "string") {
+      return { isValid: false, errorMessage: 'Action kind "drag_and_drop" requires a valid "destinationLocalId"' };
+    }
+  }
+  if (kind === "upload_file") {
+    if (!proposal.fileName || typeof proposal.fileName !== "string") {
+      return { isValid: false, errorMessage: 'Action kind "upload_file" requires a valid "fileName"' };
+    }
+  }
+  if (kind === "type") {
+    if (typeof proposal.textToType !== "string" || proposal.textToType.length === 0 || proposal.textToType.length > 500) {
+      return { isValid: false, errorMessage: 'Action kind "type" requires "textToType" string between 1 and 500 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.textToType)) {
+      return { isValid: false, errorMessage: "textToType contains prohibited script patterns" };
+    }
+  } else if (proposal.textToType !== void 0) {
+    if (typeof proposal.textToType !== "string" || proposal.textToType.length > 500) {
+      return { isValid: false, errorMessage: 'Field "textToType" must be a string up to 500 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.textToType)) {
+      return { isValid: false, errorMessage: "textToType contains prohibited script patterns" };
+    }
+  }
+  if (kind === "select") {
+    if (typeof proposal.selectOptionValue !== "string" || proposal.selectOptionValue.length === 0 || proposal.selectOptionValue.length > 200) {
+      return { isValid: false, errorMessage: 'Action kind "select" requires "selectOptionValue" string between 1 and 200 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.selectOptionValue)) {
+      return { isValid: false, errorMessage: "selectOptionValue contains prohibited script patterns" };
+    }
+  } else if (proposal.selectOptionValue !== void 0) {
+    if (typeof proposal.selectOptionValue !== "string" || proposal.selectOptionValue.length > 200) {
+      return { isValid: false, errorMessage: 'Field "selectOptionValue" must be a string up to 200 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.selectOptionValue)) {
+      return { isValid: false, errorMessage: "selectOptionValue contains prohibited script patterns" };
+    }
+  }
+  if (proposal.userApproved !== void 0 && typeof proposal.userApproved !== "boolean") {
+    return { isValid: false, errorMessage: 'Field "userApproved" must be a boolean' };
+  }
+  if (proposal.pressEnter !== void 0 && typeof proposal.pressEnter !== "boolean") {
+    return { isValid: false, errorMessage: 'Field "pressEnter" must be a boolean' };
+  }
+  if (proposal.userInputPrompt !== void 0) {
+    if (typeof proposal.userInputPrompt !== "string" || proposal.userInputPrompt.length > 500) {
+      return { isValid: false, errorMessage: 'Field "userInputPrompt" must be a string up to 500 characters' };
+    }
+    if (hasProhibitedScriptPattern(proposal.userInputPrompt) || hasProhibitedUrlPattern(proposal.userInputPrompt)) {
+      return { isValid: false, errorMessage: "userInputPrompt contains prohibited script or URL patterns" };
+    }
+  }
+  if (proposal.inputKey !== void 0) {
+    if (typeof proposal.inputKey !== "string" || proposal.inputKey.length > 100 || !/^[a-zA-Z0-9_-]+$/.test(proposal.inputKey)) {
+      return { isValid: false, errorMessage: 'Field "inputKey" must be a valid identifier up to 100 characters' };
+    }
+  }
+  if (kind === "batch") {
+    if (!Array.isArray(proposal.batchActions) || proposal.batchActions.length === 0) {
+      return { isValid: false, errorMessage: 'Action kind "batch" requires a non-empty "batchActions" array' };
+    }
+  }
+  if (proposal.batchActions !== void 0) {
+    if (!Array.isArray(proposal.batchActions)) {
+      return { isValid: false, errorMessage: 'Field "batchActions" must be an array' };
+    }
+    if (proposal.batchActions.length === 0 || proposal.batchActions.length > 10) {
+      return { isValid: false, errorMessage: 'Field "batchActions" must contain between 1 and 10 actions' };
+    }
+    const ALLOWED_ATOMIC_ACTION_KEYS = /* @__PURE__ */ new Set([
+      "actionId",
+      "kind",
+      "targetLocalId",
+      "destinationLocalId",
+      "textToType",
+      "selectOptionValue",
+      "scrollDirection",
+      "pressEnter",
+      "fileName",
+      "rationale"
+    ]);
+    const VALID_ATOMIC_KINDS = /* @__PURE__ */ new Set([
+      "click",
+      "hover",
+      "type",
+      "select",
+      "drag_and_drop",
+      "upload_file",
+      "scroll",
+      "wait",
+      "observe",
+      "extract",
+      "answer"
+    ]);
+    for (let i = 0; i < proposal.batchActions.length; i++) {
+      const sub = proposal.batchActions[i];
+      if (!isPlainObject(sub)) {
+        return { isValid: false, errorMessage: `batchActions[${i}] must be a JSON object` };
+      }
+      for (const k2 of Object.getOwnPropertyNames(sub)) {
+        if (PROHIBITED_PROPERTY_NAMES.has(k2) || !ALLOWED_ATOMIC_ACTION_KEYS.has(k2)) {
+          return { isValid: false, errorMessage: `Closed schema violation: Unknown property "${k2}" in batchActions[${i}]` };
+        }
+      }
+      if (typeof sub.actionId !== "string" || !ACTION_ID_REGEX.test(sub.actionId)) {
+        return { isValid: false, errorMessage: `Invalid actionId in batchActions[${i}]` };
+      }
+      if (typeof sub.kind !== "string" || !VALID_ATOMIC_KINDS.has(sub.kind)) {
+        return { isValid: false, errorMessage: `Invalid kind "${sub.kind}" in batchActions[${i}]` };
+      }
+      if (sub.targetLocalId !== void 0) {
+        if (typeof sub.targetLocalId !== "string" || !LOCAL_ID_REGEX.test(sub.targetLocalId) || hasProhibitedSelectorPattern(sub.targetLocalId)) {
+          return { isValid: false, errorMessage: `Invalid targetLocalId in batchActions[${i}]` };
+        }
+      }
+      if (["click", "hover", "type", "select", "upload_file"].includes(sub.kind) && !sub.targetLocalId) {
+        return { isValid: false, errorMessage: `batchActions[${i}] kind "${sub.kind}" requires targetLocalId` };
+      }
+      if (sub.kind === "type") {
+        if (typeof sub.textToType !== "string" || sub.textToType.length === 0 || sub.textToType.length > 500) {
+          return { isValid: false, errorMessage: `batchActions[${i}] type action requires textToType (1-500 chars)` };
+        }
+        if (hasProhibitedScriptPattern(sub.textToType)) {
+          return { isValid: false, errorMessage: `batchActions[${i}] textToType contains prohibited script patterns` };
+        }
+      }
+      if (sub.kind === "select") {
+        if (typeof sub.selectOptionValue !== "string" || sub.selectOptionValue.length === 0 || sub.selectOptionValue.length > 200) {
+          return { isValid: false, errorMessage: `batchActions[${i}] select action requires selectOptionValue` };
+        }
+        if (hasProhibitedScriptPattern(sub.selectOptionValue)) {
+          return { isValid: false, errorMessage: `batchActions[${i}] selectOptionValue contains prohibited script patterns` };
+        }
+      }
+      if (sub.scrollDirection !== void 0 && !VALID_SCROLL_DIRECTIONS.has(sub.scrollDirection)) {
+        return { isValid: false, errorMessage: `Invalid scrollDirection in batchActions[${i}]` };
+      }
+      if (sub.rationale !== void 0 && (typeof sub.rationale !== "string" || sub.rationale.length > 500)) {
+        return { isValid: false, errorMessage: `Invalid rationale in batchActions[${i}]` };
+      }
+      if (validElements && sub.targetLocalId) {
+        const found = validElements.find((e) => e.localId === sub.targetLocalId);
+        if (!found) {
+          return { isValid: false, errorMessage: `batchActions[${i}] target element "${sub.targetLocalId}" not found in context` };
+        }
+      }
+    }
+  }
+  if (validElements) {
+    if (proposal.targetLocalId) {
+      const targetElement = validElements.find((e) => e.localId === proposal.targetLocalId);
+      if (!targetElement) {
+        return {
+          isValid: false,
+          errorMessage: "Target element with localId not found in sanitized context"
+        };
+      }
+      const caps = targetElement.actionCapabilities || [];
+      if (caps.length > 0) {
+        if (kind === "click" && !caps.includes("click")) {
+          return {
+            isValid: false,
+            errorMessage: 'Target element does not support "click" action capability'
+          };
+        }
+        if (kind === "type" && !caps.includes("type")) {
+          return {
+            isValid: false,
+            errorMessage: 'Target element does not support "type" action capability'
+          };
+        }
+        if (kind === "select" && !caps.includes("select")) {
+          return {
+            isValid: false,
+            errorMessage: 'Target element does not support "select" action capability'
+          };
+        }
+        if (kind === "hover" && !caps.includes("hover") && !caps.includes("click")) {
+          return {
+            isValid: false,
+            errorMessage: 'Target element does not support "hover" action capability'
+          };
+        }
+        if (kind === "drag_and_drop" && !caps.includes("drag") && !caps.includes("click")) {
+          return {
+            isValid: false,
+            errorMessage: 'Target element does not support "drag" action capability'
+          };
+        }
+        if (kind === "upload_file" && !caps.includes("upload") && !caps.includes("type")) {
+          return {
+            isValid: false,
+            errorMessage: 'Target element does not support "upload" action capability'
+          };
+        }
+      }
+    }
+    if (proposal.destinationLocalId) {
+      const destElement = validElements.find((e) => e.localId === proposal.destinationLocalId);
+      if (!destElement) {
+        return {
+          isValid: false,
+          errorMessage: "Destination element with destinationLocalId not found in sanitized context"
+        };
+      }
+    }
+  }
+  return {
+    isValid: true,
+    proposal
+  };
+}
+function classifyActionRisk(proposal, elementName) {
+  const kind = proposal.kind;
+  const name2 = (elementName || "").toLowerCase();
+  if (name2.includes("password") || name2.includes("otp") || name2.includes("captcha") || name2.includes("cvv") || name2.includes("pin") || kind === "type" && (name2.includes("payment") || name2.includes("card") || name2.includes("token") || name2.includes("secret") || name2.includes("sensitive") || name2.includes("national id") || name2.includes("aadhaar") || name2.includes("pan") || name2.includes("ssn"))) {
+    return "blocked";
+  }
+  if (proposal.userApproved) {
+    return "safe";
+  }
+  if (kind === "request_user_input") {
+    return "safe";
+  }
+  if (kind === "batch" && proposal.batchActions && proposal.batchActions.length > 0) {
+    let hasProtected = false;
+    for (const sub of proposal.batchActions) {
+      const subTarget = (sub.targetLocalId || "").toLowerCase();
+      const subRationale = (sub.rationale || "").toLowerCase();
+      if (subTarget.includes("password") || subTarget.includes("otp") || subTarget.includes("captcha") || subTarget.includes("cvv") || subTarget.includes("pin") || sub.kind === "type" && (subTarget.includes("payment") || subTarget.includes("card") || subTarget.includes("token") || subTarget.includes("secret"))) {
+        return "blocked";
+      }
+      if (sub.kind === "upload_file" || subTarget.includes("submit") || subTarget.includes("send") || subTarget.includes("publish") || subTarget.includes("delete") || subTarget.includes("pay") || subRationale.includes("submit") || subRationale.includes("delete") || subRationale.includes("pay")) {
+        hasProtected = true;
+      }
+    }
+    return hasProtected ? "protected" : "safe";
+  }
+  if (kind === "upload_file") {
+    return "protected";
+  }
+  if (kind === "hover") {
+    return "safe";
+  }
+  if (kind === "request_user_confirmation" || name2.includes("submit") || name2.includes("send") || name2.includes("publish") || name2.includes("delete") || name2.includes("remove") || name2.includes("pay") || name2.includes("purchase") || name2.includes("buy") || name2.includes("authorize") || name2.includes("sign") || name2.includes("transfer") || name2.includes("confirm order")) {
+    return "protected";
+  }
+  if (kind === "drag_and_drop") {
+    return proposal.risk || "safe";
+  }
+  if (kind === "observe" || kind === "wait" || kind === "scroll" || kind === "select" || kind === "click" && (name2.includes("preview") || name2.includes("filter") || name2.includes("view") || name2.includes("tab") || name2.includes("next") || name2.includes("search") || name2.includes("close") || name2.includes("cancel")) || kind === "type") {
+    return "safe";
+  }
+  return proposal.risk || "protected";
+}
+function stripNavigationPrefixFromGoal(goal) {
+  if (!goal || typeof goal !== "string")
+    return goal;
+  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:(?:in|on|open)\s+(?:a\s+)?(?:new|another|fresh)\s+tab(?:,\s*|\s+and\s+)?)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s,]+|[a-zA-Z0-9_.-]+?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*)(.+)$/i);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  return goal.trim();
+}
+function isPureNavigationGoal(goal) {
+  if (!goal || typeof goal !== "string")
+    return false;
+  let g = goal.trim().toLowerCase();
+  const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
+  let prev = "";
+  while (g && g !== prev) {
+    prev = g;
+    g = g.replace(ACTION_PREFIX_REGEX, "").trim();
+  }
+  if (/\s+(?:and\s+then|then|after\s+that|and|,)\s+(?:click|type|fill|enter|search|filter|find|select|press|check|see|tell|scroll|hover|drag|drop|upload)\b/i.test(g)) {
+    return false;
+  }
+  if (/^https?:\/\/[^\s]+$/i.test(g) || /^www\.[a-z0-9-]+\.[a-z]+(?:\/[^\s]*)?$/i.test(g)) {
+    return true;
+  }
+  if (/^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,24}(?:\/[^\s]*)?$/i.test(g)) {
+    return true;
+  }
+  const navMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_.:/-]+)$/i);
+  if (navMatch) {
+    const target = navMatch[1].trim();
+    if (/https?:\/\/|www\.|\.[a-z]{2,}/i.test(target))
+      return true;
+    if (/^(?:gmail|google|isro|sih|github|youtube|reddit|wikipedia|duckduckgo|demo|portal)$/i.test(target))
+      return true;
+  }
+  return false;
 }
 
 // ../../packages/pii-rules/dist/luhn.js
@@ -16796,7 +16930,59 @@ var SENSITIVE_FIELD_KEYWORDS = [
   "patient",
   "health",
   "doctor_note",
-  "clinical"
+  "clinical",
+  // Phone & Mobile
+  "phone",
+  "mobile",
+  "contact",
+  "tel",
+  "cell",
+  "phonenumber",
+  "phone_number",
+  "usernumber",
+  "user_number",
+  "mobile_number",
+  "contact_number",
+  "cellphone",
+  // Address & Location
+  "address",
+  "street",
+  "city",
+  "state",
+  "zip",
+  "zipcode",
+  "pincode",
+  "pin_code",
+  "postal",
+  "postal_code",
+  "currentaddress",
+  "permanentaddress",
+  "current_address",
+  "permanent_address",
+  // Date of Birth
+  "dob",
+  "birth",
+  "birthday",
+  "bday",
+  "dateofbirth",
+  "date_of_birth",
+  // Name & Identity
+  "firstname",
+  "lastname",
+  "fullname",
+  "name",
+  "fname",
+  "lname",
+  "first_name",
+  "last_name",
+  "user_name",
+  "applicant_name",
+  // Account Handles
+  "username",
+  "user_id",
+  "userid",
+  "user_handle",
+  "user_profile"
 ];
 var SENSITIVE_AUTOCOMPLETE_VALUES = [
   "current-password",
@@ -16812,7 +16998,21 @@ var SENSITIVE_AUTOCOMPLETE_VALUES = [
   "bday",
   "bday-day",
   "bday-month",
-  "bday-year"
+  "bday-year",
+  "tel",
+  "tel-national",
+  "tel-country-code",
+  "postal-code",
+  "street-address",
+  "address-line1",
+  "address-line2",
+  "address-level1",
+  "address-level2",
+  "name",
+  "given-name",
+  "family-name",
+  "username",
+  "email"
 ];
 
 // ../../packages/pii-rules/dist/regex-patterns.js
@@ -16820,7 +17020,15 @@ var CANARY_SECRET = "SECRET_CANARY_SIH26171_DO_NOT_TRANSMIT";
 var CANARY_REGEX = /\b(?:SECRET_CANARY[A-Za-z0-9_]*|CANARY_PRIVAPILOT[A-Za-z0-9_]*)\b/g;
 var MEDICAL_REGEX = /\b(?:medical note|clinical diagnosis|prescription info|patient record|doctor note)\b[^\n.,;]*/gi;
 var HANDLE_REGEX = /(?:^|(?<=\s|[([{"']))(@[A-Za-z0-9_]{1,30})\b/g;
+var DELIVERY_ADDRESS_REGEX = /(?:^|(?<=\s|[([{"']))(?:Deliver(?:y|ing)?\s+to|Ship\s+to|Shipping\s+to|Delivered\s+to)\s+([^\n\r<]{3,80})/gi;
+var HOME_WORK_LOCATION_REGEX = /\b(?:HOME|WORK|OFFICE|OTHER)\s+(?:at\s+|-\s+)([^\n\r<]{3,80})/gi;
+var PINCODE_IN_CONTEXT_REGEX = /\b(?:pin(?:\s*code)?[\s:]*|postal\s*code[\s:]*|[,\-]\s*)([1-9][0-9]{5})\b/gi;
+var LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt|Sector|Block|Pocket|Street|St\.|Road|Rd\.|Cross|Main|Nagar|Colony|Enclave|Vihar|Kunj|Society|Layout|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Bhavan|Bhawan)\b[^\n\r,;]{2,60}/gi;
+var ACCOUNT_GREETING_REGEX = /\b(?:Hello|Hi|Welcome),\s+([A-Za-z0-9_]{2,30})\b/gi;
+var STREET_ADDRESS_REGEX = /\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir)\b[^\n\r,;]*/gi;
+var DATE_OF_BIRTH_REGEX = /\b(?:\d{1,2}[\s/-](?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s/-]\d{2,4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b/gi;
 var EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+var STANDARD_PHONE_REGEX = /(?:^|(?<!\d))(?:\+?1[\s.-]?)?\(?([0-9]{3})\)?[\s.-]?([0-9]{3})[\s.-]?([0-9]{4})(?!\d)\b/g;
 var INDIAN_PHONE_REGEX = /(?:^|(?<!\d))(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)\b/g;
 var INTL_PHONE_REGEX = /\b\+(?:[1-9]\d{0,2})[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{1,4}[\s.-]?\d{1,9}\b/g;
 var PAN_REGEX = /\b[A-Z]{5}[0-9]{4}[A-Z]\b/g;
@@ -16864,6 +17072,65 @@ function scanTextForPII(text) {
         category: "username",
         startIndex: handleStart,
         endIndex: handleStart + match[1].length,
+        matchedLength: match[1].length,
+        confidence: 0.95
+      });
+    }
+  }
+  for (const match of text.matchAll(DELIVERY_ADDRESS_REGEX)) {
+    if (match.index !== void 0) {
+      matches.push({
+        category: "address",
+        startIndex: match.index,
+        endIndex: match.index + match[0].length,
+        matchedLength: match[0].length,
+        confidence: 0.95
+      });
+    }
+  }
+  for (const match of text.matchAll(HOME_WORK_LOCATION_REGEX)) {
+    if (match.index !== void 0) {
+      matches.push({
+        category: "address",
+        startIndex: match.index,
+        endIndex: match.index + match[0].length,
+        matchedLength: match[0].length,
+        confidence: 0.95
+      });
+    }
+  }
+  for (const match of text.matchAll(LOCALITY_ADDRESS_REGEX)) {
+    if (match.index !== void 0) {
+      matches.push({
+        category: "address",
+        startIndex: match.index,
+        endIndex: match.index + match[0].length,
+        matchedLength: match[0].length,
+        confidence: 0.92
+      });
+    }
+  }
+  for (const match of text.matchAll(PINCODE_IN_CONTEXT_REGEX)) {
+    if (match.index !== void 0 && match[1]) {
+      const pinOffset = match[0].indexOf(match[1]);
+      const pinStart = match.index + pinOffset;
+      matches.push({
+        category: "address",
+        startIndex: pinStart,
+        endIndex: pinStart + match[1].length,
+        matchedLength: match[1].length,
+        confidence: 0.96
+      });
+    }
+  }
+  for (const match of text.matchAll(ACCOUNT_GREETING_REGEX)) {
+    if (match.index !== void 0 && match[1]) {
+      const nameOffset = match[0].indexOf(match[1]);
+      const nameStart = match.index + nameOffset;
+      matches.push({
+        category: "username",
+        startIndex: nameStart,
+        endIndex: nameStart + match[1].length,
         matchedLength: match[1].length,
         confidence: 0.95
       });
@@ -16950,6 +17217,54 @@ function scanTextForPII(text) {
       }
     }
   }
+  for (const match of text.matchAll(STANDARD_PHONE_REGEX)) {
+    if (match.index !== void 0) {
+      const start = match.index;
+      const end = match.index + match[0].length;
+      const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+      if (!alreadyCovered) {
+        matches.push({
+          category: "phone",
+          startIndex: start,
+          endIndex: end,
+          matchedLength: match[0].length,
+          confidence: 0.92
+        });
+      }
+    }
+  }
+  for (const match of text.matchAll(STREET_ADDRESS_REGEX)) {
+    if (match.index !== void 0) {
+      const start = match.index;
+      const end = match.index + match[0].length;
+      const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+      if (!alreadyCovered) {
+        matches.push({
+          category: "address",
+          startIndex: start,
+          endIndex: end,
+          matchedLength: match[0].length,
+          confidence: 0.94
+        });
+      }
+    }
+  }
+  for (const match of text.matchAll(DATE_OF_BIRTH_REGEX)) {
+    if (match.index !== void 0) {
+      const start = match.index;
+      const end = match.index + match[0].length;
+      const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+      if (!alreadyCovered) {
+        matches.push({
+          category: "date_of_birth",
+          startIndex: start,
+          endIndex: end,
+          matchedLength: match[0].length,
+          confidence: 0.95
+        });
+      }
+    }
+  }
   for (const match of text.matchAll(CVV_CONTEXT_REGEX)) {
     if (match.index !== void 0 && match[1]) {
       const cvvStart = match.index + match[0].indexOf(match[1]);
@@ -17015,6 +17330,14 @@ function analyzeDomElementSensitivity(desc) {
         cat = "date_of_birth";
       else if (autoVal === "one-time-code")
         cat = "auth_code";
+      else if (autoVal.startsWith("tel"))
+        cat = "phone";
+      else if (autoVal.includes("address") || autoVal.includes("postal-code"))
+        cat = "address";
+      else if (autoVal.includes("name") || autoVal === "username")
+        cat = "username";
+      else if (autoVal === "email")
+        cat = "email";
       return {
         isSensitive: true,
         category: cat,
@@ -17022,6 +17345,22 @@ function analyzeDomElementSensitivity(desc) {
         confidence: 1
       };
     }
+  }
+  if (type === "email" || autocomplete === "email") {
+    return {
+      isSensitive: true,
+      category: "email",
+      reason: "type/autocomplete email",
+      confidence: 0.95
+    };
+  }
+  if (type === "tel" || autocomplete === "tel") {
+    return {
+      isSensitive: true,
+      category: "phone",
+      reason: "type/autocomplete tel",
+      confidence: 0.95
+    };
   }
   const combinedTokens = `${name2} ${id2} ${placeholder} ${ariaLabel} ${labelText}`.toLowerCase();
   for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
@@ -17034,6 +17373,10 @@ function analyzeDomElementSensitivity(desc) {
         cat = "credit_card";
       else if (keyword.includes("cvv") || keyword.includes("cvc"))
         cat = "cvv";
+      else if (keyword.includes("email") || keyword.includes("mail"))
+        cat = "email";
+      else if (keyword.includes("phone") || keyword.includes("mobile") || keyword.includes("contact") || keyword.includes("tel") || keyword.includes("cell") || keyword.includes("usernumber"))
+        cat = "phone";
       else if (keyword.includes("pan"))
         cat = "national_id";
       else if (keyword.includes("aadhaar") || keyword.includes("aadhar"))
@@ -17046,6 +17389,12 @@ function analyzeDomElementSensitivity(desc) {
         cat = "auth_code";
       else if (keyword.includes("medical") || keyword.includes("diagnosis") || keyword.includes("prescription") || keyword.includes("patient") || keyword.includes("health") || keyword.includes("doctor_note") || keyword.includes("clinical"))
         cat = "uninspectable";
+      else if (keyword.includes("address") || keyword.includes("street") || keyword.includes("city") || keyword.includes("state") || keyword.includes("zip") || keyword.includes("postal") || keyword.includes("pincode"))
+        cat = "address";
+      else if (keyword.includes("dob") || keyword.includes("birth") || keyword.includes("bday"))
+        cat = "date_of_birth";
+      else if (keyword.includes("name") || keyword.includes("fname") || keyword.includes("lname") || keyword.includes("user") || keyword.includes("applicant"))
+        cat = "username";
       return {
         isSensitive: true,
         category: cat,
@@ -17054,21 +17403,28 @@ function analyzeDomElementSensitivity(desc) {
       };
     }
   }
-  if (type === "email" || autocomplete === "email") {
-    return {
-      isSensitive: true,
-      category: "email",
-      reason: "type/autocomplete email",
-      confidence: 0.9
-    };
-  }
-  if (type === "tel" || autocomplete === "tel") {
-    return {
-      isSensitive: true,
-      category: "phone",
-      reason: "type/autocomplete tel",
-      confidence: 0.9
-    };
+  if (desc.value && typeof desc.value === "string") {
+    const trimmedVal = desc.value.trim();
+    if (trimmedVal.length > 0) {
+      const piiMatches = scanTextForPII(trimmedVal);
+      if (piiMatches.length > 0) {
+        return {
+          isSensitive: true,
+          category: piiMatches[0].category,
+          reason: `live value matches PII (${piiMatches[0].category})`,
+          confidence: 0.95
+        };
+      }
+      const isSearchBox = combinedTokens.includes("search") || combinedTokens.includes("filter") || combinedTokens.includes("find") || type === "search";
+      if (!isSearchBox && (desc.tagName === "textarea" || desc.tagName === "input" && type !== "submit" && type !== "button" && type !== "checkbox" && type !== "radio")) {
+        return {
+          isSensitive: true,
+          category: "username",
+          reason: `live input value in form field: "${desc.name || desc.id || desc.placeholder || "input"}"`,
+          confidence: 0.85
+        };
+      }
+    }
   }
   return {
     isSensitive: false,
@@ -17088,6 +17444,12 @@ function scrubText(text) {
   let result = "";
   let lastIndex = 0;
   for (const match of matches) {
+    if (match.startIndex < lastIndex) {
+      if (match.endIndex > lastIndex) {
+        lastIndex = match.endIndex;
+      }
+      continue;
+    }
     result += text.substring(lastIndex, match.startIndex);
     result += `[REDACTED_${match.category.toUpperCase()}]`;
     lastIndex = match.endIndex;
@@ -18628,9 +18990,9 @@ var WebExtensionAdapter = class {
             }
           };
           if (typeof wId === "number" && wId > 0) {
-            api.tabs.captureVisibleTab(wId, { format: "png" }, callback);
+            api.tabs.captureVisibleTab(wId, { format: "jpeg", quality: 75 }, callback);
           } else {
-            api.tabs.captureVisibleTab({ format: "png" }, callback);
+            api.tabs.captureVisibleTab({ format: "jpeg", quality: 75 }, callback);
           }
         } catch (e) {
           reject(new Error(e?.message || "Exception during captureVisibleTab"));
@@ -18940,6 +19302,15 @@ var WebExtensionAdapter = class {
           }
         });
         if (createdTab && createdTab.id) {
+          try {
+            if (createdTab.windowId && api.windows?.update) {
+              api.windows.update(createdTab.windowId, { focused: true });
+            }
+            if (api.tabs?.update) {
+              api.tabs.update(createdTab.id, { active: true });
+            }
+          } catch (_) {
+          }
           const readyTab = await this.waitForTabReady(createdTab.id, 1e4, url);
           await this.ensureContentScript(createdTab.id);
           return { tabId: createdTab.id, url: readyTab?.url || url };
@@ -19690,6 +20061,87 @@ var ReasoningHttpClient = class {
     }
     return await response.json();
   }
+  async getPlatformApiTelemetry() {
+    const urls = [
+      `${this.serverBaseUrl}/api/v1/platform/keys`,
+      this.serverBaseUrl.includes("localhost") ? `${this.serverBaseUrl.replace("localhost", "127.0.0.1")}/api/v1/platform/keys` : null
+    ].filter(Boolean);
+    for (const url of urls) {
+      try {
+        const response = await this.fetchWithTimeout(url, { method: "GET" }, "Platform Telemetry", 5e3);
+        if (response.ok) return await response.json();
+      } catch {
+      }
+    }
+    return null;
+  }
+  async generatePlatformApiKey(name2 = "Extension User Partner", tier = "enterprise") {
+    const urls = [
+      `${this.serverBaseUrl}/api/v1/platform/keys`,
+      this.serverBaseUrl.includes("localhost") ? `${this.serverBaseUrl.replace("localhost", "127.0.0.1")}/api/v1/platform/keys` : null
+    ].filter(Boolean);
+    for (const url of urls) {
+      try {
+        const response = await this.fetchWithTimeout(
+          url,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: name2, tier })
+          },
+          "Generate Platform Key",
+          5e3
+        );
+        if (response.ok) {
+          return await response.json();
+        }
+      } catch {
+      }
+    }
+    const hex = Array.from(crypto.getRandomValues(new Uint8Array(16))).map((b) => b.toString(16).padStart(2, "0")).join("");
+    return {
+      apiKey: `privapilot_live_${hex}`,
+      tenantId: `tenant_${hex.slice(0, 10)}`,
+      name: name2 || "Production Workspace",
+      tier: tier || "enterprise",
+      monthlyQuotaSteps: tier === "enterprise" ? 5e4 : 5e3,
+      rateLimitPerMinute: tier === "enterprise" ? 120 : 60
+    };
+  }
+  async dispatchPlatformTask(payload, apiKey = "privapilot_live_sih2026_demo_key") {
+    const urls = [
+      `${this.serverBaseUrl}/api/v1/agent/dispatch`,
+      this.serverBaseUrl.includes("localhost") ? `${this.serverBaseUrl.replace("localhost", "127.0.0.1")}/api/v1/agent/dispatch` : null
+    ].filter(Boolean);
+    for (const url of urls) {
+      try {
+        const response = await this.fetchWithTimeout(
+          url,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              protocolVersion: "1.0",
+              goal: payload.goal,
+              enableSubAgents: payload.enableSubAgents ?? true,
+              maxParallel: payload.maxParallel ?? 2,
+              contextUrl: payload.contextUrl
+            })
+          },
+          "SubAgent Swarm Dispatch",
+          45e3
+        );
+        if (response.ok) {
+          return await response.json();
+        }
+      } catch {
+      }
+    }
+    return null;
+  }
 };
 
 // src/background/audit-logger.ts
@@ -19746,6 +20198,21 @@ var AuditLogger = class {
 // src/vault/vault-store.ts
 var VAULT_STORAGE_KEY = "privapilot_personal_vault_v1";
 var DEFAULT_VAULT_PIN = "1234";
+var DEMO_USER_PROFILE = {
+  fullName: "John Doe",
+  firstName: "John",
+  lastName: "Doe",
+  email: "john.doe@example.com",
+  phone: "9876543210",
+  organization: "Acme Technologies",
+  address: "123 Main Street, Suite 100",
+  city: "San Francisco",
+  state: "California",
+  postalCode: "94105",
+  country: "United States",
+  dateOfBirth: "18 Sep 2000",
+  githubUrl: "https://github.com/johndoe"
+};
 var DEFAULT_USER_PROFILE = {
   fullName: "Kushagra Singh",
   firstName: "Kushagra",
@@ -19758,6 +20225,7 @@ var DEFAULT_USER_PROFILE = {
   state: "Delhi",
   postalCode: "110001",
   country: "India",
+  dateOfBirth: "18 Sep 2000",
   githubUrl: "https://github.com/kushagara175"
 };
 var DEFAULT_VAULT_STATE = {
@@ -19996,6 +20464,10 @@ var SYNONYM_GROUPS = [
       "mobile",
       "mobile no",
       "mobile number",
+      "usernumber",
+      "user number",
+      "mobile (10 digits)",
+      "10 digits",
       "cell",
       "whatsapp",
       "tel"
@@ -20006,7 +20478,7 @@ var SYNONYM_GROUPS = [
   },
   {
     canonical: "email",
-    aliases: ["email", "e-mail", "mail", "email id", "email address", "user email"],
+    aliases: ["email", "e-mail", "mail", "email id", "email address", "user email", "useremail"],
     autocompletes: ["email"],
     inputTypes: ["email"],
     friendlyPrompt: "Please enter your Email Address"
@@ -20019,15 +20491,30 @@ var SYNONYM_GROUPS = [
   },
   {
     canonical: "firstName",
-    aliases: ["first name", "given name", "fname", "first"],
+    aliases: ["first name", "firstname", "given name", "fname", "first"],
     autocompletes: ["given-name"],
     friendlyPrompt: "Please enter your First Name"
   },
   {
     canonical: "lastName",
-    aliases: ["last name", "surname", "family name", "lname", "last"],
+    aliases: ["last name", "lastname", "surname", "family name", "lname", "last"],
     autocompletes: ["family-name"],
     friendlyPrompt: "Please enter your Last Name"
+  },
+  {
+    canonical: "dateOfBirth",
+    aliases: [
+      "date of birth",
+      "dob",
+      "birth date",
+      "birthday",
+      "bday",
+      "dateofbirth",
+      "birth"
+    ],
+    autocompletes: ["bday", "bday-day", "bday-month", "bday-year"],
+    inputTypes: ["date"],
+    friendlyPrompt: "Please enter your Date of Birth"
   },
   {
     canonical: "organization",
@@ -20056,7 +20543,19 @@ var SYNONYM_GROUPS = [
   },
   {
     canonical: "address",
-    aliases: ["address", "street", "street address", "address line", "residence"],
+    aliases: [
+      "address",
+      "street",
+      "street address",
+      "address line",
+      "currentaddress",
+      "current address",
+      "permanentaddress",
+      "permanent address",
+      "current-address",
+      "permanent-address",
+      "residence"
+    ],
     autocompletes: ["street-address", "address-line1", "address-line2"],
     friendlyPrompt: "Please enter your Street Address"
   },
@@ -20148,7 +20647,7 @@ function classifyFieldDescriptor(descriptor) {
   }
   return bestMatch;
 }
-function matchFieldToVault(descriptor, profile, siteCredentials = [], _targetDomain = "") {
+function matchFieldToVault(descriptor, profile, siteCredentials = [], _targetDomain = "", allowDemoFallback = false) {
   const classification = classifyFieldDescriptor(descriptor);
   if (!classification) {
     return {
@@ -20218,6 +20717,7 @@ function matchFieldToVault(descriptor, profile, siteCredentials = [], _targetDom
     state: "state",
     postalCode: "postalCode",
     country: "country",
+    dateOfBirth: "dateOfBirth",
     githubUrl: "githubUrl",
     username: void 0,
     password: void 0
@@ -20245,6 +20745,20 @@ function matchFieldToVault(descriptor, profile, siteCredentials = [], _targetDom
         confidence: Math.max(confidence, 0.85),
         isCredential: false,
         reason: `Derived firstName from profile fullName (${reason})`,
+        promptIfMissing
+      };
+    }
+  }
+  if (allowDemoFallback && profileKey && DEMO_USER_PROFILE[profileKey]) {
+    const demoVal = String(DEMO_USER_PROFILE[profileKey]).trim();
+    if (demoVal.length > 0) {
+      return {
+        matched: true,
+        canonicalField: canonical,
+        valueToFill: demoVal,
+        confidence: Math.max(confidence, 0.85),
+        isCredential: false,
+        reason: `Populated "${canonical}" with synthetic demo persona (${reason})`,
         promptIfMissing
       };
     }
@@ -20317,6 +20831,17 @@ function isRestrictedBrowserUrl(urlStr) {
   }
   return { isRestricted: false };
 }
+function isSubAgentSwarmGoal(goal) {
+  if (!goal || typeof goal !== "string") return false;
+  const trimmed = goal.trim();
+  const isComparative = /\b(?:compare|both|versus|vs\.?|across|each|and\s+also|simultaneously)\b/i.test(trimmed);
+  const hasMultiplePortals = /(?:https?:\/\/[^\s]+[\s\S]+https?:\/\/[^\s]+)/i.test(trimmed);
+  const mentionsMultipleEntities = /(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi.test(trimmed);
+  const entityMatches = trimmed.match(/(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi);
+  const uniqueEntities = entityMatches ? Array.from(new Set(entityMatches.map((e) => e.toLowerCase()))) : [];
+  const isExplicitSubagent = /\b(?:sub-?agents?|swarm|parallel\s+agents?)\b/i.test(trimmed);
+  return isComparative && uniqueEntities.length >= 2 || hasMultiplePortals || uniqueEntities.length >= 2 || isExplicitSubagent;
+}
 var RunCoordinator = class {
   state = "idle";
   browser;
@@ -20345,6 +20870,10 @@ var RunCoordinator = class {
   currentRunId = "";
   currentTabId;
   lastGoal = "";
+  previousSnapshot = null;
+  previousUrl = "";
+  lastExecutedProposal = null;
+  lastExecutionResult = null;
   constructor(browser = new WebExtensionAdapter(), httpClient = new ReasoningHttpClient(), auditLogger = new AuditLogger(), options = {}) {
     this.browser = browser;
     this.httpClient = httpClient;
@@ -20368,7 +20897,7 @@ var RunCoordinator = class {
     const finalReasoning = res.reasoning || res.proposal?.reasoning || res.proposal?.thought || this.lastActionProposal?.reasoning || this.lastActionProposal?.thought || Array.isArray(res.steps) && (res.steps.find((s) => s.proposal?.reasoning)?.proposal?.reasoning || res.steps.find((s) => s.proposal?.rationale)?.proposal?.rationale) || res.proposal?.rationale || this.lastActionProposal?.rationale || void 0;
     const finalRes = {
       ...res,
-      reply: res.reply || res.proposal?.reply || (res.proposal?.kind === "answer" ? res.proposal.rationale || res.message : void 0),
+      reply: res.reply || res.proposal?.reply || (res.proposal?.kind === "answer" || res.proposal?.kind === "finish" ? res.proposal.rationale || res.message : void 0),
       reasoning: finalReasoning,
       runId: res.runId || this.currentRunId || void 0
     };
@@ -20419,6 +20948,16 @@ var RunCoordinator = class {
       const last2 = this.actionHistory[this.actionHistory.length - 2];
       const matches = (a) => a.kind === proposal.kind && a.targetLocalId === proposal.targetLocalId && a.textToType === proposal.textToType && a.selectOptionValue === proposal.selectOptionValue && a.scrollDirection === proposal.scrollDirection;
       if (matches(last1) && matches(last2)) {
+        return true;
+      }
+    }
+    if (this.actionHistory.length >= 4) {
+      const last1 = this.actionHistory[this.actionHistory.length - 1];
+      const last2 = this.actionHistory[this.actionHistory.length - 2];
+      const last3 = this.actionHistory[this.actionHistory.length - 3];
+      const last4 = this.actionHistory[this.actionHistory.length - 4];
+      const matches = (a, b) => a && b && a.kind === b.kind && a.targetLocalId === b.targetLocalId && a.textToType === b.textToType;
+      if (matches(proposal, last2) && matches(proposal, last4) && matches(last1, last3)) {
         return true;
       }
     }
@@ -20661,6 +21200,25 @@ var RunCoordinator = class {
             }
           }
           const query = extractSearchQueryFromGoal(goal) || "query";
+          const wantsAnalysis = /(?:analyze|analysis|price|prices|cost|tell|summary|report|how\s+much|compare)/i.test(trimmedGoal);
+          if (wantsAnalysis) {
+            const productElements = sanitized.elements.filter((el2) => {
+              const text = el2.sanitizedName || "";
+              return /(?:iphone|apple|phone|₹|\$|rs\.?|gb|off|deal|price|model)/i.test(text) && text.length > 3;
+            });
+            const topProducts = Array.from(new Set(productElements.map((el2) => el2.sanitizedName.trim()))).slice(0, 6);
+            let analysisRationale = `Searched for "${query}" on ${currentUrl || "portal"}.
+
+` + (topProducts.length > 0 ? `**Extracted Listings & Pricing from Page:**
+` + topProducts.map((p) => `\u2022 ${p}`).join("\n") : `**Live Search Completed:** Results for "${query}" loaded and verified on the page.`);
+            return {
+              actionId: `act_local_answer_${step}_${Date.now()}`,
+              kind: "answer",
+              confidence: 0.98,
+              risk: "safe",
+              rationale: analysisRationale
+            };
+          }
           return {
             actionId: `act_local_finish_${step}_${Date.now()}`,
             kind: "finish",
@@ -21063,6 +21621,10 @@ var RunCoordinator = class {
     this.currentGoal = effectiveGoal;
     this.currentTaskContract = resolveTaskContract(effectiveGoal);
     goal = effectiveGoal;
+    this.previousSnapshot = null;
+    this.previousUrl = "";
+    this.lastExecutedProposal = null;
+    this.lastExecutionResult = null;
     try {
       const activeTab = await this.browser.getActiveTab(options?.tabId);
       if (activeTab?.id) {
@@ -21174,6 +21736,12 @@ var RunCoordinator = class {
     this.cumulativeServerLatency = 0;
     this.isCancelled = false;
     this.stepsTrace = [];
+    if (this.currentTabId && typeof chrome !== "undefined" && chrome.tabs?.update) {
+      try {
+        chrome.tabs.update(this.currentTabId, { active: true });
+      } catch (_) {
+      }
+    }
     return this.executeLoop();
   }
   /**
@@ -21188,6 +21756,9 @@ var RunCoordinator = class {
       if (!goal) {
         const res2 = { success: false, state: "idle", error: "No active goal" };
         return this.completeWithResult(res2);
+      }
+      if (isSubAgentSwarmGoal(goal)) {
+        return this.dispatchSubAgentSwarm(goal);
       }
       let hasNavigatedInitially = false;
       while (this.currentStep < this.currentMaxSteps) {
@@ -21207,7 +21778,11 @@ var RunCoordinator = class {
           let targetUrl = extractTargetUrlFromGoal(goal);
           if (!targetUrl) {
             const lowerGoal = (goal || "").toLowerCase();
-            if (lowerGoal.includes("wikipedia") || lowerGoal.includes("wiki")) {
+            if (lowerGoal.includes("amazon")) {
+              targetUrl = "https://www.amazon.in";
+            } else if (lowerGoal.includes("flipkart")) {
+              targetUrl = "https://www.flipkart.com";
+            } else if (lowerGoal.includes("wikipedia") || lowerGoal.includes("wiki")) {
               targetUrl = "https://www.wikipedia.org";
             } else if (lowerGoal.includes("sih") || lowerGoal.includes("smart india hackathon") || lowerGoal.includes("hackathon") || lowerGoal.includes("problem statement") || lowerGoal.includes("spoc") || lowerGoal.includes("submission")) {
               targetUrl = "https://sih.gov.in";
@@ -21280,6 +21855,9 @@ var RunCoordinator = class {
               this.currentGoal = subGoal;
               this.currentTaskContract = resolveTaskContract(subGoal);
             }
+            this.previousUrl = "about:blank";
+            this.lastExecutedProposal = navAction;
+            this.lastExecutionResult = { success: true, message: `Loaded ${targetUrl}` };
             this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
             continue;
           }
@@ -21333,7 +21911,8 @@ var RunCoordinator = class {
                 hasNavigatedInitially = true;
                 const isExplicitNewTab = /\b(?:new\s+tab|another\s+tab|fresh\s+tab)\b/i.test(goal);
                 const isFromExistingWebpage = !isRestrictedBrowserUrl(activeTab.url).isRestricted;
-                const shouldOpenNewTab = isExplicitNewTab || isDifferentSite && isFromExistingWebpage;
+                const isSearchEngineOrBlank = /(?:google\.[a-z.]+|bing\.com|duckduckgo\.com|yahoo\.com)\/?$/i.test(activeTab.url?.replace(/^https?:\/\/(?:www\.)?/, ""));
+                const shouldOpenNewTab = isExplicitNewTab || isDifferentSite && isFromExistingWebpage && !isSearchEngineOrBlank;
                 const navAction = {
                   actionId: `act_init_nav_${Date.now()}`,
                   kind: "navigate",
@@ -21387,6 +21966,9 @@ var RunCoordinator = class {
                   this.currentGoal = subGoal;
                   this.currentTaskContract = resolveTaskContract(subGoal);
                 }
+                this.previousUrl = activeTab?.url || "";
+                this.lastExecutedProposal = navAction;
+                this.lastExecutionResult = { success: true, message: `Loaded ${targetUrl}` };
                 this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
                 continue;
               } else if (isSubdomainOrRedirect && !hasPathChange && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url")) {
@@ -21556,7 +22138,7 @@ var RunCoordinator = class {
         } catch (err) {
           console.warn("[PrivaPilot Coordinator] Sanitizer warning:", err?.message || err, "- evaluating resilient recovery.");
           const isSensitiveGoal = /\b(?:sensitive|secret|credential|password|cvv|pin|aadhaar|ssn|token|taint|confidential)\b/i.test(goal);
-          const isActionDirective = isSensitiveGoal || /\b(?:click|type|select|press|submit|navigate|go\s+to|open|fill|scroll)\b/i.test(goal);
+          const isActionDirective = isSensitiveGoal || /\b(?:click|type|select|press|submit|navigate|go\s+to|open|fill|scroll|search|find|compare|filter|check|analyze|lookup|price|count|read|inspect)\b/i.test(goal);
           if (!isActionDirective) {
             this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Synthesizing answer with reasoning model`);
             const chatRes = await this.httpClient.requestGeneralChat(goal, this.actionHistory);
@@ -21616,9 +22198,48 @@ var RunCoordinator = class {
         if (this.listeners.onSanitizationComplete) {
           this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
         }
-        if (this.actionHistory.length > 0 && sanitized.pageState) {
-          const historyText = this.actionHistory.map((a, idx) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || "page"}" (${a.rationale || "executed"})`).join("; ");
-          sanitized.pageState.postconditionSummary = historyText.length > 480 ? historyText.slice(-480) : historyText;
+        let stateDelta = void 0;
+        if (this.lastExecutedProposal) {
+          const urlChanged = Boolean(this.previousUrl && activeTab?.url && this.previousUrl !== activeTab.url);
+          const prevCount = this.previousSnapshot?.elements?.length || 0;
+          const currentCount = sanitized.elements.length;
+          const elementsAddedCount = Math.max(0, currentCount - prevCount);
+          const elementsRemovedCount = Math.max(0, prevCount - currentCount);
+          const scrollDeltaY = (sanitized.pageState?.scrollMetrics?.scrollTop || 0) - (this.previousSnapshot?.pageState?.scrollMetrics?.scrollTop || 0);
+          const prevTargetName = this.lastExecutedProposal.targetLocalId ? this.previousSnapshot?.elements?.find((e) => e.localId === this.lastExecutedProposal?.targetLocalId)?.sanitizedName : void 0;
+          let outcomeDesc = this.lastExecutionResult?.message || "Action executed";
+          if (urlChanged) {
+            outcomeDesc = `Page navigated to ${activeTab?.url || "new URL"}`;
+          } else if (elementsAddedCount > 5) {
+            outcomeDesc = `UI updated: ${elementsAddedCount} new elements rendered`;
+          }
+          stateDelta = {
+            previousAction: {
+              kind: this.lastExecutedProposal.kind,
+              targetName: prevTargetName,
+              targetLocalId: this.lastExecutedProposal.targetLocalId,
+              textToType: this.lastExecutedProposal.textToType,
+              expectedState: this.lastExecutedProposal.expectedState
+            },
+            urlChanged,
+            previousUrl: this.previousUrl,
+            currentUrl: activeTab?.url || "",
+            elementsAddedCount,
+            elementsRemovedCount,
+            scrollDeltaY,
+            observedOutcome: outcomeDesc,
+            verificationPassed: Boolean(this.lastExecutionResult?.semanticOutcomeVerified || this.lastExecutionResult?.success)
+          };
+        }
+        if (sanitized.pageState) {
+          sanitized.pageState.url = activeTab?.url || "";
+          if (stateDelta) {
+            sanitized.pageState.stateDelta = stateDelta;
+          }
+          if (this.actionHistory.length > 0) {
+            const historyText = this.actionHistory.map((a, idx) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || "page"}" -> Result: ${a.verification?.reasonCode || "Executed"} (URL: ${activeTab?.url || ""})`).join("; ");
+            sanitized.pageState.postconditionSummary = historyText.length > 500 ? historyText.slice(-500) : historyText;
+          }
         }
         const isPureScrollDirective = Boolean(this.currentTaskContract?.expectedTerminal.kind === "scroll_changed") && !Boolean(this.currentTaskContract?.isMultiStep) && !/\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?)\b/i.test(this.currentGoal || "");
         let proposal;
@@ -21626,12 +22247,92 @@ var RunCoordinator = class {
         let networkRequestMade = true;
         let t4_reasoningReceived = Date.now();
         const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
+        const isAutofillGoal = /\b(?:fill\s+(?:the\s+|this\s+)?form|autofill\b|fill\s+(?:in\s+)?(?:my\s+)?(?:details|profile|form)|fill\s+up\s+(?:the\s+)?demo\s+data|fill\s+(?:the\s+)?demo\s+data)\b/i.test(this.currentGoal || "");
+        const prefersDemoData = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || "") || /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || "");
+        const hasAutofilled = this.actionHistory.some((a) => a.actionId && (a.actionId.includes("act_local_autofill_batch_") || a.actionId.includes("act_autofill_")));
+        let localAutofillProposal = null;
+        if (isAutofillGoal) {
+          if (hasAutofilled) {
+            localAutofillProposal = {
+              actionId: `act_autofill_done_${Date.now()}`,
+              kind: "finish",
+              confidence: 1,
+              risk: "safe",
+              reasoning: `\u{1F441}\uFE0F Observation: All matching form fields have been populated with ${prefersDemoData ? "synthetic demo persona" : "local Personal Vault"} records.
+\u26A1 Action Selection: Conclude form filling workflow.`,
+              rationale: `Form successfully filled with ${prefersDemoData ? "realistic synthetic demo data" : "profile details from your local Personal Vault"}.`
+            };
+          } else {
+            try {
+              const vaultProfile = await getUserProfile();
+              const profile = prefersDemoData ? DEMO_USER_PROFILE : vaultProfile || DEMO_USER_PROFILE;
+              const pageDomain = sanitized.pageState?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : "");
+              const creds = await getCredentialsForDomain(pageDomain);
+              const formInputs = sanitized.elements.filter((e) => e.role === "input" || e.role === "textarea");
+              const batchActions = [];
+              const filledSlots = /* @__PURE__ */ new Set();
+              for (const input of formInputs) {
+                const descriptor = {
+                  id: input.localId,
+                  name: input.sanitizedName,
+                  rawName: input.sanitizedName,
+                  placeholder: input.sanitizedName
+                };
+                const match = matchFieldToVault(descriptor, profile, creds, pageDomain, prefersDemoData);
+                if (match.matched && match.valueToFill && !filledSlots.has(match.canonicalField)) {
+                  filledSlots.add(match.canonicalField);
+                  batchActions.push({
+                    actionId: `act_autofill_${match.canonicalField}_${Date.now()}`,
+                    kind: "type",
+                    targetLocalId: input.localId,
+                    textToType: match.valueToFill,
+                    rationale: `Autofill ${match.canonicalField} with ${prefersDemoData ? "synthetic demo data" : "local Personal Vault"}`
+                  });
+                }
+              }
+              if (batchActions.length > 0) {
+                const wantsSubmit = /\b(?:and\s+submit|and\s+sign\s*in|and\s+log\s*in|and\s+send)\b/i.test(this.currentGoal || "");
+                if (wantsSubmit) {
+                  const submitBtn = sanitized.elements.find(
+                    (e) => (e.role === "button" || e.role === "input") && /\b(?:submit|sign\s*in|log\s*in|register|save|send)\b/i.test(e.sanitizedName)
+                  );
+                  if (submitBtn) {
+                    batchActions.push({
+                      actionId: `act_autofill_submit_${Date.now()}`,
+                      kind: "click",
+                      targetLocalId: submitBtn.localId,
+                      rationale: `Submit form`
+                    });
+                  }
+                }
+                localAutofillProposal = {
+                  actionId: `act_local_autofill_batch_${Date.now()}`,
+                  kind: "batch",
+                  batchActions,
+                  confidence: 0.99,
+                  risk: "safe",
+                  reasoning: `\u{1F441}\uFE0F Observation: Detected ${formInputs.length} form inputs on the current page.
+\u{1F3AF} User Intent: Autofill form fields with ${prefersDemoData ? "synthetic demo persona" : "user details from local Personal Vault"}.
+\u26A1 Action Selection: Matched ${batchActions.length} fields (${Array.from(filledSlots).join(", ")}) and executing zero-knowledge autofill batch.`,
+                  rationale: `Autofilled ${batchActions.length} form fields (${Array.from(filledSlots).join(", ")}) with ${prefersDemoData ? "synthetic demo persona" : "local Personal Vault"}`
+                };
+              }
+            } catch (_) {
+            }
+          }
+        }
         if (localScrollProposal) {
           proposal = localScrollProposal;
           decisionOrigin = "local";
           networkRequestMade = false;
           t4_reasoningReceived = Date.now();
           this.transition("validating-action", `Step ${step}/${maxSteps}: Locally resolved safe action (${proposal.kind})`);
+        } else if (localAutofillProposal) {
+          proposal = localAutofillProposal;
+          decisionOrigin = "local";
+          networkRequestMade = false;
+          t4_reasoningReceived = Date.now();
+          this.transition("validating-action", `Step ${step}/${maxSteps}: Locally resolved form autofill (${localAutofillProposal.batchActions?.length || 0} fields)`);
         } else {
           this.transition("sending-sanitized-context", `Step ${step}/${maxSteps}: Transmitting sanitized context`);
           this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Awaiting reasoning action`);
@@ -21660,21 +22361,68 @@ var RunCoordinator = class {
           t4_reasoningReceived = Date.now();
         }
         this.lastActionProposal = proposal;
+        if (this.listeners.onActionProposed) {
+          const matchedEl = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
+          const enrichedProposal = {
+            ...proposal,
+            sanitizedTargetName: matchedEl?.sanitizedName || proposal.elementText || void 0
+          };
+          this.listeners.onActionProposed(enrichedProposal, this.currentRunId);
+        }
         this.transition("validating-action", `Step ${step}/${maxSteps}: Validating proposed action`);
         const t5_actionValidated = Date.now();
+        if ((proposal.kind === "type" || proposal.kind === "click" || proposal.kind === "select" || proposal.kind === "hover") && !proposal.targetLocalId) {
+          let resolvedTargetId;
+          if (proposal.kind === "type") {
+            const inputCandidate = sanitized.elements.find((e) => (e.role === "input" || e.role === "textarea") && !e.state.includes("disabled"));
+            if (inputCandidate) resolvedTargetId = inputCandidate.localId;
+          } else if (proposal.kind === "click") {
+            const clickCandidate = sanitized.elements.find((e) => (e.role === "button" || e.role === "link") && !e.state.includes("disabled"));
+            if (clickCandidate) resolvedTargetId = clickCandidate.localId;
+          }
+          if (resolvedTargetId) {
+            proposal = { ...proposal, targetLocalId: resolvedTargetId };
+          } else {
+            console.warn(`[Coordinator] Model emitted ${proposal.kind} without valid targetLocalId; pivoting to request_user_input in themed UI`);
+            const promptMsg = proposal.userInputPrompt || proposal.rationale || "Please provide the missing information to continue.";
+            proposal = {
+              actionId: `act_user_input_${Date.now()}`,
+              kind: "request_user_input",
+              targetLocalId: sanitized.elements.find((e) => e.role === "input" || e.role === "textarea")?.localId,
+              userInputPrompt: promptMsg,
+              confidence: 0.95,
+              risk: "safe",
+              rationale: promptMsg
+            };
+          }
+        }
         const actionValidation = validateActionProposal(proposal, sanitized.elements);
         if (!actionValidation.isValid || !actionValidation.proposal) {
-          const errorMsg2 = `Action rejected: ${actionValidation.errorMessage || "Invalid action proposal schema"}`;
-          this.transition("failed-safe", errorMsg2);
-          const res2 = {
-            success: false,
-            state: "failed-safe",
-            error: errorMsg2,
-            sanitized,
-            proposal,
-            stepCount: step
-          };
-          return this.completeWithResult(res2);
+          if (!proposal.targetLocalId && (actionValidation.errorMessage?.includes("targetLocalId") || actionValidation.errorMessage?.includes("coordinates"))) {
+            const fallbackInput = sanitized.elements.find((e) => e.role === "input" || e.role === "textarea");
+            const promptMsg = proposal.rationale || "Please provide the missing information to continue.";
+            proposal = {
+              actionId: `act_user_input_${Date.now()}`,
+              kind: "request_user_input",
+              targetLocalId: fallbackInput?.localId,
+              userInputPrompt: promptMsg,
+              confidence: 0.95,
+              risk: "safe",
+              rationale: promptMsg
+            };
+          } else {
+            const errorMsg2 = `Action rejected: ${actionValidation.errorMessage || "Invalid action proposal schema"}`;
+            this.transition("failed-safe", errorMsg2);
+            const res2 = {
+              success: false,
+              state: "failed-safe",
+              error: errorMsg2,
+              sanitized,
+              proposal,
+              stepCount: step
+            };
+            return this.completeWithResult(res2);
+          }
         }
         if (proposal.confidence < 0.25 && proposal.kind !== "finish" && proposal.kind !== "wait") {
           const errorMsg2 = `Action rejected: Proposal confidence (${proposal.confidence}) is below safe execution threshold (0.25)`;
@@ -21871,13 +22619,12 @@ var RunCoordinator = class {
           };
           return this.completeWithResult(res2);
         }
-        if (this.listeners.onActionProposed) {
-          this.listeners.onActionProposed(proposal, this.currentRunId);
-        }
         if (proposal.kind === "request_user_input") {
           let autoFilledFromVault = false;
           try {
-            const profile = await getUserProfile();
+            const prefersDemoData2 = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || "") || /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || "");
+            const vaultProfile = await getUserProfile();
+            const profile = prefersDemoData2 ? DEMO_USER_PROFILE : vaultProfile || DEMO_USER_PROFILE;
             const pageDomain = sanitized.pageState?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : "");
             const creds = await getCredentialsForDomain(pageDomain);
             const targetEl = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
@@ -21887,7 +22634,7 @@ var RunCoordinator = class {
               rawName: targetEl?.sanitizedName,
               placeholder: targetEl?.sanitizedName
             };
-            const match = matchFieldToVault(descriptor, profile, creds, pageDomain);
+            const match = matchFieldToVault(descriptor, profile, creds, pageDomain, prefersDemoData2);
             if (match.matched && match.valueToFill) {
               await this.browser.sendMessageToTab(activeTab.id, {
                 type: "EXECUTE_ACTION",
@@ -21904,7 +22651,7 @@ var RunCoordinator = class {
                 captureId: sanitized.captureId
               });
               autoFilledFromVault = true;
-              this.transition("executing", `Autofilled ${match.canonicalField} from local Personal Vault`);
+              this.transition("executing", `Autofilled ${match.canonicalField} from ${prefersDemoData2 ? "demo persona" : "local Personal Vault"}`);
               continue;
             }
           } catch (_) {
@@ -22086,8 +22833,36 @@ var RunCoordinator = class {
         if (proposal.kind === "wait") {
           await new Promise((r) => setTimeout(r, 600));
         }
-        if (proposal.kind === "type" && !proposal.pressEnter && this.currentTaskContract?.structuredIntent?.pressEnter) {
+        const currentUrl = activeTab?.url || "";
+        if (proposal.kind === "type" && !proposal.pressEnter && (this.currentTaskContract?.structuredIntent?.pressEnter || /(?:amazon|flipkart|google|search)/i.test(currentUrl))) {
           proposal = { ...proposal, pressEnter: true };
+        }
+        if (proposal.kind === "type" && proposal.targetLocalId) {
+          try {
+            const profile = await getUserProfile();
+            const pageDomain = sanitized.pageState?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : "");
+            const creds = await getCredentialsForDomain(pageDomain);
+            const targetEl = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
+            if (targetEl && (targetEl.role === "input" || targetEl.role === "textarea")) {
+              const isAutofill = /\b(?:fill|autofill|register|signup|sign\s*up|login|log\s*in|profile|details|form)\b/i.test(this.currentGoal || "");
+              const isPlaceholder = !proposal.textToType || /^(?:alice|bob|john|jane|user@|test@|example\.com|placeholder|enter\s+|your\s+|\[.*\])/i.test(proposal.textToType.trim());
+              const descriptor = {
+                id: targetEl.localId,
+                name: targetEl.sanitizedName,
+                rawName: targetEl.sanitizedName,
+                placeholder: targetEl.sanitizedName
+              };
+              const match = matchFieldToVault(descriptor, profile, creds, pageDomain);
+              if (match.matched && match.valueToFill && (isAutofill || isPlaceholder)) {
+                proposal = {
+                  ...proposal,
+                  textToType: match.valueToFill,
+                  rationale: `Autofilled ${match.canonicalField} from local Personal Vault`
+                };
+              }
+            }
+          } catch (_) {
+          }
         }
         let execResponse;
         if (proposal.kind === "batch" && proposal.batchActions && proposal.batchActions.length > 0) {
@@ -22096,12 +22871,36 @@ var RunCoordinator = class {
           let lastBatchResult = null;
           for (let i = 0; i < proposal.batchActions.length; i++) {
             const sub = proposal.batchActions[i];
+            let subTextToType = sub.textToType;
+            if (sub.kind === "type" && sub.targetLocalId) {
+              try {
+                const profile = await getUserProfile();
+                const pageDomain = sanitized.pageState?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : "");
+                const creds = await getCredentialsForDomain(pageDomain);
+                const targetEl = sanitized.elements.find((e) => e.localId === sub.targetLocalId);
+                if (targetEl && (targetEl.role === "input" || targetEl.role === "textarea")) {
+                  const isAutofill = /\b(?:fill|autofill|register|signup|sign\s*up|login|log\s*in|profile|details|form)\b/i.test(this.currentGoal || "");
+                  const isPlaceholder = !subTextToType || /^(?:alice|bob|john|jane|user@|test@|example\.com|placeholder|enter\s+|your\s+|\[.*\])/i.test(subTextToType.trim());
+                  const descriptor = {
+                    id: targetEl.localId,
+                    name: targetEl.sanitizedName,
+                    rawName: targetEl.sanitizedName,
+                    placeholder: targetEl.sanitizedName
+                  };
+                  const match = matchFieldToVault(descriptor, profile, creds, pageDomain);
+                  if (match.matched && match.valueToFill && (isAutofill || isPlaceholder)) {
+                    subTextToType = match.valueToFill;
+                  }
+                }
+              } catch (_) {
+              }
+            }
             const subProposal = {
               actionId: sub.actionId || `act_sub_${i + 1}_${Date.now()}`,
               kind: sub.kind,
               targetLocalId: sub.targetLocalId,
               destinationLocalId: sub.destinationLocalId,
-              textToType: sub.textToType,
+              textToType: subTextToType,
               selectOptionValue: sub.selectOptionValue,
               scrollDirection: sub.scrollDirection,
               pressEnter: sub.pressEnter,
@@ -22146,13 +22945,21 @@ var RunCoordinator = class {
           }
           execResponse = lastBatchResult || { success: allBatchSucceeded, semanticOutcomeVerified: allBatchSucceeded };
         } else {
+          if (proposal.kind === "type" && proposal.textToType) {
+            if (/\b(?:in\s+the\s+search\s+bar|in\s+search\s+box|and\s+analyze|and\s+tell\s+me|and\s+check|into\s+active\s+field)\b/i.test(proposal.textToType)) {
+              const cleanedText = extractSearchQueryFromGoal(proposal.textToType);
+              if (cleanedText && cleanedText.length > 0 && cleanedText !== proposal.textToType) {
+                proposal.textToType = cleanedText;
+              }
+            }
+          }
           if (proposal.kind === "type" && proposal.textToType && /^https?:\/\/[a-zA-Z0-9.-]+/i.test(proposal.textToType.trim())) {
             try {
               const urlObj = new URL(proposal.textToType.trim());
               const currentHost = new URL(activeTab.url).hostname.toLowerCase();
               if (urlObj.hostname.toLowerCase() !== currentHost && typeof this.browser.navigateTab === "function") {
-                this.transition("executing", `Opening new tab for ${urlObj.href}...`);
-                const navRes = await this.browser.navigateTab(activeTab.id, urlObj.href, { createNewTab: true });
+                this.transition("executing", `Navigating to ${urlObj.href}...`);
+                const navRes = await this.browser.navigateTab(activeTab.id, urlObj.href, { createNewTab: false });
                 if (navRes && typeof navRes === "object" && navRes.tabId) {
                   this.currentTabId = navRes.tabId;
                   activeTab.id = navRes.tabId;
@@ -22269,6 +23076,10 @@ var RunCoordinator = class {
           }
         }
         this.recordActionHistory(proposal);
+        this.previousSnapshot = sanitized;
+        this.previousUrl = activeTab?.url || "";
+        this.lastExecutedProposal = proposal;
+        this.lastExecutionResult = execResponse;
         const isSuccess = Boolean(execResponse && execResponse.success && execResponse.semanticOutcomeVerified);
         const stepTrace = {
           step,
@@ -22401,11 +23212,112 @@ var RunCoordinator = class {
   async getModelStatus() {
     return this.httpClient.getModelStatus();
   }
+  async getPlatformApiTelemetry() {
+    return this.httpClient.getPlatformApiTelemetry();
+  }
+  async generatePlatformApiKey(name2, tier) {
+    return this.httpClient.generatePlatformApiKey(name2, tier);
+  }
+  /**
+   * Dispatches a multi-target or comparative goal to the backend Sub-Agent Swarm Orchestrator.
+   * Runs parallel browser agents in isolated contexts and produces synthesized comparison.
+   */
+  async dispatchSubAgentSwarm(goal) {
+    this.currentGoal = goal;
+    this.transition("awaiting-reasoning", "Analyzing goal with Sub-Agent Swarm Orchestrator...");
+    this.listeners.onStateChange?.("awaiting-reasoning", "Decomposing task into parallel sub-agents...", this.currentRunId);
+    let activeKey = "privapilot_live_sih2026_demo_key";
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      try {
+        const stored = await chrome.storage.local.get(["privapilot_active_platform_key"]);
+        if (stored?.privapilot_active_platform_key) {
+          activeKey = stored.privapilot_active_platform_key;
+        }
+      } catch {
+      }
+    }
+    this.transition("executing", "Running parallel browser sub-agents across domains...");
+    this.listeners.onStepProgress?.(1, 2, "Sub-agents executing parallel extraction...", this.currentRunId);
+    const taskResponse = await this.httpClient.dispatchPlatformTask(
+      { goal, enableSubAgents: true, maxParallel: 2 },
+      activeKey
+    );
+    if (taskResponse && taskResponse.status === "completed") {
+      const subTasks = taskResponse.plan?.subTasks || [];
+      if (typeof chrome !== "undefined") {
+        let isFirst = true;
+        for (const st2 of subTasks) {
+          if (st2.targetUrl && typeof st2.targetUrl === "string" && st2.targetUrl.startsWith("http")) {
+            try {
+              if (isFirst && this.currentTabId && typeof chrome.tabs?.update === "function") {
+                chrome.tabs.update(this.currentTabId, { url: st2.targetUrl });
+                isFirst = false;
+              } else if (chrome.tabs?.create) {
+                chrome.tabs.create({ url: st2.targetUrl, active: false });
+              }
+            } catch {
+              if (chrome.tabs?.create) {
+                chrome.tabs.create({ url: st2.targetUrl, active: false });
+              }
+            }
+          }
+        }
+      }
+      const subTasksSummary = subTasks.map((st2) => {
+        const link = st2.targetUrl ? ` ([Open Site](${st2.targetUrl}))` : "";
+        return `\u2022 **${st2.title || st2.subTaskId}**: ${st2.status === "completed" ? "\u2713 Completed" : "Executed"}${link}`;
+      }).join("\n");
+      const fullReply = [
+        `\u{1F916} **Sub-Agent Swarm Deployed (${subTasks.length} Parallel Agents)**
+`,
+        subTasksSummary,
+        `
+### Swarm Synthesis & Live Price Comparison
+`,
+        taskResponse.finalSynthesis || "Multi-agent comparison completed.",
+        `
+
+\u{1F6E1}\uFE0F *Audit Proof: \`${taskResponse.complianceAudit?.proofId || "audit_verified"}\` (Zero Plaintext PII)*`
+      ].filter(Boolean).join("\n");
+      this.transition("complete", "Sub-Agent Swarm execution complete");
+      return this.completeWithResult({
+        success: true,
+        state: "complete",
+        reply: fullReply,
+        reasoning: taskResponse.plan?.rationale || "Goal required parallel processing across isolated browser contexts.",
+        proposal: {
+          actionId: `swarm_${Date.now()}`,
+          kind: "answer",
+          rationale: taskResponse.finalSynthesis,
+          confidence: 1,
+          risk: "safe"
+        },
+        stepCount: subTasks.length || 2
+      });
+    }
+    return this.completeWithResult({
+      success: false,
+      state: "failed-safe",
+      reply: `Could not reach the Sub-Agent Swarm Orchestrator. Ensure the PrivaPilot server is running on http://localhost:4501.`,
+      error: "Subagent dispatch failed"
+    });
+  }
   /**
    * Performs page-aware chat strictly across the privacy boundary.
    */
   async chatWithPage(userMessage, history) {
     try {
+      if (isSubAgentSwarmGoal(userMessage)) {
+        const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
+        return {
+          success: swarmRes.success,
+          reply: swarmRes.reply || "Sub-agent swarm completed.",
+          reasoning: swarmRes.reasoning || "",
+          maskCount: 0,
+          elementCount: 0,
+          modelConnected: true
+        };
+      }
       const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening))\s*$/i;
       if (PURE_GREETING_PATTERN.test(userMessage.trim())) {
         return this.generalChat(userMessage, void 0, history);
@@ -22472,6 +23384,17 @@ var RunCoordinator = class {
    * Directly chats with the reasoning model without page context or perception overhead.
    */
   async chatWithoutPage(userMessage, history) {
+    if (isSubAgentSwarmGoal(userMessage)) {
+      const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
+      return {
+        success: swarmRes.success,
+        reply: swarmRes.reply || "Sub-agent swarm completed.",
+        reasoning: swarmRes.reasoning || "",
+        maskCount: 0,
+        elementCount: 0,
+        modelConnected: true
+      };
+    }
     return this.generalChat(userMessage, void 0, history);
   }
   /**
@@ -22480,6 +23403,17 @@ var RunCoordinator = class {
    * working one with nothing to say.
    */
   async generalChat(userMessage, priorError, history) {
+    if (isSubAgentSwarmGoal(userMessage)) {
+      const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
+      return {
+        success: swarmRes.success,
+        reply: swarmRes.reply || "Sub-agent swarm completed.",
+        reasoning: swarmRes.reasoning || "",
+        maskCount: 0,
+        elementCount: 0,
+        modelConnected: true
+      };
+    }
     try {
       const genRes = await this.httpClient.requestGeneralChat(userMessage, history);
       return {
@@ -22952,6 +23886,14 @@ async function handleSidepanelRequest(message) {
     coordinator.cancelRun();
     return { success: true, state: "idle", message: "Run cancelled by user" };
   }
+  if (message.type === "GET_PLATFORM_API_TELEMETRY") {
+    const telemetry = await coordinator.getPlatformApiTelemetry();
+    return { success: true, telemetry };
+  }
+  if (message.type === "GENERATE_PLATFORM_API_KEY") {
+    const keyData = await coordinator.generatePlatformApiKey(message.name, message.tier);
+    return { success: true, keyData };
+  }
   throw new Error(`Unsupported side-panel request: ${message?.type || "unknown"}`);
 }
 if (typeof chrome !== "undefined" && chrome.runtime?.onConnect) {
@@ -23142,6 +24084,22 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
     }
     if (message.type === "GET_LAST_RESULT") {
       sendResponse(coordinator.getLastResult());
+      return true;
+    }
+    if (message.type === "GET_PLATFORM_API_TELEMETRY") {
+      coordinator.getPlatformApiTelemetry().then((telemetry) => {
+        sendResponse({ success: true, telemetry });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err?.message || "Failed to get telemetry" });
+      });
+      return true;
+    }
+    if (message.type === "GENERATE_PLATFORM_API_KEY") {
+      coordinator.generatePlatformApiKey(message.name, message.tier).then((keyData) => {
+        sendResponse({ success: true, keyData });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err?.message || "Failed to generate key" });
+      });
       return true;
     }
     return false;

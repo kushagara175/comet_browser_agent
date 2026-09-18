@@ -17,7 +17,7 @@
  *   is picked up on the next request instead of being stuck on "mock".
  */
 
-import { SanitizedNetworkPayload, ActionProposal, validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS, groundTargetCandidates, tokenizeSemanticText } from '@privapilot/protocol';
+import { SanitizedNetworkPayload, ActionProposal, validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS, groundTargetCandidates, tokenizeSemanticText, extractSearchQueryFromGoal } from '@privapilot/protocol';
 import { MockReasoningEngine } from './mock-engine.js';
 
 export interface VlmConfig {
@@ -163,6 +163,17 @@ export function extractThinking(raw: string): string {
   return '';
 }
 
+export function cleanServerReasoning(str: string): string {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .replace(/```(?:json)?\s*[\s\S]*?```/gi, '')
+    .replace(/\{[\s\S]*?"actionId"[\s\S]*?\}/gi, '')
+    .replace(/\{[\s\S]*?"kind"[\s\S]*?\}/gi, '')
+    .replace(/<\/?think(?:ing)?>/gi, '')
+    .replace(/<\/?thought>/gi, '')
+    .trim();
+}
+
 export function sanitizeProhibitedText(text: string): string {
   if (!text || typeof text !== 'string') return '';
   return text
@@ -198,7 +209,7 @@ export class VlmReasoningEngine {
       timeoutMs: config.timeoutMs ?? parseInt(process.env.VLM_TIMEOUT_MS || '90000', 10),
       probeTimeoutMs: config.probeTimeoutMs ?? parseInt(process.env.VLM_PROBE_TIMEOUT_MS || '4000', 10),
       numCtx: config.numCtx ?? parseInt(process.env.VLM_NUM_CTX || '8192', 10),
-      maxTokens: config.maxTokens ?? parseInt(process.env.VLM_MAX_TOKENS || '2500', 10)
+      maxTokens: config.maxTokens ?? parseInt(process.env.VLM_MAX_TOKENS || '800', 10)
     };
     this.mockFallback = new MockReasoningEngine();
   }
@@ -1067,12 +1078,23 @@ export class VlmReasoningEngine {
       }
 
       const thinking = parsed.reasoning || parsed.thought || extractedThinking;
+      let rawThink = '';
       if (Array.isArray(thinking)) {
-        parsed.reasoning = thinking.filter(Boolean).map((s: any) => String(s).trim()).join('\n').slice(0, 5000);
-      } else if (thinking && typeof thinking === 'string' && thinking.trim().length > 0) {
-        parsed.reasoning = String(thinking).trim().slice(0, 5000);
+        rawThink = thinking.filter(Boolean).map((s: any) => String(s).trim()).join('\n');
+      } else if (thinking && typeof thinking === 'string') {
+        rawThink = thinking;
+      }
+      const sanitizedThink = cleanServerReasoning(rawThink).slice(0, 5000);
+      if (sanitizedThink.length > 0) {
+        parsed.reasoning = sanitizedThink;
       } else {
         delete parsed.reasoning;
+      }
+
+      if (parsed.kind === 'finish') {
+        if (!parsed.reply && parsed.rationale && parsed.rationale.length > 0) {
+          parsed.reply = parsed.rationale;
+        }
       }
 
       if (!parsed.textToType && (parsed.text || parsed.value || parsed.input || parsed.content)) {
@@ -1094,6 +1116,13 @@ export class VlmReasoningEngine {
       }
       if (parsed.textToType === '') {
         delete parsed.textToType;
+      } else if (parsed.kind === 'type' && parsed.textToType) {
+        if (/\b(?:in\s+the\s+search\s+bar|in\s+search\s+box|and\s+analyze|and\s+tell\s+me|and\s+check)\b/i.test(parsed.textToType)) {
+          const cleaned = extractSearchQueryFromGoal(parsed.textToType);
+          if (cleaned && cleaned.length > 0 && cleaned !== parsed.textToType) {
+            parsed.textToType = cleaned;
+          }
+        }
       }
       if (parsed.selectOptionValue === '') {
         delete parsed.selectOptionValue;
@@ -1172,7 +1201,7 @@ Strict Rules:
 1. Return ONLY schema-valid JSON for one single next action or answer.
 2. Target elements using "targetLocalId" ONLY for interaction actions ("click", "type", "select", "hover", "drag_and_drop", "upload_file"). NEVER invent CSS selectors, XPath, or JavaScript.
 3. Classify risk as "safe" (read/navigate/preview/filter/hover/drag/upload/finish/answer) or "protected" (submit/delete/pay/sign).
-4. SEARCH / FILTER / INPUT DIRECTIVE: When the user's goal asks to search, filter, type, fill, enter, write, or set text in a search box or text input (role: "input" or "textarea"), you MUST return kind: "type", target that input's local ID, and set "textToType" to the exact requested text. When searching on web portals, Wikipedia, or search engines, set "pressEnter": true so the search is executed immediately. Do NOT propose "click", "observe", "wait", or a prose plan when the intention is to enter text or filter.
+4. SEARCH / FILTER / INPUT DIRECTIVE: When the user's goal asks to search, filter, type, fill, enter, write, or set text in a search box or text input (role: "input" or "textarea"), you MUST return kind: "type", target that input's local ID, and set "textToType" to ONLY the exact search query or entity (e.g. "iPhone 16", "171", "Chandrayaan-3"). DO NOT include conversational wrapper phrases like "in the search bar" or "and analyze the price" in "textToType". When searching on web portals, Wikipedia, or search engines, set "pressEnter": true so the search is executed immediately. Do NOT propose "click", "observe", "wait", or a prose plan when the intention is to enter text or filter.
 5. SELECT DIRECTIVE: When selecting an option from a dropdown (role: "select"), you MUST return kind: "select", target that select's local ID, and provide "selectOptionValue" with the desired option value.
 6. HOVER DIRECTIVE: When hovering or inspecting flyouts/dropdown menus, return kind: "hover", and target that element's local ID.
 7. DRAG AND DROP DIRECTIVE: When moving or dragging an item, return kind: "drag_and_drop", set "targetLocalId" to the source element and "destinationLocalId" to the target drop container.
@@ -1181,6 +1210,7 @@ Strict Rules:
    Execute step 1 (navigation or intermediate click/scroll/hover), observe the updated page state on the next cycle, and continue with the subsequent steps (typing, extracting, or verifying) before proposing "finish". Do NOT propose "finish" prematurely after intermediate navigation clicks.
 10. MODEL REASONING & CHAIN-OF-THOUGHT:
     Before proposing an action or answer, you MUST provide your authentic, pure thinking in the "reasoning" field (or inside <think>...</think> tags).
+    Keep your thinking concise and fast (2-4 focused sentences, under 150 words) to ensure rapid, sub-3-second agent execution.
     Explain what you observe on the page, what the user wants to accomplish, and your strategic rationale for selecting this action tool and target element.
     Provide natural, coherent reasoning paragraphs without fake rigid categories or emojis.
 11. Do not return "finish" merely because you have explained what should happen. Use "finish" only when visible page state proves the user's requested browser operation is already complete.
@@ -1234,10 +1264,10 @@ Strict Rules:
 18. BIDIRECTIONAL SCROLL AWARENESS & REALISTIC READING DIRECTIVE (BROWSER-USE PATTERN):
    - Check the "Scroll Metrics" in Page State Landmarks (e.g. "Scroll: 0px / max 18000px; Page extends 18000px below viewport").
    - CRITICAL REALISTIC READING DIRECTIVE: When the user's goal asks to read, find, inspect, or tell specific details from an article or document (e.g. "tell me what instruments/payloads...", "find the specifications...", "what does the section on X say...", "what are the details...", "how many..."):
-     DO NOT propose kind: "finish" immediately from internal pre-training memory while sitting statically at the top of the page (Scroll: 0px)!
-     If the page extends below the viewport and the specific content, table, or section is not in view:
-     You MUST propose kind: "scroll", scrollDirection: "down" (or target the element/heading with targetLocalId) to actually scroll smoothly through the article and inspect the page content before finishing.
-     This ensures authentic, grounded browser navigation that the user can visually see on screen.
+      DO NOT propose kind: "finish" immediately from internal pre-training memory while sitting statically at the top of the page (Scroll: 0px)!
+      If the page extends below the viewport and the specific content, table, or section is not in view:
+      You MUST propose kind: "scroll", scrollDirection: "down" (or target the element/heading with targetLocalId) to actually scroll smoothly through the article and inspect the page content before finishing.
+      This ensures authentic, grounded browser navigation that the user can visually see on screen.
    - If you need to navigate back up to previous sections or navigation bars, return kind: "scroll", scrollDirection: "up" or "top".
    - Do NOT scroll down if Page State indicates "At bottom of page (no content below)".
 19. FORM FILLING & PERSONAL VAULT RESILIENCE:
@@ -1245,6 +1275,17 @@ Strict Rules:
      Propose typing canonical slot names or values (e.g. Alice, user@domain.com, or user phone).
      The client's zero-knowledge local vault automatically aliases heterogeneous web labels ("contact", "mobile", "tel" -> phone; "org", "college" -> organization) without leaking PII across the network.
      If a mandatory field is missing from both the user prompt and page context, propose kind: "request_user_input" with userInputPrompt.
+20. E-COMMERCE SEARCH & AUTOCOMPLETE BAN (CRITICAL):
+    - When searching on e-commerce sites (Amazon, Flipkart) or search portals:
+      ALWAYS submit the search by setting "pressEnter": true on the "type" action, or by clicking the search submit button (e.g. magnifying glass or "Go").
+    - NEVER click on autocomplete suggestion dropdowns! Autocomplete dropdowns are ephemeral and frequently misidentified with persistent header links (such as "Registry & Gifting", "Sell", "Customer Service"). Clicking them leads to wrong pages and infinite loops.
+    - Once a search has been typed and submitted, DO NOT re-type the search query into the search input if the page is currently navigating or loading.
+    - When the search results page loads (e.g. /s?k= or /search?q=), inspect the visible product listings and prices directly and summarize them to the user.
+21. CLOSED-LOOP SCREEN VERIFICATION DIRECTIVE:
+    - On multi-step executions, you receive the "Verified Screen Transition & State Delta" detailing what happened after your previous action.
+    - Inspect the updated screen and element list. Verify if your previous action fulfilled its purpose (e.g. form submitted, new search results loaded, page navigated).
+    - If the objective is achieved or the requested data (such as product names, prices, dates, metrics) is now visible on the screen, DO NOT issue redundant clicks or re-type the query! Provide your grounded summary/answer in "reply" and "rationale" and return kind: "finish".
+    - If another step is needed (e.g. clicking a specific result, opening a dropdown), choose the single minimal next action.
 
 JSON Schema:
 {
@@ -1325,6 +1366,25 @@ JSON Schema:
       ? `\nPage State Landmarks:\n${landmarks.map(l => `- ${l}`).join('\n')}\n`
       : '';
 
+    let stateDeltaBlock = '';
+    if ((pageState as any).stateDelta) {
+      const d = (pageState as any).stateDelta;
+      const prevActionStr = d.previousAction
+        ? `${d.previousAction.kind}${d.previousAction.targetName ? ` on "${d.previousAction.targetName}"` : ''}${d.previousAction.textToType ? ` (typed: "${d.previousAction.textToType}")` : ''}${d.previousAction.expectedState ? ` [Expected: ${d.previousAction.expectedState}]` : ''}`
+        : 'Initial navigation';
+      const urlDiffStr = d.urlChanged
+        ? `CHANGED from "${d.previousUrl}" to "${d.currentUrl}"`
+        : `Unchanged ("${d.currentUrl}")`;
+
+      stateDeltaBlock = `\nVerified Screen Transition & State Delta:
+- Previous Action Dispatched: ${prevActionStr}
+- URL Transition: ${urlDiffStr}
+- DOM Mutations: +${d.elementsAddedCount || 0} elements added, -${d.elementsRemovedCount || 0} elements removed
+- Scroll Shift: ${d.scrollDeltaY || 0}px
+- Verified Screen Outcome: ${d.observedOutcome} (Verification: ${d.verificationPassed ? 'PASSED' : 'UNCONFIRMED'})
+- INSTRUCTION: Verify whether the previous action brought the target content into view. If the goal is fulfilled by the visible page state, return kind: "finish" with your answer. Otherwise, return the single minimal next action.\n`;
+    }
+
     let redactionBlock = '';
     if (payload.redactionManifest) {
       const m = payload.redactionManifest;
@@ -1342,10 +1402,11 @@ IMPORTANT PRIVACY INSTRUCTION: All redacted values and blackened regions are per
     const pageTitle = pageState.title || 'Active Web Page';
     const domainStr = (pageState as any).domain ? ` | Domain: ${(pageState as any).domain}` : '';
     const routeStr = pageState.routeFingerprint ? ` | Route: ${pageState.routeFingerprint}` : '';
+    const currentUrlStr = (pageState as any).url ? `\nPage URL: ${(pageState as any).url}` : '';
 
-    return `Active Web Page: "${pageTitle}"${domainStr}${routeStr}
+    return `Active Web Page: "${pageTitle}"${domainStr}${routeStr}${currentUrlStr}
 User Goal: ${payload.goal || 'Inspect page'}
-${redactionBlock}${landmarksBlock}Active Viewport Elements:
+${redactionBlock}${stateDeltaBlock}${landmarksBlock}Active Viewport Elements:
 ${JSON.stringify(compactElements, null, 2)}
 
 ${promptSuffix}`;

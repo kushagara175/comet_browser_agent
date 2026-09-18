@@ -101,9 +101,9 @@ export class WebExtensionAdapter implements BrowserAdapter {
           };
 
           if (typeof wId === 'number' && wId > 0) {
-            api.tabs.captureVisibleTab(wId, { format: 'png' }, callback);
+            api.tabs.captureVisibleTab(wId, { format: 'jpeg', quality: 75 }, callback);
           } else {
-            api.tabs.captureVisibleTab({ format: 'png' }, callback);
+            api.tabs.captureVisibleTab({ format: 'jpeg', quality: 75 }, callback);
           }
         } catch (e: any) {
           reject(new Error(e?.message || 'Exception during captureVisibleTab'));
@@ -464,6 +464,14 @@ export class WebExtensionAdapter implements BrowserAdapter {
           }
         });
         if (createdTab && createdTab.id) {
+          try {
+            if (createdTab.windowId && api.windows?.update) {
+              api.windows.update(createdTab.windowId, { focused: true });
+            }
+            if (api.tabs?.update) {
+              api.tabs.update(createdTab.id, { active: true });
+            }
+          } catch (_) {}
           const readyTab = await this.waitForTabReady(createdTab.id, 10000, url);
           await this.ensureContentScript(createdTab.id);
           return { tabId: createdTab.id, url: readyTab?.url || url };

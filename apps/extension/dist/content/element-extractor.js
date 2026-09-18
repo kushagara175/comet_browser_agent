@@ -110,7 +110,7 @@ export class ElementExtractor {
         // Helper to recursively process a document or same-origin frame with coordinate offsets
         const processDocumentLevel = (currentDoc, offset = { x: 0, y: 0 }, depth = 0) => {
             // 1. Extract interactive controls & form inputs (including custom dropdowns, comboboxes, and tabs)
-            const candidates = currentDoc.querySelectorAll('button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed]');
+            const candidates = currentDoc.querySelectorAll('button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [contenteditable="true"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed]');
             candidates.forEach((node) => {
                 const el = node;
                 // Overlay Safety: Never extract extension overlays, HUD controls, or debug containers
@@ -125,43 +125,51 @@ export class ElementExtractor {
                 this.counter++;
                 const localId = `el_${this.counter}`;
                 this.elementMap.set(localId, el);
-                // Determine role
+                // Determine role (prioritizing native tag semantics)
                 let role = 'generic';
                 const tag = el.tagName.toLowerCase();
                 const roleAttr = (typeof el.getAttribute === 'function' ? el.getAttribute('role') || '' : '').toLowerCase();
                 const ariaHasPopup = (typeof el.getAttribute === 'function' ? el.getAttribute('aria-haspopup') || '' : '').toLowerCase();
-                if (tag === 'button' || roleAttr === 'button')
-                    role = 'button';
-                else if (tag === 'a' || roleAttr === 'link')
-                    role = 'link';
-                else if (roleAttr === 'tab')
-                    role = 'tab';
-                else if (roleAttr === 'menuitem')
-                    role = 'menuitem';
-                else if (roleAttr === 'combobox' || roleAttr === 'listbox' || ariaHasPopup === 'listbox')
-                    role = 'select';
-                else if (tag === 'input') {
+                if (tag === 'input') {
                     const type = (typeof el.getAttribute === 'function' ? el.getAttribute('type') || 'text' : 'text').toLowerCase();
                     if (type === 'checkbox')
                         role = 'checkbox';
                     else if (type === 'radio')
                         role = 'radio';
+                    else if (type === 'button' || type === 'submit' || type === 'reset')
+                        role = 'button';
                     else
                         role = 'input';
                 }
-                else if (tag === 'select')
-                    role = 'select';
-                else if (tag === 'textarea')
+                else if (tag === 'textarea' || roleAttr === 'searchbox' || el.isContentEditable || el.getAttribute?.('contenteditable') === 'true') {
                     role = 'textarea';
+                }
+                else if (tag === 'select' || roleAttr === 'listbox' || (!el.matches?.('input') && (roleAttr === 'combobox' || ariaHasPopup === 'listbox'))) {
+                    role = 'select';
+                }
+                else if (tag === 'button' || roleAttr === 'button') {
+                    role = 'button';
+                }
+                else if (tag === 'a' || roleAttr === 'link') {
+                    role = 'link';
+                }
+                else if (roleAttr === 'tab') {
+                    role = 'tab';
+                }
+                else if (roleAttr === 'menuitem') {
+                    role = 'menuitem';
+                }
                 // Determine capabilities
                 const caps = ['click', 'hover'];
-                if (role === 'input' || role === 'textarea') {
-                    caps.push('type');
+                if (role === 'input' || role === 'textarea' || tag === 'input' || tag === 'textarea' || el.isContentEditable) {
                     const inputType = (typeof el.getAttribute === 'function' ? el.getAttribute('type') || '' : '').toLowerCase();
+                    if (inputType !== 'checkbox' && inputType !== 'radio' && inputType !== 'button' && inputType !== 'submit' && inputType !== 'image') {
+                        caps.push('type');
+                    }
                     if (inputType === 'file')
                         caps.push('upload');
                 }
-                if (role === 'select')
+                if (role === 'select' || tag === 'select' || roleAttr === 'combobox')
                     caps.push('select');
                 const isDraggable = el.getAttribute?.('draggable') === 'true' || el.getAttribute?.('role') === 'slider' || (typeof el.getAttribute === 'function' && el.getAttribute('aria-grabbed') !== null);
                 if (isDraggable)
@@ -208,7 +216,31 @@ export class ElementExtractor {
                 }
                 else {
                     // For buttons, links, custom clickable controls
-                    rawName = el.innerText?.trim() || (typeof el.getAttribute === 'function' ? el.getAttribute('aria-label')?.trim() || el.getAttribute('title')?.trim() : '') || role;
+                    const textContent = el.innerText?.trim() || '';
+                    const aria = (typeof el.getAttribute === 'function' ? el.getAttribute('aria-label')?.trim() || el.getAttribute('title')?.trim() : '') || '';
+                    let childName = '';
+                    if (!textContent && !aria) {
+                        const svgChild = el.querySelector('svg');
+                        if (svgChild) {
+                            childName = svgChild.getAttribute('aria-label') || svgChild.querySelector('title')?.textContent?.trim() || '';
+                        }
+                        if (!childName) {
+                            const imgChild = el.querySelector('img');
+                            if (imgChild) {
+                                childName = imgChild.getAttribute('alt') || imgChild.getAttribute('title') || '';
+                            }
+                        }
+                        if (!childName && typeof el.getAttribute === 'function' && el.getAttribute('type') === 'submit') {
+                            childName = 'Submit';
+                        }
+                        if (!childName) {
+                            const searchForm = typeof el.closest === 'function' ? el.closest('form, [role="search"]') : null;
+                            if (searchForm) {
+                                childName = 'Search';
+                            }
+                        }
+                    }
+                    rawName = textContent || aria || childName || role;
                 }
                 // Extract container / row context (e.g. table row, card, list item)
                 let containerContext;
@@ -261,8 +293,11 @@ export class ElementExtractor {
                     verticalOffset,
                     inViewport
                 });
-                // Also record descriptor for DOM sensitivity analysis (zero live values)
-                if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+                // Also record descriptor for DOM sensitivity analysis
+                const isEditable = tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable || el.getAttribute('contenteditable') === 'true';
+                if (isEditable) {
+                    const liveVal = el.value !== undefined ? el.value : (el.textContent || undefined);
+                    const liveValueStr = typeof liveVal === 'string' ? liveVal : undefined;
                     domElements.push({
                         id: localId,
                         descriptor: {
@@ -273,10 +308,30 @@ export class ElementExtractor {
                             autocomplete: el.getAttribute('autocomplete') || undefined,
                             placeholder: el.getAttribute('placeholder') || undefined,
                             ariaLabel: el.getAttribute('aria-label') || undefined,
-                            associatedLabelText: associatedLabelText || undefined
+                            associatedLabelText: associatedLabelText || undefined,
+                            value: liveValueStr
                         },
                         boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
                     });
+                    // Zero-Trust Live Input Value Protection:
+                    // If an input or textarea has a live entered value, ensure its visual box is captured for PII masking
+                    if (liveValueStr && liveValueStr.trim().length > 0 && rect.width > 0 && rect.height > 0) {
+                        const inputValTrimmed = liveValueStr.trim();
+                        const valMatches = scanTextForPII(inputValTrimmed);
+                        const boxX = rect.x + offset.x;
+                        const boxY = rect.y + offset.y;
+                        textNodes.push({
+                            id: `input_val_${localId}`,
+                            text: inputValTrimmed,
+                            boundingClientRect: { x: boxX, y: boxY, width: rect.width, height: rect.height },
+                            matchedRanges: [{
+                                    category: valMatches.length > 0 ? valMatches[0].category : 'username',
+                                    startIndex: 0,
+                                    endIndex: inputValTrimmed.length,
+                                    rects: [{ x: boxX, y: boxY, width: rect.width, height: rect.height }]
+                                }]
+                        });
+                    }
                 }
             });
             // 2. Extract Visible Text Nodes & Compute Range Bounding Boxes
@@ -294,12 +349,26 @@ export class ElementExtractor {
                         if (parentRect.width > 0 && parentRect.height > 0) {
                             textIdx++;
                             const nodeId = `txt_${depth}_${textIdx}`;
-                            // Check if parent element represents user account identity (e.g. User-Name header on X, user-menu button on Claude/ChatGPT)
+                            // Check if parent element represents user account identity (e.g. User-Name header on X, user-menu button on Claude/ChatGPT, account header on Flipkart)
                             const isAccountIdentity = Boolean(typeof parent.closest === 'function' &&
-                                parent.closest('[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i]'));
+                                parent.closest('[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [title*="profile" i], [title*="account" i], [class*="account" i], [class*="profile" i], [class*="user" i], [data-testid*="account" i], [data-testid*="profile" i]'));
+                            // Check if parent element represents delivery address / shipping location widget
+                            const isDeliveryAddressContainer = Boolean(typeof parent.closest === 'function' &&
+                                parent.closest('[class*="deliver" i], [id*="deliver" i], [class*="address" i], [id*="address" i], [class*="location" i], [id*="location" i], [class*="pincode" i], [id*="pincode" i]'));
                             // Scan text node for PII matches
                             let matches = scanTextForPII(content);
-                            if (matches.length === 0 && isAccountIdentity && trimmed.length > 1 && trimmed.length < 80) {
+                            if (matches.length === 0 && isDeliveryAddressContainer && trimmed.length > 2 && trimmed.length < 120 &&
+                                (/\b(?:home|work|office|deliver|katra|nagar|colony|road|street|\d{5,6})\b/i.test(trimmed))) {
+                                matches = [{
+                                        category: 'address',
+                                        startIndex: 0,
+                                        endIndex: content.length,
+                                        matchedLength: content.length,
+                                        confidence: 0.95
+                                    }];
+                            }
+                            else if (matches.length === 0 && isAccountIdentity && trimmed.length > 1 && trimmed.length < 80 &&
+                                !/^(?:login|sign in|sign up|register|cart|orders|notifications|help|wishlist|explore|become a seller)$/i.test(trimmed)) {
                                 matches = [{
                                         category: 'username',
                                         startIndex: 0,
@@ -402,18 +471,28 @@ export class ElementExtractor {
                 const src = (el.getAttribute?.('src') || el.getAttribute?.('srcset') || '').toLowerCase();
                 const isAvatar = classText.includes('avatar') ||
                     classText.includes('profile') ||
+                    classText.includes('user-pic') ||
+                    classText.includes('user-img') ||
+                    classText.includes('user-photo') ||
+                    classText.includes('user-image') ||
+                    classText.includes('author-img') ||
+                    classText.includes('gravatar') ||
                     testId.includes('avatar') ||
                     testId.includes('useravatar') ||
+                    testId.includes('profile-pic') ||
                     alt.includes('avatar') ||
                     alt.includes('profile') ||
+                    alt.includes('user photo') ||
+                    alt.includes('author') ||
                     ariaLabel.includes('avatar') ||
                     ariaLabel.includes('profile') ||
                     ariaLabel.includes('account') ||
                     src.includes('profile_images') ||
                     src.includes('avatar') ||
+                    src.includes('gravatar.com') ||
                     src.includes('avatars.githubusercontent') ||
                     src.includes('googleusercontent.com') ||
-                    Boolean(typeof el.closest === 'function' && el.closest('[data-testid*="UserAvatar" i], [data-testid*="avatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i]'));
+                    Boolean(typeof el.closest === 'function' && el.closest('[data-testid*="UserAvatar" i], [data-testid*="avatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i], [data-testid*="user-profile" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [class*="account" i], [class*="profile" i], [class*="user-info" i], [class*="user-header" i], [class*="user-badge" i]'));
                 const isVisualMedia = tagName === 'IMG' ||
                     tagName === 'SVG' ||
                     role === 'img' ||
@@ -555,7 +634,18 @@ export class ElementExtractor {
                         processDocumentLevel(innerDoc, iframeOffset, depth + 1);
                     }
                     else {
-                        // Cross-origin or inaccessible frame -> Mark high risk surface to mask fail-closed!
+                        // Check if this cross-origin iframe is an advertisement / promotional banner
+                        const fSrc = typeof f.getAttribute === 'function' ? f.getAttribute('src') : (f.src || '');
+                        const fName = typeof f.getAttribute === 'function' ? f.getAttribute('name') : (f.name || '');
+                        const fTitle = typeof f.getAttribute === 'function' ? f.getAttribute('title') : (f.title || '');
+                        const fClass = typeof f.getAttribute === 'function' ? f.getAttribute('class') : (f.className || '');
+                        const adMarkers = `${f.id || ''} ${fName || ''} ${fTitle || ''} ${fClass || ''} ${fSrc || ''}`.toLowerCase();
+                        const isAdFrame = /\b(?:google_ad|googlesyndication|doubleclick|adnxs|adservice|ad-slot|adsystem|ads-|aswift|taboola|outbrain|criteo|pubmatic|rubicon|adform|advertisement|banner-ad)\b|google_ads_iframe|godaddy/i.test(adMarkers);
+                        if (isAdFrame) {
+                            // Ignore commercial ad iframes from intrusive blackout masking
+                            return;
+                        }
+                        // Real cross-origin or inaccessible frame -> Mark high risk surface to mask fail-closed!
                         surfaces.push({
                             id: `ifr_${surfaceCounter}`,
                             surfaceType: 'iframe',

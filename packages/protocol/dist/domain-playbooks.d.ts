@@ -72,6 +72,14 @@ export declare const DUCKDUCKGO_PLAYBOOK: DomainPlaybook;
  */
 export declare const GOOGLE_PLAYBOOK: DomainPlaybook;
 /**
+ * Playbook for Amazon (amazon.in / amazon.com)
+ */
+export declare const AMAZON_PLAYBOOK: DomainPlaybook;
+/**
+ * Playbook for Flipkart (flipkart.com)
+ */
+export declare const FLIPKART_PLAYBOOK: DomainPlaybook;
+/**
  * Playbook for Wikipedia (wikipedia.org)
  */
 export declare const WIKIPEDIA_PLAYBOOK: DomainPlaybook;

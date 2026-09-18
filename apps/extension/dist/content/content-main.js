@@ -112,7 +112,59 @@
     "patient",
     "health",
     "doctor_note",
-    "clinical"
+    "clinical",
+    // Phone & Mobile
+    "phone",
+    "mobile",
+    "contact",
+    "tel",
+    "cell",
+    "phonenumber",
+    "phone_number",
+    "usernumber",
+    "user_number",
+    "mobile_number",
+    "contact_number",
+    "cellphone",
+    // Address & Location
+    "address",
+    "street",
+    "city",
+    "state",
+    "zip",
+    "zipcode",
+    "pincode",
+    "pin_code",
+    "postal",
+    "postal_code",
+    "currentaddress",
+    "permanentaddress",
+    "current_address",
+    "permanent_address",
+    // Date of Birth
+    "dob",
+    "birth",
+    "birthday",
+    "bday",
+    "dateofbirth",
+    "date_of_birth",
+    // Name & Identity
+    "firstname",
+    "lastname",
+    "fullname",
+    "name",
+    "fname",
+    "lname",
+    "first_name",
+    "last_name",
+    "user_name",
+    "applicant_name",
+    // Account Handles
+    "username",
+    "user_id",
+    "userid",
+    "user_handle",
+    "user_profile"
   ];
   var SENSITIVE_AUTOCOMPLETE_VALUES = [
     "current-password",
@@ -128,14 +180,36 @@
     "bday",
     "bday-day",
     "bday-month",
-    "bday-year"
+    "bday-year",
+    "tel",
+    "tel-national",
+    "tel-country-code",
+    "postal-code",
+    "street-address",
+    "address-line1",
+    "address-line2",
+    "address-level1",
+    "address-level2",
+    "name",
+    "given-name",
+    "family-name",
+    "username",
+    "email"
   ];
 
   // ../../packages/pii-rules/dist/regex-patterns.js
   var CANARY_REGEX = /\b(?:SECRET_CANARY[A-Za-z0-9_]*|CANARY_PRIVAPILOT[A-Za-z0-9_]*)\b/g;
   var MEDICAL_REGEX = /\b(?:medical note|clinical diagnosis|prescription info|patient record|doctor note)\b[^\n.,;]*/gi;
   var HANDLE_REGEX = /(?:^|(?<=\s|[([{"']))(@[A-Za-z0-9_]{1,30})\b/g;
+  var DELIVERY_ADDRESS_REGEX = /(?:^|(?<=\s|[([{"']))(?:Deliver(?:y|ing)?\s+to|Ship\s+to|Shipping\s+to|Delivered\s+to)\s+([^\n\r<]{3,80})/gi;
+  var HOME_WORK_LOCATION_REGEX = /\b(?:HOME|WORK|OFFICE|OTHER)\s+(?:at\s+|-\s+)([^\n\r<]{3,80})/gi;
+  var PINCODE_IN_CONTEXT_REGEX = /\b(?:pin(?:\s*code)?[\s:]*|postal\s*code[\s:]*|[,\-]\s*)([1-9][0-9]{5})\b/gi;
+  var LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt|Sector|Block|Pocket|Street|St\.|Road|Rd\.|Cross|Main|Nagar|Colony|Enclave|Vihar|Kunj|Society|Layout|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Bhavan|Bhawan)\b[^\n\r,;]{2,60}/gi;
+  var ACCOUNT_GREETING_REGEX = /\b(?:Hello|Hi|Welcome),\s+([A-Za-z0-9_]{2,30})\b/gi;
+  var STREET_ADDRESS_REGEX = /\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir)\b[^\n\r,;]*/gi;
+  var DATE_OF_BIRTH_REGEX = /\b(?:\d{1,2}[\s/-](?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s/-]\d{2,4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b/gi;
   var EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+  var STANDARD_PHONE_REGEX = /(?:^|(?<!\d))(?:\+?1[\s.-]?)?\(?([0-9]{3})\)?[\s.-]?([0-9]{3})[\s.-]?([0-9]{4})(?!\d)\b/g;
   var INDIAN_PHONE_REGEX = /(?:^|(?<!\d))(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)\b/g;
   var INTL_PHONE_REGEX = /\b\+(?:[1-9]\d{0,2})[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{1,4}[\s.-]?\d{1,9}\b/g;
   var PAN_REGEX = /\b[A-Z]{5}[0-9]{4}[A-Z]\b/g;
@@ -179,6 +253,65 @@
           category: "username",
           startIndex: handleStart,
           endIndex: handleStart + match[1].length,
+          matchedLength: match[1].length,
+          confidence: 0.95
+        });
+      }
+    }
+    for (const match of text.matchAll(DELIVERY_ADDRESS_REGEX)) {
+      if (match.index !== void 0) {
+        matches.push({
+          category: "address",
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+          matchedLength: match[0].length,
+          confidence: 0.95
+        });
+      }
+    }
+    for (const match of text.matchAll(HOME_WORK_LOCATION_REGEX)) {
+      if (match.index !== void 0) {
+        matches.push({
+          category: "address",
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+          matchedLength: match[0].length,
+          confidence: 0.95
+        });
+      }
+    }
+    for (const match of text.matchAll(LOCALITY_ADDRESS_REGEX)) {
+      if (match.index !== void 0) {
+        matches.push({
+          category: "address",
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+          matchedLength: match[0].length,
+          confidence: 0.92
+        });
+      }
+    }
+    for (const match of text.matchAll(PINCODE_IN_CONTEXT_REGEX)) {
+      if (match.index !== void 0 && match[1]) {
+        const pinOffset = match[0].indexOf(match[1]);
+        const pinStart = match.index + pinOffset;
+        matches.push({
+          category: "address",
+          startIndex: pinStart,
+          endIndex: pinStart + match[1].length,
+          matchedLength: match[1].length,
+          confidence: 0.96
+        });
+      }
+    }
+    for (const match of text.matchAll(ACCOUNT_GREETING_REGEX)) {
+      if (match.index !== void 0 && match[1]) {
+        const nameOffset = match[0].indexOf(match[1]);
+        const nameStart = match.index + nameOffset;
+        matches.push({
+          category: "username",
+          startIndex: nameStart,
+          endIndex: nameStart + match[1].length,
           matchedLength: match[1].length,
           confidence: 0.95
         });
@@ -265,6 +398,54 @@
         }
       }
     }
+    for (const match of text.matchAll(STANDARD_PHONE_REGEX)) {
+      if (match.index !== void 0) {
+        const start = match.index;
+        const end = match.index + match[0].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+        if (!alreadyCovered) {
+          matches.push({
+            category: "phone",
+            startIndex: start,
+            endIndex: end,
+            matchedLength: match[0].length,
+            confidence: 0.92
+          });
+        }
+      }
+    }
+    for (const match of text.matchAll(STREET_ADDRESS_REGEX)) {
+      if (match.index !== void 0) {
+        const start = match.index;
+        const end = match.index + match[0].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+        if (!alreadyCovered) {
+          matches.push({
+            category: "address",
+            startIndex: start,
+            endIndex: end,
+            matchedLength: match[0].length,
+            confidence: 0.94
+          });
+        }
+      }
+    }
+    for (const match of text.matchAll(DATE_OF_BIRTH_REGEX)) {
+      if (match.index !== void 0) {
+        const start = match.index;
+        const end = match.index + match[0].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+        if (!alreadyCovered) {
+          matches.push({
+            category: "date_of_birth",
+            startIndex: start,
+            endIndex: end,
+            matchedLength: match[0].length,
+            confidence: 0.95
+          });
+        }
+      }
+    }
     for (const match of text.matchAll(CVV_CONTEXT_REGEX)) {
       if (match.index !== void 0 && match[1]) {
         const cvvStart = match.index + match[0].indexOf(match[1]);
@@ -330,6 +511,14 @@
           cat = "date_of_birth";
         else if (autoVal === "one-time-code")
           cat = "auth_code";
+        else if (autoVal.startsWith("tel"))
+          cat = "phone";
+        else if (autoVal.includes("address") || autoVal.includes("postal-code"))
+          cat = "address";
+        else if (autoVal.includes("name") || autoVal === "username")
+          cat = "username";
+        else if (autoVal === "email")
+          cat = "email";
         return {
           isSensitive: true,
           category: cat,
@@ -337,6 +526,22 @@
           confidence: 1
         };
       }
+    }
+    if (type === "email" || autocomplete === "email") {
+      return {
+        isSensitive: true,
+        category: "email",
+        reason: "type/autocomplete email",
+        confidence: 0.95
+      };
+    }
+    if (type === "tel" || autocomplete === "tel") {
+      return {
+        isSensitive: true,
+        category: "phone",
+        reason: "type/autocomplete tel",
+        confidence: 0.95
+      };
     }
     const combinedTokens = `${name} ${id} ${placeholder} ${ariaLabel} ${labelText}`.toLowerCase();
     for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
@@ -349,6 +554,10 @@
           cat = "credit_card";
         else if (keyword.includes("cvv") || keyword.includes("cvc"))
           cat = "cvv";
+        else if (keyword.includes("email") || keyword.includes("mail"))
+          cat = "email";
+        else if (keyword.includes("phone") || keyword.includes("mobile") || keyword.includes("contact") || keyword.includes("tel") || keyword.includes("cell") || keyword.includes("usernumber"))
+          cat = "phone";
         else if (keyword.includes("pan"))
           cat = "national_id";
         else if (keyword.includes("aadhaar") || keyword.includes("aadhar"))
@@ -361,6 +570,12 @@
           cat = "auth_code";
         else if (keyword.includes("medical") || keyword.includes("diagnosis") || keyword.includes("prescription") || keyword.includes("patient") || keyword.includes("health") || keyword.includes("doctor_note") || keyword.includes("clinical"))
           cat = "uninspectable";
+        else if (keyword.includes("address") || keyword.includes("street") || keyword.includes("city") || keyword.includes("state") || keyword.includes("zip") || keyword.includes("postal") || keyword.includes("pincode"))
+          cat = "address";
+        else if (keyword.includes("dob") || keyword.includes("birth") || keyword.includes("bday"))
+          cat = "date_of_birth";
+        else if (keyword.includes("name") || keyword.includes("fname") || keyword.includes("lname") || keyword.includes("user") || keyword.includes("applicant"))
+          cat = "username";
         return {
           isSensitive: true,
           category: cat,
@@ -369,21 +584,28 @@
         };
       }
     }
-    if (type === "email" || autocomplete === "email") {
-      return {
-        isSensitive: true,
-        category: "email",
-        reason: "type/autocomplete email",
-        confidence: 0.9
-      };
-    }
-    if (type === "tel" || autocomplete === "tel") {
-      return {
-        isSensitive: true,
-        category: "phone",
-        reason: "type/autocomplete tel",
-        confidence: 0.9
-      };
+    if (desc.value && typeof desc.value === "string") {
+      const trimmedVal = desc.value.trim();
+      if (trimmedVal.length > 0) {
+        const piiMatches = scanTextForPII(trimmedVal);
+        if (piiMatches.length > 0) {
+          return {
+            isSensitive: true,
+            category: piiMatches[0].category,
+            reason: `live value matches PII (${piiMatches[0].category})`,
+            confidence: 0.95
+          };
+        }
+        const isSearchBox = combinedTokens.includes("search") || combinedTokens.includes("filter") || combinedTokens.includes("find") || type === "search";
+        if (!isSearchBox && (desc.tagName === "textarea" || desc.tagName === "input" && type !== "submit" && type !== "button" && type !== "checkbox" && type !== "radio")) {
+          return {
+            isSensitive: true,
+            category: "username",
+            reason: `live input value in form field: "${desc.name || desc.id || desc.placeholder || "input"}"`,
+            confidence: 0.85
+          };
+        }
+      }
     }
     return {
       isSensitive: false,
@@ -486,7 +708,7 @@
       let surfaceCounter = 0;
       const processDocumentLevel = (currentDoc, offset = { x: 0, y: 0 }, depth = 0) => {
         const candidates = currentDoc.querySelectorAll(
-          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed]'
+          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [contenteditable="true"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed]'
         );
         candidates.forEach((node) => {
           const el = node;
@@ -502,25 +724,34 @@
           const tag = el.tagName.toLowerCase();
           const roleAttr = (typeof el.getAttribute === "function" ? el.getAttribute("role") || "" : "").toLowerCase();
           const ariaHasPopup = (typeof el.getAttribute === "function" ? el.getAttribute("aria-haspopup") || "" : "").toLowerCase();
-          if (tag === "button" || roleAttr === "button") role = "button";
-          else if (tag === "a" || roleAttr === "link") role = "link";
-          else if (roleAttr === "tab") role = "tab";
-          else if (roleAttr === "menuitem") role = "menuitem";
-          else if (roleAttr === "combobox" || roleAttr === "listbox" || ariaHasPopup === "listbox") role = "select";
-          else if (tag === "input") {
+          if (tag === "input") {
             const type = (typeof el.getAttribute === "function" ? el.getAttribute("type") || "text" : "text").toLowerCase();
             if (type === "checkbox") role = "checkbox";
             else if (type === "radio") role = "radio";
+            else if (type === "button" || type === "submit" || type === "reset") role = "button";
             else role = "input";
-          } else if (tag === "select") role = "select";
-          else if (tag === "textarea") role = "textarea";
+          } else if (tag === "textarea" || roleAttr === "searchbox" || el.isContentEditable || el.getAttribute?.("contenteditable") === "true") {
+            role = "textarea";
+          } else if (tag === "select" || roleAttr === "listbox" || !el.matches?.("input") && (roleAttr === "combobox" || ariaHasPopup === "listbox")) {
+            role = "select";
+          } else if (tag === "button" || roleAttr === "button") {
+            role = "button";
+          } else if (tag === "a" || roleAttr === "link") {
+            role = "link";
+          } else if (roleAttr === "tab") {
+            role = "tab";
+          } else if (roleAttr === "menuitem") {
+            role = "menuitem";
+          }
           const caps = ["click", "hover"];
-          if (role === "input" || role === "textarea") {
-            caps.push("type");
+          if (role === "input" || role === "textarea" || tag === "input" || tag === "textarea" || el.isContentEditable) {
             const inputType = (typeof el.getAttribute === "function" ? el.getAttribute("type") || "" : "").toLowerCase();
+            if (inputType !== "checkbox" && inputType !== "radio" && inputType !== "button" && inputType !== "submit" && inputType !== "image") {
+              caps.push("type");
+            }
             if (inputType === "file") caps.push("upload");
           }
-          if (role === "select") caps.push("select");
+          if (role === "select" || tag === "select" || roleAttr === "combobox") caps.push("select");
           const isDraggable = el.getAttribute?.("draggable") === "true" || el.getAttribute?.("role") === "slider" || typeof el.getAttribute === "function" && el.getAttribute("aria-grabbed") !== null;
           if (isDraggable) caps.push("drag");
           let rawName = "";
@@ -556,7 +787,31 @@
             const ariaControls = (typeof el.getAttribute === "function" ? el.getAttribute("aria-controls") || "" : "").trim();
             rawName = associatedLabelText || ariaLabel || placeholder || title || (typeAttr === "search" ? "Search" : "") || (ariaControls.toLowerCase().includes("table") ? "Search" : "") || nameAttr || role;
           } else {
-            rawName = el.innerText?.trim() || (typeof el.getAttribute === "function" ? el.getAttribute("aria-label")?.trim() || el.getAttribute("title")?.trim() : "") || role;
+            const textContent = el.innerText?.trim() || "";
+            const aria = (typeof el.getAttribute === "function" ? el.getAttribute("aria-label")?.trim() || el.getAttribute("title")?.trim() : "") || "";
+            let childName = "";
+            if (!textContent && !aria) {
+              const svgChild = el.querySelector("svg");
+              if (svgChild) {
+                childName = svgChild.getAttribute("aria-label") || svgChild.querySelector("title")?.textContent?.trim() || "";
+              }
+              if (!childName) {
+                const imgChild = el.querySelector("img");
+                if (imgChild) {
+                  childName = imgChild.getAttribute("alt") || imgChild.getAttribute("title") || "";
+                }
+              }
+              if (!childName && typeof el.getAttribute === "function" && el.getAttribute("type") === "submit") {
+                childName = "Submit";
+              }
+              if (!childName) {
+                const searchForm = typeof el.closest === "function" ? el.closest('form, [role="search"]') : null;
+                if (searchForm) {
+                  childName = "Search";
+                }
+              }
+            }
+            rawName = textContent || aria || childName || role;
           }
           let containerContext;
           try {
@@ -600,7 +855,10 @@
             verticalOffset,
             inViewport
           });
-          if (tag === "input" || tag === "textarea" || tag === "select") {
+          const isEditable = tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable || el.getAttribute("contenteditable") === "true";
+          if (isEditable) {
+            const liveVal = el.value !== void 0 ? el.value : el.textContent || void 0;
+            const liveValueStr = typeof liveVal === "string" ? liveVal : void 0;
             domElements.push({
               id: localId,
               descriptor: {
@@ -611,10 +869,28 @@
                 autocomplete: el.getAttribute("autocomplete") || void 0,
                 placeholder: el.getAttribute("placeholder") || void 0,
                 ariaLabel: el.getAttribute("aria-label") || void 0,
-                associatedLabelText: associatedLabelText || void 0
+                associatedLabelText: associatedLabelText || void 0,
+                value: liveValueStr
               },
               boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
             });
+            if (liveValueStr && liveValueStr.trim().length > 0 && rect.width > 0 && rect.height > 0) {
+              const inputValTrimmed = liveValueStr.trim();
+              const valMatches = scanTextForPII(inputValTrimmed);
+              const boxX = rect.x + offset.x;
+              const boxY = rect.y + offset.y;
+              textNodes.push({
+                id: `input_val_${localId}`,
+                text: inputValTrimmed,
+                boundingClientRect: { x: boxX, y: boxY, width: rect.width, height: rect.height },
+                matchedRanges: [{
+                  category: valMatches.length > 0 ? valMatches[0].category : "username",
+                  startIndex: 0,
+                  endIndex: inputValTrimmed.length,
+                  rects: [{ x: boxX, y: boxY, width: rect.width, height: rect.height }]
+                }]
+              });
+            }
           }
         });
         const textWalker = currentDoc.createTreeWalker ? currentDoc.createTreeWalker(currentDoc.body || currentDoc, SHOW_TEXT_FILTER) : null;
@@ -633,11 +909,24 @@
                 const nodeId = `txt_${depth}_${textIdx}`;
                 const isAccountIdentity = Boolean(
                   typeof parent.closest === "function" && parent.closest(
-                    '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i]'
+                    '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [title*="profile" i], [title*="account" i], [class*="account" i], [class*="profile" i], [class*="user" i], [data-testid*="account" i], [data-testid*="profile" i]'
+                  )
+                );
+                const isDeliveryAddressContainer = Boolean(
+                  typeof parent.closest === "function" && parent.closest(
+                    '[class*="deliver" i], [id*="deliver" i], [class*="address" i], [id*="address" i], [class*="location" i], [id*="location" i], [class*="pincode" i], [id*="pincode" i]'
                   )
                 );
                 let matches = scanTextForPII(content);
-                if (matches.length === 0 && isAccountIdentity && trimmed.length > 1 && trimmed.length < 80) {
+                if (matches.length === 0 && isDeliveryAddressContainer && trimmed.length > 2 && trimmed.length < 120 && /\b(?:home|work|office|deliver|katra|nagar|colony|road|street|\d{5,6})\b/i.test(trimmed)) {
+                  matches = [{
+                    category: "address",
+                    startIndex: 0,
+                    endIndex: content.length,
+                    matchedLength: content.length,
+                    confidence: 0.95
+                  }];
+                } else if (matches.length === 0 && isAccountIdentity && trimmed.length > 1 && trimmed.length < 80 && !/^(?:login|sign in|sign up|register|cart|orders|notifications|help|wishlist|explore|become a seller)$/i.test(trimmed)) {
                   matches = [{
                     category: "username",
                     startIndex: 0,
@@ -726,7 +1015,7 @@
           const alt = (el.getAttribute?.("alt") || "").toLowerCase();
           const ariaLabel = (el.getAttribute?.("aria-label") || "").toLowerCase();
           const src = (el.getAttribute?.("src") || el.getAttribute?.("srcset") || "").toLowerCase();
-          const isAvatar = classText.includes("avatar") || classText.includes("profile") || testId.includes("avatar") || testId.includes("useravatar") || alt.includes("avatar") || alt.includes("profile") || ariaLabel.includes("avatar") || ariaLabel.includes("profile") || ariaLabel.includes("account") || src.includes("profile_images") || src.includes("avatar") || src.includes("avatars.githubusercontent") || src.includes("googleusercontent.com") || Boolean(typeof el.closest === "function" && el.closest('[data-testid*="UserAvatar" i], [data-testid*="avatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i]'));
+          const isAvatar = classText.includes("avatar") || classText.includes("profile") || classText.includes("user-pic") || classText.includes("user-img") || classText.includes("user-photo") || classText.includes("user-image") || classText.includes("author-img") || classText.includes("gravatar") || testId.includes("avatar") || testId.includes("useravatar") || testId.includes("profile-pic") || alt.includes("avatar") || alt.includes("profile") || alt.includes("user photo") || alt.includes("author") || ariaLabel.includes("avatar") || ariaLabel.includes("profile") || ariaLabel.includes("account") || src.includes("profile_images") || src.includes("avatar") || src.includes("gravatar.com") || src.includes("avatars.githubusercontent") || src.includes("googleusercontent.com") || Boolean(typeof el.closest === "function" && el.closest('[data-testid*="UserAvatar" i], [data-testid*="avatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i], [data-testid*="user-profile" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [class*="account" i], [class*="profile" i], [class*="user-info" i], [class*="user-header" i], [class*="user-badge" i]'));
           const isVisualMedia = tagName === "IMG" || tagName === "SVG" || role === "img" || isAvatar;
           if (!isVisualMedia) return;
           imageElements.push({
@@ -855,6 +1144,15 @@
               });
               processDocumentLevel(innerDoc, iframeOffset, depth + 1);
             } else {
+              const fSrc = typeof f.getAttribute === "function" ? f.getAttribute("src") : f.src || "";
+              const fName = typeof f.getAttribute === "function" ? f.getAttribute("name") : f.name || "";
+              const fTitle = typeof f.getAttribute === "function" ? f.getAttribute("title") : f.title || "";
+              const fClass = typeof f.getAttribute === "function" ? f.getAttribute("class") : f.className || "";
+              const adMarkers = `${f.id || ""} ${fName || ""} ${fTitle || ""} ${fClass || ""} ${fSrc || ""}`.toLowerCase();
+              const isAdFrame = /\b(?:google_ad|googlesyndication|doubleclick|adnxs|adservice|ad-slot|adsystem|ads-|aswift|taboola|outbrain|criteo|pubmatic|rubicon|adform|advertisement|banner-ad)\b|google_ads_iframe|godaddy/i.test(adMarkers);
+              if (isAdFrame) {
+                return;
+              }
               surfaces.push({
                 id: `ifr_${surfaceCounter}`,
                 surfaceType: "iframe",
@@ -1134,24 +1432,40 @@
           message: `Action blocked by client safety policy: ${proposal.rationale || "blocked action"}`
         };
       }
-      if (!proposal.targetLocalId) {
-        return {
-          actionId: proposal.actionId,
-          success: false,
-          timestamp,
-          semanticOutcomeVerified: false,
-          message: "Missing targetLocalId for DOM action"
-        };
+      let targetEl = proposal.targetLocalId ? elementMap.get(proposal.targetLocalId) : void 0;
+      if (!targetEl && Array.isArray(proposal.coordinates) && proposal.coordinates.length >= 2) {
+        const coords = proposal.coordinates;
+        let cx = coords[0];
+        let cy = coords[1];
+        const win2 = typeof window !== "undefined" ? window : null;
+        if (win2) {
+          if (cx <= 1 && cy <= 1) {
+            cx = Math.round(cx * (win2.innerWidth || 1280));
+            cy = Math.round(cy * (win2.innerHeight || 800));
+          }
+          const doc = win2.document;
+          if (doc && typeof doc.elementFromPoint === "function") {
+            targetEl = doc.elementFromPoint(cx, cy) || void 0;
+          }
+        }
       }
-      const targetEl = elementMap.get(proposal.targetLocalId);
       if (!targetEl) {
+        if (!proposal.targetLocalId && !proposal.coordinates) {
+          return {
+            actionId: proposal.actionId,
+            success: false,
+            timestamp,
+            semanticOutcomeVerified: false,
+            message: "Missing targetLocalId or coordinates for DOM action"
+          };
+        }
         return {
           actionId: proposal.actionId,
           success: false,
           timestamp,
           semanticOutcomeVerified: false,
           staleTarget: true,
-          message: `Target element '${proposal.targetLocalId}' is stale or not found in DOM`
+          message: `Target element '${proposal.targetLocalId || `coordinates [${proposal.coordinates?.join(", ")}]`}' is stale or not found in DOM`
         };
       }
       const isConnected = targetEl.isConnected ?? (targetEl.ownerDocument && targetEl.ownerDocument.contains(targetEl));
@@ -1216,27 +1530,101 @@
           if (typeof targetEl.focus === "function") {
             targetEl.focus();
           }
+          const rect = typeof targetEl.getBoundingClientRect === "function" ? targetEl.getBoundingClientRect() : { left: 10, top: 10, width: 20, height: 20 };
+          const coords = proposal.coordinates;
+          let clientX = rect.left + rect.width / 2;
+          let clientY = rect.top + rect.height / 2;
+          if (Array.isArray(coords) && coords.length >= 2) {
+            clientX = coords[0] <= 1 && typeof window !== "undefined" ? Math.round(coords[0] * (window.innerWidth || 1280)) : coords[0];
+            clientY = coords[1] <= 1 && typeof window !== "undefined" ? Math.round(coords[1] * (window.innerHeight || 800)) : coords[1];
+          }
+          const mouseInit = {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            clientX,
+            clientY,
+            screenX: clientX,
+            screenY: clientY,
+            button: 0,
+            buttons: 1
+          };
           if (MouseEventCtor) {
-            targetEl.dispatchEvent(new MouseEventCtor("mousedown", { bubbles: true, cancelable: true, composed: true }));
-            targetEl.dispatchEvent(new MouseEventCtor("mouseup", { bubbles: true, cancelable: true, composed: true }));
+            targetEl.dispatchEvent(new MouseEventCtor("mousedown", mouseInit));
+            targetEl.dispatchEvent(new MouseEventCtor("mouseup", mouseInit));
           }
           if (typeof targetEl.click === "function") {
             targetEl.click();
           } else if (EventCtor) {
-            targetEl.dispatchEvent(new EventCtor("click", { bubbles: true, cancelable: true, composed: true }));
+            targetEl.dispatchEvent(new (MouseEventCtor || EventCtor)("click", mouseInit));
           }
           return {
             actionId: proposal.actionId,
             success: true,
             timestamp,
             semanticOutcomeVerified: true,
-            message: `Clicked element '${proposal.targetLocalId}'`
+            message: `Clicked element '${proposal.targetLocalId || `coordinates [${clientX}, ${clientY}]`}'`
           };
         }
         if (proposal.kind === "type" && proposal.textToType !== void 0) {
-          const tag = targetEl.tagName.toLowerCase();
-          const isInputOrTextArea = tag === "input" || tag === "textarea";
-          const isContentEditable = targetEl.isContentEditable || targetEl.getAttribute?.("contenteditable") === "true" || targetEl.getAttribute?.("role") === "textbox";
+          let tag = targetEl.tagName.toLowerCase();
+          let isInputOrTextArea = tag === "input" || tag === "textarea";
+          let isContentEditable = targetEl.isContentEditable || targetEl.getAttribute?.("contenteditable") === "true" || targetEl.getAttribute?.("role") === "textbox";
+          let inputType = tag === "input" ? (targetEl.getAttribute?.("type") || "text").toLowerCase() : "";
+          const nonTextTypes = ["button", "submit", "reset", "image", "checkbox", "radio", "hidden"];
+          let isNonTextInput = tag === "input" && nonTextTypes.includes(inputType);
+          if (!isInputOrTextArea && !isContentEditable || isNonTextInput) {
+            const isEditableTarget = (el) => {
+              if (!el || typeof el.getAttribute !== "function") return false;
+              const t = el.tagName?.toLowerCase();
+              if (t === "textarea") return true;
+              if (t === "input") {
+                const it = (el.getAttribute("type") || "text").toLowerCase();
+                return !["button", "submit", "reset", "image", "checkbox", "radio", "hidden", "file"].includes(it);
+              }
+              return el.isContentEditable === true || el.getAttribute("contenteditable") === "true" || el.getAttribute("role") === "textbox" || el.getAttribute("role") === "searchbox" || el.getAttribute("role") === "combobox";
+            };
+            let healedEl = null;
+            const form = typeof targetEl.closest === "function" ? targetEl.closest("form") : null;
+            if (form && typeof form.querySelectorAll === "function") {
+              const inputs = form.querySelectorAll('input, textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"]');
+              for (const inp of Array.from(inputs)) {
+                if (isEditableTarget(inp)) {
+                  healedEl = inp;
+                  break;
+                }
+              }
+            }
+            if (!healedEl && typeof targetEl.closest === "function") {
+              const container = targetEl.closest('[role="search"], [role="combobox"], header, nav, .search, .search-box, .searchbar');
+              if (container && typeof container.querySelectorAll === "function") {
+                const inputs = container.querySelectorAll('input, textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"]');
+                for (const inp of Array.from(inputs)) {
+                  if (isEditableTarget(inp)) {
+                    healedEl = inp;
+                    break;
+                  }
+                }
+              }
+            }
+            if (!healedEl && targetEl.parentElement && typeof targetEl.parentElement.querySelectorAll === "function") {
+              const parentInputs = targetEl.parentElement.querySelectorAll('input, textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"]');
+              for (const inp of Array.from(parentInputs)) {
+                if (inp !== targetEl && isEditableTarget(inp)) {
+                  healedEl = inp;
+                  break;
+                }
+              }
+            }
+            if (healedEl) {
+              targetEl = healedEl;
+              tag = targetEl.tagName.toLowerCase();
+              isInputOrTextArea = tag === "input" || tag === "textarea";
+              isContentEditable = targetEl.isContentEditable || targetEl.getAttribute?.("contenteditable") === "true" || targetEl.getAttribute?.("role") === "textbox";
+              inputType = tag === "input" ? (targetEl.getAttribute?.("type") || "text").toLowerCase() : "";
+              isNonTextInput = tag === "input" && nonTextTypes.includes(inputType);
+            }
+          }
           if (!isInputOrTextArea && !isContentEditable) {
             return {
               actionId: proposal.actionId,
@@ -1247,7 +1635,6 @@
             };
           }
           if (tag === "input") {
-            const inputType = (targetEl.getAttribute?.("type") || "text").toLowerCase();
             if (inputType === "file") {
               try {
                 const fileName = (proposal.textToType || "submission.pdf").split(/[/\\]/).pop() || "submission.pdf";
@@ -1277,7 +1664,6 @@
                 };
               }
             }
-            const nonTextTypes = ["button", "submit", "reset", "image", "checkbox", "radio", "hidden"];
             if (nonTextTypes.includes(inputType)) {
               return {
                 actionId: proposal.actionId,
@@ -2502,26 +2888,7 @@
       }
 
       .privapilot-badge-pill {
-        position: fixed !important;
-        top: 12px !important;
-        right: 18px !important;
-        pointer-events: none !important;
-        z-index: 2147483647 !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        gap: 7px !important;
-        background: rgba(10, 15, 30, 0.88) !important;
-        backdrop-filter: blur(16px) saturate(180%) !important;
-        -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
-        border: 1px solid rgba(96, 165, 250, 0.5) !important;
-        color: #e0f2fe !important;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-        font-size: 11px !important;
-        font-weight: 600 !important;
-        padding: 5px 12px !important;
-        border-radius: 9999px !important;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(59, 130, 246, 0.45) !important;
-        letter-spacing: 0.3px !important;
+        display: none !important;
       }
 
       .privapilot-pulse-dot {
@@ -2699,20 +3066,6 @@
         glow.className = "privapilot-overlay privapilot-working-glow";
         glow.setAttribute("data-privapilot-ignore", "true");
         glow.setAttribute("aria-hidden", "true");
-        const badge = document.createElement("div");
-        badge.className = "privapilot-overlay privapilot-badge-pill";
-        badge.setAttribute("data-privapilot-ignore", "true");
-        badge.setAttribute("aria-hidden", "true");
-        const dot = document.createElement("span");
-        dot.className = "privapilot-pulse-dot";
-        dot.setAttribute("data-privapilot-ignore", "true");
-        const text = document.createElement("span");
-        text.className = "privapilot-badge-text";
-        text.textContent = label;
-        text.setAttribute("data-privapilot-ignore", "true");
-        badge.appendChild(dot);
-        badge.appendChild(text);
-        glow.appendChild(badge);
         glow.style.opacity = "0";
         document.body.appendChild(glow);
         void glow.offsetHeight;
@@ -2720,8 +3073,6 @@
         this.workingGlowEl = glow;
       } else {
         this.workingGlowEl.style.opacity = "1";
-        const text = this.workingGlowEl.querySelector(".privapilot-badge-text");
-        if (text) text.textContent = label;
       }
       this.glowWatchdogTimer = setTimeout(() => {
         this.hideAgentWorkingGlow();
@@ -3249,7 +3600,7 @@
       return { success: true };
     }
     if (message.type === "EXTRACT_DOM_SNAPSHOT") {
-      overlay.showAgentWorkingGlow(message.label || "PrivaPilot Perceiving Page");
+      overlay.hideAgentWorkingGlow();
       const extracted = extractor.extractSnapshot(document);
       const captureId = message.captureId || `cap_${Date.now()}`;
       currentCaptureId = captureId;

@@ -8,18 +8,21 @@ import {
   SanitizedNetworkPayload,
   ActionProposal,
   resolveTaskContract,
-  groundTargetCandidates
+  groundTargetCandidates,
+  extractSearchQueryFromGoal
 } from '@privapilot/protocol';
 
 export class MockReasoningEngine {
   async decideNextAction(payload: SanitizedNetworkPayload): Promise<ActionProposal> {
     const proposal = await this.computeAction(payload);
     if (!proposal.reasoning && proposal.rationale) {
-      const targetDesc = proposal.targetLocalId ? `element ${proposal.targetLocalId}` : 'the page';
-      const count = payload.elements?.length || 0;
+      const elements = payload.elements || [];
+      const targetEl = proposal.targetLocalId ? elements.find(e => e.localId === proposal.targetLocalId) : undefined;
+      const targetDesc = targetEl?.sanitizedName ? `"${targetEl.sanitizedName}"` : (proposal.targetLocalId ? `target field` : 'page');
+      const count = elements.length;
       return {
         ...proposal,
-        reasoning: `Analyzed viewport containing ${count} interactive element${count === 1 ? '' : 's'}. Aligning execution strategy for: "${payload.goal || ''}". Selecting ${proposal.kind} on ${targetDesc} (${proposal.rationale}).`
+        reasoning: `Perceived ${count} interactive page elements. Processing goal: "${payload.goal || ''}". Selected ${proposal.kind} on ${targetDesc} (${proposal.rationale}).`
       };
     }
     return proposal;
@@ -167,6 +170,16 @@ export class MockReasoningEngine {
     if (intent && intent.intent === 'click') {
       const grounding = groundTargetCandidates(elements, intent);
       if (grounding.status === 'ambiguous_match' && grounding.bestCandidate) {
+        if (!intent.targetPhrase || intent.targetPhrase === 'undefined') {
+          return {
+            actionId: `act_${Date.now()}`,
+            kind: 'answer',
+            confidence: 0.9,
+            risk: 'safe',
+            rationale: 'Could not resolve target element on the current page.',
+            reply: 'Could not resolve a unique target element on this page. Please navigate to the target website or specify an exact action.'
+          };
+        }
         return {
           actionId: `act_${Date.now()}`,
           kind: 'click',
@@ -287,9 +300,10 @@ export class MockReasoningEngine {
       }
 
       const grounding = groundTargetCandidates(elements, intent);
-      const textToType = goal.includes('clearance')
+      const rawVal = goal.includes('clearance')
         ? 'Security Clearance'
         : (intent.requestedValue || '');
+      const textToType = extractSearchQueryFromGoal(rawVal) || rawVal;
       if (grounding.bestCandidate && (grounding.status === 'unambiguous_match' || grounding.bestCandidate.score >= 50)) {
         const target = grounding.bestCandidate.element;
         return {
@@ -303,9 +317,13 @@ export class MockReasoningEngine {
           expectedState: 'Text entered into input field'
         };
       }
-      // Fallback: find any editable input or textarea if none matched by name
+      // Fallback: find any genuine editable input or textarea (not submit button or non-text)
       const fallbackInput = elements.find(
-        (el) => el.actionCapabilities.includes('type') && !el.state.includes('disabled')
+        (el) =>
+          (el.role === 'input' || el.role === 'textarea') &&
+          el.actionCapabilities.includes('type') &&
+          !el.state.includes('disabled') &&
+          !/submit|lucky|button|cancel/i.test(el.sanitizedName)
       );
       if (fallbackInput) {
         return {
@@ -315,7 +333,7 @@ export class MockReasoningEngine {
           textToType,
           confidence: 0.90,
           risk: 'safe',
-          rationale: `Typing "${textToType}" into active field "${fallbackInput.sanitizedName}"`,
+          rationale: `Typing "${textToType}" into "${fallbackInput.sanitizedName || 'search field'}"`,
           expectedState: 'Text entered into input field'
         };
       }

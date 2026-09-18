@@ -1,6 +1,6 @@
 import { SanitizedElement } from './payload.js';
 import { StructuredTaskIntent, FormFieldAssignment } from './grounding.js';
-export type ActionKind = 'observe' | 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'extract' | 'answer' | 'request_user_confirmation' | 'request_user_input' | 'batch' | 'finish' | 'blocked';
+export type ActionKind = 'observe' | 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'extract' | 'answer' | 'request_user_confirmation' | 'request_user_input' | 'batch' | 'spawn_subagents' | 'finish' | 'blocked';
 export type RiskLevel = 'safe' | 'protected' | 'blocked';
 export type ExpectedPostcondition = {
     readonly kind: 'dialog_visible';
@@ -98,6 +98,8 @@ export interface ActionProposal {
     readonly batchActions?: ReadonlyArray<AtomicActionProposal>;
     readonly userInputPrompt?: string;
     readonly inputKey?: string;
+    readonly subTasks?: ReadonlyArray<any>;
+    readonly coordinates?: readonly [number, number];
 }
 export interface ActionExecutionResult {
     readonly actionId: string;

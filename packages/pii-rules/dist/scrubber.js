@@ -16,6 +16,12 @@ export function scrubText(text) {
     let result = '';
     let lastIndex = 0;
     for (const match of matches) {
+        if (match.startIndex < lastIndex) {
+            if (match.endIndex > lastIndex) {
+                lastIndex = match.endIndex;
+            }
+            continue;
+        }
         result += text.substring(lastIndex, match.startIndex);
         result += `[REDACTED_${match.category.toUpperCase()}]`;
         lastIndex = match.endIndex;

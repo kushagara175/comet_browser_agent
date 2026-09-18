@@ -107,6 +107,13 @@
           </svg>
           <span>Telemetry &amp; Audit Log</span>
         </button>
+        <button type="button" id="menuApiPlatformBtn" class="menu-action-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+          </svg>
+          <span>Developer API &amp; Keys</span>
+          <span class="vault-menu-badge">API</span>
+        </button>
         <button type="button" id="menuDevToolsBtn" class="menu-action-item">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
@@ -126,6 +133,7 @@
         <button id="tabVaultBtn" class="hud-tab-btn" style="display: none;"></button>
         <button id="tabPayloadBtn" class="hud-tab-btn" style="display: none;"></button>
         <button id="tabAuditBtn" class="hud-tab-btn" style="display: none;"></button>
+        <button id="tabApiPlatformBtn" class="hud-tab-btn" style="display: none;"></button>
       </div>
 
       <!-- TAB 1: Chat & Execution Stage -->
@@ -564,6 +572,128 @@
         </div>
       </div>
 
+      <!-- TAB 6: Developer Platform & API Keys -->
+      <div id="tabApiPlatformContent" class="tab-pane hidden">
+        <div class="api-platform-wrapper">
+          <!-- Top Navigation Back Button -->
+          <div class="api-top-nav-row">
+            <button type="button" id="apiPlatformBackToChatBtn" class="vault-back-btn" title="Back to Chat">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              <span>Back to Chat</span>
+            </button>
+            <div class="api-header-title">Developer API &amp; Sub-Agents</div>
+          </div>
+
+          <!-- Card 1: API Key Generation & Controls -->
+          <div class="api-card">
+            <div class="api-card-header">
+              <div>
+                <h3 class="api-card-title">Platform API Key</h3>
+                <p class="api-card-desc">Production-ready credentials for autonomous agents and external integrations.</p>
+              </div>
+            </div>
+
+            <div class="api-key-box">
+              <div class="api-key-display-row">
+                <span class="api-key-label">ACTIVE KEY</span>
+                <span id="apiTenantTierBadge" class="api-tier-badge">Enterprise</span>
+              </div>
+              <div class="api-key-input-wrap">
+                <input type="text" id="apiActiveKeyInput" readonly value="privapilot_live_sih2026_demo_key" spellcheck="false" />
+                <button type="button" id="apiCopyKeyBtn" class="btn-api-action copy" title="Copy to Clipboard">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span id="apiCopyKeyLabel">Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="api-actions-row">
+              <button type="button" id="apiGenerateNewKeyBtn" class="btn-api-generate">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                </svg>
+                <span>Generate New API Key</span>
+              </button>
+              <button type="button" id="apiRefreshStatsBtn" class="btn-api-refresh" title="Refresh Live Stats">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </div>
+            <div id="apiKeyStatusMessage" class="api-status-msg hidden"></div>
+          </div>
+
+          <!-- Card 2: Live Quotas & Telemetry Meters -->
+          <div class="api-card">
+            <div class="api-card-header">
+              <div>
+                <h3 class="api-card-title">Live Quota &amp; Telemetry</h3>
+                <p class="api-card-desc">Real-time usage metrics tracked across external agent invocations.</p>
+              </div>
+            </div>
+
+            <div class="api-metrics-grid">
+              <div class="api-metric-item">
+                <div class="api-metric-value" id="apiTotalRequestsValue">0</div>
+                <div class="api-metric-label">Total Requests</div>
+              </div>
+              <div class="api-metric-item">
+                <div class="api-metric-value" id="apiRemainingStepsValue">50,000</div>
+                <div class="api-metric-label">Remaining Steps</div>
+              </div>
+              <div class="api-metric-item">
+                <div class="api-metric-value" id="apiRateLimitValue">120/m</div>
+                <div class="api-metric-label">Rate Limit</div>
+              </div>
+            </div>
+
+            <div class="api-progress-wrap">
+              <div class="api-progress-label">
+                <span>Step Quota Balance</span>
+                <span id="apiQuotaPercent">100% available</span>
+              </div>
+              <div class="api-progress-bar-bg">
+                <div id="apiQuotaProgressBar" class="api-progress-bar-fill" style="width: 100%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Real-Time Live API Request Stream -->
+          <div class="api-card">
+            <div class="api-card-header">
+              <div>
+                <h3 class="api-card-title">Request Activity</h3>
+                <p class="api-card-desc">Live log of requests sent to the platform API.</p>
+              </div>
+            </div>
+            <div id="apiLiveRequestsFeed" class="api-feed">
+              <div class="api-feed-empty">No external requests recorded yet.</div>
+            </div>
+          </div>
+
+          <!-- Card 4: Quick Integration Snippet -->
+          <div class="api-card">
+            <div class="api-card-header">
+              <div>
+                <h3 class="api-card-title">Integration Snippet (cURL)</h3>
+                <p class="api-card-desc">Dispatch tasks to the PrivaPilot parallel swarm:</p>
+              </div>
+            </div>
+            <pre class="api-code-block"><code id="apiCurlSnippet">curl -X POST http://127.0.0.1:4501/api/v1/agent/dispatch \
+  -H "Authorization: Bearer privapilot_live_sih2026_demo_key" \
+  -H "Content-Type: application/json" \
+  -d '{"protocolVersion":"1.0","goal":"Compare iPhone 16 prices across Amazon and Flipkart","enableSubAgents":true}'</code></pre>
+          </div>
+        </div>
+      </div>
+
       <!-- PROTECTED ACTION CONFIRMATION MODAL -->
       <div id="actionConfirmModal" class="confirm-modal hidden">
         <div class="confirm-card">
@@ -667,7 +797,7 @@
   </div>
 
   <script src="waves-shader.js"></script>
-  <script type="module" src="sidepanel.js?v=2.3.7"></script>
+  <script type="module" src="sidepanel.js?v=2.4.0"></script>
 </body>
 </html>
 

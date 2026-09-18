@@ -647,4 +647,120 @@ export function validateSanitizedChatPayload(body) {
         payload: body
     };
 }
+const ALLOWED_PLATFORM_TASK_KEYS = new Set([
+    'protocolVersion',
+    'goal',
+    'contextUrl',
+    'enableSubAgents',
+    'maxParallel',
+    'privacyTier',
+    'requireHumanApproval'
+]);
+/**
+ * Validates a PlatformTaskRequest against closed schema.
+ */
+export function validatePlatformTaskRequest(body) {
+    if (!isPlainObject(body)) {
+        return { isValid: false, errorMessage: 'Request payload must be a JSON object' };
+    }
+    for (const k of Object.getOwnPropertyNames(body)) {
+        if (PROHIBITED_PROPERTY_NAMES.has(k) || !ALLOWED_PLATFORM_TASK_KEYS.has(k)) {
+            return { isValid: false, errorMessage: `Closed schema violation: Unknown property "${k}" is prohibited` };
+        }
+    }
+    if (body.protocolVersion !== '1.0') {
+        return { isValid: false, errorMessage: 'Unsupported protocol version. Expected "1.0"' };
+    }
+    if (typeof body.goal !== 'string' || !body.goal.trim()) {
+        return { isValid: false, errorMessage: 'Field "goal" must be a non-empty string' };
+    }
+    if (body.goal.length > 2000) {
+        return { isValid: false, errorMessage: 'Field "goal" exceeds maximum length of 2000 characters' };
+    }
+    if (hasProhibitedScriptPattern(body.goal)) {
+        return { isValid: false, errorMessage: 'Field "goal" contains prohibited script patterns' };
+    }
+    if (body.contextUrl !== undefined) {
+        if (typeof body.contextUrl !== 'string' || body.contextUrl.length > 2048) {
+            return { isValid: false, errorMessage: 'Field "contextUrl" must be a string up to 2048 characters' };
+        }
+        if (hasProhibitedScriptPattern(body.contextUrl)) {
+            return { isValid: false, errorMessage: 'Field "contextUrl" contains prohibited script patterns' };
+        }
+    }
+    if (body.maxParallel !== undefined) {
+        if (typeof body.maxParallel !== 'number' || !Number.isInteger(body.maxParallel) || body.maxParallel < 1 || body.maxParallel > 4) {
+            return { isValid: false, errorMessage: 'Field "maxParallel" must be an integer between 1 and 4' };
+        }
+    }
+    if (body.privacyTier !== undefined) {
+        if (body.privacyTier !== 'strict_dpdp' && body.privacyTier !== 'standard') {
+            return { isValid: false, errorMessage: 'Field "privacyTier" must be "strict_dpdp" or "standard"' };
+        }
+    }
+    return {
+        isValid: true,
+        payload: body
+    };
+}
+const ALLOWED_PLAN_KEYS = new Set(['protocolVersion', 'goal', 'contextUrl']);
+/**
+ * Validates a PlanRequest against closed schema.
+ */
+export function validatePlanRequest(body) {
+    if (!isPlainObject(body)) {
+        return { isValid: false, errorMessage: 'Request payload must be a JSON object' };
+    }
+    for (const k of Object.getOwnPropertyNames(body)) {
+        if (PROHIBITED_PROPERTY_NAMES.has(k) || !ALLOWED_PLAN_KEYS.has(k)) {
+            return { isValid: false, errorMessage: `Closed schema violation: Unknown property "${k}" is prohibited` };
+        }
+    }
+    if (body.protocolVersion !== '1.0') {
+        return { isValid: false, errorMessage: 'Unsupported protocol version. Expected "1.0"' };
+    }
+    if (typeof body.goal !== 'string' || !body.goal.trim()) {
+        return { isValid: false, errorMessage: 'Field "goal" must be a non-empty string' };
+    }
+    if (body.goal.length > 2000) {
+        return { isValid: false, errorMessage: 'Field "goal" exceeds maximum length of 2000 characters' };
+    }
+    if (hasProhibitedScriptPattern(body.goal)) {
+        return { isValid: false, errorMessage: 'Field "goal" contains prohibited script patterns' };
+    }
+    return {
+        isValid: true,
+        payload: body
+    };
+}
+const ALLOWED_SYNTHESIZE_KEYS = new Set(['protocolVersion', 'originalGoal', 'subTaskResults']);
+/**
+ * Validates a SynthesizeRequest against closed schema.
+ */
+export function validateSynthesizeRequest(body) {
+    if (!isPlainObject(body)) {
+        return { isValid: false, errorMessage: 'Request payload must be a JSON object' };
+    }
+    for (const k of Object.getOwnPropertyNames(body)) {
+        if (PROHIBITED_PROPERTY_NAMES.has(k) || !ALLOWED_SYNTHESIZE_KEYS.has(k)) {
+            return { isValid: false, errorMessage: `Closed schema violation: Unknown property "${k}" is prohibited` };
+        }
+    }
+    if (body.protocolVersion !== '1.0') {
+        return { isValid: false, errorMessage: 'Unsupported protocol version. Expected "1.0"' };
+    }
+    if (typeof body.originalGoal !== 'string' || !body.originalGoal.trim()) {
+        return { isValid: false, errorMessage: 'Field "originalGoal" must be a non-empty string' };
+    }
+    if (hasProhibitedScriptPattern(body.originalGoal)) {
+        return { isValid: false, errorMessage: 'Field "originalGoal" contains prohibited script patterns' };
+    }
+    if (!Array.isArray(body.subTaskResults)) {
+        return { isValid: false, errorMessage: 'Field "subTaskResults" must be an array' };
+    }
+    return {
+        isValid: true,
+        payload: body
+    };
+}
 //# sourceMappingURL=payload-validator.js.map

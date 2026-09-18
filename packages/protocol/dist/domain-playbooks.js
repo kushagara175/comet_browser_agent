@@ -541,6 +541,110 @@ export const GOOGLE_PLAYBOOK = {
     }
 };
 /**
+ * Playbook for Amazon (amazon.in / amazon.com)
+ */
+export const AMAZON_PLAYBOOK = {
+    domain: 'amazon.in',
+    name: 'Amazon India',
+    aliases: ['amazon.in', 'www.amazon.in', 'amazon.com', 'www.amazon.com', 'amazon'],
+    routes: [
+        {
+            name: 'home',
+            path: '/',
+            description: 'Amazon homepage',
+            matchKeywords: ['home', 'homepage', 'shop']
+        },
+        {
+            name: 'search',
+            path: '/s',
+            description: 'Amazon search results page',
+            matchKeywords: ['search', 'results', 'products', 's']
+        }
+    ],
+    landmarks: [
+        {
+            id: 'amazon_search_input',
+            phrase: 'Search Amazon',
+            aliases: ['Search Amazon.in', 'Search Amazon', 'search', 'twotabsearchtextbox', 'field-keywords', 'search box', 'Search input', 'q'],
+            role: 'input',
+            description: 'Amazon main product search input box',
+            intentAction: 'type'
+        },
+        {
+            id: 'amazon_search_button',
+            phrase: 'Go',
+            aliases: ['Search submit', 'nav-search-submit-button', 'Go', 'Submit'],
+            role: 'button',
+            description: 'Trigger Amazon product search button',
+            intentAction: 'click'
+        }
+    ],
+    metricsRules: [
+        {
+            metricId: 'products_count',
+            labelKeywords: ['results', 'products', 'items'],
+            containerHints: ['stat', 'card', 'metric', 'counter'],
+            valuePattern: '\\b\\d+\\b',
+            description: 'Total products listed on Amazon search'
+        }
+    ],
+    formFieldHints: {
+        search: ['twotabsearchtextbox', 'field-keywords', 'search', 'query']
+    }
+};
+/**
+ * Playbook for Flipkart (flipkart.com)
+ */
+export const FLIPKART_PLAYBOOK = {
+    domain: 'flipkart.com',
+    name: 'Flipkart',
+    aliases: ['flipkart.com', 'www.flipkart.com', 'flipkart'],
+    routes: [
+        {
+            name: 'home',
+            path: '/',
+            description: 'Flipkart homepage',
+            matchKeywords: ['home', 'homepage', 'shop']
+        },
+        {
+            name: 'search',
+            path: '/search',
+            description: 'Flipkart search results page',
+            matchKeywords: ['search', 'results', 'products']
+        }
+    ],
+    landmarks: [
+        {
+            id: 'flipkart_search_input',
+            phrase: 'Search for Products, Brands and More',
+            aliases: ['Search for Products', 'Search Products', 'Search', 'search box', 'q', 'Search input'],
+            role: 'input',
+            description: 'Flipkart main product search bar',
+            intentAction: 'type'
+        },
+        {
+            id: 'flipkart_search_button',
+            phrase: 'Search',
+            aliases: ['Search submit', 'Submit'],
+            role: 'button',
+            description: 'Trigger Flipkart search button',
+            intentAction: 'click'
+        }
+    ],
+    metricsRules: [
+        {
+            metricId: 'products_count',
+            labelKeywords: ['results', 'products', 'items'],
+            containerHints: ['stat', 'card', 'metric', 'counter'],
+            valuePattern: '\\b\\d+\\b',
+            description: 'Total products listed on Flipkart search'
+        }
+    ],
+    formFieldHints: {
+        search: ['q', 'search', 'query']
+    }
+};
+/**
  * Playbook for Wikipedia (wikipedia.org)
  */
 export const WIKIPEDIA_PLAYBOOK = {
@@ -1027,6 +1131,8 @@ export const REGISTERED_PLAYBOOKS = [
     REDDIT_PLAYBOOK,
     DUCKDUCKGO_PLAYBOOK,
     GOOGLE_PLAYBOOK,
+    AMAZON_PLAYBOOK,
+    FLIPKART_PLAYBOOK,
     WIKIPEDIA_PLAYBOOK
 ];
 /**
@@ -1301,14 +1407,24 @@ export function extractMetricsWithPlaybook(textContext, metricRule) {
  */
 export function extractSearchQueryFromGoal(goal) {
     let q = (goal || '').trim();
-    const compoundMatch = q.match(/(?:and|then|after\s+that)\s+(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type)\s+(.+)$/i);
+    // Strip initial navigation commands like "Open Amazon, ", "Go to google.com and "
+    q = q.replace(/^(?:open|go\s+to|visit|launch)\s+[^,;]+[,\s;]+(?:and\s+then|then|after\s+that|and)?\s*/i, '');
+    const compoundMatch = q.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type)\s+(.+)$/i);
     if (compoundMatch) {
         q = compoundMatch[1].trim();
     }
     else {
         q = q.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, '');
     }
-    q = q.replace(/\s+(?:in|into|on)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page)$/i, '');
+    // Strip trailing search box / prepositional phrases
+    q = q.replace(/\s+(?:in|into|on|using|use)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page).*$/i, '');
+    // Strip portal mentions like "on amazon", "in flipkart", "across amazon and flipkart"
+    q = q.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github)(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github))*/i, '');
+    // Strip trailing action directives like "use the search bar and hit the website as said and then analyze", "and tell me the price", "and analyze"
+    q = q.replace(/\s+(?:use|using)\s+(?:the\s+)?search\s+bar.*$/i, '');
+    q = q.replace(/\s+(?:and|to|then)\s+(?:hit\s+the\s+website|tell\s+me|analyze|give\s+me|show\s+me|check\s+the\s+price|compare).*$/i, '');
+    q = q.replace(/\s+(?:and|then)\s+analyze.*$/i, '');
+    q = q.replace(/^["']+|["']+$/g, '');
     return q.trim();
 }
 /**
@@ -1372,6 +1488,12 @@ export function extractTargetUrlFromGoal(goal) {
         if (siteKeyword.includes('.')) {
             return `https://${siteKeyword}`;
         }
+        if (siteKeyword.includes('amazon')) {
+            return 'https://www.amazon.in';
+        }
+        if (siteKeyword.includes('flipkart')) {
+            return 'https://www.flipkart.com';
+        }
         if (siteKeyword.includes('isro') || siteKeyword.includes('space')) {
             return 'https://www.isro.gov.in';
         }
@@ -1413,7 +1535,7 @@ export function extractTargetUrlFromGoal(goal) {
         }
     }
     // 5. Explicit navigation verb at start of goal: "open/go to/visit <target>"
-    const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+([a-zA-Z0-9_.-]+)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*|$)/i);
+    const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:in\s+)?([a-zA-Z0-9_.-]+)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*|$)/i);
     if (navDirective) {
         const target = navDirective[1].trim().toLowerCase();
         if (target.includes('.')) {
@@ -1423,6 +1545,10 @@ export function extractTargetUrlFromGoal(goal) {
                 return 'https://www.isro.gov.in';
             return `https://${target}`;
         }
+        if (target === 'amazon' || target.includes('amazon'))
+            return 'https://www.amazon.in';
+        if (target === 'flipkart' || target.includes('flipkart'))
+            return 'https://www.flipkart.com';
         if (target === 'isro' || target.includes('isro'))
             return 'https://www.isro.gov.in';
         if (target === 'gmail' || target.includes('gmail'))
@@ -1454,13 +1580,13 @@ export function extractTargetUrlFromGoal(goal) {
     }
     // 6. Registered Playbook matches against registered domains and distinct aliases
     // ONLY if the goal expresses explicit navigation intent, not an on-page search/filter/action!
-    const isOnPageAction = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|search|filter|find|type|fill|enter|about|check|see|tell|count|submissions?|how\s+many|what\s+is)\b/i.test(g);
+    const isOnPageAction = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|filter|find|type|fill|enter|about|check|see|tell|count|submissions?|how\s+many|what\s+is)\b/i.test(g);
     if (!isOnPageAction) {
         const lower = g.toLowerCase();
         for (const playbook of REGISTERED_PLAYBOOKS) {
             for (const alias of playbook.aliases) {
                 if (alias.length >= 4) {
-                    const regex = new RegExp(`^\\s*${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$|\\b(?:open|go\\s+to|visit|launch|load|navigate\\s+to)\\s+${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                    const regex = new RegExp(`^\\s*${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$|\\b(?:open|go\s+to|visit|launch|load|navigate\s+to)\\s+${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
                     if (regex.test(lower)) {
                         return `https://${playbook.domain}`;
                     }
@@ -1468,6 +1594,11 @@ export function extractTargetUrlFromGoal(goal) {
             }
         }
     }
+    // 7. Direct keyword detection for prominent internet services if mentioned in goal
+    if (/\b(?:open|in|on|at|hit)\s+(?:the\s+)?amazon\b/i.test(g) || /\bamazon\b/i.test(g))
+        return 'https://www.amazon.in';
+    if (/\b(?:open|in|on|at|hit)\s+(?:the\s+)?flipkart\b/i.test(g) || /\bflipkart\b/i.test(g))
+        return 'https://www.flipkart.com';
     return undefined;
 }
 //# sourceMappingURL=domain-playbooks.js.map

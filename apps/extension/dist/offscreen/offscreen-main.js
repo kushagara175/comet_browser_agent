@@ -14081,7 +14081,59 @@ as ORT format: ${n}`);
     "patient",
     "health",
     "doctor_note",
-    "clinical"
+    "clinical",
+    // Phone & Mobile
+    "phone",
+    "mobile",
+    "contact",
+    "tel",
+    "cell",
+    "phonenumber",
+    "phone_number",
+    "usernumber",
+    "user_number",
+    "mobile_number",
+    "contact_number",
+    "cellphone",
+    // Address & Location
+    "address",
+    "street",
+    "city",
+    "state",
+    "zip",
+    "zipcode",
+    "pincode",
+    "pin_code",
+    "postal",
+    "postal_code",
+    "currentaddress",
+    "permanentaddress",
+    "current_address",
+    "permanent_address",
+    // Date of Birth
+    "dob",
+    "birth",
+    "birthday",
+    "bday",
+    "dateofbirth",
+    "date_of_birth",
+    // Name & Identity
+    "firstname",
+    "lastname",
+    "fullname",
+    "name",
+    "fname",
+    "lname",
+    "first_name",
+    "last_name",
+    "user_name",
+    "applicant_name",
+    // Account Handles
+    "username",
+    "user_id",
+    "userid",
+    "user_handle",
+    "user_profile"
   ];
   var SENSITIVE_AUTOCOMPLETE_VALUES = [
     "current-password",
@@ -14097,7 +14149,21 @@ as ORT format: ${n}`);
     "bday",
     "bday-day",
     "bday-month",
-    "bday-year"
+    "bday-year",
+    "tel",
+    "tel-national",
+    "tel-country-code",
+    "postal-code",
+    "street-address",
+    "address-line1",
+    "address-line2",
+    "address-level1",
+    "address-level2",
+    "name",
+    "given-name",
+    "family-name",
+    "username",
+    "email"
   ];
 
   // ../../packages/pii-rules/dist/regex-patterns.js
@@ -14105,7 +14171,15 @@ as ORT format: ${n}`);
   var CANARY_REGEX = /\b(?:SECRET_CANARY[A-Za-z0-9_]*|CANARY_PRIVAPILOT[A-Za-z0-9_]*)\b/g;
   var MEDICAL_REGEX = /\b(?:medical note|clinical diagnosis|prescription info|patient record|doctor note)\b[^\n.,;]*/gi;
   var HANDLE_REGEX = /(?:^|(?<=\s|[([{"']))(@[A-Za-z0-9_]{1,30})\b/g;
+  var DELIVERY_ADDRESS_REGEX = /(?:^|(?<=\s|[([{"']))(?:Deliver(?:y|ing)?\s+to|Ship\s+to|Shipping\s+to|Delivered\s+to)\s+([^\n\r<]{3,80})/gi;
+  var HOME_WORK_LOCATION_REGEX = /\b(?:HOME|WORK|OFFICE|OTHER)\s+(?:at\s+|-\s+)([^\n\r<]{3,80})/gi;
+  var PINCODE_IN_CONTEXT_REGEX = /\b(?:pin(?:\s*code)?[\s:]*|postal\s*code[\s:]*|[,\-]\s*)([1-9][0-9]{5})\b/gi;
+  var LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt|Sector|Block|Pocket|Street|St\.|Road|Rd\.|Cross|Main|Nagar|Colony|Enclave|Vihar|Kunj|Society|Layout|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Bhavan|Bhawan)\b[^\n\r,;]{2,60}/gi;
+  var ACCOUNT_GREETING_REGEX = /\b(?:Hello|Hi|Welcome),\s+([A-Za-z0-9_]{2,30})\b/gi;
+  var STREET_ADDRESS_REGEX = /\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir)\b[^\n\r,;]*/gi;
+  var DATE_OF_BIRTH_REGEX = /\b(?:\d{1,2}[\s/-](?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s/-]\d{2,4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b/gi;
   var EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+  var STANDARD_PHONE_REGEX = /(?:^|(?<!\d))(?:\+?1[\s.-]?)?\(?([0-9]{3})\)?[\s.-]?([0-9]{3})[\s.-]?([0-9]{4})(?!\d)\b/g;
   var INDIAN_PHONE_REGEX = /(?:^|(?<!\d))(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)\b/g;
   var INTL_PHONE_REGEX = /\b\+(?:[1-9]\d{0,2})[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{1,4}[\s.-]?\d{1,9}\b/g;
   var PAN_REGEX = /\b[A-Z]{5}[0-9]{4}[A-Z]\b/g;
@@ -14149,6 +14223,65 @@ as ORT format: ${n}`);
           category: "username",
           startIndex: handleStart,
           endIndex: handleStart + match[1].length,
+          matchedLength: match[1].length,
+          confidence: 0.95
+        });
+      }
+    }
+    for (const match of text.matchAll(DELIVERY_ADDRESS_REGEX)) {
+      if (match.index !== void 0) {
+        matches.push({
+          category: "address",
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+          matchedLength: match[0].length,
+          confidence: 0.95
+        });
+      }
+    }
+    for (const match of text.matchAll(HOME_WORK_LOCATION_REGEX)) {
+      if (match.index !== void 0) {
+        matches.push({
+          category: "address",
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+          matchedLength: match[0].length,
+          confidence: 0.95
+        });
+      }
+    }
+    for (const match of text.matchAll(LOCALITY_ADDRESS_REGEX)) {
+      if (match.index !== void 0) {
+        matches.push({
+          category: "address",
+          startIndex: match.index,
+          endIndex: match.index + match[0].length,
+          matchedLength: match[0].length,
+          confidence: 0.92
+        });
+      }
+    }
+    for (const match of text.matchAll(PINCODE_IN_CONTEXT_REGEX)) {
+      if (match.index !== void 0 && match[1]) {
+        const pinOffset = match[0].indexOf(match[1]);
+        const pinStart = match.index + pinOffset;
+        matches.push({
+          category: "address",
+          startIndex: pinStart,
+          endIndex: pinStart + match[1].length,
+          matchedLength: match[1].length,
+          confidence: 0.96
+        });
+      }
+    }
+    for (const match of text.matchAll(ACCOUNT_GREETING_REGEX)) {
+      if (match.index !== void 0 && match[1]) {
+        const nameOffset = match[0].indexOf(match[1]);
+        const nameStart = match.index + nameOffset;
+        matches.push({
+          category: "username",
+          startIndex: nameStart,
+          endIndex: nameStart + match[1].length,
           matchedLength: match[1].length,
           confidence: 0.95
         });
@@ -14235,6 +14368,54 @@ as ORT format: ${n}`);
         }
       }
     }
+    for (const match of text.matchAll(STANDARD_PHONE_REGEX)) {
+      if (match.index !== void 0) {
+        const start = match.index;
+        const end = match.index + match[0].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+        if (!alreadyCovered) {
+          matches.push({
+            category: "phone",
+            startIndex: start,
+            endIndex: end,
+            matchedLength: match[0].length,
+            confidence: 0.92
+          });
+        }
+      }
+    }
+    for (const match of text.matchAll(STREET_ADDRESS_REGEX)) {
+      if (match.index !== void 0) {
+        const start = match.index;
+        const end = match.index + match[0].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+        if (!alreadyCovered) {
+          matches.push({
+            category: "address",
+            startIndex: start,
+            endIndex: end,
+            matchedLength: match[0].length,
+            confidence: 0.94
+          });
+        }
+      }
+    }
+    for (const match of text.matchAll(DATE_OF_BIRTH_REGEX)) {
+      if (match.index !== void 0) {
+        const start = match.index;
+        const end = match.index + match[0].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+        if (!alreadyCovered) {
+          matches.push({
+            category: "date_of_birth",
+            startIndex: start,
+            endIndex: end,
+            matchedLength: match[0].length,
+            confidence: 0.95
+          });
+        }
+      }
+    }
     for (const match of text.matchAll(CVV_CONTEXT_REGEX)) {
       if (match.index !== void 0 && match[1]) {
         const cvvStart = match.index + match[0].indexOf(match[1]);
@@ -14300,6 +14481,14 @@ as ORT format: ${n}`);
           cat = "date_of_birth";
         else if (autoVal === "one-time-code")
           cat = "auth_code";
+        else if (autoVal.startsWith("tel"))
+          cat = "phone";
+        else if (autoVal.includes("address") || autoVal.includes("postal-code"))
+          cat = "address";
+        else if (autoVal.includes("name") || autoVal === "username")
+          cat = "username";
+        else if (autoVal === "email")
+          cat = "email";
         return {
           isSensitive: true,
           category: cat,
@@ -14307,6 +14496,22 @@ as ORT format: ${n}`);
           confidence: 1
         };
       }
+    }
+    if (type === "email" || autocomplete === "email") {
+      return {
+        isSensitive: true,
+        category: "email",
+        reason: "type/autocomplete email",
+        confidence: 0.95
+      };
+    }
+    if (type === "tel" || autocomplete === "tel") {
+      return {
+        isSensitive: true,
+        category: "phone",
+        reason: "type/autocomplete tel",
+        confidence: 0.95
+      };
     }
     const combinedTokens = `${name2} ${id2} ${placeholder} ${ariaLabel} ${labelText}`.toLowerCase();
     for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
@@ -14319,6 +14524,10 @@ as ORT format: ${n}`);
           cat = "credit_card";
         else if (keyword.includes("cvv") || keyword.includes("cvc"))
           cat = "cvv";
+        else if (keyword.includes("email") || keyword.includes("mail"))
+          cat = "email";
+        else if (keyword.includes("phone") || keyword.includes("mobile") || keyword.includes("contact") || keyword.includes("tel") || keyword.includes("cell") || keyword.includes("usernumber"))
+          cat = "phone";
         else if (keyword.includes("pan"))
           cat = "national_id";
         else if (keyword.includes("aadhaar") || keyword.includes("aadhar"))
@@ -14331,6 +14540,12 @@ as ORT format: ${n}`);
           cat = "auth_code";
         else if (keyword.includes("medical") || keyword.includes("diagnosis") || keyword.includes("prescription") || keyword.includes("patient") || keyword.includes("health") || keyword.includes("doctor_note") || keyword.includes("clinical"))
           cat = "uninspectable";
+        else if (keyword.includes("address") || keyword.includes("street") || keyword.includes("city") || keyword.includes("state") || keyword.includes("zip") || keyword.includes("postal") || keyword.includes("pincode"))
+          cat = "address";
+        else if (keyword.includes("dob") || keyword.includes("birth") || keyword.includes("bday"))
+          cat = "date_of_birth";
+        else if (keyword.includes("name") || keyword.includes("fname") || keyword.includes("lname") || keyword.includes("user") || keyword.includes("applicant"))
+          cat = "username";
         return {
           isSensitive: true,
           category: cat,
@@ -14339,21 +14554,28 @@ as ORT format: ${n}`);
         };
       }
     }
-    if (type === "email" || autocomplete === "email") {
-      return {
-        isSensitive: true,
-        category: "email",
-        reason: "type/autocomplete email",
-        confidence: 0.9
-      };
-    }
-    if (type === "tel" || autocomplete === "tel") {
-      return {
-        isSensitive: true,
-        category: "phone",
-        reason: "type/autocomplete tel",
-        confidence: 0.9
-      };
+    if (desc.value && typeof desc.value === "string") {
+      const trimmedVal = desc.value.trim();
+      if (trimmedVal.length > 0) {
+        const piiMatches = scanTextForPII(trimmedVal);
+        if (piiMatches.length > 0) {
+          return {
+            isSensitive: true,
+            category: piiMatches[0].category,
+            reason: `live value matches PII (${piiMatches[0].category})`,
+            confidence: 0.95
+          };
+        }
+        const isSearchBox = combinedTokens.includes("search") || combinedTokens.includes("filter") || combinedTokens.includes("find") || type === "search";
+        if (!isSearchBox && (desc.tagName === "textarea" || desc.tagName === "input" && type !== "submit" && type !== "button" && type !== "checkbox" && type !== "radio")) {
+          return {
+            isSensitive: true,
+            category: "username",
+            reason: `live input value in form field: "${desc.name || desc.id || desc.placeholder || "input"}"`,
+            confidence: 0.85
+          };
+        }
+      }
     }
     return {
       isSensitive: false,
@@ -14373,6 +14595,12 @@ as ORT format: ${n}`);
     let result = "";
     let lastIndex = 0;
     for (const match of matches) {
+      if (match.startIndex < lastIndex) {
+        if (match.endIndex > lastIndex) {
+          lastIndex = match.endIndex;
+        }
+        continue;
+      }
       result += text.substring(lastIndex, match.startIndex);
       result += `[REDACTED_${match.category.toUpperCase()}]`;
       lastIndex = match.endIndex;

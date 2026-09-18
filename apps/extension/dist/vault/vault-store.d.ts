@@ -16,6 +16,7 @@ export interface UserProfileData {
     state?: string;
     postalCode?: string;
     country?: string;
+    dateOfBirth?: string;
     githubUrl?: string;
     linkedinUrl?: string;
     customNotes?: string;
@@ -37,6 +38,7 @@ export interface PersonalVaultState {
     updatedAt: number;
 }
 export declare const DEFAULT_VAULT_PIN = "1234";
+export declare const DEMO_USER_PROFILE: UserProfileData;
 export declare const DEFAULT_USER_PROFILE: UserProfileData;
 /**
  * Normalizes an arbitrary URL, hostname, or string into a clean lowercase domain origin.

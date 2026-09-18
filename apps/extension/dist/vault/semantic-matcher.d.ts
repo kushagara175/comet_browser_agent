@@ -6,7 +6,7 @@
  * without brittle hardcoded string matching.
  */
 import { UserProfileData, SiteCredential } from './vault-store.js';
-export type CanonicalFieldKey = 'phone' | 'email' | 'fullName' | 'firstName' | 'lastName' | 'organization' | 'address' | 'city' | 'state' | 'postalCode' | 'country' | 'githubUrl' | 'username' | 'password';
+export type CanonicalFieldKey = 'phone' | 'email' | 'fullName' | 'firstName' | 'lastName' | 'organization' | 'address' | 'city' | 'state' | 'postalCode' | 'country' | 'dateOfBirth' | 'githubUrl' | 'username' | 'password';
 export interface FormElementDescriptor {
     readonly id?: string;
     readonly tagName?: string;
@@ -40,5 +40,5 @@ export declare function classifyFieldDescriptor(descriptor: FormElementDescripto
  * Matches a form element against the local Personal Vault and site credentials.
  * Strict zero-PII leak: Only returns values from the local store; nothing is transmitted.
  */
-export declare function matchFieldToVault(descriptor: FormElementDescriptor, profile: UserProfileData, siteCredentials?: SiteCredential[], _targetDomain?: string): FieldMatchResult;
+export declare function matchFieldToVault(descriptor: FormElementDescriptor, profile: UserProfileData, siteCredentials?: SiteCredential[], _targetDomain?: string, allowDemoFallback?: boolean): FieldMatchResult;
 //# sourceMappingURL=semantic-matcher.d.ts.map

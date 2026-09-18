@@ -6,7 +6,7 @@
  * without brittle hardcoded string matching.
  */
 
-import { UserProfileData, SiteCredential } from './vault-store.js';
+import { UserProfileData, SiteCredential, DEMO_USER_PROFILE } from './vault-store.js';
 
 export type CanonicalFieldKey =
   | 'phone'
@@ -20,6 +20,7 @@ export type CanonicalFieldKey =
   | 'state'
   | 'postalCode'
   | 'country'
+  | 'dateOfBirth'
   | 'githubUrl'
   | 'username'
   | 'password';
@@ -82,6 +83,10 @@ const SYNONYM_GROUPS: SynonymGroup[] = [
       'mobile',
       'mobile no',
       'mobile number',
+      'usernumber',
+      'user number',
+      'mobile (10 digits)',
+      '10 digits',
       'cell',
       'whatsapp',
       'tel'
@@ -92,7 +97,7 @@ const SYNONYM_GROUPS: SynonymGroup[] = [
   },
   {
     canonical: 'email',
-    aliases: ['email', 'e-mail', 'mail', 'email id', 'email address', 'user email'],
+    aliases: ['email', 'e-mail', 'mail', 'email id', 'email address', 'user email', 'useremail'],
     autocompletes: ['email'],
     inputTypes: ['email'],
     friendlyPrompt: 'Please enter your Email Address'
@@ -105,15 +110,30 @@ const SYNONYM_GROUPS: SynonymGroup[] = [
   },
   {
     canonical: 'firstName',
-    aliases: ['first name', 'given name', 'fname', 'first'],
+    aliases: ['first name', 'firstname', 'given name', 'fname', 'first'],
     autocompletes: ['given-name'],
     friendlyPrompt: 'Please enter your First Name'
   },
   {
     canonical: 'lastName',
-    aliases: ['last name', 'surname', 'family name', 'lname', 'last'],
+    aliases: ['last name', 'lastname', 'surname', 'family name', 'lname', 'last'],
     autocompletes: ['family-name'],
     friendlyPrompt: 'Please enter your Last Name'
+  },
+  {
+    canonical: 'dateOfBirth',
+    aliases: [
+      'date of birth',
+      'dob',
+      'birth date',
+      'birthday',
+      'bday',
+      'dateofbirth',
+      'birth'
+    ],
+    autocompletes: ['bday', 'bday-day', 'bday-month', 'bday-year'],
+    inputTypes: ['date'],
+    friendlyPrompt: 'Please enter your Date of Birth'
   },
   {
     canonical: 'organization',
@@ -142,7 +162,19 @@ const SYNONYM_GROUPS: SynonymGroup[] = [
   },
   {
     canonical: 'address',
-    aliases: ['address', 'street', 'street address', 'address line', 'residence'],
+    aliases: [
+      'address',
+      'street',
+      'street address',
+      'address line',
+      'currentaddress',
+      'current address',
+      'permanentaddress',
+      'permanent address',
+      'current-address',
+      'permanent-address',
+      'residence'
+    ],
     autocompletes: ['street-address', 'address-line1', 'address-line2'],
     friendlyPrompt: 'Please enter your Street Address'
   },
@@ -280,7 +312,8 @@ export function matchFieldToVault(
   descriptor: FormElementDescriptor,
   profile: UserProfileData,
   siteCredentials: SiteCredential[] = [],
-  _targetDomain: string = ''
+  _targetDomain: string = '',
+  allowDemoFallback: boolean = false
 ): FieldMatchResult {
   const classification = classifyFieldDescriptor(descriptor);
   if (!classification) {
@@ -357,6 +390,7 @@ export function matchFieldToVault(
     state: 'state',
     postalCode: 'postalCode',
     country: 'country',
+    dateOfBirth: 'dateOfBirth',
     githubUrl: 'githubUrl',
     username: undefined,
     password: undefined
@@ -388,6 +422,22 @@ export function matchFieldToVault(
         confidence: Math.max(confidence, 0.85),
         isCredential: false,
         reason: `Derived firstName from profile fullName (${reason})`,
+        promptIfMissing
+      };
+    }
+  }
+
+  // C. Demo Persona Fallback
+  if (allowDemoFallback && profileKey && DEMO_USER_PROFILE[profileKey]) {
+    const demoVal = String(DEMO_USER_PROFILE[profileKey]).trim();
+    if (demoVal.length > 0) {
+      return {
+        matched: true,
+        canonicalField: canonical,
+        valueToFill: demoVal,
+        confidence: Math.max(confidence, 0.85),
+        isCredential: false,
+        reason: `Populated "${canonical}" with synthetic demo persona (${reason})`,
         promptIfMissing
       };
     }

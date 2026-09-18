@@ -152,26 +152,43 @@ export class ActionExecutor {
       };
     }
 
-    // 3. Stale / missing targetLocalId validation
-    if (!proposal.targetLocalId) {
-      return {
-        actionId: proposal.actionId,
-        success: false,
-        timestamp,
-        semanticOutcomeVerified: false,
-        message: 'Missing targetLocalId for DOM action'
-      };
+    // 3. Target resolution via targetLocalId or physical coordinates
+    let targetEl = proposal.targetLocalId ? elementMap.get(proposal.targetLocalId) : undefined;
+
+    if (!targetEl && Array.isArray((proposal as any).coordinates) && (proposal as any).coordinates.length >= 2) {
+      const coords = (proposal as any).coordinates;
+      let cx = coords[0];
+      let cy = coords[1];
+      const win = typeof window !== 'undefined' ? window : null;
+      if (win) {
+        if (cx <= 1.0 && cy <= 1.0) {
+          cx = Math.round(cx * (win.innerWidth || 1280));
+          cy = Math.round(cy * (win.innerHeight || 800));
+        }
+        const doc = win.document;
+        if (doc && typeof doc.elementFromPoint === 'function') {
+          targetEl = (doc.elementFromPoint(cx, cy) as HTMLElement) || undefined;
+        }
+      }
     }
 
-    const targetEl = elementMap.get(proposal.targetLocalId);
     if (!targetEl) {
+      if (!proposal.targetLocalId && !(proposal as any).coordinates) {
+        return {
+          actionId: proposal.actionId,
+          success: false,
+          timestamp,
+          semanticOutcomeVerified: false,
+          message: 'Missing targetLocalId or coordinates for DOM action'
+        };
+      }
       return {
         actionId: proposal.actionId,
         success: false,
         timestamp,
         semanticOutcomeVerified: false,
         staleTarget: true,
-        message: `Target element '${proposal.targetLocalId}' is stale or not found in DOM`
+        message: `Target element '${proposal.targetLocalId || `coordinates [${(proposal as any).coordinates?.join(', ')}]`}' is stale or not found in DOM`
       };
     }
 
@@ -256,14 +273,35 @@ export class ActionExecutor {
           targetEl.focus();
         }
 
+        const rect = typeof targetEl.getBoundingClientRect === 'function' ? targetEl.getBoundingClientRect() : { left: 10, top: 10, width: 20, height: 20 };
+        const coords = (proposal as any).coordinates;
+        let clientX = rect.left + rect.width / 2;
+        let clientY = rect.top + rect.height / 2;
+        if (Array.isArray(coords) && coords.length >= 2) {
+          clientX = coords[0] <= 1.0 && typeof window !== 'undefined' ? Math.round(coords[0] * (window.innerWidth || 1280)) : coords[0];
+          clientY = coords[1] <= 1.0 && typeof window !== 'undefined' ? Math.round(coords[1] * (window.innerHeight || 800)) : coords[1];
+        }
+
+        const mouseInit = {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clientX,
+          clientY,
+          screenX: clientX,
+          screenY: clientY,
+          button: 0,
+          buttons: 1
+        };
+
         if (MouseEventCtor) {
-          targetEl.dispatchEvent(new MouseEventCtor('mousedown', { bubbles: true, cancelable: true, composed: true }));
-          targetEl.dispatchEvent(new MouseEventCtor('mouseup', { bubbles: true, cancelable: true, composed: true }));
+          targetEl.dispatchEvent(new MouseEventCtor('mousedown', mouseInit));
+          targetEl.dispatchEvent(new MouseEventCtor('mouseup', mouseInit));
         }
         if (typeof targetEl.click === 'function') {
           targetEl.click();
         } else if (EventCtor) {
-          targetEl.dispatchEvent(new EventCtor('click', { bubbles: true, cancelable: true, composed: true }));
+          targetEl.dispatchEvent(new (MouseEventCtor || EventCtor)('click', mouseInit));
         }
 
         return {
@@ -271,18 +309,90 @@ export class ActionExecutor {
           success: true,
           timestamp,
           semanticOutcomeVerified: true,
-          message: `Clicked element '${proposal.targetLocalId}'`
+          message: `Clicked element '${proposal.targetLocalId || `coordinates [${clientX}, ${clientY}]`}'`
         };
       }
 
       // TYPE ACTION
       if (proposal.kind === 'type' && proposal.textToType !== undefined) {
-        const tag = targetEl.tagName.toLowerCase();
-        const isInputOrTextArea = tag === 'input' || tag === 'textarea';
-        const isContentEditable =
+        let tag = targetEl.tagName.toLowerCase();
+        let isInputOrTextArea = tag === 'input' || tag === 'textarea';
+        let isContentEditable =
           (targetEl as HTMLElement).isContentEditable ||
           targetEl.getAttribute?.('contenteditable') === 'true' ||
           targetEl.getAttribute?.('role') === 'textbox';
+
+        let inputType = tag === 'input' ? (targetEl.getAttribute?.('type') || 'text').toLowerCase() : '';
+        const nonTextTypes = ['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'hidden'];
+        let isNonTextInput = tag === 'input' && nonTextTypes.includes(inputType);
+
+        // Self-healing: If target element is not directly editable (e.g. submit button, button, or container)
+        // search for an editable input in the same form or container
+        if ((!isInputOrTextArea && !isContentEditable) || isNonTextInput) {
+          const isEditableTarget = (el: any): boolean => {
+            if (!el || typeof el.getAttribute !== 'function') return false;
+            const t = el.tagName?.toLowerCase();
+            if (t === 'textarea') return true;
+            if (t === 'input') {
+              const it = (el.getAttribute('type') || 'text').toLowerCase();
+              return !['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'hidden', 'file'].includes(it);
+            }
+            return (
+              el.isContentEditable === true ||
+              el.getAttribute('contenteditable') === 'true' ||
+              el.getAttribute('role') === 'textbox' ||
+              el.getAttribute('role') === 'searchbox' ||
+              el.getAttribute('role') === 'combobox'
+            );
+          };
+
+          let healedEl: HTMLElement | null = null;
+          const form = typeof targetEl.closest === 'function' ? targetEl.closest('form') : null;
+          if (form && typeof form.querySelectorAll === 'function') {
+            const inputs = form.querySelectorAll('input, textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"]');
+            for (const inp of Array.from(inputs)) {
+              if (isEditableTarget(inp)) {
+                healedEl = inp as HTMLElement;
+                break;
+              }
+            }
+          }
+
+          if (!healedEl && typeof targetEl.closest === 'function') {
+            const container = targetEl.closest('[role="search"], [role="combobox"], header, nav, .search, .search-box, .searchbar');
+            if (container && typeof container.querySelectorAll === 'function') {
+              const inputs = container.querySelectorAll('input, textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"]');
+              for (const inp of Array.from(inputs)) {
+                if (isEditableTarget(inp)) {
+                  healedEl = inp as HTMLElement;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (!healedEl && targetEl.parentElement && typeof targetEl.parentElement.querySelectorAll === 'function') {
+            const parentInputs = targetEl.parentElement.querySelectorAll('input, textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"]');
+            for (const inp of Array.from(parentInputs)) {
+              if (inp !== targetEl && isEditableTarget(inp)) {
+                healedEl = inp as HTMLElement;
+                break;
+              }
+            }
+          }
+
+          if (healedEl) {
+            targetEl = healedEl;
+            tag = targetEl.tagName.toLowerCase();
+            isInputOrTextArea = tag === 'input' || tag === 'textarea';
+            isContentEditable =
+              (targetEl as HTMLElement).isContentEditable ||
+              targetEl.getAttribute?.('contenteditable') === 'true' ||
+              targetEl.getAttribute?.('role') === 'textbox';
+            inputType = tag === 'input' ? (targetEl.getAttribute?.('type') || 'text').toLowerCase() : '';
+            isNonTextInput = tag === 'input' && nonTextTypes.includes(inputType);
+          }
+        }
 
         // Reject semantically changed / non-editable targets
         if (!isInputOrTextArea && !isContentEditable) {
@@ -296,7 +406,6 @@ export class ActionExecutor {
         }
 
         if (tag === 'input') {
-          const inputType = (targetEl.getAttribute?.('type') || 'text').toLowerCase();
           if (inputType === 'file') {
             try {
               const fileName = (proposal.textToType || 'submission.pdf').split(/[/\\]/).pop() || 'submission.pdf';
@@ -327,7 +436,6 @@ export class ActionExecutor {
             }
           }
 
-          const nonTextTypes = ['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'hidden'];
           if (nonTextTypes.includes(inputType)) {
             return {
               actionId: proposal.actionId,

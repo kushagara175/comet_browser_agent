@@ -10,8 +10,24 @@ const CANARY_REGEX = /\b(?:SECRET_CANARY[A-Za-z0-9_]*|CANARY_PRIVAPILOT[A-Za-z0-
 const MEDICAL_REGEX = /\b(?:medical note|clinical diagnosis|prescription info|patient record|doctor note)\b[^\n.,;]*/gi;
 // Social Media / Profile Handles (e.g. @kushagracretes, @username)
 const HANDLE_REGEX = /(?:^|(?<=\s|[([{"']))(@[A-Za-z0-9_]{1,30})\b/g;
+// Delivery and Postal Address Markers (e.g. "Deliver to Kushagra, 211002", "Delivering to Mumbai 400001", "Ship to John Doe")
+const DELIVERY_ADDRESS_REGEX = /(?:^|(?<=\s|[([{"']))(?:Deliver(?:y|ing)?\s+to|Ship\s+to|Shipping\s+to|Delivered\s+to)\s+([^\n\r<]{3,80})/gi;
+// Home / Work / Office Named Locations (e.g. "HOME at katra - Allahabad", "WORK at Cyber City")
+const HOME_WORK_LOCATION_REGEX = /\b(?:HOME|WORK|OFFICE|OTHER)\s+(?:at\s+|-\s+)([^\n\r<]{3,80})/gi;
+// Indian 6-digit Postal PIN Codes in context (e.g. "PIN: 211002", "Pincode 560001", or 6 digits in delivery/postal address)
+const PINCODE_IN_CONTEXT_REGEX = /\b(?:pin(?:\s*code)?[\s:]*|postal\s*code[\s:]*|[,\-]\s*)([1-9][0-9]{5})\b/gi;
+// Locality, Colony, Nagar, Marg, Katra street addresses
+const LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt|Sector|Block|Pocket|Street|St\.|Road|Rd\.|Cross|Main|Nagar|Colony|Enclave|Vihar|Kunj|Society|Layout|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Bhavan|Bhawan)\b[^\n\r,;]{2,60}/gi;
+// Account Greeting Names (e.g. "Hello, Kushagra", "Welcome, Alice", "Hi John")
+const ACCOUNT_GREETING_REGEX = /\b(?:Hello|Hi|Welcome),\s+([A-Za-z0-9_]{2,30})\b/gi;
+// Standard Street Address (e.g. "123 Main St, Anytown, USA", "456 Park Avenue")
+const STREET_ADDRESS_REGEX = /\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir)\b[^\n\r,;]*/gi;
+// Date of Birth / Calendar Dates (e.g. "18 Sep 2026", "14-08-1988", "1998/05/20")
+const DATE_OF_BIRTH_REGEX = /\b(?:\d{1,2}[\s/-](?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s/-]\d{2,4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b/gi;
 // Email: Standard RFC-compliant safe pattern
 const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+// Standard 10-digit Phone Numbers (e.g. 1234567890, (123) 456-7890, 123-456-7890)
+const STANDARD_PHONE_REGEX = /(?:^|(?<!\d))(?:\+?1[\s.-]?)?\(?([0-9]{3})\)?[\s.-]?([0-9]{3})[\s.-]?([0-9]{4})(?!\d)\b/g;
 // Indian Phone (+91-9876543210, +91 98765 43210, 09876543210, 9876543210) & International E.164
 const INDIAN_PHONE_REGEX = /(?:^|(?<!\d))(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)\b/g;
 const INTL_PHONE_REGEX = /\b\+(?:[1-9]\d{0,2})[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{1,4}[\s.-]?\d{1,9}\b/g;
@@ -68,6 +84,70 @@ export function scanTextForPII(text) {
                 category: 'username',
                 startIndex: handleStart,
                 endIndex: handleStart + match[1].length,
+                matchedLength: match[1].length,
+                confidence: 0.95
+            });
+        }
+    }
+    // 1d. Delivery & Postal Addresses
+    for (const match of text.matchAll(DELIVERY_ADDRESS_REGEX)) {
+        if (match.index !== undefined) {
+            matches.push({
+                category: 'address',
+                startIndex: match.index,
+                endIndex: match.index + match[0].length,
+                matchedLength: match[0].length,
+                confidence: 0.95
+            });
+        }
+    }
+    // 1e. Home / Work / Office Named Locations
+    for (const match of text.matchAll(HOME_WORK_LOCATION_REGEX)) {
+        if (match.index !== undefined) {
+            matches.push({
+                category: 'address',
+                startIndex: match.index,
+                endIndex: match.index + match[0].length,
+                matchedLength: match[0].length,
+                confidence: 0.95
+            });
+        }
+    }
+    // 1f. Locality / Street Address Lines
+    for (const match of text.matchAll(LOCALITY_ADDRESS_REGEX)) {
+        if (match.index !== undefined) {
+            matches.push({
+                category: 'address',
+                startIndex: match.index,
+                endIndex: match.index + match[0].length,
+                matchedLength: match[0].length,
+                confidence: 0.92
+            });
+        }
+    }
+    // 1g. Postal PIN codes in context
+    for (const match of text.matchAll(PINCODE_IN_CONTEXT_REGEX)) {
+        if (match.index !== undefined && match[1]) {
+            const pinOffset = match[0].indexOf(match[1]);
+            const pinStart = match.index + pinOffset;
+            matches.push({
+                category: 'address',
+                startIndex: pinStart,
+                endIndex: pinStart + match[1].length,
+                matchedLength: match[1].length,
+                confidence: 0.96
+            });
+        }
+    }
+    // 1h. Account Greeting Names
+    for (const match of text.matchAll(ACCOUNT_GREETING_REGEX)) {
+        if (match.index !== undefined && match[1]) {
+            const nameOffset = match[0].indexOf(match[1]);
+            const nameStart = match.index + nameOffset;
+            matches.push({
+                category: 'username',
+                startIndex: nameStart,
+                endIndex: nameStart + match[1].length,
                 matchedLength: match[1].length,
                 confidence: 0.95
             });
@@ -157,6 +237,57 @@ export function scanTextForPII(text) {
                     endIndex: end,
                     matchedLength: match[0].length,
                     confidence: 0.90
+                });
+            }
+        }
+    }
+    // 7b. Standard 10-digit Phone Numbers
+    for (const match of text.matchAll(STANDARD_PHONE_REGEX)) {
+        if (match.index !== undefined) {
+            const start = match.index;
+            const end = match.index + match[0].length;
+            const alreadyCovered = matches.some(m => m.startIndex <= start && m.endIndex >= end);
+            if (!alreadyCovered) {
+                matches.push({
+                    category: 'phone',
+                    startIndex: start,
+                    endIndex: end,
+                    matchedLength: match[0].length,
+                    confidence: 0.92
+                });
+            }
+        }
+    }
+    // 7c. Street Addresses
+    for (const match of text.matchAll(STREET_ADDRESS_REGEX)) {
+        if (match.index !== undefined) {
+            const start = match.index;
+            const end = match.index + match[0].length;
+            const alreadyCovered = matches.some(m => m.startIndex <= start && m.endIndex >= end);
+            if (!alreadyCovered) {
+                matches.push({
+                    category: 'address',
+                    startIndex: start,
+                    endIndex: end,
+                    matchedLength: match[0].length,
+                    confidence: 0.94
+                });
+            }
+        }
+    }
+    // 7d. Dates of Birth / Calendar Dates
+    for (const match of text.matchAll(DATE_OF_BIRTH_REGEX)) {
+        if (match.index !== undefined) {
+            const start = match.index;
+            const end = match.index + match[0].length;
+            const alreadyCovered = matches.some(m => m.startIndex <= start && m.endIndex >= end);
+            if (!alreadyCovered) {
+                matches.push({
+                    category: 'date_of_birth',
+                    startIndex: start,
+                    endIndex: end,
+                    matchedLength: match[0].length,
+                    confidence: 0.95
                 });
             }
         }

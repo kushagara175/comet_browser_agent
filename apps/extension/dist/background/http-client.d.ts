@@ -59,5 +59,13 @@ export declare class ReasoningHttpClient {
      * Transmits contextless general query (zero page or browser state).
      */
     requestGeneralChat(message: string, history?: ReadonlyArray<ChatHistoryMessage>): Promise<ChatReply>;
+    getPlatformApiTelemetry(): Promise<any>;
+    generatePlatformApiKey(name?: string, tier?: string): Promise<any>;
+    dispatchPlatformTask(payload: {
+        goal: string;
+        enableSubAgents?: boolean;
+        maxParallel?: number;
+        contextUrl?: string;
+    }, apiKey?: string): Promise<any>;
 }
 //# sourceMappingURL=http-client.d.ts.map

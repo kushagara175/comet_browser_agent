@@ -105,6 +105,7 @@ export declare function isRestrictedBrowserUrl(urlStr?: string): {
     isRestricted: boolean;
     reason?: string;
 };
+export declare function isSubAgentSwarmGoal(goal: string): boolean;
 export declare class RunCoordinator {
     private state;
     private readonly browser;
@@ -133,6 +134,10 @@ export declare class RunCoordinator {
     private currentRunId;
     private currentTabId?;
     private lastGoal;
+    private previousSnapshot;
+    private previousUrl;
+    private lastExecutedProposal;
+    private lastExecutionResult;
     constructor(browser?: BrowserAdapter, httpClient?: ReasoningHttpClient, auditLogger?: AuditLogger, options?: {
         defaultMaxSteps?: number;
         maxStaleRetries?: number;
@@ -162,6 +167,13 @@ export declare class RunCoordinator {
      * Reports whether the reasoning gateway and a model backend are reachable.
      */
     getModelStatus(): Promise<ModelStatus>;
+    getPlatformApiTelemetry(): Promise<any>;
+    generatePlatformApiKey(name?: string, tier?: string): Promise<any>;
+    /**
+     * Dispatches a multi-target or comparative goal to the backend Sub-Agent Swarm Orchestrator.
+     * Runs parallel browser agents in isolated contexts and produces synthesized comparison.
+     */
+    dispatchSubAgentSwarm(goal: string): Promise<CoordinatorRunResult>;
     /**
      * Performs page-aware chat strictly across the privacy boundary.
      */

@@ -66,6 +66,20 @@ test('Text PII Scanner - Detects Indian & Global Formats', () => {
   assert.ok(categories.includes('cvv'), 'Must detect CVV in context');
 });
 
+test('Text PII Scanner - Detects Delivery Addresses, Locations, and PIN Codes', () => {
+  const deliverySample = 'Deliver to Kushagra, 211002 - HOME at katra - Allahabad';
+  const matches = scanTextForPII(deliverySample);
+
+  assert.ok(matches.length > 0, 'Must detect address matches');
+  const categories = matches.map(m => m.category);
+  assert.ok(categories.includes('address'), 'Must detect address/location category');
+
+  const scrubbed = scrubText(deliverySample);
+  assert.ok(scrubbed.includes('[REDACTED_ADDRESS]'));
+  assert.ok(!scrubbed.includes('211002'));
+  assert.ok(!scrubbed.includes('katra'));
+});
+
 test('DOM Semantic Analyzer - Catches Form Elements and Autocomplete Tokens', () => {
   // 1. Password input
   const pwdDecision = analyzeDomElementSensitivity({

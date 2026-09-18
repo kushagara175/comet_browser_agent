@@ -72,6 +72,8 @@ test('Domain Playbooks: extractSearchQueryFromGoal extracts clean target query',
   assert.equal(extractSearchQueryFromGoal('filter by PS 171'), 'PS 171');
   assert.equal(extractSearchQueryFromGoal('search Chinmaya in search box'), 'Chinmaya');
   assert.equal(extractSearchQueryFromGoal('please search for AI in the search bar'), 'AI');
+  assert.equal(extractSearchQueryFromGoal('Open Amazon, search for iPhone 16 in the search bar, and analyze the price'), 'iPhone 16');
+  assert.equal(extractSearchQueryFromGoal('Go to flipkart, search "Samsung Galaxy S24" and compare price'), 'Samsung Galaxy S24');
 });
 
 test('Domain Playbooks: Cross-route navigation from know-your-spoc to problem-statements for PS query', () => {

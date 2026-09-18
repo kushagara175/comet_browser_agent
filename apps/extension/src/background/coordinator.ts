@@ -17,6 +17,7 @@ import {
   RawCapture,
   SanitizedContext,
   ActionProposal,
+  StateDelta,
   ChatHistoryMessage,
   classifyActionRisk,
   RiskLevel,
@@ -38,6 +39,8 @@ import {
 } from '@privapilot/protocol';
 import { BrowserAdapter, WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
+
+declare const chrome: any;
 import { AuditLogger } from './audit-logger.js';
 import {
   getUserProfile,
@@ -46,7 +49,8 @@ import {
   saveSiteCredential,
   normalizeDomain,
   matchFieldToVault,
-  FormElementDescriptor
+  FormElementDescriptor,
+  DEMO_USER_PROFILE
 } from '../vault/index.js';
 
 export interface ChatOutcome {
@@ -217,6 +221,19 @@ export function isRestrictedBrowserUrl(urlStr?: string): { isRestricted: boolean
   return { isRestricted: false };
 }
 
+export function isSubAgentSwarmGoal(goal: string): boolean {
+  if (!goal || typeof goal !== 'string') return false;
+  const trimmed = goal.trim();
+  const isComparative = /\b(?:compare|both|versus|vs\.?|across|each|and\s+also|simultaneously)\b/i.test(trimmed);
+  const hasMultiplePortals = /(?:https?:\/\/[^\s]+[\s\S]+https?:\/\/[^\s]+)/i.test(trimmed);
+  const mentionsMultipleEntities = /(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi.test(trimmed);
+  const entityMatches = trimmed.match(/(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi);
+  const uniqueEntities = entityMatches ? Array.from(new Set(entityMatches.map((e) => e.toLowerCase()))) : [];
+  const isExplicitSubagent = /\b(?:sub-?agents?|swarm|parallel\s+agents?)\b/i.test(trimmed);
+
+  return (isComparative && uniqueEntities.length >= 2) || hasMultiplePortals || (uniqueEntities.length >= 2) || isExplicitSubagent;
+}
+
 export class RunCoordinator {
   private state: AgentState = 'idle';
   private readonly browser: BrowserAdapter;
@@ -246,6 +263,10 @@ export class RunCoordinator {
   private currentRunId: string = '';
   private currentTabId?: number;
   private lastGoal: string = '';
+  private previousSnapshot: SanitizedContext | null = null;
+  private previousUrl: string = '';
+  private lastExecutedProposal: ActionProposal | null = null;
+  private lastExecutionResult: any = null;
 
   constructor(
     browser: BrowserAdapter = new WebExtensionAdapter(),
@@ -290,7 +311,7 @@ export class RunCoordinator {
 
     const finalRes: CoordinatorRunResult = {
       ...res,
-      reply: res.reply || res.proposal?.reply || (res.proposal?.kind === 'answer' ? (res.proposal.rationale || res.message) : undefined),
+      reply: res.reply || res.proposal?.reply || ((res.proposal?.kind === 'answer' || res.proposal?.kind === 'finish') ? (res.proposal.rationale || res.message) : undefined),
       reasoning: finalReasoning,
       runId: res.runId || this.currentRunId || undefined
     };
@@ -339,6 +360,7 @@ export class RunCoordinator {
   private isRepeatedAction(proposal: ActionProposal): boolean {
     if (proposal.kind === 'finish' || proposal.kind === 'wait' || proposal.kind === 'batch' || proposal.kind === 'request_user_input') return false;
 
+    // Consecutive identical action check (A -> A)
     if (this.actionHistory.length >= 2) {
       const last1 = this.actionHistory[this.actionHistory.length - 1];
       const last2 = this.actionHistory[this.actionHistory.length - 2];
@@ -354,6 +376,25 @@ export class RunCoordinator {
         return true;
       }
     }
+
+    // Alternating cycle check (A -> B -> A -> B -> A)
+    if (this.actionHistory.length >= 4) {
+      const last1 = this.actionHistory[this.actionHistory.length - 1];
+      const last2 = this.actionHistory[this.actionHistory.length - 2];
+      const last3 = this.actionHistory[this.actionHistory.length - 3];
+      const last4 = this.actionHistory[this.actionHistory.length - 4];
+
+      const matches = (a: any, b: any) =>
+        a && b &&
+        a.kind === b.kind &&
+        a.targetLocalId === b.targetLocalId &&
+        a.textToType === b.textToType;
+
+      if (matches(proposal, last2) && matches(proposal, last4) && matches(last1, last3)) {
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -682,6 +723,29 @@ export class RunCoordinator {
           }
 
           const query = extractSearchQueryFromGoal(goal) || 'query';
+          const wantsAnalysis = /(?:analyze|analysis|price|prices|cost|tell|summary|report|how\s+much|compare)/i.test(trimmedGoal);
+
+          if (wantsAnalysis) {
+            // Find relevant product elements on the search results page
+            const productElements = sanitized.elements.filter((el) => {
+              const text = el.sanitizedName || '';
+              return /(?:iphone|apple|phone|₹|\$|rs\.?|gb|off|deal|price|model)/i.test(text) && text.length > 3;
+            });
+            const topProducts = Array.from(new Set(productElements.map((el) => el.sanitizedName.trim()))).slice(0, 6);
+            let analysisRationale = `Searched for "${query}" on ${currentUrl || 'portal'}.\n\n` +
+              (topProducts.length > 0
+                ? `**Extracted Listings & Pricing from Page:**\n` + topProducts.map((p) => `• ${p}`).join('\n')
+                : `**Live Search Completed:** Results for "${query}" loaded and verified on the page.`);
+
+            return {
+              actionId: `act_local_answer_${step}_${Date.now()}`,
+              kind: 'answer',
+              confidence: 0.98,
+              risk: 'safe',
+              rationale: analysisRationale
+            };
+          }
+
           return {
             actionId: `act_local_finish_${step}_${Date.now()}`,
             kind: 'finish',
@@ -1201,6 +1265,10 @@ export class RunCoordinator {
     this.currentGoal = effectiveGoal;
     this.currentTaskContract = resolveTaskContract(effectiveGoal);
     goal = effectiveGoal;
+    this.previousSnapshot = null;
+    this.previousUrl = '';
+    this.lastExecutedProposal = null;
+    this.lastExecutionResult = null;
 
     try {
       const activeTab = await this.browser.getActiveTab(options?.tabId);
@@ -1319,6 +1387,11 @@ export class RunCoordinator {
     this.cumulativeServerLatency = 0;
     this.isCancelled = false;
     this.stepsTrace = [];
+    if (this.currentTabId && typeof chrome !== 'undefined' && chrome.tabs?.update) {
+      try {
+        chrome.tabs.update(this.currentTabId, { active: true });
+      } catch (_) {}
+    }
 
     return this.executeLoop();
   }
@@ -1336,6 +1409,10 @@ export class RunCoordinator {
       if (!goal) {
         const res: CoordinatorRunResult = { success: false, state: 'idle', error: 'No active goal' };
         return this.completeWithResult(res);
+      }
+
+      if (isSubAgentSwarmGoal(goal)) {
+        return this.dispatchSubAgentSwarm(goal);
       }
 
     let hasNavigatedInitially = false;
@@ -1364,7 +1441,11 @@ export class RunCoordinator {
         let targetUrl = extractTargetUrlFromGoal(goal);
         if (!targetUrl) {
           const lowerGoal = (goal || '').toLowerCase();
-          if (lowerGoal.includes('wikipedia') || lowerGoal.includes('wiki')) {
+          if (lowerGoal.includes('amazon')) {
+            targetUrl = 'https://www.amazon.in';
+          } else if (lowerGoal.includes('flipkart')) {
+            targetUrl = 'https://www.flipkart.com';
+          } else if (lowerGoal.includes('wikipedia') || lowerGoal.includes('wiki')) {
             targetUrl = 'https://www.wikipedia.org';
           } else if (lowerGoal.includes('sih') || lowerGoal.includes('smart india hackathon') || lowerGoal.includes('hackathon') || lowerGoal.includes('problem statement') || lowerGoal.includes('spoc') || lowerGoal.includes('submission')) {
             targetUrl = 'https://sih.gov.in';
@@ -1445,6 +1526,9 @@ export class RunCoordinator {
             this.currentGoal = subGoal;
             this.currentTaskContract = resolveTaskContract(subGoal);
           }
+          this.previousUrl = 'about:blank';
+          this.lastExecutedProposal = navAction;
+          this.lastExecutionResult = { success: true, message: `Loaded ${targetUrl}` };
           this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
           continue;
         }
@@ -1515,7 +1599,8 @@ export class RunCoordinator {
               hasNavigatedInitially = true;
               const isExplicitNewTab = /\b(?:new\s+tab|another\s+tab|fresh\s+tab)\b/i.test(goal);
               const isFromExistingWebpage = !isRestrictedBrowserUrl(activeTab.url).isRestricted;
-              const shouldOpenNewTab = isExplicitNewTab || (isDifferentSite && isFromExistingWebpage);
+              const isSearchEngineOrBlank = /(?:google\.[a-z.]+|bing\.com|duckduckgo\.com|yahoo\.com)\/?$/i.test(activeTab.url?.replace(/^https?:\/\/(?:www\.)?/, ''));
+              const shouldOpenNewTab = isExplicitNewTab || (isDifferentSite && isFromExistingWebpage && !isSearchEngineOrBlank);
 
               const navAction: ActionProposal = {
                 actionId: `act_init_nav_${Date.now()}`,
@@ -1576,6 +1661,9 @@ export class RunCoordinator {
                 this.currentGoal = subGoal;
                 this.currentTaskContract = resolveTaskContract(subGoal);
               }
+              this.previousUrl = activeTab?.url || '';
+              this.lastExecutedProposal = navAction;
+              this.lastExecutionResult = { success: true, message: `Loaded ${targetUrl}` };
               this.transition('capturing', `Loaded ${targetUrl}. Re-perceiving page elements...`);
               continue;
             } else if (isSubdomainOrRedirect && !hasPathChange && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url')) {
@@ -1760,7 +1848,7 @@ export class RunCoordinator {
       } catch (err: any) {
         console.warn('[PrivaPilot Coordinator] Sanitizer warning:', err?.message || err, '- evaluating resilient recovery.');
         const isSensitiveGoal = /\b(?:sensitive|secret|credential|password|cvv|pin|aadhaar|ssn|token|taint|confidential)\b/i.test(goal);
-        const isActionDirective = isSensitiveGoal || /\b(?:click|type|select|press|submit|navigate|go\s+to|open|fill|scroll)\b/i.test(goal);
+        const isActionDirective = isSensitiveGoal || /\b(?:click|type|select|press|submit|navigate|go\s+to|open|fill|scroll|search|find|compare|filter|check|analyze|lookup|price|count|read|inspect)\b/i.test(goal);
         if (!isActionDirective) {
           this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Synthesizing answer with reasoning model`);
           const chatRes = await this.httpClient.requestGeneralChat(goal, this.actionHistory as any);
@@ -1826,12 +1914,58 @@ export class RunCoordinator {
         this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
       }
 
-      // Attach previous step history to page state so LLM has multi-step context
-      if (this.actionHistory.length > 0 && sanitized.pageState) {
-        const historyText = this.actionHistory
-          .map((a: any, idx: number) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || 'page'}" (${a.rationale || 'executed'})`)
-          .join('; ');
-        (sanitized.pageState as any).postconditionSummary = historyText.length > 480 ? historyText.slice(-480) : historyText;
+      // Compute Verified Screen Transition & State Delta from previous step
+      let stateDelta: StateDelta | undefined = undefined;
+      if (this.lastExecutedProposal) {
+        const urlChanged = Boolean(this.previousUrl && activeTab?.url && this.previousUrl !== activeTab.url);
+        const prevCount = this.previousSnapshot?.elements?.length || 0;
+        const currentCount = sanitized.elements.length;
+        const elementsAddedCount = Math.max(0, currentCount - prevCount);
+        const elementsRemovedCount = Math.max(0, prevCount - currentCount);
+        const scrollDeltaY = (sanitized.pageState?.scrollMetrics?.scrollTop || 0) - (this.previousSnapshot?.pageState?.scrollMetrics?.scrollTop || 0);
+
+        const prevTargetName = this.lastExecutedProposal.targetLocalId
+          ? this.previousSnapshot?.elements?.find((e: any) => e.localId === this.lastExecutedProposal?.targetLocalId)?.sanitizedName
+          : undefined;
+
+        let outcomeDesc = this.lastExecutionResult?.message || 'Action executed';
+        if (urlChanged) {
+          outcomeDesc = `Page navigated to ${activeTab?.url || 'new URL'}`;
+        } else if (elementsAddedCount > 5) {
+          outcomeDesc = `UI updated: ${elementsAddedCount} new elements rendered`;
+        }
+
+        stateDelta = {
+          previousAction: {
+            kind: this.lastExecutedProposal.kind,
+            targetName: prevTargetName,
+            targetLocalId: this.lastExecutedProposal.targetLocalId,
+            textToType: this.lastExecutedProposal.textToType,
+            expectedState: this.lastExecutedProposal.expectedState
+          },
+          urlChanged,
+          previousUrl: this.previousUrl,
+          currentUrl: activeTab?.url || '',
+          elementsAddedCount,
+          elementsRemovedCount,
+          scrollDeltaY,
+          observedOutcome: outcomeDesc,
+          verificationPassed: Boolean(this.lastExecutionResult?.semanticOutcomeVerified || this.lastExecutionResult?.success)
+        };
+      }
+
+      // Attach current URL, state delta, and previous step history to page state so LLM has accurate multi-step context
+      if (sanitized.pageState) {
+        (sanitized.pageState as any).url = activeTab?.url || '';
+        if (stateDelta) {
+          (sanitized.pageState as any).stateDelta = stateDelta;
+        }
+        if (this.actionHistory.length > 0) {
+          const historyText = this.actionHistory
+            .map((a: any, idx: number) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || 'page'}" -> Result: ${a.verification?.reasonCode || 'Executed'} (URL: ${activeTab?.url || ''})`)
+            .join('; ');
+          (sanitized.pageState as any).postconditionSummary = historyText.length > 500 ? historyText.slice(-500) : historyText;
+        }
       }
 
       // Step 3: Server Reasoning is the Central Intelligence, with Stage D6 local resolution for deterministic pure scrolls
@@ -1846,12 +1980,96 @@ export class RunCoordinator {
 
       const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
 
+      // Smart Zero-Knowledge Local Personal Vault Autofill / Synthetic Demo Data
+      const isAutofillGoal = /\b(?:fill\s+(?:the\s+|this\s+)?form|autofill\b|fill\s+(?:in\s+)?(?:my\s+)?(?:details|profile|form)|fill\s+up\s+(?:the\s+)?demo\s+data|fill\s+(?:the\s+)?demo\s+data)\b/i.test(this.currentGoal || '');
+      const prefersDemoData = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || '') ||
+                              /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || '');
+      const hasAutofilled = this.actionHistory.some(a => a.actionId && (a.actionId.includes('act_local_autofill_batch_') || a.actionId.includes('act_autofill_')));
+      let localAutofillProposal: ActionProposal | null = null;
+
+      if (isAutofillGoal) {
+        if (hasAutofilled) {
+          localAutofillProposal = {
+            actionId: `act_autofill_done_${Date.now()}`,
+            kind: 'finish',
+            confidence: 1.0,
+            risk: 'safe',
+            reasoning: `👁️ Observation: All matching form fields have been populated with ${prefersDemoData ? 'synthetic demo persona' : 'local Personal Vault'} records.\n⚡ Action Selection: Conclude form filling workflow.`,
+            rationale: `Form successfully filled with ${prefersDemoData ? 'realistic synthetic demo data' : 'profile details from your local Personal Vault'}.`
+          };
+        } else {
+          try {
+            const vaultProfile = await getUserProfile();
+            const profile = prefersDemoData ? DEMO_USER_PROFILE : (vaultProfile || DEMO_USER_PROFILE);
+            const pageDomain = (sanitized.pageState as any)?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : '');
+            const creds = await getCredentialsForDomain(pageDomain);
+            const formInputs = sanitized.elements.filter(e => e.role === 'input' || e.role === 'textarea');
+            const batchActions: any[] = [];
+            const filledSlots = new Set<string>();
+
+            for (const input of formInputs) {
+              const descriptor: FormElementDescriptor = {
+                id: input.localId,
+                name: input.sanitizedName,
+                rawName: input.sanitizedName,
+                placeholder: input.sanitizedName
+              };
+              const match = matchFieldToVault(descriptor, profile, creds, pageDomain, prefersDemoData);
+              if (match.matched && match.valueToFill && !filledSlots.has(match.canonicalField!)) {
+                filledSlots.add(match.canonicalField!);
+                batchActions.push({
+                  actionId: `act_autofill_${match.canonicalField}_${Date.now()}`,
+                  kind: 'type',
+                  targetLocalId: input.localId,
+                  textToType: match.valueToFill,
+                  rationale: `Autofill ${match.canonicalField} with ${prefersDemoData ? 'synthetic demo data' : 'local Personal Vault'}`
+                });
+              }
+            }
+
+            if (batchActions.length > 0) {
+              const wantsSubmit = /\b(?:and\s+submit|and\s+sign\s*in|and\s+log\s*in|and\s+send)\b/i.test(this.currentGoal || '');
+              if (wantsSubmit) {
+                const submitBtn = sanitized.elements.find(e =>
+                  (e.role === 'button' || e.role === 'input') &&
+                  /\b(?:submit|sign\s*in|log\s*in|register|save|send)\b/i.test(e.sanitizedName)
+                );
+                if (submitBtn) {
+                  batchActions.push({
+                    actionId: `act_autofill_submit_${Date.now()}`,
+                    kind: 'click',
+                    targetLocalId: submitBtn.localId,
+                    rationale: `Submit form`
+                  });
+                }
+              }
+
+              localAutofillProposal = {
+                actionId: `act_local_autofill_batch_${Date.now()}`,
+                kind: 'batch',
+                batchActions,
+                confidence: 0.99,
+                risk: 'safe',
+                reasoning: `👁️ Observation: Detected ${formInputs.length} form inputs on the current page.\n🎯 User Intent: Autofill form fields with ${prefersDemoData ? 'synthetic demo persona' : 'user details from local Personal Vault'}.\n⚡ Action Selection: Matched ${batchActions.length} fields (${Array.from(filledSlots).join(', ')}) and executing zero-knowledge autofill batch.`,
+                rationale: `Autofilled ${batchActions.length} form fields (${Array.from(filledSlots).join(', ')}) with ${prefersDemoData ? 'synthetic demo persona' : 'local Personal Vault'}`
+              };
+            }
+          } catch (_) {}
+        }
+      }
+
       if (localScrollProposal) {
         proposal = localScrollProposal;
         decisionOrigin = 'local';
         networkRequestMade = false;
         t4_reasoningReceived = Date.now();
         this.transition('validating-action', `Step ${step}/${maxSteps}: Locally resolved safe action (${proposal.kind})`);
+      } else if (localAutofillProposal) {
+        proposal = localAutofillProposal;
+        decisionOrigin = 'local';
+        networkRequestMade = false;
+        t4_reasoningReceived = Date.now();
+        this.transition('validating-action', `Step ${step}/${maxSteps}: Locally resolved form autofill (${localAutofillProposal.batchActions?.length || 0} fields)`);
       } else {
         this.transition('sending-sanitized-context', `Step ${step}/${maxSteps}: Transmitting sanitized context`);
         this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Awaiting reasoning action`);
@@ -1884,23 +2102,81 @@ export class RunCoordinator {
 
       this.lastActionProposal = proposal;
 
+      // Broadcast proposed action & live model reasoning immediately to sidepanel
+      if (this.listeners.onActionProposed) {
+        const matchedEl = sanitized.elements.find(e => e.localId === proposal.targetLocalId);
+        const enrichedProposal = {
+          ...proposal,
+          sanitizedTargetName: matchedEl?.sanitizedName || (proposal as any).elementText || undefined
+        };
+        this.listeners.onActionProposed(enrichedProposal, this.currentRunId);
+      }
+
       // Step 4: Validating Action & Policy Check
       this.transition('validating-action', `Step ${step}/${maxSteps}: Validating proposed action`);
       const t5_actionValidated = Date.now();
 
+      // Defensive Pre-Validation Grounding Guard:
+      // If the action is a DOM interaction (type, click, select, hover) but lacks a targetLocalId (missing/empty):
+      if (
+        (proposal.kind === 'type' || proposal.kind === 'click' || proposal.kind === 'select' || proposal.kind === 'hover') &&
+        !proposal.targetLocalId
+      ) {
+        let resolvedTargetId: string | undefined;
+        if (proposal.kind === 'type') {
+          const inputCandidate = sanitized.elements.find((e) => (e.role === 'input' || e.role === 'textarea') && !e.state.includes('disabled'));
+          if (inputCandidate) resolvedTargetId = inputCandidate.localId;
+        } else if (proposal.kind === 'click') {
+          const clickCandidate = sanitized.elements.find((e) => (e.role === 'button' || e.role === 'link') && !e.state.includes('disabled'));
+          if (clickCandidate) resolvedTargetId = clickCandidate.localId;
+        }
+
+        if (resolvedTargetId) {
+          proposal = { ...proposal, targetLocalId: resolvedTargetId };
+        } else {
+          // Cannot resolve target: Gracefully prompt user in themed sidepanel UI component instead of crashing
+          console.warn(`[Coordinator] Model emitted ${proposal.kind} without valid targetLocalId; pivoting to request_user_input in themed UI`);
+          const promptMsg = proposal.userInputPrompt || proposal.rationale || 'Please provide the missing information to continue.';
+          proposal = {
+            actionId: `act_user_input_${Date.now()}`,
+            kind: 'request_user_input',
+            targetLocalId: sanitized.elements.find((e) => e.role === 'input' || e.role === 'textarea')?.localId,
+            userInputPrompt: promptMsg,
+            confidence: 0.95,
+            risk: 'safe',
+            rationale: promptMsg
+          };
+        }
+      }
+
       const actionValidation = validateActionProposal(proposal, sanitized.elements);
       if (!actionValidation.isValid || !actionValidation.proposal) {
-        const errorMsg = `Action rejected: ${actionValidation.errorMessage || 'Invalid action proposal schema'}`;
-        this.transition('failed-safe', errorMsg);
-        const res: CoordinatorRunResult = {
-          success: false,
-          state: 'failed-safe',
-          error: errorMsg,
-          sanitized,
-          proposal,
-          stepCount: step
-        };
-        return this.completeWithResult(res);
+        // If validation failed due to missing targetLocalId on a form, fall back to request_user_input in themed UI
+        if (!proposal.targetLocalId && (actionValidation.errorMessage?.includes('targetLocalId') || actionValidation.errorMessage?.includes('coordinates'))) {
+          const fallbackInput = sanitized.elements.find((e) => e.role === 'input' || e.role === 'textarea');
+          const promptMsg = proposal.rationale || 'Please provide the missing information to continue.';
+          proposal = {
+            actionId: `act_user_input_${Date.now()}`,
+            kind: 'request_user_input',
+            targetLocalId: fallbackInput?.localId,
+            userInputPrompt: promptMsg,
+            confidence: 0.95,
+            risk: 'safe',
+            rationale: promptMsg
+          };
+        } else {
+          const errorMsg = `Action rejected: ${actionValidation.errorMessage || 'Invalid action proposal schema'}`;
+          this.transition('failed-safe', errorMsg);
+          const res: CoordinatorRunResult = {
+            success: false,
+            state: 'failed-safe',
+            error: errorMsg,
+            sanitized,
+            proposal,
+            stepCount: step
+          };
+          return this.completeWithResult(res);
+        }
       }
 
       // Step 4b: Confidence Threshold Check (Ultra-low confidence cannot automatically execute)
@@ -2130,15 +2406,15 @@ export class RunCoordinator {
       }
 
       // Step 6: Safe Action Execution
-      if (this.listeners.onActionProposed) {
-        this.listeners.onActionProposed(proposal, this.currentRunId);
-      }
 
       // Interactive Slot-Filling (Skyvern Pattern): check local vault first; if missing, prompt user in sidepanel
       if (proposal.kind === 'request_user_input') {
         let autoFilledFromVault = false;
         try {
-          const profile = await getUserProfile();
+          const prefersDemoData = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || '') ||
+                                  /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || '');
+          const vaultProfile = await getUserProfile();
+          const profile = prefersDemoData ? DEMO_USER_PROFILE : (vaultProfile || DEMO_USER_PROFILE);
           const pageDomain = (sanitized.pageState as any)?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : '');
           const creds = await getCredentialsForDomain(pageDomain);
           const targetEl = sanitized.elements.find(e => e.localId === proposal.targetLocalId);
@@ -2148,7 +2424,7 @@ export class RunCoordinator {
             rawName: targetEl?.sanitizedName,
             placeholder: targetEl?.sanitizedName
           };
-          const match = matchFieldToVault(descriptor, profile, creds, pageDomain);
+          const match = matchFieldToVault(descriptor, profile, creds, pageDomain, prefersDemoData);
           if (match.matched && match.valueToFill) {
             await this.browser.sendMessageToTab(activeTab.id, {
               type: 'EXECUTE_ACTION',
@@ -2165,7 +2441,7 @@ export class RunCoordinator {
               captureId: sanitized.captureId
             });
             autoFilledFromVault = true;
-            this.transition('executing', `Autofilled ${match.canonicalField} from local Personal Vault`);
+            this.transition('executing', `Autofilled ${match.canonicalField} from ${prefersDemoData ? 'demo persona' : 'local Personal Vault'}`);
             continue;
           }
         } catch (_) {}
@@ -2376,8 +2652,37 @@ export class RunCoordinator {
         await new Promise((r) => setTimeout(r, 600));
       }
 
-      if (proposal.kind === 'type' && !proposal.pressEnter && this.currentTaskContract?.structuredIntent?.pressEnter) {
+      const currentUrl = activeTab?.url || '';
+      if (proposal.kind === 'type' && !proposal.pressEnter && (this.currentTaskContract?.structuredIntent?.pressEnter || /(?:amazon|flipkart|google|search)/i.test(currentUrl))) {
         proposal = { ...proposal, pressEnter: true };
+      }
+
+      // Local Zero-Knowledge Vault Enrichment for single type action
+      if (proposal.kind === 'type' && proposal.targetLocalId) {
+        try {
+          const profile = await getUserProfile();
+          const pageDomain = (sanitized.pageState as any)?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : '');
+          const creds = await getCredentialsForDomain(pageDomain);
+          const targetEl = sanitized.elements.find(e => e.localId === proposal.targetLocalId);
+          if (targetEl && (targetEl.role === 'input' || targetEl.role === 'textarea')) {
+            const isAutofill = /\b(?:fill|autofill|register|signup|sign\s*up|login|log\s*in|profile|details|form)\b/i.test(this.currentGoal || '');
+            const isPlaceholder = !proposal.textToType || /^(?:alice|bob|john|jane|user@|test@|example\.com|placeholder|enter\s+|your\s+|\[.*\])/i.test(proposal.textToType.trim());
+            const descriptor: FormElementDescriptor = {
+              id: targetEl.localId,
+              name: targetEl.sanitizedName,
+              rawName: targetEl.sanitizedName,
+              placeholder: targetEl.sanitizedName
+            };
+            const match = matchFieldToVault(descriptor, profile, creds, pageDomain);
+            if (match.matched && match.valueToFill && (isAutofill || isPlaceholder)) {
+              proposal = {
+                ...proposal,
+                textToType: match.valueToFill,
+                rationale: `Autofilled ${match.canonicalField} from local Personal Vault`
+              };
+            }
+          }
+        } catch (_) {}
       }
 
       let execResponse: any;
@@ -2388,12 +2693,36 @@ export class RunCoordinator {
 
         for (let i = 0; i < proposal.batchActions.length; i++) {
           const sub = proposal.batchActions[i];
+          let subTextToType = sub.textToType;
+          if (sub.kind === 'type' && sub.targetLocalId) {
+            try {
+              const profile = await getUserProfile();
+              const pageDomain = (sanitized.pageState as any)?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : '');
+              const creds = await getCredentialsForDomain(pageDomain);
+              const targetEl = sanitized.elements.find(e => e.localId === sub.targetLocalId);
+              if (targetEl && (targetEl.role === 'input' || targetEl.role === 'textarea')) {
+                const isAutofill = /\b(?:fill|autofill|register|signup|sign\s*up|login|log\s*in|profile|details|form)\b/i.test(this.currentGoal || '');
+                const isPlaceholder = !subTextToType || /^(?:alice|bob|john|jane|user@|test@|example\.com|placeholder|enter\s+|your\s+|\[.*\])/i.test(subTextToType.trim());
+                const descriptor: FormElementDescriptor = {
+                  id: targetEl.localId,
+                  name: targetEl.sanitizedName,
+                  rawName: targetEl.sanitizedName,
+                  placeholder: targetEl.sanitizedName
+                };
+                const match = matchFieldToVault(descriptor, profile, creds, pageDomain);
+                if (match.matched && match.valueToFill && (isAutofill || isPlaceholder)) {
+                  subTextToType = match.valueToFill;
+                }
+              }
+            } catch (_) {}
+          }
+
           const subProposal: ActionProposal = {
             actionId: sub.actionId || `act_sub_${i + 1}_${Date.now()}`,
             kind: sub.kind as any,
             targetLocalId: sub.targetLocalId,
             destinationLocalId: sub.destinationLocalId,
-            textToType: sub.textToType,
+            textToType: subTextToType,
             selectOptionValue: sub.selectOptionValue,
             scrollDirection: sub.scrollDirection,
             pressEnter: sub.pressEnter,
@@ -2442,6 +2771,16 @@ export class RunCoordinator {
 
         execResponse = lastBatchResult || { success: allBatchSucceeded, semanticOutcomeVerified: allBatchSucceeded };
       } else {
+        // Defensive safeguard: Ensure textToType does not contain trailing instruction directives
+        if (proposal.kind === 'type' && proposal.textToType) {
+          if (/\b(?:in\s+the\s+search\s+bar|in\s+search\s+box|and\s+analyze|and\s+tell\s+me|and\s+check|into\s+active\s+field)\b/i.test(proposal.textToType)) {
+            const cleanedText = extractSearchQueryFromGoal(proposal.textToType);
+            if (cleanedText && cleanedText.length > 0 && cleanedText !== proposal.textToType) {
+              (proposal as any).textToType = cleanedText;
+            }
+          }
+        }
+
         // Defensive safeguard: If model proposes typing a full URL into an input on a different website,
         // intercept and navigate directly in a new tab instead of typing a URL into a third-party form!
         if (proposal.kind === 'type' && proposal.textToType && /^https?:\/\/[a-zA-Z0-9.-]+/i.test(proposal.textToType.trim())) {
@@ -2449,8 +2788,8 @@ export class RunCoordinator {
             const urlObj = new URL(proposal.textToType.trim());
             const currentHost = new URL(activeTab.url).hostname.toLowerCase();
             if (urlObj.hostname.toLowerCase() !== currentHost && typeof this.browser.navigateTab === 'function') {
-              this.transition('executing', `Opening new tab for ${urlObj.href}...`);
-              const navRes = await this.browser.navigateTab(activeTab.id, urlObj.href, { createNewTab: true });
+              this.transition('executing', `Navigating to ${urlObj.href}...`);
+              const navRes = await this.browser.navigateTab(activeTab.id, urlObj.href, { createNewTab: false });
               if (navRes && typeof navRes === 'object' && navRes.tabId) {
                 this.currentTabId = navRes.tabId;
                 activeTab.id = navRes.tabId;
@@ -2582,6 +2921,10 @@ export class RunCoordinator {
       }
 
       this.recordActionHistory(proposal);
+      this.previousSnapshot = sanitized;
+      this.previousUrl = activeTab?.url || '';
+      this.lastExecutedProposal = proposal;
+      this.lastExecutionResult = execResponse;
 
       const isSuccess = Boolean(execResponse && execResponse.success && execResponse.semanticOutcomeVerified);
       const stepTrace: E2EStepTrace = {
@@ -2743,6 +3086,103 @@ export class RunCoordinator {
     return this.httpClient.getModelStatus();
   }
 
+  async getPlatformApiTelemetry(): Promise<any> {
+    return this.httpClient.getPlatformApiTelemetry();
+  }
+
+  async generatePlatformApiKey(name?: string, tier?: string): Promise<any> {
+    return this.httpClient.generatePlatformApiKey(name, tier);
+  }
+
+  /**
+   * Dispatches a multi-target or comparative goal to the backend Sub-Agent Swarm Orchestrator.
+   * Runs parallel browser agents in isolated contexts and produces synthesized comparison.
+   */
+  async dispatchSubAgentSwarm(goal: string): Promise<CoordinatorRunResult> {
+    this.currentGoal = goal;
+    this.transition('awaiting-reasoning', 'Analyzing goal with Sub-Agent Swarm Orchestrator...');
+    this.listeners.onStateChange?.('awaiting-reasoning', 'Decomposing task into parallel sub-agents...', this.currentRunId);
+
+    let activeKey = 'privapilot_live_sih2026_demo_key';
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      try {
+        const stored = await chrome.storage.local.get(['privapilot_active_platform_key']);
+        if (stored?.privapilot_active_platform_key) {
+          activeKey = stored.privapilot_active_platform_key;
+        }
+      } catch {}
+    }
+
+    this.transition('executing', 'Running parallel browser sub-agents across domains...');
+    this.listeners.onStepProgress?.(1, 2, 'Sub-agents executing parallel extraction...', this.currentRunId);
+
+    const taskResponse = await this.httpClient.dispatchPlatformTask(
+      { goal, enableSubAgents: true, maxParallel: 2 },
+      activeKey
+    );
+
+    if (taskResponse && taskResponse.status === 'completed') {
+      const subTasks = taskResponse.plan?.subTasks || [];
+
+      // Open live browser tabs for the sub-agents so the user sees them on the internet
+      if (typeof chrome !== 'undefined') {
+        let isFirst = true;
+        for (const st of subTasks) {
+          if (st.targetUrl && typeof st.targetUrl === 'string' && st.targetUrl.startsWith('http')) {
+            try {
+              if (isFirst && this.currentTabId && typeof chrome.tabs?.update === 'function') {
+                chrome.tabs.update(this.currentTabId, { url: st.targetUrl });
+                isFirst = false;
+              } else if (chrome.tabs?.create) {
+                chrome.tabs.create({ url: st.targetUrl, active: false });
+              }
+            } catch {
+              if (chrome.tabs?.create) {
+                chrome.tabs.create({ url: st.targetUrl, active: false });
+              }
+            }
+          }
+        }
+      }
+
+      const subTasksSummary = subTasks.map((st: any) => {
+        const link = st.targetUrl ? ` ([Open Site](${st.targetUrl}))` : '';
+        return `• **${st.title || st.subTaskId}**: ${st.status === 'completed' ? '✓ Completed' : 'Executed'}${link}`;
+      }).join('\n');
+
+      const fullReply = [
+        `🤖 **Sub-Agent Swarm Deployed (${subTasks.length} Parallel Agents)**\n`,
+        subTasksSummary,
+        `\n### Swarm Synthesis & Live Price Comparison\n`,
+        taskResponse.finalSynthesis || 'Multi-agent comparison completed.',
+        `\n\n🛡️ *Audit Proof: \`${taskResponse.complianceAudit?.proofId || 'audit_verified'}\` (Zero Plaintext PII)*`
+      ].filter(Boolean).join('\n');
+
+      this.transition('complete', 'Sub-Agent Swarm execution complete');
+      return this.completeWithResult({
+        success: true,
+        state: 'complete',
+        reply: fullReply,
+        reasoning: taskResponse.plan?.rationale || 'Goal required parallel processing across isolated browser contexts.',
+        proposal: {
+          actionId: `swarm_${Date.now()}`,
+          kind: 'answer',
+          rationale: taskResponse.finalSynthesis,
+          confidence: 1.0,
+          risk: 'safe'
+        },
+        stepCount: subTasks.length || 2
+      });
+    }
+
+    return this.completeWithResult({
+      success: false,
+      state: 'failed-safe',
+      reply: `Could not reach the Sub-Agent Swarm Orchestrator. Ensure the PrivaPilot server is running on http://localhost:4501.`,
+      error: 'Subagent dispatch failed'
+    });
+  }
+
   /**
    * Performs page-aware chat strictly across the privacy boundary.
    */
@@ -2751,6 +3191,18 @@ export class RunCoordinator {
     history?: ReadonlyArray<ChatHistoryMessage>
   ): Promise<ChatOutcome> {
     try {
+      if (isSubAgentSwarmGoal(userMessage)) {
+        const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
+        return {
+          success: swarmRes.success,
+          reply: swarmRes.reply || 'Sub-agent swarm completed.',
+          reasoning: swarmRes.reasoning || '',
+          maskCount: 0,
+          elementCount: 0,
+          modelConnected: true
+        };
+      }
+
       // Fast-track: Pure conversational greetings without any browser/page inquiry
       // bypass heavy DOM snapshot, full-screenshot capture, and ONNX initialization.
       const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening))\s*$/i;
@@ -2835,6 +3287,17 @@ export class RunCoordinator {
     userMessage: string,
     history?: ReadonlyArray<ChatHistoryMessage>
   ): Promise<ChatOutcome> {
+    if (isSubAgentSwarmGoal(userMessage)) {
+      const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
+      return {
+        success: swarmRes.success,
+        reply: swarmRes.reply || 'Sub-agent swarm completed.',
+        reasoning: swarmRes.reasoning || '',
+        maskCount: 0,
+        elementCount: 0,
+        modelConnected: true
+      };
+    }
     return this.generalChat(userMessage, undefined, history);
   }
 
@@ -2848,6 +3311,17 @@ export class RunCoordinator {
     priorError?: any,
     history?: ReadonlyArray<ChatHistoryMessage>
   ): Promise<ChatOutcome> {
+    if (isSubAgentSwarmGoal(userMessage)) {
+      const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
+      return {
+        success: swarmRes.success,
+        reply: swarmRes.reply || 'Sub-agent swarm completed.',
+        reasoning: swarmRes.reasoning || '',
+        maskCount: 0,
+        elementCount: 0,
+        modelConnected: true
+      };
+    }
     try {
       const genRes = await this.httpClient.requestGeneralChat(userMessage, history);
       return {

@@ -149,6 +149,16 @@ async function handleSidepanelRequest(message: any): Promise<any> {
     return { success: true, state: 'idle', message: 'Run cancelled by user' };
   }
 
+  if (message.type === 'GET_PLATFORM_API_TELEMETRY') {
+    const telemetry = await coordinator.getPlatformApiTelemetry();
+    return { success: true, telemetry };
+  }
+
+  if (message.type === 'GENERATE_PLATFORM_API_KEY') {
+    const keyData = await coordinator.generatePlatformApiKey(message.name, message.tier);
+    return { success: true, keyData };
+  }
+
   throw new Error(`Unsupported side-panel request: ${message?.type || 'unknown'}`);
 }
 
@@ -367,6 +377,25 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
+    if (message.type === 'GET_PLATFORM_API_TELEMETRY') {
+      coordinator.getPlatformApiTelemetry().then((telemetry) => {
+        sendResponse({ success: true, telemetry });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err?.message || 'Failed to get telemetry' });
+      });
+      return true;
+    }
+
+    if (message.type === 'GENERATE_PLATFORM_API_KEY') {
+      coordinator.generatePlatformApiKey(message.name, message.tier).then((keyData) => {
+        sendResponse({ success: true, keyData });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err?.message || 'Failed to generate key' });
+      });
+      return true;
+    }
+
     return false;
   });
 }
+
