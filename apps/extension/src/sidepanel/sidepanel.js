@@ -1166,6 +1166,17 @@ if (typeof document !== 'undefined') {
       }
     });
 
+    const menuReloadExtensionBtn = document.getElementById('menuReloadExtensionBtn');
+    menuReloadExtensionBtn?.addEventListener('click', () => {
+      geminiMenuDropdown?.classList.add('hidden');
+      menuToggleBtn?.classList.remove('active');
+      if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.reload === 'function') {
+        chrome.runtime.reload();
+      } else {
+        window.location.reload();
+      }
+    });
+
     menuDevToolsBtn?.addEventListener('click', () => {
       geminiMenuDropdown?.classList.add('hidden');
       menuToggleBtn?.classList.remove('active');
