@@ -1981,9 +1981,7 @@ export class RunCoordinator {
       const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
 
       // Smart Zero-Knowledge Local Personal Vault Autofill / Synthetic Demo Data
-      const isAutofillGoal = /\b(?:fill|autofill|populate)\b.*?\b(?:form|details|data|inputs?|profile|fields?)\b/i.test(this.currentGoal || '') ||
-        /\b(?:fill\s+(?:in|up|out)?\s*(?:the|this|my)?\s*(?:form|details|profile|data))\b/i.test(this.currentGoal || '') ||
-        /\b(?:autofill\b)\b/i.test(this.currentGoal || '');
+      const isAutofillGoal = /\b(?:fill|autofill|populate|form)\b/i.test(this.currentGoal || '');
       const prefersDemoData = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || '') ||
                               /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || '');
       const hasAutofilled = this.actionHistory.some(a => a.actionId && (a.actionId.includes('act_local_autofill_batch_') || a.actionId.includes('act_autofill_')));
@@ -2131,6 +2129,17 @@ export class RunCoordinator {
                 userApproved: true,
                 rationale: `Prompting user for missing field: ${fieldName}`
               };
+            } else {
+              localAutofillProposal = {
+                actionId: `act_autofill_no_inputs_${Date.now()}`,
+                kind: 'answer',
+                reply: 'No fillable form inputs or registration fields were detected on the active page. Please navigate to a page with a form (such as demoqa.com/automation-practice-form).',
+                confidence: 1.0,
+                risk: 'safe',
+                userApproved: true,
+                reasoning: '👁️ Observation: No fillable input or textarea elements found on this page.\n⚡ Action Selection: Inform user that no form fields are available to fill.',
+                rationale: 'No fillable form fields detected on the current page.'
+              };
             }
           } catch (_) {}
         }
@@ -2156,10 +2165,23 @@ export class RunCoordinator {
           proposal = await this.httpClient.requestReasoningAction(sanitized);
         } catch (err: any) {
           console.warn('[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:', err?.message || err);
+          const msg = (err?.message || '').toLowerCase();
           // Fallback to local offline router (Playbooks, Form Filling, Metrics, Bookmarks, Scroll)
           const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
           if (localProposal) {
             proposal = localProposal;
+            decisionOrigin = 'local';
+            networkRequestMade = false;
+          } else if (msg.includes('userinputprompt') || msg.includes('request_user_input') || msg.includes('input prompt') || msg.includes('slot')) {
+            proposal = {
+              actionId: `act_salvaged_input_${Date.now()}`,
+              kind: 'request_user_input',
+              userInputPrompt: 'Could you please clarify what information or action you would like to proceed with?',
+              confidence: 0.9,
+              risk: 'safe',
+              userApproved: true,
+              rationale: 'Clarifying user intent'
+            };
             decisionOrigin = 'local';
             networkRequestMade = false;
           } else {

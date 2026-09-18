@@ -16285,6 +16285,29 @@ var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "subTasks",
   "coordinates"
 ]);
+var ALLOWED_ATOMIC_ACTION_KEYS = /* @__PURE__ */ new Set([
+  "actionId",
+  "kind",
+  "targetLocalId",
+  "destinationLocalId",
+  "textToType",
+  "selectOptionValue",
+  "scrollDirection",
+  "pressEnter",
+  "fileName",
+  "userInputPrompt",
+  "inputKey",
+  "reply",
+  "reasoning",
+  "rationale",
+  "userApproved",
+  "coordinates",
+  "confidence",
+  "risk",
+  "prompt",
+  "message",
+  "thought"
+]);
 var VALID_ACTION_KINDS = /* @__PURE__ */ new Set([
   "observe",
   "click",
@@ -16593,22 +16616,6 @@ function validateActionProposal(proposal, validElements) {
     if (proposal.batchActions.length === 0 || proposal.batchActions.length > 10) {
       return { isValid: false, errorMessage: 'Field "batchActions" must contain between 1 and 10 actions' };
     }
-    const ALLOWED_ATOMIC_ACTION_KEYS = /* @__PURE__ */ new Set([
-      "actionId",
-      "kind",
-      "targetLocalId",
-      "destinationLocalId",
-      "textToType",
-      "selectOptionValue",
-      "scrollDirection",
-      "pressEnter",
-      "fileName",
-      "userInputPrompt",
-      "inputKey",
-      "reply",
-      "reasoning",
-      "rationale"
-    ]);
     const VALID_ATOMIC_KINDS = /* @__PURE__ */ new Set([
       "click",
       "hover",
@@ -19990,6 +19997,21 @@ var ReasoningHttpClient = class {
           delete actionRaw[k2];
         }
       }
+      if (Array.isArray(actionRaw.batchActions)) {
+        for (const sub of actionRaw.batchActions) {
+          if (sub && typeof sub === "object" && !Array.isArray(sub)) {
+            if (sub.userInputPrompt && !sub.kind) {
+              sub.kind = "request_user_input";
+            }
+            for (const subK of Object.keys(sub)) {
+              if (!ALLOWED_ATOMIC_ACTION_KEYS.has(subK)) {
+                console.warn(`[PrivaPilot HttpClient] Stripping unexpected key from batch action: ${subK}`);
+                delete sub[subK];
+              }
+            }
+          }
+        }
+      }
     }
     const validation = validateActionProposal(actionRaw, sanitized.elements);
     if (!validation.isValid || !validation.proposal) {
@@ -22261,7 +22283,7 @@ var RunCoordinator = class {
         let networkRequestMade = true;
         let t4_reasoningReceived = Date.now();
         const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
-        const isAutofillGoal = /\b(?:fill|autofill|populate)\b.*?\b(?:form|details|data|inputs?|profile|fields?)\b/i.test(this.currentGoal || "") || /\b(?:fill\s+(?:in|up|out)?\s*(?:the|this|my)?\s*(?:form|details|profile|data))\b/i.test(this.currentGoal || "") || /\b(?:autofill\b)\b/i.test(this.currentGoal || "");
+        const isAutofillGoal = /\b(?:fill|autofill|populate|form)\b/i.test(this.currentGoal || "");
         const prefersDemoData = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || "") || /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || "");
         const hasAutofilled = this.actionHistory.some((a) => a.actionId && (a.actionId.includes("act_local_autofill_batch_") || a.actionId.includes("act_autofill_")));
         let localAutofillProposal = null;
@@ -22395,6 +22417,17 @@ var RunCoordinator = class {
                   userApproved: true,
                   rationale: `Prompting user for missing field: ${fieldName}`
                 };
+              } else {
+                localAutofillProposal = {
+                  actionId: `act_autofill_no_inputs_${Date.now()}`,
+                  kind: "answer",
+                  reply: "No fillable form inputs or registration fields were detected on the active page. Please navigate to a page with a form (such as demoqa.com/automation-practice-form).",
+                  confidence: 1,
+                  risk: "safe",
+                  userApproved: true,
+                  reasoning: "\u{1F441}\uFE0F Observation: No fillable input or textarea elements found on this page.\n\u26A1 Action Selection: Inform user that no form fields are available to fill.",
+                  rationale: "No fillable form fields detected on the current page."
+                };
               }
             } catch (_) {
             }
@@ -22419,9 +22452,22 @@ var RunCoordinator = class {
             proposal = await this.httpClient.requestReasoningAction(sanitized);
           } catch (err) {
             console.warn("[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:", err?.message || err);
+            const msg = (err?.message || "").toLowerCase();
             const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
             if (localProposal) {
               proposal = localProposal;
+              decisionOrigin = "local";
+              networkRequestMade = false;
+            } else if (msg.includes("userinputprompt") || msg.includes("request_user_input") || msg.includes("input prompt") || msg.includes("slot")) {
+              proposal = {
+                actionId: `act_salvaged_input_${Date.now()}`,
+                kind: "request_user_input",
+                userInputPrompt: "Could you please clarify what information or action you would like to proceed with?",
+                confidence: 0.9,
+                risk: "safe",
+                userApproved: true,
+                rationale: "Clarifying user intent"
+              };
               decisionOrigin = "local";
               networkRequestMade = false;
             } else {

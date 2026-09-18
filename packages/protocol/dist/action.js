@@ -524,6 +524,29 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
     'subTasks',
     'coordinates'
 ]);
+export const ALLOWED_ATOMIC_ACTION_KEYS = new Set([
+    'actionId',
+    'kind',
+    'targetLocalId',
+    'destinationLocalId',
+    'textToType',
+    'selectOptionValue',
+    'scrollDirection',
+    'pressEnter',
+    'fileName',
+    'userInputPrompt',
+    'inputKey',
+    'reply',
+    'reasoning',
+    'rationale',
+    'userApproved',
+    'coordinates',
+    'confidence',
+    'risk',
+    'prompt',
+    'message',
+    'thought'
+]);
 const VALID_ACTION_KINDS = new Set([
     'observe',
     'click',
@@ -865,22 +888,6 @@ export function validateActionProposal(proposal, validElements) {
         if (proposal.batchActions.length === 0 || proposal.batchActions.length > 10) {
             return { isValid: false, errorMessage: 'Field "batchActions" must contain between 1 and 10 actions' };
         }
-        const ALLOWED_ATOMIC_ACTION_KEYS = new Set([
-            'actionId',
-            'kind',
-            'targetLocalId',
-            'destinationLocalId',
-            'textToType',
-            'selectOptionValue',
-            'scrollDirection',
-            'pressEnter',
-            'fileName',
-            'userInputPrompt',
-            'inputKey',
-            'reply',
-            'reasoning',
-            'rationale'
-        ]);
         const VALID_ATOMIC_KINDS = new Set([
             'click',
             'hover',

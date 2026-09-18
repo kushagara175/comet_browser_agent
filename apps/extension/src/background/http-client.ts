@@ -15,6 +15,7 @@ import {
   ActionProposal,
   validateActionProposal,
   ALLOWED_ACTION_PROPOSAL_KEYS,
+  ALLOWED_ATOMIC_ACTION_KEYS,
   toSanitizedNetworkPayload
 } from '@privapilot/protocol';
 import { assertNoCanaryLeak } from '@privapilot/test-fixtures';
@@ -196,6 +197,21 @@ export class ReasoningHttpClient {
         if (!ALLOWED_ACTION_PROPOSAL_KEYS.has(k)) {
           console.warn(`[PrivaPilot HttpClient] Stripping unexpected key from server response: ${k}`);
           delete actionRaw[k];
+        }
+      }
+      if (Array.isArray(actionRaw.batchActions)) {
+        for (const sub of actionRaw.batchActions) {
+          if (sub && typeof sub === 'object' && !Array.isArray(sub)) {
+            if (sub.userInputPrompt && !sub.kind) {
+              sub.kind = 'request_user_input';
+            }
+            for (const subK of Object.keys(sub)) {
+              if (!ALLOWED_ATOMIC_ACTION_KEYS.has(subK)) {
+                console.warn(`[PrivaPilot HttpClient] Stripping unexpected key from batch action: ${subK}`);
+                delete sub[subK];
+              }
+            }
+          }
         }
       }
     }
