@@ -802,59 +802,15 @@ if (typeof document !== 'undefined') {
       }
     }
 
-    // Refresh & Reset Session: Clears chat responses, starts a fresh new chat session, and updates tab context WITHOUT closing the sidepanel!
+    // Refresh & Restart Extension: Hot reloads extension worker and resets sidepanel UI
     const reloadExtensionBtn = document.getElementById('reloadExtensionBtn');
-    const triggerReload = (e) => {
-      // If user holds Shift while clicking, allow full extension restart for debugging
-      if (e?.shiftKey) {
-        reloadExtensionBtn?.classList.add('spinning');
-        if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.reload === 'function') {
-          chrome.runtime.reload();
-          return;
-        }
-      }
-
+    const triggerReload = () => {
       reloadExtensionBtn?.classList.add('spinning');
-
-      // 1. Reset agent status & clear active borders
-      setAgentStatus('idle');
-      if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
-        chrome.tabs.sendMessage(currentActiveTabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
+      if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.reload === 'function') {
+        chrome.runtime.reload();
+        return;
       }
-
-      // 2. Clear conversation history and reset chat messages
-      conversationHistory = [];
-      if (typeof createNewChat === 'function') {
-        createNewChat();
-      }
-
-      // 3. Clear inspector cache
-      cachedRawScreenshot = '';
-      cachedSanitizedScreenshot = '';
-      lastSanitizedContext = null;
-      currentGoalText = '';
-
-      // 4. Update tab information
-      updateActiveTabUrl();
-
-      // 5. Ensure HUD is visible and loading view is hidden
-      if (loadingView && aiWorkerView) {
-        loadingView.classList.add('hidden');
-        aiWorkerView.classList.remove('hidden');
-      }
-
-      // 6. Reset chat input & send button
-      if (chatInput) {
-        chatInput.value = '';
-        chatInput.focus();
-      }
-      if (typeof updateSendBtn === 'function') {
-        updateSendBtn();
-      }
-
-      setTimeout(() => {
-        reloadExtensionBtn?.classList.remove('spinning');
-      }, 350);
+      window.location.reload();
     };
     reloadExtensionBtn?.addEventListener('click', triggerReload);
 

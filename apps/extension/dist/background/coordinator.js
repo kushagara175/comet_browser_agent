@@ -104,13 +104,14 @@ export function isSubAgentSwarmGoal(goal) {
     if (!goal || typeof goal !== 'string')
         return false;
     const trimmed = goal.trim();
-    const isComparative = /\b(?:compare|both|versus|vs\.?|across|each|and\s+also|simultaneously)\b/i.test(trimmed);
+    const isComparative = /\b(?:compare|both|versus|vs\.?|across|each|and\s+also|simultaneously|parallel|multiple\s+sites|different\s+tabs?)\b/i.test(trimmed);
     const hasMultiplePortals = /(?:https?:\/\/[^\s]+[\s\S]+https?:\/\/[^\s]+)/i.test(trimmed);
-    const mentionsMultipleEntities = /(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi.test(trimmed);
-    const entityMatches = trimmed.match(/(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi);
+    const mentionsMultipleEntities = /(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi.test(trimmed);
+    const entityMatches = trimmed.match(/(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi);
     const uniqueEntities = entityMatches ? Array.from(new Set(entityMatches.map((e) => e.toLowerCase()))) : [];
-    const isExplicitSubagent = /\b(?:sub-?agents?|swarm|parallel\s+agents?)\b/i.test(trimmed);
-    return (isComparative && uniqueEntities.length >= 2) || hasMultiplePortals || (uniqueEntities.length >= 2) || isExplicitSubagent;
+    const isExplicitSubagent = /\b(?:sub-?agents?|swarm|parallel\s+agents?|multi-?agent)\b/i.test(trimmed);
+    const isCrossDomainQuery = isComparative && (uniqueEntities.length >= 2 || /\b(?:flight|flights|airline|airlines|hotel|hotels|price|prices|ticket|tickets|fare|fares)\b/i.test(trimmed));
+    return isCrossDomainQuery || hasMultiplePortals || (uniqueEntities.length >= 2) || isExplicitSubagent;
 }
 export class RunCoordinator {
     state = 'idle';
@@ -2975,10 +2976,10 @@ export class RunCoordinator {
         this.transition('awaiting-reasoning', 'Analyzing goal with Sub-Agent Swarm Orchestrator...');
         this.listeners.onStateChange?.('awaiting-reasoning', 'Decomposing task into parallel sub-agents...', this.currentRunId);
         // Resolve target entities & URLs immediately
-        const entityMatches = goal.match(/(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi);
+        const entityMatches = goal.match(/(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi);
         let targetEntities = entityMatches ? Array.from(new Set(entityMatches.map(e => e.toLowerCase()))) : [];
         if (targetEntities.length < 2) {
-            if (/\b(?:flight|airline|ticket|travel|indigo|air\s*india)\b/i.test(goal)) {
+            if (/\b(?:flight|airline|ticket|travel|indigo|air\s*india|flight|fare)\b/i.test(goal)) {
                 targetEntities = ['indigo', 'air india'];
             }
             else {
@@ -2997,6 +2998,12 @@ export class RunCoordinator {
                 return 'https://www.goindigo.in';
             if (ent === 'air india')
                 return 'https://www.airindia.com';
+            if (ent === 'makemytrip')
+                return 'https://www.makemytrip.com';
+            if (ent === 'booking')
+                return 'https://www.booking.com';
+            if (ent === 'agoda')
+                return 'https://www.agoda.com';
             return `https://www.google.com/search?q=${encodeURIComponent(ent + ' ' + goal)}`;
         };
         const targetUrl1 = getTargetUrl(targetEntities[0]);
