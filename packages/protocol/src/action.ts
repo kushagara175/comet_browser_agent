@@ -666,7 +666,10 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
   'userInputPrompt',
   'inputKey',
   'subTasks',
-  'coordinates'
+  'coordinates',
+  'url',
+  'targetUrl',
+  'description'
 ]);
 
 export const ALLOWED_ATOMIC_ACTION_KEYS = new Set([
@@ -690,7 +693,10 @@ export const ALLOWED_ATOMIC_ACTION_KEYS = new Set([
   'risk',
   'prompt',
   'message',
-  'thought'
+  'thought',
+  'url',
+  'targetUrl',
+  'description'
 ]);
 
 const VALID_ACTION_KINDS = new Set([

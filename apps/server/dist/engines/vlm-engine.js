@@ -16,7 +16,7 @@
  * - A negative probe is cached only briefly, so a backend started after the gateway
  *   is picked up on the next request instead of being stuck on "mock".
  */
-import { validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS, groundTargetCandidates, tokenizeSemanticText, extractSearchQueryFromGoal } from '@privapilot/protocol';
+import { validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS, ALLOWED_ATOMIC_ACTION_KEYS, groundTargetCandidates, tokenizeSemanticText, extractSearchQueryFromGoal } from '@privapilot/protocol';
 import { MockReasoningEngine } from './mock-engine.js';
 const DEFAULT_MODEL_NAME = 'qwen2.5-vl';
 /** A successful probe result stays valid this long. */
@@ -978,6 +978,13 @@ export class VlmReasoningEngine {
             }
             if (Array.isArray(parsed.batchActions)) {
                 for (const act of parsed.batchActions) {
+                    if (act && typeof act === 'object') {
+                        for (const k of Object.keys(act)) {
+                            if (!ALLOWED_ATOMIC_ACTION_KEYS.has(k)) {
+                                delete act[k];
+                            }
+                        }
+                    }
                     if (act.rationale) {
                         act.rationale = sanitizeProhibitedText(act.rationale).slice(0, 500);
                     }

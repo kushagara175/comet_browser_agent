@@ -17,7 +17,7 @@
  *   is picked up on the next request instead of being stuck on "mock".
  */
 
-import { SanitizedNetworkPayload, ActionProposal, validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS, groundTargetCandidates, tokenizeSemanticText, extractSearchQueryFromGoal } from '@privapilot/protocol';
+import { SanitizedNetworkPayload, ActionProposal, validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS, ALLOWED_ATOMIC_ACTION_KEYS, groundTargetCandidates, tokenizeSemanticText, extractSearchQueryFromGoal } from '@privapilot/protocol';
 import { MockReasoningEngine } from './mock-engine.js';
 
 export interface VlmConfig {
@@ -1152,6 +1152,13 @@ export class VlmReasoningEngine {
       }
       if (Array.isArray(parsed.batchActions)) {
         for (const act of parsed.batchActions) {
+          if (act && typeof act === 'object') {
+            for (const k of Object.keys(act)) {
+              if (!ALLOWED_ATOMIC_ACTION_KEYS.has(k)) {
+                delete act[k];
+              }
+            }
+          }
           if (act.rationale) {
             act.rationale = sanitizeProhibitedText(act.rationale).slice(0, 500);
           }

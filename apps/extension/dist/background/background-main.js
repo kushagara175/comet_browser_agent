@@ -16283,7 +16283,10 @@ var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "userInputPrompt",
   "inputKey",
   "subTasks",
-  "coordinates"
+  "coordinates",
+  "url",
+  "targetUrl",
+  "description"
 ]);
 var ALLOWED_ATOMIC_ACTION_KEYS = /* @__PURE__ */ new Set([
   "actionId",
@@ -16306,7 +16309,10 @@ var ALLOWED_ATOMIC_ACTION_KEYS = /* @__PURE__ */ new Set([
   "risk",
   "prompt",
   "message",
-  "thought"
+  "thought",
+  "url",
+  "targetUrl",
+  "description"
 ]);
 var VALID_ACTION_KINDS = /* @__PURE__ */ new Set([
   "observe",
