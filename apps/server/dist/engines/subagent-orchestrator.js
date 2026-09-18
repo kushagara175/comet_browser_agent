@@ -31,10 +31,19 @@ export class SubAgentOrchestrator {
         // 1. Check for explicit multi-target / comparative intent
         const isComparative = /\b(?:compare|both|versus|vs\.?|across|each|and\s+also|simultaneously)\b/i.test(trimmedGoal);
         const hasMultiplePortals = /(?:https?:\/\/[^\s]+[\s\S]+https?:\/\/[^\s]+)/i.test(trimmedGoal);
-        const mentionsMultipleEntities = /(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab)/gi.test(trimmedGoal);
-        const entityMatches = trimmedGoal.match(/(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab)/gi);
-        const uniqueEntities = entityMatches ? Array.from(new Set(entityMatches.map((e) => e.toLowerCase()))) : [];
-        const shouldDecompose = (isComparative && uniqueEntities.length >= 2) || hasMultiplePortals || (uniqueEntities.length >= 2);
+        const isExplicitSubagent = /\b(?:sub-?agents?|swarm|parallel\s+agents?)\b/i.test(trimmedGoal);
+        const mentionsMultipleEntities = /(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi.test(trimmedGoal);
+        const entityMatches = trimmedGoal.match(/(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi);
+        let uniqueEntities = entityMatches ? Array.from(new Set(entityMatches.map((e) => e.toLowerCase()))) : [];
+        if (uniqueEntities.length < 2 && (isComparative || isExplicitSubagent)) {
+            if (/\b(?:flight|airline|ticket|travel|indigo|air\s*india)\b/i.test(trimmedGoal)) {
+                uniqueEntities = ['indigo', 'air india'];
+            }
+            else {
+                uniqueEntities = ['amazon', 'flipkart'];
+            }
+        }
+        const shouldDecompose = (isComparative && uniqueEntities.length >= 2) || hasMultiplePortals || (uniqueEntities.length >= 2) || isExplicitSubagent;
         if (!shouldDecompose) {
             // Single sequential task
             return {
