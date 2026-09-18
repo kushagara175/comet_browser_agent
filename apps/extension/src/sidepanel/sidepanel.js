@@ -2731,8 +2731,14 @@ if (typeof document !== 'undefined') {
       agentBubble.className = 'chat-msg agent';
 
       let initialActionText = 'Perceiving page elements...';
+      const isSubAgentGoal =
+        /\b(?:compare|versus|vs\.?|across|both|sub-?agents?|swarm|parallel\s+agents?|simultaneously)\b/i.test(goalText) ||
+        Boolean(goalText.match(/(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi)?.length >= 2);
+
       const navMatch = goalText.match(/\b(?:open|go\s+to|visit|launch)\s+([a-zA-Z0-9.-]+\.[a-z]{2,}|amazon|flipkart|google|github|wikipedia)/i);
-      if (navMatch) {
+      if (isSubAgentGoal) {
+        initialActionText = 'Deploying parallel browser sub-agents across tabs...';
+      } else if (navMatch) {
         initialActionText = `Navigating to ${navMatch[1]}...`;
       }
 
@@ -2742,7 +2748,7 @@ if (typeof document !== 'undefined') {
             <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
-            <span class="monologue-title thinking-shimmer-text">Thinking...</span>
+            <span class="monologue-title thinking-shimmer-text">${isSubAgentGoal ? 'Sub-Agent Swarm...' : 'Thinking...'}</span>
           </button>
           <div class="monologue-drawer" style="display: none;">
             <div class="monologue-content">
@@ -2757,7 +2763,7 @@ if (typeof document !== 'undefined') {
       chatMessages.appendChild(agentBubble);
       chatMessages.scrollTop = chatMessages.scrollHeight;
 
-      setAgentStatus('capturing');
+      setAgentStatus(isSubAgentGoal ? 'executing' : 'capturing');
 
       // Reset any active confirmation modal from earlier runs
       actionConfirmModal?.classList.add('hidden');

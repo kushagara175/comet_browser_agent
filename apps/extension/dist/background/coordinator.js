@@ -1024,6 +1024,10 @@ export class RunCoordinator {
                 label: 'PrivaPilot Agent Active'
             }).catch(() => { });
         }
+        // Fast-track: Sub-Agent Swarm / Comparative Multi-Portal Goals
+        if (isSubAgentSwarmGoal(effectiveGoal)) {
+            return this.dispatchSubAgentSwarm(effectiveGoal);
+        }
         // Fast-track: Pure conversational greetings or direct queries bypass heavy perception and potential tab blockages
         const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|hi\s+there|hello\s+there|greetings|good\s+(?:morning|afternoon|evening|day)|who\s+are\s+you|what\s+can\s+you\s+do)\s*[!.?]*$/i;
         if (PURE_GREETING_PATTERN.test((goal || '').trim())) {
@@ -2897,16 +2901,25 @@ export class RunCoordinator {
         };
         const targetUrl1 = getTargetUrl(targetEntities[0]);
         const targetUrl2 = getTargetUrl(targetEntities[1]);
-        // Open live browser tabs immediately so the user sees the sub-agents deployed in real time
-        if (typeof chrome !== 'undefined') {
+        // Open live browser tabs immediately so the user sees both sub-agents deployed in real time
+        if (this.browser && typeof this.browser.navigateTab === 'function') {
+            if (this.currentTabId) {
+                this.browser.navigateTab(this.currentTabId, targetUrl1).catch(() => { });
+            }
+            this.browser.navigateTab(0, targetUrl2, { createNewTab: true }).catch(() => { });
+        }
+        else if (typeof chrome !== 'undefined' && chrome.tabs) {
             try {
-                if (this.currentTabId && typeof chrome.tabs?.update === 'function') {
+                if (this.currentTabId && typeof chrome.tabs.update === 'function') {
                     chrome.tabs.update(this.currentTabId, { url: targetUrl1 });
+                }
+                else if (typeof chrome.tabs.create === 'function') {
+                    chrome.tabs.create({ url: targetUrl1, active: true });
                 }
             }
             catch { }
             try {
-                if (typeof chrome.tabs?.create === 'function') {
+                if (typeof chrome.tabs.create === 'function') {
                     chrome.tabs.create({ url: targetUrl2, active: false });
                 }
             }

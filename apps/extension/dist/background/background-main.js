@@ -21679,6 +21679,9 @@ var RunCoordinator = class {
       }).catch(() => {
       });
     }
+    if (isSubAgentSwarmGoal(effectiveGoal)) {
+      return this.dispatchSubAgentSwarm(effectiveGoal);
+    }
     const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|hi\s+there|hello\s+there|greetings|good\s+(?:morning|afternoon|evening|day)|who\s+are\s+you|what\s+can\s+you\s+do)\s*[!.?]*$/i;
     if (PURE_GREETING_PATTERN.test((goal || "").trim())) {
       this.transition("awaiting-reasoning", "Synthesizing response with reasoning model...");
@@ -23411,15 +23414,24 @@ var RunCoordinator = class {
     };
     const targetUrl1 = getTargetUrl(targetEntities[0]);
     const targetUrl2 = getTargetUrl(targetEntities[1]);
-    if (typeof chrome !== "undefined") {
+    if (this.browser && typeof this.browser.navigateTab === "function") {
+      if (this.currentTabId) {
+        this.browser.navigateTab(this.currentTabId, targetUrl1).catch(() => {
+        });
+      }
+      this.browser.navigateTab(0, targetUrl2, { createNewTab: true }).catch(() => {
+      });
+    } else if (typeof chrome !== "undefined" && chrome.tabs) {
       try {
-        if (this.currentTabId && typeof chrome.tabs?.update === "function") {
+        if (this.currentTabId && typeof chrome.tabs.update === "function") {
           chrome.tabs.update(this.currentTabId, { url: targetUrl1 });
+        } else if (typeof chrome.tabs.create === "function") {
+          chrome.tabs.create({ url: targetUrl1, active: true });
         }
       } catch {
       }
       try {
-        if (typeof chrome.tabs?.create === "function") {
+        if (typeof chrome.tabs.create === "function") {
           chrome.tabs.create({ url: targetUrl2, active: false });
         }
       } catch {
