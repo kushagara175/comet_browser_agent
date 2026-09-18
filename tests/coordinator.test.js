@@ -684,3 +684,79 @@ test('Coordinator: isSubAgentSwarmGoal detects multi-airline and comparison quer
   assert.strictEqual(isSubAgentSwarmGoal('flights from Delhi to Mumbai'), false);
 });
 
+test('Coordinator: Drives physical DOM typing and clicking across multi-agent flight comparison tabs', async () => {
+  const dispatchedActions = [];
+  const borderCalls = [];
+
+  const browser = createFakeBrowserAdapter();
+  browser.getActiveTab = async () => ({
+    id: 101,
+    url: 'https://www.airindia.com/',
+    title: 'Air India: Book Domestic and International Flights'
+  });
+
+  browser.sendMessageToTab = async (tabId, message) => {
+    if (message.type === 'SET_ACTIVE_BORDER') {
+      borderCalls.push({ tabId, label: message.label, active: message.active });
+      return { success: true };
+    }
+    if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
+      return {
+        success: true,
+        snapshot: {
+          elements: [
+            { localId: 'el_from', role: 'input', text: 'FROM Origin', sanitizedName: 'FROM Origin', state: [] },
+            { localId: 'el_to', role: 'input', text: 'TO Destination', sanitizedName: 'TO Destination', state: [] },
+            { localId: 'el_search', role: 'button', text: 'SEARCH FLIGHTS', sanitizedName: 'SEARCH FLIGHTS', state: [] },
+            { localId: 'el_fare1', role: 'generic', text: 'AI-612 Non-stop 06:20 AM ₹2,799', sanitizedName: 'AI-612 Non-stop 06:20 AM ₹2,799', state: [] }
+          ]
+        }
+      };
+    }
+    if (message.type === 'EXECUTE_ACTION') {
+      dispatchedActions.push({ tabId, proposal: message.proposal });
+      return { success: true };
+    }
+    return { success: true };
+  };
+
+  const reasoningHttpClient = {
+    async requestReasoningAction() {
+      throw new Error('Should not reach single-tab reasoning for swarm');
+    },
+    async dispatchPlatformTask(payload) {
+      return {
+        taskId: 'live_flight_swarm_1',
+        status: 'completed',
+        complianceAudit: { proofId: 'audit_test_proof_123' },
+        finalSynthesis: 'Air India lists fares from ₹2,799; IndiGo listings compared.'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, reasoningHttpClient, undefined, { defaultMaxSteps: 1 });
+  const result = await coordinator.startRun('Compare flights from Delhi to Mumbai on IndiGo and Air India');
+
+  assert.ok(result);
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.state, 'complete');
+
+  // Verify physical typing actions were dispatched to the DOM
+  const typedOrigin = dispatchedActions.find(a => a.proposal.kind === 'type' && a.proposal.textToType === 'Delhi');
+  const typedDest = dispatchedActions.find(a => a.proposal.kind === 'type' && a.proposal.textToType === 'Mumbai');
+  const clickedSearch = dispatchedActions.find(a => a.proposal.kind === 'click');
+
+  assert.ok(typedOrigin, 'Origin input must be typed on screen with "Delhi"');
+  assert.strictEqual(typedOrigin.proposal.targetLocalId, 'el_from');
+
+  assert.ok(typedDest, 'Destination input must be typed on screen with "Mumbai"');
+  assert.strictEqual(typedDest.proposal.targetLocalId, 'el_to');
+
+  assert.ok(clickedSearch, 'Search button must be clicked on screen');
+  assert.strictEqual(clickedSearch.proposal.targetLocalId, 'el_search');
+
+  // Verify active border was set on tabs
+  assert.ok(borderCalls.some(b => b.active === true && b.label.includes('AIR INDIA')));
+});
+
+

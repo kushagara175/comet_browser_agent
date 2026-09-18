@@ -175,8 +175,13 @@ export declare class RunCoordinator {
     getPlatformApiTelemetry(): Promise<any>;
     generatePlatformApiKey(name?: string, tier?: string): Promise<any>;
     /**
+     * Drives visual browser interaction on a designated tab for a sub-agent worker.
+     * Performs real DOM inspection, form typing / search submission, and live result extraction.
+     */
+    private driveSubAgentOnTab;
+    /**
      * Dispatches a multi-target or comparative goal to the backend Sub-Agent Swarm Orchestrator.
-     * Runs parallel browser agents in isolated contexts and produces synthesized comparison.
+     * Runs parallel browser agents in isolated contexts with live visual DOM driving and produces synthesized comparison.
      */
     dispatchSubAgentSwarm(goal: string): Promise<CoordinatorRunResult>;
     /**
