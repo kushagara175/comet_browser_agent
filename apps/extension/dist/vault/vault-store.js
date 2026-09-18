@@ -19,6 +19,7 @@ export const DEMO_USER_PROFILE = {
     postalCode: '94105',
     country: 'United States',
     dateOfBirth: '18 Sep 2000',
+    gender: 'Male',
     githubUrl: 'https://github.com/johndoe'
 };
 export const DEFAULT_USER_PROFILE = {
@@ -33,7 +34,8 @@ export const DEFAULT_USER_PROFILE = {
     state: 'Delhi',
     postalCode: '110001',
     country: 'India',
-    dateOfBirth: '18 Sep 2000',
+    dateOfBirth: '14 Aug 2001',
+    gender: 'Male',
     githubUrl: 'https://github.com/kushagara175'
 };
 const DEFAULT_VAULT_STATE = {

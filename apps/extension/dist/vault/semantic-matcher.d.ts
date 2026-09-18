@@ -6,7 +6,7 @@
  * without brittle hardcoded string matching.
  */
 import { UserProfileData, SiteCredential } from './vault-store.js';
-export type CanonicalFieldKey = 'phone' | 'email' | 'fullName' | 'firstName' | 'lastName' | 'organization' | 'address' | 'city' | 'state' | 'postalCode' | 'country' | 'dateOfBirth' | 'githubUrl' | 'username' | 'password';
+export type CanonicalFieldKey = 'phone' | 'email' | 'fullName' | 'firstName' | 'lastName' | 'organization' | 'address' | 'city' | 'state' | 'postalCode' | 'country' | 'dateOfBirth' | 'gender' | 'githubUrl' | 'username' | 'password';
 export interface FormElementDescriptor {
     readonly id?: string;
     readonly tagName?: string;

@@ -17,6 +17,7 @@ export interface UserProfileData {
     postalCode?: string;
     country?: string;
     dateOfBirth?: string;
+    gender?: string;
     githubUrl?: string;
     linkedinUrl?: string;
     customNotes?: string;

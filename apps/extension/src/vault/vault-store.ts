@@ -20,6 +20,7 @@ export interface UserProfileData {
   postalCode?: string;
   country?: string;
   dateOfBirth?: string;
+  gender?: string;
   githubUrl?: string;
   linkedinUrl?: string;
   customNotes?: string;
@@ -59,6 +60,7 @@ export const DEMO_USER_PROFILE: UserProfileData = {
   postalCode: '94105',
   country: 'United States',
   dateOfBirth: '18 Sep 2000',
+  gender: 'Male',
   githubUrl: 'https://github.com/johndoe'
 };
 
@@ -74,7 +76,8 @@ export const DEFAULT_USER_PROFILE: UserProfileData = {
   state: 'Delhi',
   postalCode: '110001',
   country: 'India',
-  dateOfBirth: '18 Sep 2000',
+  dateOfBirth: '14 Aug 2001',
+  gender: 'Male',
   githubUrl: 'https://github.com/kushagara175'
 };
 

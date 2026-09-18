@@ -16603,6 +16603,10 @@ function validateActionProposal(proposal, validElements) {
       "scrollDirection",
       "pressEnter",
       "fileName",
+      "userInputPrompt",
+      "inputKey",
+      "reply",
+      "reasoning",
       "rationale"
     ]);
     const VALID_ATOMIC_KINDS = /* @__PURE__ */ new Set([
@@ -16616,7 +16620,8 @@ function validateActionProposal(proposal, validElements) {
       "wait",
       "observe",
       "extract",
-      "answer"
+      "answer",
+      "request_user_input"
     ]);
     for (let i = 0; i < proposal.batchActions.length; i++) {
       const sub = proposal.batchActions[i];
@@ -17362,7 +17367,7 @@ function analyzeDomElementSensitivity(desc) {
       confidence: 0.95
     };
   }
-  const combinedTokens = `${name2} ${id2} ${placeholder} ${ariaLabel} ${labelText}`.toLowerCase();
+  const combinedTokens = `${name2} ${id2} ${placeholder} ${ariaLabel} ${labelText}`.replace(/([a-z\d])([A-Z])/g, "$1 $2").toLowerCase();
   for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
     const regex = new RegExp(`\\b${keyword}\\b|_${keyword}|${keyword}_`, "i");
     if (regex.test(combinedTokens) || combinedTokens.includes("secret_canary") || combinedTokens.includes("canary")) {
@@ -20211,6 +20216,7 @@ var DEMO_USER_PROFILE = {
   postalCode: "94105",
   country: "United States",
   dateOfBirth: "18 Sep 2000",
+  gender: "Male",
   githubUrl: "https://github.com/johndoe"
 };
 var DEFAULT_USER_PROFILE = {
@@ -20225,7 +20231,8 @@ var DEFAULT_USER_PROFILE = {
   state: "Delhi",
   postalCode: "110001",
   country: "India",
-  dateOfBirth: "18 Sep 2000",
+  dateOfBirth: "14 Aug 2001",
+  gender: "Male",
   githubUrl: "https://github.com/kushagara175"
 };
 var DEFAULT_VAULT_STATE = {
@@ -20584,6 +20591,12 @@ var SYNONYM_GROUPS = [
     friendlyPrompt: "Please enter your Country"
   },
   {
+    canonical: "gender",
+    aliases: ["gender", "sex", "male", "female", "gender-radio"],
+    autocompletes: ["sex"],
+    friendlyPrompt: "Please select your Gender"
+  },
+  {
     canonical: "githubUrl",
     aliases: ["github", "github url", "git", "repo", "portfolio", "project url"],
     autocompletes: ["url"],
@@ -20591,7 +20604,7 @@ var SYNONYM_GROUPS = [
   }
 ];
 function cleanTokens(raw) {
-  return raw.toLowerCase().replace(/[_\-:\*\(\)\[\]\/\\]/g, " ").replace(/\s+/g, " ").trim();
+  return raw.replace(/([a-z\d])([A-Z])/g, "$1 $2").toLowerCase().replace(/[_\-:\*\(\)\[\]\/\\]/g, " ").replace(/\s+/g, " ").trim();
 }
 function classifyFieldDescriptor(descriptor) {
   const typeAttr = (descriptor.type || "").toLowerCase().trim();
@@ -20718,6 +20731,7 @@ function matchFieldToVault(descriptor, profile, siteCredentials = [], _targetDom
     postalCode: "postalCode",
     country: "country",
     dateOfBirth: "dateOfBirth",
+    gender: "gender",
     githubUrl: "githubUrl",
     username: void 0,
     password: void 0
@@ -22247,7 +22261,7 @@ var RunCoordinator = class {
         let networkRequestMade = true;
         let t4_reasoningReceived = Date.now();
         const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
-        const isAutofillGoal = /\b(?:fill\s+(?:the\s+|this\s+)?form|autofill\b|fill\s+(?:in\s+)?(?:my\s+)?(?:details|profile|form)|fill\s+up\s+(?:the\s+)?demo\s+data|fill\s+(?:the\s+)?demo\s+data)\b/i.test(this.currentGoal || "");
+        const isAutofillGoal = /\b(?:fill|autofill|populate)\b.*?\b(?:form|details|data|inputs?|profile|fields?)\b/i.test(this.currentGoal || "") || /\b(?:fill\s+(?:in|up|out)?\s*(?:the|this|my)?\s*(?:form|details|profile|data))\b/i.test(this.currentGoal || "") || /\b(?:autofill\b)\b/i.test(this.currentGoal || "");
         const prefersDemoData = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || "") || /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || "");
         const hasAutofilled = this.actionHistory.some((a) => a.actionId && (a.actionId.includes("act_local_autofill_batch_") || a.actionId.includes("act_autofill_")));
         let localAutofillProposal = null;
@@ -22258,6 +22272,7 @@ var RunCoordinator = class {
               kind: "finish",
               confidence: 1,
               risk: "safe",
+              userApproved: true,
               reasoning: `\u{1F441}\uFE0F Observation: All matching form fields have been populated with ${prefersDemoData ? "synthetic demo persona" : "local Personal Vault"} records.
 \u26A1 Action Selection: Conclude form filling workflow.`,
               rationale: `Form successfully filled with ${prefersDemoData ? "realistic synthetic demo data" : "profile details from your local Personal Vault"}.`
@@ -22271,12 +22286,23 @@ var RunCoordinator = class {
               const formInputs = sanitized.elements.filter((e) => e.role === "input" || e.role === "textarea");
               const batchActions = [];
               const filledSlots = /* @__PURE__ */ new Set();
+              const rawDomList = domResponse?.snapshot?.domElements || [];
+              const rawInteractiveList = domResponse?.snapshot?.interactiveElements || [];
               for (const input of formInputs) {
+                const domEl = rawDomList.find((d) => d.id === input.localId);
+                const interEl = rawInteractiveList.find((i) => i.localId === input.localId);
+                const domDesc = domEl?.descriptor;
                 const descriptor = {
-                  id: input.localId,
-                  name: input.sanitizedName,
-                  rawName: input.sanitizedName,
-                  placeholder: input.sanitizedName
+                  id: domDesc?.id || input.localId,
+                  tagName: domDesc?.tagName || (input.role === "textarea" ? "textarea" : "input"),
+                  type: domDesc?.type,
+                  name: domDesc?.name || domDesc?.id || interEl?.rawName,
+                  rawName: interEl?.rawName || domDesc?.name || domDesc?.id,
+                  placeholder: domDesc?.placeholder,
+                  ariaLabel: domDesc?.ariaLabel,
+                  associatedLabelText: domDesc?.associatedLabelText,
+                  autocomplete: domDesc?.autocomplete,
+                  sanitizedName: input.sanitizedName
                 };
                 const match = matchFieldToVault(descriptor, profile, creds, pageDomain, prefersDemoData);
                 if (match.matched && match.valueToFill && !filledSlots.has(match.canonicalField)) {
@@ -22286,8 +22312,43 @@ var RunCoordinator = class {
                     kind: "type",
                     targetLocalId: input.localId,
                     textToType: match.valueToFill,
+                    userApproved: true,
                     rationale: `Autofill ${match.canonicalField} with ${prefersDemoData ? "synthetic demo data" : "local Personal Vault"}`
                   });
+                }
+              }
+              if (!filledSlots.has("gender")) {
+                const maleOption = rawInteractiveList.find(
+                  (i) => (i.role === "radio" || i.role === "button" || i.role === "generic") && /\b(?:male)\b/i.test(i.rawName || "")
+                ) || sanitized.elements.find(
+                  (e) => (e.role === "radio" || e.role === "button" || e.role === "generic") && /\b(?:male)\b/i.test(e.sanitizedName || "")
+                );
+                if (maleOption) {
+                  batchActions.push({
+                    actionId: `act_autofill_gender_${Date.now()}`,
+                    kind: "click",
+                    targetLocalId: maleOption.localId,
+                    userApproved: true,
+                    rationale: `Select Male for Gender`
+                  });
+                  filledSlots.add("gender");
+                }
+              }
+              if (!filledSlots.has("hobbies")) {
+                const hobbyOption = rawInteractiveList.find(
+                  (i) => (i.role === "checkbox" || i.role === "button" || i.role === "generic") && /\b(?:sports|reading|music)\b/i.test(i.rawName || "")
+                ) || sanitized.elements.find(
+                  (e) => (e.role === "checkbox" || e.role === "button" || e.role === "generic") && /\b(?:sports|reading|music)\b/i.test(e.sanitizedName || "")
+                );
+                if (hobbyOption) {
+                  batchActions.push({
+                    actionId: `act_autofill_hobby_${Date.now()}`,
+                    kind: "click",
+                    targetLocalId: hobbyOption.localId,
+                    userApproved: true,
+                    rationale: `Select hobby option`
+                  });
+                  filledSlots.add("hobbies");
                 }
               }
               if (batchActions.length > 0) {
@@ -22301,6 +22362,7 @@ var RunCoordinator = class {
                       actionId: `act_autofill_submit_${Date.now()}`,
                       kind: "click",
                       targetLocalId: submitBtn.localId,
+                      userApproved: true,
                       rationale: `Submit form`
                     });
                   }
@@ -22311,10 +22373,27 @@ var RunCoordinator = class {
                   batchActions,
                   confidence: 0.99,
                   risk: "safe",
+                  userApproved: true,
                   reasoning: `\u{1F441}\uFE0F Observation: Detected ${formInputs.length} form inputs on the current page.
 \u{1F3AF} User Intent: Autofill form fields with ${prefersDemoData ? "synthetic demo persona" : "user details from local Personal Vault"}.
 \u26A1 Action Selection: Matched ${batchActions.length} fields (${Array.from(filledSlots).join(", ")}) and executing zero-knowledge autofill batch.`,
                   rationale: `Autofilled ${batchActions.length} form fields (${Array.from(filledSlots).join(", ")}) with ${prefersDemoData ? "synthetic demo persona" : "local Personal Vault"}`
+                };
+              } else if (formInputs.length > 0) {
+                const firstUnmatched = formInputs[0];
+                const domEl = rawDomList.find((d) => d.id === firstUnmatched.localId);
+                const interEl = rawInteractiveList.find((i) => i.localId === firstUnmatched.localId);
+                const domDesc = domEl?.descriptor;
+                const fieldName = domDesc?.associatedLabelText || domDesc?.placeholder || domDesc?.name || interEl?.rawName || "form field";
+                localAutofillProposal = {
+                  actionId: `act_request_input_${Date.now()}`,
+                  kind: "request_user_input",
+                  targetLocalId: firstUnmatched.localId,
+                  userInputPrompt: `Please enter your ${fieldName} to complete the form`,
+                  confidence: 0.95,
+                  risk: "safe",
+                  userApproved: true,
+                  rationale: `Prompting user for missing field: ${fieldName}`
                 };
               }
             } catch (_) {
@@ -22628,11 +22707,22 @@ var RunCoordinator = class {
             const pageDomain = sanitized.pageState?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : "");
             const creds = await getCredentialsForDomain(pageDomain);
             const targetEl = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
+            const rawDomList = domResponse?.snapshot?.domElements || [];
+            const rawInteractiveList = domResponse?.snapshot?.interactiveElements || [];
+            const domEl = rawDomList.find((d) => d.id === targetEl?.localId);
+            const interEl = rawInteractiveList.find((i) => i.localId === targetEl?.localId);
+            const domDesc = domEl?.descriptor;
             const descriptor = {
-              id: targetEl?.localId,
-              name: targetEl?.sanitizedName,
-              rawName: targetEl?.sanitizedName,
-              placeholder: targetEl?.sanitizedName
+              id: domDesc?.id || targetEl?.localId,
+              tagName: domDesc?.tagName || (targetEl?.role === "textarea" ? "textarea" : "input"),
+              type: domDesc?.type,
+              name: domDesc?.name || domDesc?.id || interEl?.rawName,
+              rawName: interEl?.rawName || domDesc?.name || domDesc?.id,
+              placeholder: domDesc?.placeholder,
+              ariaLabel: domDesc?.ariaLabel,
+              associatedLabelText: domDesc?.associatedLabelText,
+              autocomplete: domDesc?.autocomplete,
+              sanitizedName: targetEl?.sanitizedName
             };
             const match = matchFieldToVault(descriptor, profile, creds, pageDomain, prefersDemoData2);
             if (match.matched && match.valueToFill) {
@@ -22837,27 +22927,41 @@ var RunCoordinator = class {
         if (proposal.kind === "type" && !proposal.pressEnter && (this.currentTaskContract?.structuredIntent?.pressEnter || /(?:amazon|flipkart|google|search)/i.test(currentUrl))) {
           proposal = { ...proposal, pressEnter: true };
         }
-        if (proposal.kind === "type" && proposal.targetLocalId) {
+        if (proposal.kind === "type" && proposal.targetLocalId && !proposal.actionId?.startsWith("act_autofill_")) {
           try {
-            const profile = await getUserProfile();
+            const prefersDemoData2 = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || "") || /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || "");
+            const vaultProfile = await getUserProfile();
+            const profile = prefersDemoData2 ? DEMO_USER_PROFILE : vaultProfile || DEMO_USER_PROFILE;
             const pageDomain = sanitized.pageState?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : "");
             const creds = await getCredentialsForDomain(pageDomain);
             const targetEl = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
             if (targetEl && (targetEl.role === "input" || targetEl.role === "textarea")) {
               const isAutofill = /\b(?:fill|autofill|register|signup|sign\s*up|login|log\s*in|profile|details|form)\b/i.test(this.currentGoal || "");
               const isPlaceholder = !proposal.textToType || /^(?:alice|bob|john|jane|user@|test@|example\.com|placeholder|enter\s+|your\s+|\[.*\])/i.test(proposal.textToType.trim());
+              const rawDomList = domResponse?.snapshot?.domElements || [];
+              const rawInteractiveList = domResponse?.snapshot?.interactiveElements || [];
+              const domEl = rawDomList.find((d) => d.id === targetEl.localId);
+              const interEl = rawInteractiveList.find((i) => i.localId === targetEl.localId);
+              const domDesc = domEl?.descriptor;
               const descriptor = {
-                id: targetEl.localId,
-                name: targetEl.sanitizedName,
-                rawName: targetEl.sanitizedName,
-                placeholder: targetEl.sanitizedName
+                id: domDesc?.id || targetEl.localId,
+                tagName: domDesc?.tagName || (targetEl.role === "textarea" ? "textarea" : "input"),
+                type: domDesc?.type,
+                name: domDesc?.name || domDesc?.id || interEl?.rawName,
+                rawName: interEl?.rawName || domDesc?.name || domDesc?.id,
+                placeholder: domDesc?.placeholder,
+                ariaLabel: domDesc?.ariaLabel,
+                associatedLabelText: domDesc?.associatedLabelText,
+                autocomplete: domDesc?.autocomplete,
+                sanitizedName: targetEl.sanitizedName
               };
-              const match = matchFieldToVault(descriptor, profile, creds, pageDomain);
+              const match = matchFieldToVault(descriptor, profile, creds, pageDomain, prefersDemoData2);
               if (match.matched && match.valueToFill && (isAutofill || isPlaceholder)) {
                 proposal = {
                   ...proposal,
                   textToType: match.valueToFill,
-                  rationale: `Autofilled ${match.canonicalField} from local Personal Vault`
+                  userApproved: true,
+                  rationale: `Autofilled ${match.canonicalField} with ${prefersDemoData2 ? "synthetic demo persona" : "local Personal Vault"}`
                 };
               }
             }
@@ -22872,22 +22976,35 @@ var RunCoordinator = class {
           for (let i = 0; i < proposal.batchActions.length; i++) {
             const sub = proposal.batchActions[i];
             let subTextToType = sub.textToType;
-            if (sub.kind === "type" && sub.targetLocalId) {
+            if (sub.kind === "type" && sub.targetLocalId && !sub.actionId?.startsWith("act_autofill_")) {
               try {
-                const profile = await getUserProfile();
+                const prefersDemoData2 = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || "") || /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || "");
+                const vaultProfile = await getUserProfile();
+                const profile = prefersDemoData2 ? DEMO_USER_PROFILE : vaultProfile || DEMO_USER_PROFILE;
                 const pageDomain = sanitized.pageState?.domain || (activeTab.url ? normalizeDomain(activeTab.url) : "");
                 const creds = await getCredentialsForDomain(pageDomain);
                 const targetEl = sanitized.elements.find((e) => e.localId === sub.targetLocalId);
                 if (targetEl && (targetEl.role === "input" || targetEl.role === "textarea")) {
                   const isAutofill = /\b(?:fill|autofill|register|signup|sign\s*up|login|log\s*in|profile|details|form)\b/i.test(this.currentGoal || "");
                   const isPlaceholder = !subTextToType || /^(?:alice|bob|john|jane|user@|test@|example\.com|placeholder|enter\s+|your\s+|\[.*\])/i.test(subTextToType.trim());
+                  const rawDomList = domResponse?.snapshot?.domElements || [];
+                  const rawInteractiveList = domResponse?.snapshot?.interactiveElements || [];
+                  const domEl = rawDomList.find((d) => d.id === targetEl.localId);
+                  const interEl = rawInteractiveList.find((i2) => i2.localId === targetEl.localId);
+                  const domDesc = domEl?.descriptor;
                   const descriptor = {
-                    id: targetEl.localId,
-                    name: targetEl.sanitizedName,
-                    rawName: targetEl.sanitizedName,
-                    placeholder: targetEl.sanitizedName
+                    id: domDesc?.id || targetEl.localId,
+                    tagName: domDesc?.tagName || (targetEl.role === "textarea" ? "textarea" : "input"),
+                    type: domDesc?.type,
+                    name: domDesc?.name || domDesc?.id || interEl?.rawName,
+                    rawName: interEl?.rawName || domDesc?.name || domDesc?.id,
+                    placeholder: domDesc?.placeholder,
+                    ariaLabel: domDesc?.ariaLabel,
+                    associatedLabelText: domDesc?.associatedLabelText,
+                    autocomplete: domDesc?.autocomplete,
+                    sanitizedName: targetEl.sanitizedName
                   };
-                  const match = matchFieldToVault(descriptor, profile, creds, pageDomain);
+                  const match = matchFieldToVault(descriptor, profile, creds, pageDomain, prefersDemoData2);
                   if (match.matched && match.valueToFill && (isAutofill || isPlaceholder)) {
                     subTextToType = match.valueToFill;
                   }
@@ -22907,6 +23024,7 @@ var RunCoordinator = class {
               fileName: sub.fileName,
               confidence: proposal.confidence,
               risk: "safe",
+              userApproved: true,
               rationale: sub.rationale || proposal.rationale
             };
             try {

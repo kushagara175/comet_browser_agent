@@ -21,6 +21,7 @@ export type CanonicalFieldKey =
   | 'postalCode'
   | 'country'
   | 'dateOfBirth'
+  | 'gender'
   | 'githubUrl'
   | 'username'
   | 'password';
@@ -203,6 +204,12 @@ const SYNONYM_GROUPS: SynonymGroup[] = [
     friendlyPrompt: 'Please enter your Country'
   },
   {
+    canonical: 'gender',
+    aliases: ['gender', 'sex', 'male', 'female', 'gender-radio'],
+    autocompletes: ['sex'],
+    friendlyPrompt: 'Please select your Gender'
+  },
+  {
     canonical: 'githubUrl',
     aliases: ['github', 'github url', 'git', 'repo', 'portfolio', 'project url'],
     autocompletes: ['url'],
@@ -211,10 +218,11 @@ const SYNONYM_GROUPS: SynonymGroup[] = [
 ];
 
 /**
- * Normalizes text tokens by stripping punctuation and leading/trailing whitespace.
+ * Normalizes text tokens by splitting camelCase, stripping punctuation, and leading/trailing whitespace.
  */
 function cleanTokens(raw: string): string {
   return raw
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
     .toLowerCase()
     .replace(/[_\-:\*\(\)\[\]\/\\]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -391,6 +399,7 @@ export function matchFieldToVault(
     postalCode: 'postalCode',
     country: 'country',
     dateOfBirth: 'dateOfBirth',
+    gender: 'gender',
     githubUrl: 'githubUrl',
     username: undefined,
     password: undefined

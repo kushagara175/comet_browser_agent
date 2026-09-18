@@ -1062,6 +1062,10 @@ export function validateActionProposal(
       'scrollDirection',
       'pressEnter',
       'fileName',
+      'userInputPrompt',
+      'inputKey',
+      'reply',
+      'reasoning',
       'rationale'
     ]);
 
@@ -1076,7 +1080,8 @@ export function validateActionProposal(
       'wait',
       'observe',
       'extract',
-      'answer'
+      'answer',
+      'request_user_input'
     ]);
 
     for (let i = 0; i < proposal.batchActions.length; i++) {

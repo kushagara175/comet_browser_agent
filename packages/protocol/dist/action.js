@@ -875,6 +875,10 @@ export function validateActionProposal(proposal, validElements) {
             'scrollDirection',
             'pressEnter',
             'fileName',
+            'userInputPrompt',
+            'inputKey',
+            'reply',
+            'reasoning',
             'rationale'
         ]);
         const VALID_ATOMIC_KINDS = new Set([
@@ -888,7 +892,8 @@ export function validateActionProposal(proposal, validElements) {
             'wait',
             'observe',
             'extract',
-            'answer'
+            'answer',
+            'request_user_input'
         ]);
         for (let i = 0; i < proposal.batchActions.length; i++) {
             const sub = proposal.batchActions[i];

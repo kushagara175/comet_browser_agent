@@ -95,7 +95,9 @@ export function analyzeDomElementSensitivity(
   }
 
   // 4. Sensitive Keywords in id, name, placeholder, label, aria-label
-  const combinedTokens = `${name} ${id} ${placeholder} ${ariaLabel} ${labelText}`.toLowerCase();
+  const combinedTokens = `${name} ${id} ${placeholder} ${ariaLabel} ${labelText}`
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .toLowerCase();
 
   for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
     const regex = new RegExp(`\\b${keyword}\\b|_${keyword}|${keyword}_`, 'i');
