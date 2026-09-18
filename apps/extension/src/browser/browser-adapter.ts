@@ -26,6 +26,7 @@ export interface BrowserAdapter {
   navigateTab?(tabId: number, url: string, options?: { createNewTab?: boolean }): Promise<{ tabId: number; url?: string } | void>;
   waitForTabReady?(tabId: number, timeoutMs?: number, expectedUrl?: string): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string } | null>;
   ensureContentScript?(tabId: number): Promise<boolean>;
+  queryTabs?(queryInfo?: any): Promise<Array<{ id: number; url: string; title: string; windowId?: number; status?: string }>>;
   getStorage<T>(key: string): Promise<T | null>;
   setStorage<T>(key: string, value: T): Promise<void>;
   runInSanitizerHost(request: SanitizationHostRequest): Promise<SanitizedContext>;
@@ -527,6 +528,29 @@ export class WebExtensionAdapter implements BrowserAdapter {
       }
     }
     return { tabId: tabId || 0, url };
+  }
+
+  async queryTabs(queryInfo: any = {}): Promise<Array<{ id: number; url: string; title: string; windowId?: number; status?: string }>> {
+    const api = this.browserAPI;
+    if (!api || !api.tabs || !api.tabs.query) {
+      return [];
+    }
+    return new Promise((resolve) => {
+      api.tabs.query(queryInfo, (tabs: any[]) => {
+        if (api.runtime?.lastError || !tabs) {
+          return resolve([]);
+        }
+        resolve(
+          tabs.map((t: any) => ({
+            id: t.id,
+            url: t.url || '',
+            title: t.title || '',
+            windowId: t.windowId,
+            status: t.status || 'complete'
+          }))
+        );
+      });
+    });
   }
 
   async getStorage<T>(key: string): Promise<T | null> {

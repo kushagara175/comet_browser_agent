@@ -744,7 +744,7 @@ test('Coordinator: Drives physical DOM typing and clicking across multi-agent fl
   // Verify physical typing actions were dispatched to the DOM
   const typedOrigin = dispatchedActions.find(a => a.proposal.kind === 'type' && a.proposal.textToType === 'Delhi');
   const typedDest = dispatchedActions.find(a => a.proposal.kind === 'type' && a.proposal.textToType === 'Mumbai');
-  const clickedSearch = dispatchedActions.find(a => a.proposal.kind === 'click');
+  const clickedSearch = dispatchedActions.find(a => a.proposal.kind === 'click' && (a.proposal.targetLocalId === 'el_search' || a.proposal.actionId?.includes('search')));
 
   assert.ok(typedOrigin, 'Origin input must be typed on screen with "Delhi"');
   assert.strictEqual(typedOrigin.proposal.targetLocalId, 'el_from');
@@ -757,6 +757,91 @@ test('Coordinator: Drives physical DOM typing and clicking across multi-agent fl
 
   // Verify active border was set on tabs
   assert.ok(borderCalls.some(b => b.active === true && b.label.includes('AIR INDIA')));
+});
+
+test('Coordinator: Automatically clicks autocomplete popup suggestions and reuses open tabs', async () => {
+  const dispatchedActions = [];
+  const navigatedTabs = [];
+
+  const browser = createFakeBrowserAdapter();
+  // Simulate user already having IndiGo in Tab 2 and Air India in Tab 7
+  browser.queryTabs = async () => [
+    { id: 2, url: 'https://www.goindigo.in/', title: 'IndiGo Airline' },
+    { id: 7, url: 'https://www.airindia.com/', title: 'Air India Flights' }
+  ];
+  browser.navigateTab = async (tabId, url, opts) => {
+    navigatedTabs.push({ tabId, url, opts });
+    return { tabId: tabId || 8, url };
+  };
+
+  browser.sendMessageToTab = async (tabId, message) => {
+    if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
+      if (message.captureId?.includes('orig_popup')) {
+        return {
+          success: true,
+          snapshot: {
+            elements: [
+              { localId: 'el_del_sugg', role: 'option', text: 'DEL - Delhi, Indira Gandhi Intl', sanitizedName: 'DEL - Delhi', state: [] }
+            ]
+          }
+        };
+      }
+      if (message.captureId?.includes('dest_popup')) {
+        return {
+          success: true,
+          snapshot: {
+            elements: [
+              { localId: 'el_bom_sugg', role: 'option', text: 'BOM - Mumbai, Chhatrapati Shivaji', sanitizedName: 'BOM - Mumbai', state: [] }
+            ]
+          }
+        };
+      }
+      return {
+        success: true,
+        snapshot: {
+          elements: [
+            { localId: 'el_from', role: 'input', text: 'FROM Origin', sanitizedName: 'FROM Origin', state: [] },
+            { localId: 'el_to', role: 'input', text: 'TO Destination', sanitizedName: 'TO Destination', state: [] },
+            { localId: 'el_search', role: 'button', text: 'SEARCH FLIGHTS', sanitizedName: 'SEARCH FLIGHTS', state: [] },
+            { localId: 'el_fare1', role: 'generic', text: '6E-2121 Non-stop 06:00 AM ₹2,499', sanitizedName: '6E-2121 Non-stop 06:00 AM ₹2,499', state: [] }
+          ]
+        }
+      };
+    }
+    if (message.type === 'EXECUTE_ACTION') {
+      dispatchedActions.push({ tabId, proposal: message.proposal });
+      return { success: true };
+    }
+    return { success: true };
+  };
+
+  const reasoningHttpClient = {
+    async requestReasoningAction() { throw new Error('Not for swarm'); },
+    async dispatchPlatformTask() {
+      return {
+        taskId: 'live_flight_swarm_2',
+        status: 'completed',
+        complianceAudit: { proofId: 'audit_test_proof_popup' },
+        finalSynthesis: 'IndiGo 6E-2121 at ₹2,499 compared against Air India.'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, reasoningHttpClient, undefined, { defaultMaxSteps: 1 });
+  const result = await coordinator.startRun('Compare flights from Delhi to Mumbai on IndiGo and Air India');
+
+  assert.ok(result);
+  assert.strictEqual(result.success, true);
+
+  // Verify that existing open tabs 2 and 7 were reused without creating unwanted new tabs
+  assert.strictEqual(navigatedTabs.length, 0, 'Should reuse existing open tabs without forcing navigateTab');
+
+  // Verify popup suggestions were clicked
+  const clickedOrigPopup = dispatchedActions.find(a => a.proposal.kind === 'click' && a.proposal.targetLocalId === 'el_del_sugg');
+  const clickedDestPopup = dispatchedActions.find(a => a.proposal.kind === 'click' && a.proposal.targetLocalId === 'el_bom_sugg');
+
+  assert.ok(clickedOrigPopup, 'Must click Origin airport autocomplete popup item (DEL - Delhi)');
+  assert.ok(clickedDestPopup, 'Must click Destination airport autocomplete popup item (BOM - Mumbai)');
 });
 
 

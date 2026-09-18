@@ -38,6 +38,13 @@ export interface BrowserAdapter {
         status?: string;
     } | null>;
     ensureContentScript?(tabId: number): Promise<boolean>;
+    queryTabs?(queryInfo?: any): Promise<Array<{
+        id: number;
+        url: string;
+        title: string;
+        windowId?: number;
+        status?: string;
+    }>>;
     getStorage<T>(key: string): Promise<T | null>;
     setStorage<T>(key: string, value: T): Promise<void>;
     runInSanitizerHost(request: SanitizationHostRequest): Promise<SanitizedContext>;
@@ -76,6 +83,13 @@ export declare class WebExtensionAdapter implements BrowserAdapter {
         tabId: number;
         url?: string;
     }>;
+    queryTabs(queryInfo?: any): Promise<Array<{
+        id: number;
+        url: string;
+        title: string;
+        windowId?: number;
+        status?: string;
+    }>>;
     getStorage<T>(key: string): Promise<T | null>;
     setStorage<T>(key: string, value: T): Promise<void>;
     getBookmarks(query?: string): Promise<any[]>;

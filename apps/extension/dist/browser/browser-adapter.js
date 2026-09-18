@@ -498,6 +498,26 @@ export class WebExtensionAdapter {
         }
         return { tabId: tabId || 0, url };
     }
+    async queryTabs(queryInfo = {}) {
+        const api = this.browserAPI;
+        if (!api || !api.tabs || !api.tabs.query) {
+            return [];
+        }
+        return new Promise((resolve) => {
+            api.tabs.query(queryInfo, (tabs) => {
+                if (api.runtime?.lastError || !tabs) {
+                    return resolve([]);
+                }
+                resolve(tabs.map((t) => ({
+                    id: t.id,
+                    url: t.url || '',
+                    title: t.title || '',
+                    windowId: t.windowId,
+                    status: t.status || 'complete'
+                })));
+            });
+        });
+    }
     async getStorage(key) {
         const api = this.browserAPI;
         if (!api || !api.storage || !api.storage.local) {

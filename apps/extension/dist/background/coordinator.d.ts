@@ -109,6 +109,7 @@ export declare function isRestrictedBrowserUrl(urlStr?: string): {
     isRestricted: boolean;
     reason?: string;
 };
+export declare const AIRPORT_CODES: Record<string, string>;
 export declare function isSubAgentSwarmGoal(goal: string): boolean;
 export declare class RunCoordinator {
     private state;

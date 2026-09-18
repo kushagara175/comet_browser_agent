@@ -222,6 +222,24 @@ export function isRestrictedBrowserUrl(urlStr?: string): { isRestricted: boolean
   return { isRestricted: false };
 }
 
+export const AIRPORT_CODES: Record<string, string> = {
+  delhi: 'DEL',
+  mumbai: 'BOM',
+  bengaluru: 'BLR',
+  bangalore: 'BLR',
+  chennai: 'MAA',
+  kolkata: 'CCU',
+  hyderabad: 'HYD',
+  pune: 'PNQ',
+  goa: 'GOI',
+  ahmedabad: 'AMD',
+  jaipur: 'JAI',
+  kochi: 'COK',
+  cochin: 'COK',
+  lucknow: 'LKO',
+  chandigarh: 'IXC'
+};
+
 export function isSubAgentSwarmGoal(goal: string): boolean {
   if (!goal || typeof goal !== 'string') return false;
   const trimmed = goal.trim();
@@ -3395,33 +3413,96 @@ export class RunCoordinator {
     } catch (_) {}
 
     let elements: any[] = snap?.snapshot?.elements || [];
+    let pageUrl = (snap?.snapshot?.url || '').toLowerCase();
+
+    // 3b. Google Search Link-Click Fallback:
+    // If we landed on a search engine results page (e.g. Google Search), locate the direct link to the airline portal and click it
+    if (pageUrl.includes('google.com/search') || elements.some((e: any) => /google\s+search/i.test(e.sanitizedName || e.text || ''))) {
+      const entPattern = entityName === 'indigo' ? /(?:goindigo\.in|indigo)/i :
+                         entityName === 'air india' ? /(?:airindia\.com|air\s*india)/i :
+                         new RegExp(entityName.replace(/\s+/g, ''), 'i');
+      const directPortalLink = elements.find((e: any) =>
+        (e.role === 'link' || e.role === 'button') &&
+        !e.state?.includes('disabled') &&
+        (entPattern.test(e.url || '') || (entPattern.test(e.sanitizedName || e.text || '') && !/sponsored/i.test(e.sanitizedName || e.text || '')))
+      );
+
+      if (directPortalLink) {
+        this.listeners.onStepProgress?.(
+          stepIndex,
+          totalSteps,
+          `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Navigating from search page to official portal...`,
+          this.currentRunId
+        );
+        await this.browser.sendMessageToTab(tabId, {
+          type: 'EXECUTE_ACTION',
+          proposal: {
+            actionId: `act_sub_navlink_${Date.now()}`,
+            kind: 'click',
+            targetLocalId: directPortalLink.localId,
+            confidence: 1.0,
+            risk: 'safe',
+            rationale: `Navigating to official portal link`
+          }
+        }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 2500));
+        if (typeof this.browser.waitForTabReady === 'function' && tabId) {
+          await this.browser.waitForTabReady(tabId, 6000).catch(() => null);
+        }
+        if (typeof this.browser.ensureContentScript === 'function' && tabId) {
+          await this.browser.ensureContentScript(tabId).catch(() => null);
+        }
+        try {
+          snap = await this.browser.sendMessageToTab(tabId, {
+            type: 'EXTRACT_DOM_SNAPSHOT',
+            captureId: `sub_snap_postportal_${entityName}_${Date.now()}`
+          });
+          if (snap?.snapshot?.elements) {
+            elements = snap.snapshot.elements;
+            pageUrl = (snap?.snapshot?.url || '').toLowerCase();
+          }
+        } catch (_) {}
+      }
+    }
 
     // 4. Physical DOM Driving: Typing & Clicking on Screen
     if (routeInfo.isFlight) {
+      const origCode = AIRPORT_CODES[routeInfo.origin.toLowerCase()] || routeInfo.origin.slice(0, 3).toUpperCase();
+      const destCode = AIRPORT_CODES[routeInfo.dest.toLowerCase()] || routeInfo.dest.slice(0, 3).toUpperCase();
+
       // Flight booking form detection (Origin, Destination, Search button)
       const originCandidate = elements.find((e: any) =>
-        (e.role === 'input' || e.role === 'combobox' || (e.role === 'generic' && /\b(?:from|origin)\b/i.test(e.sanitizedName || e.text || ''))) &&
+        (e.role === 'input' || e.role === 'combobox' || (e.role === 'generic' && /\b(?:from|origin|departure|flying\s+from)\b/i.test(e.sanitizedName || e.text || '')) || (e.role === 'button' && /\b(?:from|origin)\b/i.test(e.sanitizedName || e.text || ''))) &&
         !e.state?.includes('disabled') &&
         /\b(?:origin|from|departure|source|departing|flying\s+from|from\s+origin)\b/i.test(e.sanitizedName || e.text || '')
       );
 
       const destCandidate = elements.find((e: any) =>
-        (e.role === 'input' || e.role === 'combobox' || (e.role === 'generic' && /\b(?:to|destination)\b/i.test(e.sanitizedName || e.text || ''))) &&
+        (e.role === 'input' || e.role === 'combobox' || (e.role === 'generic' && /\b(?:to|destination|arrival|going\s+to|flying\s+to)\b/i.test(e.sanitizedName || e.text || '')) || (e.role === 'button' && /\b(?:to|destination)\b/i.test(e.sanitizedName || e.text || ''))) &&
         !e.state?.includes('disabled') &&
         /\b(?:destination|to|arrival|going\s+to|flying\s+to|to\s+destination)\b/i.test(e.sanitizedName || e.text || '')
       );
 
-      const searchBtnCandidate = elements.find((e: any) =>
-        (e.role === 'button' || e.role === 'input' || e.role === 'link') &&
-        !e.state?.includes('disabled') &&
-        /\b(?:search\s+flights?|search|find\s+flights?|book\s+flights?|show\s+flights?)\b/i.test(e.sanitizedName || e.text || '')
-      );
-
       if (originCandidate && destCandidate) {
+        // Step 4a: Focus/click origin input
+        await this.browser.sendMessageToTab(tabId, {
+          type: 'EXECUTE_ACTION',
+          proposal: {
+            actionId: `act_sub_orig_focus_${Date.now()}`,
+            kind: 'click',
+            targetLocalId: originCandidate.localId,
+            confidence: 1.0,
+            risk: 'safe',
+            rationale: `Focusing Origin field`
+          }
+        }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 400));
+
+        // Step 4b: Type origin
         this.listeners.onStepProgress?.(
           stepIndex,
           totalSteps,
-          `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Typing Origin "${routeInfo.origin}" on screen...`,
+          `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Typing Origin "${routeInfo.origin}" (${origCode})...`,
           this.currentRunId
         );
         await this.browser.sendMessageToTab(tabId, {
@@ -3436,50 +3517,192 @@ export class RunCoordinator {
             rationale: `Typing origin ${routeInfo.origin}`
           }
         }).catch(() => {});
-        await new Promise((r) => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 700));
 
-        this.listeners.onStepProgress?.(
-          stepIndex,
-          totalSteps,
-          `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Typing Destination "${routeInfo.dest}" on screen...`,
-          this.currentRunId
-        );
-        await this.browser.sendMessageToTab(tabId, {
-          type: 'EXECUTE_ACTION',
-          proposal: {
-            actionId: `act_sub_dest_${Date.now()}`,
-            kind: 'type',
-            targetLocalId: destCandidate.localId,
-            textToType: routeInfo.dest,
-            confidence: 1.0,
-            risk: 'safe',
-            rationale: `Typing destination ${routeInfo.dest}`
+        // Step 4c: Check for autocomplete airport suggestion popup and click it
+        try {
+          const origPopupSnap = await this.browser.sendMessageToTab(tabId, {
+            type: 'EXTRACT_DOM_SNAPSHOT',
+            captureId: `sub_snap_orig_popup_${Date.now()}`
+          });
+          const origPopupEls = origPopupSnap?.snapshot?.elements || [];
+          const origSuggestion = origPopupEls.find((e: any) =>
+            e.localId !== originCandidate.localId &&
+            !e.state?.includes('disabled') &&
+            (
+              new RegExp(`\\b${routeInfo.origin}\\b`, 'i').test(e.sanitizedName || e.text || '') ||
+              new RegExp(`\\b${origCode}\\b`, 'i').test(e.sanitizedName || e.text || '')
+            )
+          );
+          if (origSuggestion) {
+            this.listeners.onStepProgress?.(
+              stepIndex,
+              totalSteps,
+              `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Selecting "${origSuggestion.sanitizedName || routeInfo.origin}" from airport popup...`,
+              this.currentRunId
+            );
+            await this.browser.sendMessageToTab(tabId, {
+              type: 'EXECUTE_ACTION',
+              proposal: {
+                actionId: `act_sub_orig_sel_${Date.now()}`,
+                kind: 'click',
+                targetLocalId: origSuggestion.localId,
+                confidence: 1.0,
+                risk: 'safe',
+                rationale: `Selecting airport option from popup`
+              }
+            }).catch(() => {});
+            await new Promise((r) => setTimeout(r, 500));
           }
-        }).catch(() => {});
-        await new Promise((r) => setTimeout(r, 600));
+        } catch (_) {}
 
-        if (searchBtnCandidate) {
+        // Step 4d: Destination handling
+        let activeDestCandidate = destCandidate;
+        try {
+          const midSnap = await this.browser.sendMessageToTab(tabId, {
+            type: 'EXTRACT_DOM_SNAPSHOT',
+            captureId: `sub_snap_mid_${Date.now()}`
+          });
+          if (midSnap?.snapshot?.elements) {
+            const foundDest = midSnap.snapshot.elements.find((e: any) =>
+              (e.role === 'input' || e.role === 'combobox' || (e.role === 'generic' && /\b(?:to|destination|arrival|going\s+to|flying\s+to)\b/i.test(e.sanitizedName || e.text || '')) || (e.role === 'button' && /\b(?:to|destination)\b/i.test(e.sanitizedName || e.text || ''))) &&
+              e.localId !== originCandidate.localId &&
+              !e.state?.includes('disabled') &&
+              /\b(?:destination|to|arrival|going\s+to|flying\s+to|to\s+destination)\b/i.test(e.sanitizedName || e.text || '')
+            );
+            if (foundDest) activeDestCandidate = foundDest;
+          }
+        } catch (_) {}
+
+        if (activeDestCandidate) {
+          await this.browser.sendMessageToTab(tabId, {
+            type: 'EXECUTE_ACTION',
+            proposal: {
+              actionId: `act_sub_dest_focus_${Date.now()}`,
+              kind: 'click',
+              targetLocalId: activeDestCandidate.localId,
+              confidence: 1.0,
+              risk: 'safe',
+              rationale: `Focusing Destination field`
+            }
+          }).catch(() => {});
+          await new Promise((r) => setTimeout(r, 400));
+
           this.listeners.onStepProgress?.(
             stepIndex,
             totalSteps,
-            `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Clicking "${searchBtnCandidate.sanitizedName || 'SEARCH FLIGHTS'}"...`,
+            `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Typing Destination "${routeInfo.dest}" (${destCode})...`,
             this.currentRunId
           );
           await this.browser.sendMessageToTab(tabId, {
             type: 'EXECUTE_ACTION',
             proposal: {
-              actionId: `act_sub_search_${Date.now()}`,
-              kind: 'click',
-              targetLocalId: searchBtnCandidate.localId,
+              actionId: `act_sub_dest_${Date.now()}`,
+              kind: 'type',
+              targetLocalId: activeDestCandidate.localId,
+              textToType: routeInfo.dest,
               confidence: 1.0,
               risk: 'safe',
-              rationale: `Clicking search flights`
+              rationale: `Typing destination ${routeInfo.dest}`
             }
           }).catch(() => {});
-          await new Promise((r) => setTimeout(r, 2500));
+          await new Promise((r) => setTimeout(r, 700));
+
+          // Step 4e: Autocomplete popup selection for destination
+          try {
+            const destPopupSnap = await this.browser.sendMessageToTab(tabId, {
+              type: 'EXTRACT_DOM_SNAPSHOT',
+              captureId: `sub_snap_dest_popup_${Date.now()}`
+            });
+            const destPopupEls = destPopupSnap?.snapshot?.elements || [];
+            const destSuggestion = destPopupEls.find((e: any) =>
+              e.localId !== activeDestCandidate.localId &&
+              e.localId !== originCandidate.localId &&
+              !e.state?.includes('disabled') &&
+              (
+                new RegExp(`\\b${routeInfo.dest}\\b`, 'i').test(e.sanitizedName || e.text || '') ||
+                new RegExp(`\\b${destCode}\\b`, 'i').test(e.sanitizedName || e.text || '')
+              )
+            );
+            if (destSuggestion) {
+              this.listeners.onStepProgress?.(
+                stepIndex,
+                totalSteps,
+                `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Selecting "${destSuggestion.sanitizedName || routeInfo.dest}" from airport popup...`,
+                this.currentRunId
+              );
+              await this.browser.sendMessageToTab(tabId, {
+                type: 'EXECUTE_ACTION',
+                proposal: {
+                  actionId: `act_sub_dest_sel_${Date.now()}`,
+                  kind: 'click',
+                  targetLocalId: destSuggestion.localId,
+                  confidence: 1.0,
+                  risk: 'safe',
+                  rationale: `Selecting airport option from popup`
+                }
+              }).catch(() => {});
+              await new Promise((r) => setTimeout(r, 500));
+            }
+          } catch (_) {}
         }
 
+        // Step 4f: One Way trip selection if available
         try {
+          const freshSnap = await this.browser.sendMessageToTab(tabId, {
+            type: 'EXTRACT_DOM_SNAPSHOT',
+            captureId: `sub_snap_before_search_${Date.now()}`
+          });
+          const currentEls = freshSnap?.snapshot?.elements || elements;
+          const oneWayBtn = currentEls.find((e: any) =>
+            /\b(?:one[\s-]?way|oneway)\b/i.test(e.sanitizedName || e.text || '') &&
+            !e.state?.includes('disabled') &&
+            !e.state?.includes('checked') &&
+            !e.state?.includes('selected')
+          );
+          if (oneWayBtn) {
+            await this.browser.sendMessageToTab(tabId, {
+              type: 'EXECUTE_ACTION',
+              proposal: {
+                actionId: `act_sub_oneway_${Date.now()}`,
+                kind: 'click',
+                targetLocalId: oneWayBtn.localId,
+                confidence: 1.0,
+                risk: 'safe',
+                rationale: `Selecting One Way`
+              }
+            }).catch(() => {});
+            await new Promise((r) => setTimeout(r, 300));
+          }
+
+          // Step 4g: Click SEARCH FLIGHTS button
+          const searchBtnCandidate = currentEls.find((e: any) =>
+            (e.role === 'button' || e.role === 'input' || e.role === 'link') &&
+            !e.state?.includes('disabled') &&
+            /\b(?:search\s+flights?|search|find\s+flights?|book\s+flights?|show\s+flights?)\b/i.test(e.sanitizedName || e.text || '')
+          );
+
+          if (searchBtnCandidate) {
+            this.listeners.onStepProgress?.(
+              stepIndex,
+              totalSteps,
+              `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Clicking "${searchBtnCandidate.sanitizedName || 'SEARCH FLIGHTS'}"...`,
+              this.currentRunId
+            );
+            await this.browser.sendMessageToTab(tabId, {
+              type: 'EXECUTE_ACTION',
+              proposal: {
+                actionId: `act_sub_search_${Date.now()}`,
+                kind: 'click',
+                targetLocalId: searchBtnCandidate.localId,
+                confidence: 1.0,
+                risk: 'safe',
+                rationale: `Clicking search flights`
+              }
+            }).catch(() => {});
+            await new Promise((r) => setTimeout(r, 3000));
+          }
+
           snap = await this.browser.sendMessageToTab(tabId, {
             type: 'EXTRACT_DOM_SNAPSHOT',
             captureId: `sub_snap_post_${entityName}_${Date.now()}`
@@ -3610,8 +3833,13 @@ export class RunCoordinator {
     this.listeners.onStateChange?.('awaiting-reasoning', 'Decomposing task into parallel sub-agents...', this.currentRunId);
 
     // Resolve target entities & URLs immediately
-    const entityMatches = goal.match(/(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi);
-    let targetEntities = entityMatches ? Array.from(new Set(entityMatches.map(e => e.toLowerCase()))) : [];
+    const entityMatches = goal.match(/(?:indigo|goindigo|air\s*india|airindia|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi);
+    let targetEntities = entityMatches ? Array.from(new Set(entityMatches.map(e => {
+      const low = e.toLowerCase().trim();
+      if (low === 'airindia') return 'air india';
+      if (low === 'goindigo') return 'indigo';
+      return low;
+    }))) : [];
     const isFlightQuery = /\b(?:flight|flights|airline|airlines|ticket|tickets|fare|fares)\b/i.test(goal);
 
     if (targetEntities.length < 2) {
@@ -3655,36 +3883,80 @@ export class RunCoordinator {
       .trim() || (isFlightQuery ? `${origin} to ${dest}` : 'iPhone 16');
 
     const getTargetUrl = (ent: string) => {
-      if (ent === 'amazon') return `https://www.amazon.in/s?k=${encodeURIComponent(cleanedQuery)}`;
-      if (ent === 'flipkart') return `https://www.flipkart.com/search?q=${encodeURIComponent(cleanedQuery)}`;
+      const lower = (ent || '').toLowerCase().trim();
+      if (lower === 'indigo' || lower === 'goindigo') return 'https://www.goindigo.in';
+      if (lower === 'air india' || lower === 'airindia') return 'https://www.airindia.com';
+      if (lower === 'spicejet') return 'https://www.spicejet.com';
+      if (lower === 'vistara') return 'https://www.airindia.com';
+      if (lower === 'akasa' || lower === 'akasa air') return 'https://www.akasaair.com';
+      if (lower === 'makemytrip') return 'https://www.makemytrip.com/flights';
+      if (lower === 'easemytrip') return 'https://www.easemytrip.com/flights';
+      if (lower === 'cleartrip') return 'https://www.cleartrip.com/flights';
+      if (lower === 'booking') return 'https://www.booking.com/flights';
+      if (lower === 'agoda') return 'https://www.agoda.com';
+      if (lower === 'amazon') return `https://www.amazon.in/s?k=${encodeURIComponent(cleanedQuery)}`;
+      if (lower === 'flipkart') return `https://www.flipkart.com/search?q=${encodeURIComponent(cleanedQuery)}`;
+
       if (isFlightQuery) {
-        return `https://www.google.com/search?q=${encodeURIComponent(ent + ' flights ' + origin + ' to ' + dest)}`;
+        return `https://www.google.com/search?q=${encodeURIComponent(lower + ' flights ' + origin + ' to ' + dest)}`;
       }
-      if (ent === 'indigo') return 'https://www.goindigo.in';
-      if (ent === 'air india') return 'https://www.airindia.com';
-      if (ent === 'makemytrip') return 'https://www.makemytrip.com';
-      if (ent === 'booking') return 'https://www.booking.com';
-      if (ent === 'agoda') return 'https://www.agoda.com';
-      return `https://www.google.com/search?q=${encodeURIComponent(ent + ' ' + goal)}`;
+      return `https://www.google.com/search?q=${encodeURIComponent(lower + ' ' + goal)}`;
     };
 
     const targetUrl1 = getTargetUrl(targetEntities[0]);
     const targetUrl2 = getTargetUrl(targetEntities[1]);
 
-    const ent1Norm = targetEntities[0].replace(/\s+/g, '');
-    const ent1Word = targetEntities[0].split(' ')[0];
-    const isTab1AlreadyTarget = activeUrl.includes(ent1Norm) || activeUrl.includes(ent1Word);
+    // Inspect all open tabs to reuse existing tabs if user already has the site open
+    let allOpenTabs: Array<{ id: number; url: string; title: string; windowId?: number }> = [];
+    if (typeof this.browser.queryTabs === 'function') {
+      try {
+        allOpenTabs = await this.browser.queryTabs({});
+      } catch (_) {}
+    } else if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+      try {
+        allOpenTabs = await new Promise((resolve) => {
+          chrome.tabs.query({}, (tabs: any[]) => resolve(tabs || []));
+        });
+      } catch (_) {}
+    }
 
-    // Open live browser tabs immediately so the user sees both sub-agents deployed in real time
-    let tab1Id = this.currentTabId || (activeTab?.id || 0);
-    let tab2Id = 0;
+    const matchTabForEntity = (ent: string, excludedTabId?: number) => {
+      const lower = ent.toLowerCase().trim();
+      const patterns: string[] = [];
+      if (lower === 'indigo' || lower === 'goindigo') patterns.push('goindigo.in', 'indigo');
+      else if (lower === 'air india' || lower === 'airindia') patterns.push('airindia.com', 'air india', 'airindia');
+      else if (lower === 'spicejet') patterns.push('spicejet.com', 'spicejet');
+      else if (lower === 'makemytrip') patterns.push('makemytrip.com', 'makemytrip');
+      else if (lower === 'amazon') patterns.push('amazon.in', 'amazon.com');
+      else if (lower === 'flipkart') patterns.push('flipkart.com');
+      else patterns.push(lower.replace(/\s+/g, ''));
+
+      return allOpenTabs.find(t => {
+        if (excludedTabId && t.id === excludedTabId) return false;
+        const tUrl = (t.url || '').toLowerCase();
+        const tTitle = (t.title || '').toLowerCase();
+        if (tUrl.startsWith('chrome-extension://') || tUrl.startsWith('devtools://')) return false;
+        return patterns.some(p => tUrl.includes(p) || tTitle.includes(p));
+      });
+    };
+
+    const existingTab1 = matchTabForEntity(targetEntities[0]);
+    const existingTab2 = matchTabForEntity(targetEntities[1], existingTab1?.id);
+
+    let tab1Id = existingTab1 ? existingTab1.id : (this.currentTabId || (activeTab?.id || 0));
+    let tab2Id = existingTab2 ? existingTab2.id : 0;
+    const isTab1AlreadyTarget = !!existingTab1 || activeUrl.includes(targetEntities[0].replace(/\s+/g, '')) || activeUrl.includes(targetEntities[0].split(' ')[0]);
+
+    // Open/navigate live browser tabs immediately so the user sees both sub-agents deployed in real time
     if (this.browser && typeof this.browser.navigateTab === 'function') {
       if (tab1Id && !isTab1AlreadyTarget) {
         const n1 = await this.browser.navigateTab(tab1Id, targetUrl1).catch(() => null);
         if (n1 && typeof n1 === 'object' && n1.tabId) tab1Id = n1.tabId;
       }
-      const n2 = await this.browser.navigateTab(0, targetUrl2, { createNewTab: true }).catch(() => null);
-      if (n2 && typeof n2 === 'object' && n2.tabId) tab2Id = n2.tabId;
+      if (!tab2Id) {
+        const n2 = await this.browser.navigateTab(0, targetUrl2, { createNewTab: true }).catch(() => null);
+        if (n2 && typeof n2 === 'object' && n2.tabId) tab2Id = n2.tabId;
+      }
     } else if (typeof chrome !== 'undefined' && chrome.tabs) {
       try {
         if (tab1Id && !isTab1AlreadyTarget && typeof chrome.tabs.update === 'function') {
@@ -3694,7 +3966,7 @@ export class RunCoordinator {
         }
       } catch {}
       try {
-        if (typeof chrome.tabs.create === 'function') {
+        if (!tab2Id && typeof chrome.tabs.create === 'function') {
           chrome.tabs.create({ url: targetUrl2, active: false }, (t: any) => { if (t?.id) tab2Id = t.id; });
         }
       } catch {}
