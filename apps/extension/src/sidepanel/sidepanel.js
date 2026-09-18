@@ -2338,12 +2338,18 @@ if (typeof document !== 'undefined') {
         if (kind === 'finish' || kind === 'done') {
           return 'Finalizing results...';
         }
+        if (kind === 'observe') {
+          return act.rationale || 'Observing page context...';
+        }
         return `Executing ${kind || 'action'}...`;
       }
 
       function getCleanActionLabel(act, elementsList) {
         if (!act) return 'Action completed';
         const kind = (act.kind || '').toLowerCase();
+        if (kind === 'observe') {
+          return act.rationale || 'Observed page context';
+        }
 
         // Resolve friendly element name if available
         let friendlyName = act.elementText || act.targetName || act.sanitizedTargetName || '';
@@ -2652,6 +2658,27 @@ if (typeof document !== 'undefined') {
       addAuditEntry('ACT', `${(action.kind || 'ACTION').toUpperCase()} on ${action.targetLocalId || 'page'}`, 'pass');
     }
 
+    // Affirmative response patterns and sub-agent intent detection
+    const AFFIRMATIVE_PATTERN = /^(?:yeah|yeha|yea|yes|yess+|yup|sure|ok|okay|k|kk|proceed|continue|do\s+it|go\s+ahead|yep|please\s+do|yes\s+please|confirm|right|cool|fine|alright)(?:\s+(?:please|go\s+ahead|do\s+it|proceed|continue|bro|man|now|both|with\s+it|with\s+that))?[.!]?$/i;
+
+    function isSubAgentIntentText(text, history) {
+      if (!text || typeof text !== 'string') return false;
+      const trimmed = text.trim();
+      const isComparative = /\b(?:compare|versus|vs\.?|across|both|sub-?agents?|swarm|parallel\s+agents?|simultaneously|multi-?agent)\b/i.test(trimmed);
+      const matches = trimmed.match(/(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi);
+      const uniqueCount = matches ? new Set(matches.map(m => m.toLowerCase().replace(/\s+/g, ''))).size : 0;
+      if (isComparative || uniqueCount >= 2) return true;
+
+      // Check affirmative continuation with prior subagent query in history
+      if (AFFIRMATIVE_PATTERN.test(trimmed) && Array.isArray(history) && history.length > 0) {
+        const prevUserGoal = [...history].reverse().find(m => m.role === 'user' && !AFFIRMATIVE_PATTERN.test(m.content.trim()))?.content || '';
+        if (prevUserGoal && isSubAgentIntentText(prevUserGoal, [])) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     // Execute Goal or Conversational Query
     async function executeGoal(goalText) {
       if (!goalText) return;
@@ -2698,9 +2725,7 @@ if (typeof document !== 'undefined') {
       agentBubble.className = 'chat-msg agent';
 
       let initialActionText = 'Perceiving page elements...';
-      const isSubAgentGoal =
-        /\b(?:compare|versus|vs\.?|across|both|sub-?agents?|swarm|parallel\s+agents?|simultaneously)\b/i.test(goalText) ||
-        Boolean(goalText.match(/(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi)?.length >= 2);
+      const isSubAgentGoal = isSubAgentIntentText(goalText, conversationHistory.slice(0, -1));
 
       const navMatch = goalText.match(/\b(?:open|go\s+to|visit|launch)\s+([a-zA-Z0-9.-]+\.[a-z]{2,}|amazon|flipkart|google|github|wikipedia)/i);
       if (isSubAgentGoal) {
@@ -2772,9 +2797,7 @@ if (typeof document !== 'undefined') {
       );
 
       // Detect if user instruction expresses sub-agent swarm or multi-domain comparison intent
-      const isSubAgentIntent =
-        /\b(?:compare|versus|vs\.?|across|both|sub-?agents?|swarm|parallel\s+agents?|simultaneously)\b/i.test(goalText) ||
-        Boolean(goalText.match(/(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi)?.length >= 2);
+      const isSubAgentIntent = isSubAgentIntentText(goalText, conversationHistory.slice(0, -1));
 
       // Detect if user instruction expresses browser action, navigation, or search intent
       const hasActionOrNavIntent =
@@ -3305,9 +3328,7 @@ if (typeof document !== 'undefined') {
       // Only perform page context capture if the user explicitly asks about the current tab/page
       const isExplicitPageQuery = /\b(?:this\s+(?:page|tab|site|website|article)|on\s+(?:the\s+)?screen|read\s+(?:this|the\s+page)|summarize\s+(?:this|the\s+page)|look\s+at\s+this)\b/i.test(promptText);
 
-      const isSubAgent =
-        /\b(?:compare|versus|vs\.?|across|both|sub-?agents?|swarm|parallel\s+agents?|simultaneously)\b/i.test(promptText) ||
-        Boolean(promptText.match(/(?:indigo|air\s*india|spicejet|vistara|amazon|flipkart|booking|agoda|github|gitlab|apple|myntra)/gi)?.length >= 2);
+      const isSubAgent = isSubAgentIntentText(promptText, conversationHistory);
 
       const messageType = (isExplicitBrowserAction || isSubAgent)
         ? 'START_AGENT_RUN'
@@ -3886,16 +3907,16 @@ if (typeof document !== 'undefined') {
             const shimmerTitle = lastAgentBubble?.querySelector('.monologue-title.thinking-shimmer-text') || lastAgentBubble?.querySelector('.thinking-shimmer-text');
             const liveBody = lastAgentBubble?.querySelector('.live-thought-line .thought-body');
             let stateLabel = 'Thinking...';
-            let actionStatusText = 'Perceiving page layout...';
+            let actionStatusText = message.message || 'Perceiving page layout...';
             if (message.state === 'awaiting-reasoning') {
-              stateLabel = 'Reasoning...';
-              actionStatusText = 'Planning optimal action...';
+              stateLabel = (message.message && /sub-?agent|parallel|swarm/i.test(message.message)) ? 'Sub-Agent Swarm...' : 'Reasoning...';
+              actionStatusText = message.message || 'Planning optimal action...';
             } else if (message.state === 'capturing') {
               stateLabel = 'Perceiving...';
-              actionStatusText = 'Perceiving page elements...';
+              actionStatusText = message.message || 'Perceiving page elements...';
             } else if (message.state === 'executing') {
-              stateLabel = 'Thinking...';
-              actionStatusText = 'Executing action...';
+              stateLabel = (message.message && /sub-?agent|parallel|swarm/i.test(message.message)) ? 'Sub-Agent Swarm...' : 'Thinking...';
+              actionStatusText = message.message || 'Executing action...';
             }
             if (shimmerTitle) shimmerTitle.textContent = stateLabel;
             const liveActionSpan = lastAgentBubble?.querySelector('.action-status-line.is-executing .thinking-shimmer-text');
@@ -3910,6 +3931,8 @@ if (typeof document !== 'undefined') {
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
               const liveBody = lastAgentBubble?.querySelector('.live-thought-line .thought-body');
               if (liveBody) liveBody.textContent = message.message;
+              const liveActionSpan = lastAgentBubble?.querySelector('.action-status-line.is-executing .thinking-shimmer-text');
+              if (liveActionSpan) liveActionSpan.textContent = message.message;
             }
           }
 

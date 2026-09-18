@@ -4,7 +4,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert';
-import { RunCoordinator } from '../apps/extension/dist/background/coordinator.js';
+import { RunCoordinator, isSubAgentSwarmGoal } from '../apps/extension/dist/background/coordinator.js';
 
 function createSampleElements() {
   return [
@@ -634,3 +634,53 @@ test('Coordinator: Resolves affirmative user responses using conversation histor
   assert.strictEqual(result.success, true);
   assert.strictEqual(result.state, 'complete');
 });
+
+test('Coordinator: Resolves "yeha" typo affirmative follow-up for flight comparison sub-agent swarm', async () => {
+  const browser = createFakeBrowserAdapter();
+
+  const reasoningHttpClient = {
+    async requestReasoningAction() {
+      throw new Error('Should not reach single-tab reasoning for subagent swarm');
+    },
+    async dispatchPlatformTask(payload) {
+      assert.strictEqual(payload.enableSubAgents, true);
+      return {
+        taskId: 'flight_task_1',
+        status: 'completed',
+        plan: {
+          shouldDecompose: true,
+          rationale: 'Decomposed into IndiGo and Air India parallel workers',
+          subTasks: [
+            { subTaskId: 'sub_1', title: 'Inspect INDIGO', targetUrl: 'https://www.goindigo.in', status: 'completed', result: { summary: 'IndiGo: ₹2,600' } },
+            { subTaskId: 'sub_2', title: 'Inspect AIR INDIA', targetUrl: 'https://www.airindia.com', status: 'completed', result: { summary: 'Air India: ₹2,850' } }
+          ]
+        },
+        finalSynthesis: 'IndiGo starts at ₹2,600; Air India starts at ₹2,850.'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, reasoningHttpClient, undefined, { defaultMaxSteps: 1 });
+
+  // User previously asked for IndiGo and Air India flights, then types "yeha"
+  const history = [
+    { role: 'user', content: 'flights from Delhi to Mumbai IndiGo Air India' },
+    { role: 'assistant', content: 'IndiGo flight statuses are shown. Would you like me to check Air India as well?' }
+  ];
+
+  const result = await coordinator.startRun('yeha', { history });
+
+  assert.ok(result);
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.state, 'complete');
+  assert.ok(result.reply.includes('IndiGo'));
+  assert.ok(result.reply.includes('Air India'));
+});
+
+test('Coordinator: isSubAgentSwarmGoal detects multi-airline and comparison queries', () => {
+  assert.strictEqual(isSubAgentSwarmGoal('flights from Delhi to Mumbai IndiGo Air India'), true);
+  assert.strictEqual(isSubAgentSwarmGoal('Compare flights from Delhi to Mumbai on IndiGo and Air India'), true);
+  assert.strictEqual(isSubAgentSwarmGoal('compare iPhone 16 on Amazon and Flipkart'), true);
+  assert.strictEqual(isSubAgentSwarmGoal('flights from Delhi to Mumbai'), false);
+});
+

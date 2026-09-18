@@ -20914,7 +20914,7 @@ function isSubAgentSwarmGoal(goal) {
   const hasMultiplePortals = /(?:https?:\/\/[^\s]+[\s\S]+https?:\/\/[^\s]+)/i.test(trimmed);
   const mentionsMultipleEntities = /(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi.test(trimmed);
   const entityMatches = trimmed.match(/(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi);
-  const uniqueEntities = entityMatches ? Array.from(new Set(entityMatches.map((e) => e.toLowerCase()))) : [];
+  const uniqueEntities = entityMatches ? Array.from(new Set(entityMatches.map((e) => e.toLowerCase().replace(/\s+/g, "")))) : [];
   const isExplicitSubagent = /\b(?:sub-?agents?|swarm|parallel\s+agents?|multi-?agent)\b/i.test(trimmed);
   const isCrossDomainQuery = isComparative && (uniqueEntities.length >= 2 || /\b(?:flight|flights|airline|airlines|hotel|hotels|price|prices|ticket|tickets|fare|fares)\b/i.test(trimmed));
   return isCrossDomainQuery || hasMultiplePortals || uniqueEntities.length >= 2 || isExplicitSubagent;
@@ -21705,7 +21705,7 @@ var RunCoordinator = class {
       }));
     }
     const RETRY_PATTERN = /^(?:do\s+again|try\s+again|retry|redo|do\s+it\s+again|again|run\s+again|repeat|one\s+more\s+time|once\s+more)[.!]?$/i;
-    const AFFIRMATIVE_PATTERN = /^(?:yeah|yes|yup|sure|ok|okay|proceed|continue|do\s+it|go\s+ahead|yep|please\s+do|yes\s+please|confirm|right)(?:\s+(?:please|go\s+ahead|do\s+it|proceed|continue|bro))?[.!]?$/i;
+    const AFFIRMATIVE_PATTERN = /^(?:yeah|yeha|yea|yes|yess+|yup|sure|ok|okay|k|kk|proceed|continue|do\s+it|go\s+ahead|yep|please\s+do|yes\s+please|confirm|right|cool|fine|alright)(?:\s+(?:please|go\s+ahead|do\s+it|proceed|continue|bro|man|now|both|with\s+it|with\s+that))?[.!]?$/i;
     let effectiveGoal = (goal || "").trim();
     if (RETRY_PATTERN.test(effectiveGoal) && this.lastGoal) {
       effectiveGoal = this.lastGoal;
@@ -21722,6 +21722,8 @@ var RunCoordinator = class {
         }
       } else if (this.lastGoal) {
         effectiveGoal = this.lastGoal;
+      } else if (lastUserGoal) {
+        effectiveGoal = lastUserGoal;
       }
     } else if (effectiveGoal) {
       this.lastGoal = effectiveGoal;
@@ -21748,7 +21750,7 @@ var RunCoordinator = class {
       this.browser.sendMessageToTab(this.currentTabId, {
         type: "SET_ACTIVE_BORDER",
         active: true,
-        label: "PrivaPilot Agent Active"
+        label: isSubAgentSwarmGoal(effectiveGoal) ? "Sub-Agent Swarm Active" : "PrivaPilot Agent Active"
       }).catch(() => {
       });
     }
