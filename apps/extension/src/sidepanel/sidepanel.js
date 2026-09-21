@@ -3021,6 +3021,7 @@ if (typeof document !== 'undefined') {
     let voiceAudioCtx = null;
     let voiceAnalyser = null;
     let voiceAnimFrame = null;
+    let smoothedVoiceGlowLevel = 0;
     let silenceAutoCloseTimer = null;
     let speechTalkingDecayTimer = null;
     let isSpeechApiTalking = false;
@@ -3333,16 +3334,18 @@ if (typeof document !== 'undefined') {
       let computedLevel = 0;
 
       // 1. Direct Web Audio frequency analysis from physical microphone stream
+      // Focus on human speech band (approx 80Hz - 3500Hz, bins 1 to 64) for maximum sensitivity
       if (voiceAnalyser) {
         const freqData = new Uint8Array(voiceAnalyser.frequencyBinCount);
         voiceAnalyser.getByteFrequencyData(freqData);
-        let sum = 0;
-        for (let i = 0; i < freqData.length; i++) {
-          sum += freqData[i];
+        const vocalBins = Math.min(freqData.length, 64);
+        let vocalSum = 0;
+        for (let i = 1; i < vocalBins; i++) {
+          vocalSum += freqData[i];
         }
-        const avg = sum / freqData.length;
-        if (avg > 7) {
-          computedLevel = Math.min(1.0, Math.max(0, (avg - 7) / 48));
+        const vocalAvg = vocalBins > 1 ? (vocalSum / (vocalBins - 1)) : 0;
+        if (vocalAvg > 3.5) {
+          computedLevel = Math.min(1.0, Math.max(0, (vocalAvg - 3.5) / 32));
         }
       }
 
@@ -3358,13 +3361,20 @@ if (typeof document !== 'undefined') {
         computedLevel = Math.max(computedLevel, Math.min(1.0, Math.max(0.25, synthRhythm)));
       }
 
+      // Smooth vocal energy curve for silky, organic visual dynamics
+      if (computedLevel > smoothedVoiceGlowLevel) {
+        smoothedVoiceGlowLevel = smoothedVoiceGlowLevel * 0.3 + computedLevel * 0.7;
+      } else {
+        smoothedVoiceGlowLevel = smoothedVoiceGlowLevel * 0.84 + computedLevel * 0.16;
+      }
+
       // 3. Drive Orbloom living WebGL shaders and rotation
       if (activeVoiceOrb) {
         if (isVoiceThinking) {
           activeVoiceOrb.setAudioLevel(0);
           activeVoiceOrb.setState('thinking');
-        } else if (computedLevel > 0.08) {
-          activeVoiceOrb.setAudioLevel(computedLevel);
+        } else if (computedLevel > 0.05 || smoothedVoiceGlowLevel > 0.05) {
+          activeVoiceOrb.setAudioLevel(Math.max(computedLevel, smoothedVoiceGlowLevel));
           activeVoiceOrb.setState('speaking');
         } else {
           activeVoiceOrb.setAudioLevel(0);
@@ -3375,14 +3385,24 @@ if (typeof document !== 'undefined') {
       // 3b. Drive orb voice glow backdrop in real time responding to voice level
       const orbVoiceGlowEl = document.getElementById('orbVoiceGlowBackdrop');
       if (orbVoiceGlowEl) {
-        if (computedLevel > 0.05) {
-          const scale = 1 + computedLevel * 0.45;
-          const h = 70 + computedLevel * 45;
+        if (computedLevel > 0.015 || smoothedVoiceGlowLevel > 0.015) {
+          const effectiveLevel = Math.max(computedLevel, smoothedVoiceGlowLevel);
+          const vocalExpansion = Math.min(1.0, Math.pow(effectiveLevel, 0.65));
+          const scale = 1 + vocalExpansion * 0.45;
+          const h = 84 + vocalExpansion * 96;
+          const brightness = 1.15 + vocalExpansion * 0.35;
+          const opacity = 0.88 + vocalExpansion * 0.12;
+          orbVoiceGlowEl.classList.add('speaking');
           orbVoiceGlowEl.style.setProperty('--orb-voice-glow-scale', scale.toFixed(2));
           orbVoiceGlowEl.style.setProperty('--orb-voice-glow-height', `${h.toFixed(0)}px`);
+          orbVoiceGlowEl.style.setProperty('--orb-voice-glow-brightness', brightness.toFixed(2));
+          orbVoiceGlowEl.style.setProperty('--orb-voice-glow-opacity', opacity.toFixed(2));
         } else {
+          orbVoiceGlowEl.classList.remove('speaking');
           orbVoiceGlowEl.style.removeProperty('--orb-voice-glow-scale');
           orbVoiceGlowEl.style.removeProperty('--orb-voice-glow-height');
+          orbVoiceGlowEl.style.removeProperty('--orb-voice-glow-brightness');
+          orbVoiceGlowEl.style.removeProperty('--orb-voice-glow-opacity');
         }
       }
 
@@ -3398,9 +3418,11 @@ if (typeof document !== 'undefined') {
       // 4. Drive chat box VoiceBeam auroral glow in real time
       const voiceGlowEl = document.getElementById('voiceGlowBackdrop');
       if (voiceGlowEl) {
-        if (computedLevel > 0.05) {
-          const scale = 1 + computedLevel * 0.45;
-          const h = 65 + computedLevel * 45;
+        if (computedLevel > 0.015 || smoothedVoiceGlowLevel > 0.015) {
+          const effectiveLevel = Math.max(computedLevel, smoothedVoiceGlowLevel);
+          const vocalExpansion = Math.min(1.0, Math.pow(effectiveLevel, 0.65));
+          const scale = 1 + vocalExpansion * 0.45;
+          const h = 65 + vocalExpansion * 45;
           voiceGlowEl.style.setProperty('--voice-glow-scale', scale.toFixed(2));
           voiceGlowEl.style.setProperty('--voice-glow-height', `${h.toFixed(0)}px`);
         } else {
@@ -3981,10 +4003,14 @@ if (typeof document !== 'undefined') {
         window.__orbVoiceBeamEngine.setProcessing(false);
       }
 
+      smoothedVoiceGlowLevel = 0;
       const orbVoiceGlowEl = document.getElementById('orbVoiceGlowBackdrop');
       if (orbVoiceGlowEl) {
+        orbVoiceGlowEl.classList.remove('speaking');
         orbVoiceGlowEl.style.removeProperty('--orb-voice-glow-scale');
         orbVoiceGlowEl.style.removeProperty('--orb-voice-glow-height');
+        orbVoiceGlowEl.style.removeProperty('--orb-voice-glow-brightness');
+        orbVoiceGlowEl.style.removeProperty('--orb-voice-glow-opacity');
       }
 
       // In dictate mode, ensure whatever was spoken is safely written into the chatbox

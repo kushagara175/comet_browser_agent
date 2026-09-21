@@ -4062,35 +4062,46 @@ html, body {
   left: 0 !important;
   right: 0 !important;
   width: 100% !important;
-  height: 90px !important;
+  height: 180px !important;
   border-radius: 0 0 16px 16px !important;
   pointer-events: none !important;
   z-index: 2 !important;
   overflow: hidden !important;
-  opacity: 0.9 !important;
-  transition: opacity 0.4s ease !important;
+  opacity: 1 !important;
+  border-bottom: 2px solid rgba(0, 230, 255, 0.8) !important;
+  box-shadow: inset 0 -3px 18px rgba(6, 182, 212, 0.65), inset 0 -1px 3px rgba(255, 255, 255, 0.9) !important;
+  -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.95) 45%, rgba(0, 0, 0, 0.45) 75%, transparent 100%) !important;
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.95) 45%, rgba(0, 0, 0, 0.45) 75%, transparent 100%) !important;
+  transition: opacity 0.3s ease !important;
 }
 
 .orb-voice-glow-backdrop::before {
   content: "" !important;
   position: absolute !important;
   top: auto !important;
-  bottom: -28px !important;
+  bottom: -22px !important;
   left: 50% !important;
   transform: translateX(-50%) scale(var(--orb-voice-glow-scale, 1)) !important;
-  width: 140% !important;
-  height: var(--orb-voice-glow-height, 74px) !important;
+  width: 145% !important;
+  height: var(--orb-voice-glow-height, 84px) !important;
   border-radius: 50% !important;
   background: radial-gradient(ellipse 85px 50px at 26% 100%, rgba(244, 63, 94, 0.72), transparent 75%),
               radial-gradient(ellipse 95px 60px at 40% 100%, rgba(168, 85, 247, 0.78), transparent 70%),
               radial-gradient(ellipse 105px 65px at 54% 100%, rgba(6, 182, 212, 0.82), transparent 70%),
               radial-gradient(ellipse 90px 55px at 68% 100%, rgba(245, 158, 11, 0.72), transparent 75%),
-              radial-gradient(ellipse 75px 45px at 82% 100%, rgba(16, 185, 129, 0.68), transparent 80%) !important;
-  filter: blur(20px) saturate(1.5) brightness(1.15) !important;
+              radial-gradient(ellipse 75px 45px at 82% 100%, rgba(16, 185, 129, 0.68), transparent 80%),
+              radial-gradient(ellipse 120px 65px at 50% 100%, rgba(255, 255, 255, 0.65) 0%, rgba(6, 182, 212, 0.45) 35%, transparent 70%),
+              radial-gradient(ellipse 260px 110px at 50% 100%, rgba(168, 85, 247, 0.35) 0%, rgba(6, 182, 212, 0.25) 50%, transparent 80%) !important;
+  filter: blur(22px) saturate(2.4) brightness(var(--orb-voice-glow-brightness, 1.22)) !important;
   animation: voiceAuroraBreathe 3.8s ease-in-out infinite alternate !important;
   mix-blend-mode: screen !important;
-  transition: height 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.3s ease !important;
+  opacity: var(--orb-voice-glow-opacity, 0.94) !important;
+  transition: height 0.08s ease-out, transform 0.08s ease-out, filter 0.2s ease, opacity 0.2s ease !important;
   pointer-events: none !important;
+}
+
+.orb-voice-glow-backdrop.speaking::before {
+  animation: none !important;
 }
 
 .orb-voice-glow-backdrop::after {
