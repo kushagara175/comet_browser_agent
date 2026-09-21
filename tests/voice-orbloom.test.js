@@ -284,6 +284,7 @@ test('Single Voice Mode Pill & Exact Chat VoiceBeam Auroral Gradient in Orb Sect
   const cssPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.css');
   const css = fs.readFileSync(cssPath, 'utf-8');
   assert.ok(css.includes('.orb-voice-glow-backdrop'), '.orb-voice-glow-backdrop style must exist');
+  assert.ok(css.includes('inset: auto 0 0 0 !important'), 'orb-voice-glow-backdrop must be anchored strictly to bottom rim with inset: auto 0 0 0 !important');
   assert.ok(css.includes('radial-gradient(ellipse 85px 50px at 26% 100%, rgba(244, 63, 94, 0.72)'), 'orb auroral gradient must use exact 5-ellipse radial colors matching chat box');
   assert.ok(css.includes('.voice-modal-action-group {\n  display: none !important;\n}'), 'voice-modal-action-group must be hidden with display: none !important (removing mute and cross)');
   assert.ok(css.includes('.voice-modal-bottom-bar {\n  position: absolute;\n  bottom: 24px;\n  left: 0;\n  right: 0;\n  display: flex;\n  align-items: center;\n  justify-content: flex-start;'), 'voice-modal-bottom-bar must align single pill to bottom-left');
