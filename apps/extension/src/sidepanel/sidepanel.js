@@ -3049,7 +3049,7 @@ if (typeof document !== 'undefined') {
       // Agent auto pill label matching Image 2
       const voiceAgentPillLabel = document.getElementById('voiceAgentPillLabel');
       if (voiceAgentPillLabel) {
-        voiceAgentPillLabel.textContent = currentVoiceMode === 'talk' ? 'Live Conversation' : 'Agent (auto)';
+        voiceAgentPillLabel.textContent = currentVoiceMode === 'talk' ? 'Live Conversation' : 'Voice to Text';
       }
 
       // Borderless shimmering single-mode toggle
@@ -3372,7 +3372,20 @@ if (typeof document !== 'undefined') {
         }
       }
 
-      // 3b. Drive bottom footer VoiceBeam in exact sync with current voice audio
+      // 3b. Drive orb voice glow backdrop in real time responding to voice level
+      const orbVoiceGlowEl = document.getElementById('orbVoiceGlowBackdrop');
+      if (orbVoiceGlowEl) {
+        if (computedLevel > 0.05) {
+          const scale = 1 + computedLevel * 0.45;
+          const h = 70 + computedLevel * 45;
+          orbVoiceGlowEl.style.setProperty('--orb-voice-glow-scale', scale.toFixed(2));
+          orbVoiceGlowEl.style.setProperty('--orb-voice-glow-height', `${h.toFixed(0)}px`);
+        } else {
+          orbVoiceGlowEl.style.removeProperty('--orb-voice-glow-scale');
+          orbVoiceGlowEl.style.removeProperty('--orb-voice-glow-height');
+        }
+      }
+
       if (window.__orbVoiceBeamEngine) {
         window.__orbVoiceBeamEngine.setAudioLevel(computedLevel);
         if (isVoiceThinking) {
@@ -3966,6 +3979,12 @@ if (typeof document !== 'undefined') {
       if (window.__orbVoiceBeamEngine) {
         window.__orbVoiceBeamEngine.setAudioLevel(0);
         window.__orbVoiceBeamEngine.setProcessing(false);
+      }
+
+      const orbVoiceGlowEl = document.getElementById('orbVoiceGlowBackdrop');
+      if (orbVoiceGlowEl) {
+        orbVoiceGlowEl.style.removeProperty('--orb-voice-glow-scale');
+        orbVoiceGlowEl.style.removeProperty('--orb-voice-glow-height');
       }
 
       // In dictate mode, ensure whatever was spoken is safely written into the chatbox
