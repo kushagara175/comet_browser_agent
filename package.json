@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "PrivaPilot — Privacy-Preserving On-Device Visual Perception for Lightweight Browser Agents (SIH26171 | ISRO)",
+  "description": "Comet — Privacy-Preserving On-Device Visual Perception for Lightweight Browser Agents (SIH26171 | ISRO)",
   "workspaces": [
     "packages/*",
     "apps/*"

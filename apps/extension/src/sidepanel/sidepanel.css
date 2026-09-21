@@ -436,6 +436,32 @@ html, body {
   overflow: hidden;
 }
 
+.top-left-logo-btn {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  overflow: hidden;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.top-left-logo-btn:hover {
+  opacity: 0.9;
+  transform: scale(1.04);
+}
+
+.top-left-logo-img {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: cover;
+  display: block;
+}
+
 .brand-row {
   display: flex;
   align-items: center;
