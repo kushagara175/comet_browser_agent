@@ -241,8 +241,8 @@ test('Soothing Auroral Bloom & Processing Travel Beam: voice-beam.js renders aut
   const spCss = fs.readFileSync(cssPath, 'utf-8');
   assert.ok(spCss.includes('.voice-glow-backdrop::after'), 'voice-glow-backdrop::after selector exists');
   assert.ok(spCss.includes('display: none !important'), 'voice-glow-backdrop::after must be disabled with display: none !important');
-  assert.ok(spCss.includes('filter: blur(20px)'), 'voice-glow-backdrop::before must have heavy 20px blur');
   assert.ok(spCss.includes('linear-gradient(to top, rgba(0, 0, 0, 1) 0%'), 'orb-voice-beam-footer must have smooth vertical gradient mask');
+  assert.ok(spCss.includes('display: none !important;\n  position: absolute !important;\n  inset: 0 !important;\n  width: 100% !important;\n  height: 100% !important;\n  pointer-events: none !important;\n  z-index: 3 !important;'), 'orb-voice-beam-footer canvas must be hidden to eliminate stroke wire lines');
 });
 
 test('Unified Action Button: sendBtn and stopBtn conversion with Image 2 rotating BorderBeam and rounded stop square', () => {

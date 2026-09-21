@@ -4071,6 +4071,7 @@ html, body {
 
 .orb-voice-beam-footer canvas,
 [data-voice-beam="orb-footer-beam"] canvas {
+  display: none !important;
   position: absolute !important;
   inset: 0 !important;
   width: 100% !important;

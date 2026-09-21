@@ -204,13 +204,15 @@ function buildSpectrumUnderlay(colors, alpha = 0.35) {
   return `linear-gradient(to right, ${stops})`;
 }
 
-function buildLobeGradients(id, colors, alpha, sw, sh, yOffset, fadePercent) {
+function buildLobeGradients(id, colors, alpha, sw, sh, yOffset, fadePercent, isMobile = false) {
   return voiceLobes.map((lobe, i) => {
     const rawCol = colors[i % colors.length];
     const rgb = parseRgb(rawCol) || [255, 255, 255];
     const col = alpha >= 1 ? rawCol : rgbaStr(rgb, alpha);
-    const m = `calc(${Math.round(lobe.w * sw)}px * var(--vb-w-${id}) * var(--vb-z-${id}, 1))`;
-    const d = `calc(${Math.round(lobe.h * sh)}px * var(--vb-h-${id}) * var(--vb-l${i}-${id}) * var(--vb-z-${id}, 1))`;
+    const lobeW = isMobile ? Math.max(62, lobe.w) : lobe.w;
+    const lobeH = isMobile ? 42 : lobe.h;
+    const m = `calc(${Math.round(lobeW * sw)}px * var(--vb-w-${id}) * var(--vb-z-${id}, 1))`;
+    const d = `calc(${Math.round(lobeH * sh)}px * var(--vb-h-${id}) * var(--vb-l${i}-${id}) * var(--vb-z-${id}, 1))`;
     const x = `calc(50% + (var(--vb-cx-${id}) + var(--vb-x${i}-${id})) * var(--vb-w-${id}) * var(--vb-z-${id}, 1))`;
     const h = `calc(100% + (${yOffset}px + var(--vb-y${i}-${id})) * var(--vb-z-${id}, 1))`;
     return `radial-gradient(ellipse ${m} ${d} at ${x} ${h}, ${col} 0%, transparent ${fadePercent}%)`;
@@ -246,9 +248,9 @@ export function generateVoiceCss(id, config = {}) {
   const bh = config.bloomHeight || 1;
 
   // Broad horizontal lobe widths to ensure wide, organic overlap without vertical division valleys
-  const strokeGradients = buildLobeGradients(id, colors, 0.9, (isMobile ? 1.8 : 1.2) * gw, 1.0 * gh, 2, fade);
-  const innerGradients = buildLobeGradients(id, colors, 0.55, (isMobile ? 2.2 : 1.35) * gw, 1.15 * gh, 0, fade);
-  const bloomGradients = buildLobeGradients(id, colors, 0.92, (isMobile ? 2.6 : 1.75) * gw * bs, 2.0 * gh * bh, 0, Math.min(96, fade + 4));
+  const strokeGradients = buildLobeGradients(id, colors, 0.9, (isMobile ? 1.8 : 1.2) * gw, 1.0 * gh, 2, fade, isMobile);
+  const innerGradients = buildLobeGradients(id, colors, 0.55, (isMobile ? 2.2 : 1.35) * gw, 1.15 * gh, 0, fade, isMobile);
+  const bloomGradients = buildLobeGradients(id, colors, 0.92, (isMobile ? 2.8 : 1.75) * gw * bs, 2.0 * gh * bh, 0, Math.min(96, fade + 4), isMobile);
 
   const spectrumFloor = buildSpectrumUnderlay(colors, isMobile ? 0.42 : 0.28);
 
@@ -780,7 +782,9 @@ export function initVoiceBeam(containerEl, userConfig = {}) {
       const lobe = voiceLobes[i];
       const j = wrapSpan(lobe.x * (config.lobeSpacing || 0.85) + phase, ringSpan);
       containerEl.style.setProperty(`--vb-x${i}-${id}`, `${(j * lobeCompress).toFixed(1)}px`);
-      containerEl.style.setProperty(`--vb-l${i}-${id}`, falloff(j, ringSpan).toFixed(3));
+      const f = falloff(j, ringSpan);
+      const lVal = type === 'mobile' ? (0.75 + 0.25 * f) : f;
+      containerEl.style.setProperty(`--vb-l${i}-${id}`, lVal.toFixed(3));
     }
 
     // Render Canvas Bell Band with chromatic aberration
