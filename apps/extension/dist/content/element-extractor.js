@@ -4,7 +4,7 @@
  * Scans the active document, extracts interactive elements and sensitive node descriptors,
  * and assigns ephemeral local IDs (e.g. "el_1", "el_2").
  */
-import { scanTextForPII } from '@privapilot/pii-rules';
+import { scanTextForPII, classifyPageZone, isFunctionalMapCanvas, isPublicMediaStream, isPrivateAccountShell } from '@privapilot/pii-rules';
 const TEXT_NODE_TYPE = typeof Node !== 'undefined' ? Node.TEXT_NODE : 3;
 const ELEMENT_NODE_TYPE = typeof Node !== 'undefined' ? Node.ELEMENT_NODE : 1;
 const SHOW_TEXT_FILTER = typeof NodeFilter !== 'undefined' ? NodeFilter.SHOW_TEXT : 4;
@@ -549,19 +549,37 @@ export class ElementExtractor {
                     isAvatar;
                 if (!isVisualMedia)
                     return;
+                const isPublicCommentAvatar = Boolean(typeof el.closest === 'function' &&
+                    el.closest('ytd-comment-thread-renderer, #comments, .comment, [role="article"]'));
+                const isUserShell = isPrivateAccountShell(el);
+                const shouldProtectAvatar = isUserShell || (!isPublicCommentAvatar && isAvatar);
                 imageElements.push({
                     id: `img_${depth}_${idx + 1}`,
-                    isProfilePhotoOrAvatar: isAvatar,
+                    isProfilePhotoOrAvatar: shouldProtectAvatar,
                     boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
                 });
             });
             // 4. Granular High-Risk & Uninspectable Surfaces
+            const currentDocUrl = (currentDoc.defaultView?.location?.href || doc.location?.href || '');
             // 4a. Canvases (2D Canvas vs WebGL Canvas)
             const canvases = currentDoc.querySelectorAll('canvas');
             canvases.forEach((c) => {
                 const rect = c.getBoundingClientRect();
                 if (rect.width > 0 && rect.height > 0) {
                     surfaceCounter++;
+                    const isMap = isFunctionalMapCanvas(c, currentDocUrl);
+                    if (isMap) {
+                        // Functional interactive map canvas (Bhuvan, OpenLayers, Leaflet, Mapbox) - do NOT mask!
+                        surfaces.push({
+                            id: `cvs_${surfaceCounter}`,
+                            surfaceType: 'canvas',
+                            isCrossOriginOrUninspectable: false,
+                            inspectionStatus: 'inspected_same_origin',
+                            reason: 'functional_geospatial_map',
+                            boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
+                        });
+                        return;
+                    }
                     let isWebGL = false;
                     try {
                         const webglMarker = (c.getAttribute('data-engine') || '').toLowerCase();
@@ -584,6 +602,19 @@ export class ElementExtractor {
                 const rect = v.getBoundingClientRect();
                 if (rect.width > 0 && rect.height > 0) {
                     surfaceCounter++;
+                    const isPublic = isPublicMediaStream(v, currentDocUrl);
+                    if (isPublic) {
+                        // Public video player (YouTube, Vimeo) - do NOT blackout with an opaque mask
+                        surfaces.push({
+                            id: `vid_${surfaceCounter}`,
+                            surfaceType: 'video',
+                            isCrossOriginOrUninspectable: false,
+                            inspectionStatus: 'inspected_same_origin',
+                            reason: 'public_media_stream',
+                            boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
+                        });
+                        return;
+                    }
                     surfaces.push({
                         id: `vid_${surfaceCounter}`,
                         surfaceType: 'video',
@@ -827,6 +858,31 @@ export class ElementExtractor {
                     contentSummaries.push(`Document: "${aText || fileName}" (${fileName})`);
                 }
             });
+            // Extract visible social & forum comments (e.g. YouTube, Reddit, article comments)
+            const commentThreads = doc.querySelectorAll('ytd-comment-thread-renderer, [role="article"].comment, .comment-body, .comment');
+            commentThreads.forEach((ct) => {
+                if (contentSummaries.length >= 35)
+                    return;
+                const authorEl = ct.querySelector('#author-text, .author, [class*="author"], [class*="user"]');
+                const contentEl = ct.querySelector('#content-text, .comment-text, [class*="content"], p');
+                const author = (authorEl?.textContent || '').trim().replace(/\s+/g, ' ');
+                const text = (contentEl?.textContent || '').trim().replace(/\s+/g, ' ');
+                if (text && text.length > 2) {
+                    const authorLabel = author ? `${author}: ` : '';
+                    contentSummaries.push(`Comment: ${authorLabel}"${text.slice(0, 180)}"`);
+                }
+            });
+            // Extract video player title & channel (YouTube, Vimeo)
+            const videoTitle = doc.querySelector('#title h1, h1.title, .video-title')?.textContent?.trim().replace(/\s+/g, ' ');
+            const channelName = doc.querySelector('#channel-name, #owner-name, .channel-name')?.textContent?.trim().replace(/\s+/g, ' ');
+            if (videoTitle && contentSummaries.length < 40) {
+                contentSummaries.push(`Video: "${videoTitle}"${channelName ? ` by ${channelName}` : ''}`);
+            }
+            // Extract Bhuvan & geospatial map context / active layers
+            const mapTitle = doc.querySelector('.bhuvan-header, #bhuvan-title, [class*="layer-switcher"], .ol-scale-line')?.textContent?.trim().replace(/\s+/g, ' ');
+            if (mapTitle && contentSummaries.length < 45) {
+                contentSummaries.push(`Map Surface: ${mapTitle.slice(0, 120)}`);
+            }
         }
         catch {
             // Bounded fallback
@@ -837,6 +893,7 @@ export class ElementExtractor {
         const domain = typeof doc.location !== 'undefined' && doc.location?.hostname
             ? doc.location.hostname.slice(0, 100)
             : undefined;
+        const pageZone = classifyPageZone(typeof doc.location !== 'undefined' ? doc.location?.href || '' : '');
         const win = doc.defaultView || (typeof window !== 'undefined' ? window : null);
         const docElem = doc.documentElement;
         const bodyElem = doc.body;
@@ -898,10 +955,11 @@ export class ElementExtractor {
                 dialogTitles,
                 statusSummaries,
                 counters: counters.slice(0, 20),
-                contentSummaries: contentSummaries.slice(0, 15),
+                contentSummaries: contentSummaries.slice(0, 45),
                 routeFingerprint,
                 domain,
-                scrollMetrics
+                scrollMetrics,
+                pageZone
             },
             elementMap: this.elementMap
         };

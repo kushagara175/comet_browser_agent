@@ -50,7 +50,8 @@ const ALLOWED_PAGE_STATE_KEYS = new Set([
     'domain',
     'scrollMetrics',
     'url',
-    'stateDelta'
+    'stateDelta',
+    'pageZone'
 ]);
 const ALLOWED_STATE_DELTA_KEYS = new Set([
     'previousAction',
@@ -455,6 +456,12 @@ export function validateSanitizedPayload(body) {
     if (body.pageState.domain !== undefined) {
         if (typeof body.pageState.domain !== 'string' || body.pageState.domain.length > 100 || hasProhibitedScriptPattern(body.pageState.domain)) {
             return { isValid: false, errorMessage: 'pageState.domain must be a safe string up to 100 characters' };
+        }
+    }
+    if (body.pageState.pageZone !== undefined) {
+        const validZones = new Set(['private_workspace', 'hybrid', 'public_broadcast']);
+        if (typeof body.pageState.pageZone !== 'string' || !validZones.has(body.pageState.pageZone)) {
+            return { isValid: false, errorMessage: 'pageState.pageZone must be private_workspace, hybrid, or public_broadcast' };
         }
     }
     if (body.pageState.scrollMetrics !== undefined) {

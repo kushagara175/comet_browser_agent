@@ -141,6 +141,7 @@ export interface SanitizedPageState {
   readonly domain?: string;
   readonly scrollMetrics?: ScrollMetrics;
   readonly stateDelta?: StateDelta;
+  readonly pageZone?: 'private_workspace' | 'hybrid' | 'public_broadcast';
 }
 
 export interface RedactionManifest {

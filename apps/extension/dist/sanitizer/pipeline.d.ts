@@ -45,6 +45,7 @@ export interface LocalDomSnapshot {
     readonly contentSummaries?: ReadonlyArray<string>;
     readonly domain?: string;
     readonly scrollMetrics?: ScrollMetrics;
+    readonly pageZone?: 'private_workspace' | 'hybrid' | 'public_broadcast';
 }
 export declare class SanitizerPipeline {
     /**

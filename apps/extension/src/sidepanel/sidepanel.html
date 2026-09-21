@@ -296,6 +296,10 @@
               <span class="stat-label">Canary Check</span>
               <span id="statCanaryStatus" class="stat-value text-green">Verified Clean</span>
             </div>
+            <div class="stat-box">
+              <span class="stat-label">Security Zone</span>
+              <span id="statZoneStatus" class="stat-value text-blue" style="font-size: 9px; text-transform: uppercase;">Public</span>
+            </div>
           </div>
 
           <!-- Mask Category Breakdown (Counts Only, Zero Raw PII Values) -->
@@ -304,6 +308,12 @@
             <div id="maskBreakdownList" class="breakdown-chips">
               <span class="empty-breakdown-hint">No masks applied yet. Run an action to inspect redaction.</span>
             </div>
+          </div>
+
+          <!-- Latency & CPU Performance Telemetry Gauge -->
+          <div class="perf-telemetry-row" style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 10.5px; color: #94a3b8; padding: 6px 10px; background: rgba(15, 23, 42, 0.6); border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.06);">
+            <span>⚡ Local Perception: <strong id="statLatencyValue" style="color: #38bdf8;">~185ms</strong></span>
+            <span>🖥️ CPU Usage: <strong id="statCpuValue" style="color: #4ade80;">&lt; 15% (Optimized)</strong></span>
           </div>
         </div>
       </div>

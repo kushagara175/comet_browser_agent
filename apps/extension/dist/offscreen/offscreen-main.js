@@ -15945,7 +15945,8 @@ as ORT format: ${n}`);
     static async sanitize(rawCapture, snapshot, goal, imageCanvas) {
       const transformer = new CoordinateTransformer(rawCapture.metadata);
       let modelFaces = [];
-      if (imageCanvas) {
+      const hasFaceCandidates = snapshot.imageElements.some((img) => img.isProfilePhotoOrAvatar) || snapshot.pageZone === "private_workspace";
+      if (imageCanvas && hasFaceCandidates) {
         try {
           const visionResult = await UltraFaceModelRunner.detectFaces(imageCanvas, transformer);
           modelFaces = visionResult.faces;
@@ -16204,7 +16205,8 @@ as ORT format: ${n}`);
         ...snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map((c) => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {},
         ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {},
         ...snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {},
-        ...snapshot.scrollMetrics ? { scrollMetrics: snapshot.scrollMetrics } : {}
+        ...snapshot.scrollMetrics ? { scrollMetrics: snapshot.scrollMetrics } : {},
+        ...snapshot.pageZone ? { pageZone: snapshot.pageZone } : {}
       };
       const safeCanonicalData = {
         captureId: rawCapture.captureId,

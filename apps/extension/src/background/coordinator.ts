@@ -2387,6 +2387,9 @@ export class RunCoordinator {
         if (stateDelta) {
           (sanitized.pageState as any).stateDelta = stateDelta;
         }
+        if (domResponse?.snapshot?.pageZone) {
+          (sanitized.pageState as any).pageZone = domResponse.snapshot.pageZone;
+        }
         if (this.actionHistory.length > 0) {
           const historyText = this.actionHistory
             .map((a: any, idx: number) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || 'page'}" -> Result: ${a.verification?.reasonCode || 'Executed'} (URL: ${activeTab?.url || ''})`)

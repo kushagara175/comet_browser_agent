@@ -683,6 +683,162 @@
     };
   }
 
+  // ../../packages/pii-rules/dist/surface-classifier.js
+  var PRIVATE_WORKSPACE_PATTERNS = [
+    // Webmail
+    /mail\.google\.com/i,
+    /outlook\.(?:live|office|office365)\.com/i,
+    /mail\.yahoo\.com/i,
+    /mail\.proton\.me/i,
+    /mail\.zoho\.com/i,
+    // Private messaging & team collaboration
+    /web\.whatsapp\.com/i,
+    /app\.slack\.com/i,
+    /discord\.com\/channels/i,
+    /teams\.microsoft\.com/i,
+    /web\.telegram\.org/i,
+    // Banking & Financial
+    /netbanking/i,
+    /banking/i,
+    /hdfcbank\.com/i,
+    /icicibank\.com/i,
+    /onlinesbi\.sbi/i,
+    /chase\.com/i,
+    /bankofamerica\.com/i,
+    /wellsfargo\.com/i,
+    /paypal\.com\/(?:myaccount|signin)/i,
+    /incometax\.gov\.in/i,
+    // HRMS, Payroll & Corporate internal
+    /workday\.com/i,
+    /myworkday/i,
+    /darwinbox/i,
+    /keka\.com/i,
+    /greenhouse\.io/i,
+    /bamboohr\.com/i,
+    // Healthcare & Telehealth
+    /mychart/i,
+    /patientportal/i,
+    /practo\.com\/consult/i
+  ];
+  var HYBRID_PLATFORM_PATTERNS = [
+    /youtube\.com/i,
+    /youtu\.be/i,
+    /x\.com/i,
+    /twitter\.com/i,
+    /linkedin\.com/i,
+    /github\.com/i,
+    /gitlab\.com/i,
+    /reddit\.com/i,
+    /instagram\.com/i,
+    /facebook\.com/i,
+    /amazon\.[a-z.]+/i,
+    /flipkart\.com/i,
+    /myntra\.com/i,
+    /ebay\.[a-z.]+/i
+  ];
+  var PUBLIC_BROADCAST_PATTERNS = [
+    // ISRO & Geospatial Portals
+    /bhuvan.*\.nrsc\.gov\.in/i,
+    /bhuvan\.gov\.in/i,
+    /isro\.gov\.in/i,
+    /mosdac\.gov\.in/i,
+    /vedas\.sac\.gov\.in/i,
+    /bhoonidhi\.nrsc\.gov\.in/i,
+    // Public Knowledge, Government & News
+    /wikipedia\.org/i,
+    /sih\.gov\.in/i,
+    /data\.gov\.in/i,
+    /developer\.mozilla\.org/i,
+    /w3schools\.com/i,
+    /stackoverflow\.com/i,
+    /github\.com\/(?:explore|trending)/i,
+    /bbc\.com/i,
+    /ndtv\.com/i,
+    /thehindu\.com/i
+  ];
+  function classifyPageZone(url = "") {
+    const cleanUrl = (url || "").toLowerCase();
+    for (const pattern of PRIVATE_WORKSPACE_PATTERNS) {
+      if (pattern.test(cleanUrl)) {
+        return "private_workspace";
+      }
+    }
+    for (const pattern of HYBRID_PLATFORM_PATTERNS) {
+      if (pattern.test(cleanUrl)) {
+        return "hybrid";
+      }
+    }
+    for (const pattern of PUBLIC_BROADCAST_PATTERNS) {
+      if (pattern.test(cleanUrl)) {
+        return "public_broadcast";
+      }
+    }
+    return "public_broadcast";
+  }
+  function isFunctionalMapCanvas(el, url = "") {
+    if (!el)
+      return false;
+    const cleanUrl = (url || "").toLowerCase();
+    if (cleanUrl.includes("bhuvan") || cleanUrl.includes("nrsc.gov.in") || cleanUrl.includes("isro.gov.in") || cleanUrl.includes("mosdac.gov.in") || cleanUrl.includes("vedas.sac.gov.in") || cleanUrl.includes("bhoonidhi")) {
+      return true;
+    }
+    try {
+      const className = String(el.className || "").toLowerCase();
+      const id = String(el.id || "").toLowerCase();
+      if (className.includes("ol-layer") || className.includes("ol-unselectable") || className.includes("leaflet") || className.includes("mapboxgl") || className.includes("maplibregl") || className.includes("cesium") || id.includes("map") || id.includes("bhuvan")) {
+        return true;
+      }
+      if (typeof el.closest === "function") {
+        const parentMap = el.closest('.ol-viewport, .leaflet-container, .mapboxgl-map, .maplibregl-map, .cesium-viewer, #map, #map_canvas, [class*="map-container" i], [id*="bhuvan" i]');
+        if (parentMap)
+          return true;
+      }
+    } catch (_) {
+    }
+    return false;
+  }
+  function isPublicMediaStream(el, url = "") {
+    if (!el)
+      return false;
+    const cleanUrl = (url || "").toLowerCase();
+    const isStreamingDomain = cleanUrl.includes("youtube.com") || cleanUrl.includes("youtu.be") || cleanUrl.includes("vimeo.com") || cleanUrl.includes("twitch.tv") || cleanUrl.includes("dailymotion.com");
+    if (isStreamingDomain) {
+      try {
+        const src = (el.src || el.currentSrc || el.getAttribute?.("src") || "").toLowerCase();
+        const hasHttpOrBlob = src.startsWith("http") || src.startsWith("blob:");
+        const isPlayerClass = (el.className || "").includes("video-stream") || (el.className || "").includes("html5-main-video");
+        const hasLiveCameraStream = Boolean(el.srcObject && el.srcObject.getVideoTracks?.()?.length > 0);
+        if (hasLiveCameraStream)
+          return false;
+        if (hasHttpOrBlob || isPlayerClass)
+          return true;
+      } catch (_) {
+      }
+      return true;
+    }
+    return false;
+  }
+  function isPrivateAccountShell(el) {
+    if (!el)
+      return false;
+    try {
+      const aria = (el.getAttribute?.("aria-label") || "").toLowerCase();
+      const testId = (el.getAttribute?.("data-testid") || "").toLowerCase();
+      const id = (el.id || "").toLowerCase();
+      const role = (el.getAttribute?.("role") || "").toLowerCase();
+      if (aria.includes("google account") || aria.includes("account menu") || aria.includes("switch account") || aria.includes("sign out") || testId.includes("useravatar") || testId.includes("user-menu") || testId.includes("profile-button") || id === "avatar-btn") {
+        return true;
+      }
+      if (typeof el.closest === "function") {
+        const container = el.closest('#avatar-btn, [data-testid*="user-menu" i], [aria-label*="Google Account" i], [aria-label*="Account menu" i]');
+        if (container)
+          return true;
+      }
+    } catch (_) {
+    }
+    return false;
+  }
+
   // src/content/element-extractor.ts
   var TEXT_NODE_TYPE = typeof Node !== "undefined" ? Node.TEXT_NODE : 3;
   var ELEMENT_NODE_TYPE = typeof Node !== "undefined" ? Node.ELEMENT_NODE : 1;
@@ -1120,17 +1276,35 @@
           const isAvatar = classText.includes("avatar") || classText.includes("profile") || classText.includes("user-pic") || classText.includes("user-img") || classText.includes("user-photo") || classText.includes("user-image") || classText.includes("author-img") || classText.includes("gravatar") || testId.includes("avatar") || testId.includes("useravatar") || testId.includes("profile-pic") || alt.includes("avatar") || alt.includes("profile") || alt.includes("user photo") || alt.includes("author") || ariaLabel.includes("avatar") || ariaLabel.includes("profile") || ariaLabel.includes("account") || src.includes("profile_images") || src.includes("avatar") || src.includes("gravatar.com") || src.includes("avatars.githubusercontent") || src.includes("googleusercontent.com") || Boolean(typeof el.closest === "function" && el.closest('[data-testid*="UserAvatar" i], [data-testid*="avatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i], [data-testid*="user-profile" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [class*="account" i], [class*="profile" i], [class*="user-info" i], [class*="user-header" i], [class*="user-badge" i]'));
           const isVisualMedia = tagName === "IMG" || tagName === "SVG" || role === "img" || isAvatar;
           if (!isVisualMedia) return;
+          const isPublicCommentAvatar = Boolean(
+            typeof el.closest === "function" && el.closest('ytd-comment-thread-renderer, #comments, .comment, [role="article"]')
+          );
+          const isUserShell = isPrivateAccountShell(el);
+          const shouldProtectAvatar = isUserShell || !isPublicCommentAvatar && isAvatar;
           imageElements.push({
             id: `img_${depth}_${idx + 1}`,
-            isProfilePhotoOrAvatar: isAvatar,
+            isProfilePhotoOrAvatar: shouldProtectAvatar,
             boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
           });
         });
+        const currentDocUrl = currentDoc.defaultView?.location?.href || doc.location?.href || "";
         const canvases = currentDoc.querySelectorAll("canvas");
         canvases.forEach((c) => {
           const rect = c.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
             surfaceCounter++;
+            const isMap = isFunctionalMapCanvas(c, currentDocUrl);
+            if (isMap) {
+              surfaces.push({
+                id: `cvs_${surfaceCounter}`,
+                surfaceType: "canvas",
+                isCrossOriginOrUninspectable: false,
+                inspectionStatus: "inspected_same_origin",
+                reason: "functional_geospatial_map",
+                boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
+              });
+              return;
+            }
             let isWebGL = false;
             try {
               const webglMarker = (c.getAttribute("data-engine") || "").toLowerCase();
@@ -1152,6 +1326,18 @@
           const rect = v.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
             surfaceCounter++;
+            const isPublic = isPublicMediaStream(v, currentDocUrl);
+            if (isPublic) {
+              surfaces.push({
+                id: `vid_${surfaceCounter}`,
+                surfaceType: "video",
+                isCrossOriginOrUninspectable: false,
+                inspectionStatus: "inspected_same_origin",
+                reason: "public_media_stream",
+                boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
+              });
+              return;
+            }
             surfaces.push({
               id: `vid_${surfaceCounter}`,
               surfaceType: "video",
@@ -1364,10 +1550,32 @@
             contentSummaries.push(`Document: "${aText || fileName}" (${fileName})`);
           }
         });
+        const commentThreads = doc.querySelectorAll('ytd-comment-thread-renderer, [role="article"].comment, .comment-body, .comment');
+        commentThreads.forEach((ct) => {
+          if (contentSummaries.length >= 35) return;
+          const authorEl = ct.querySelector('#author-text, .author, [class*="author"], [class*="user"]');
+          const contentEl = ct.querySelector('#content-text, .comment-text, [class*="content"], p');
+          const author = (authorEl?.textContent || "").trim().replace(/\s+/g, " ");
+          const text = (contentEl?.textContent || "").trim().replace(/\s+/g, " ");
+          if (text && text.length > 2) {
+            const authorLabel = author ? `${author}: ` : "";
+            contentSummaries.push(`Comment: ${authorLabel}"${text.slice(0, 180)}"`);
+          }
+        });
+        const videoTitle = doc.querySelector("#title h1, h1.title, .video-title")?.textContent?.trim().replace(/\s+/g, " ");
+        const channelName = doc.querySelector("#channel-name, #owner-name, .channel-name")?.textContent?.trim().replace(/\s+/g, " ");
+        if (videoTitle && contentSummaries.length < 40) {
+          contentSummaries.push(`Video: "${videoTitle}"${channelName ? ` by ${channelName}` : ""}`);
+        }
+        const mapTitle = doc.querySelector('.bhuvan-header, #bhuvan-title, [class*="layer-switcher"], .ol-scale-line')?.textContent?.trim().replace(/\s+/g, " ");
+        if (mapTitle && contentSummaries.length < 45) {
+          contentSummaries.push(`Map Surface: ${mapTitle.slice(0, 120)}`);
+        }
       } catch {
       }
       const routeFingerprint = typeof doc.location !== "undefined" && doc.location?.pathname ? doc.location.pathname.slice(0, 50) : "/";
       const domain = typeof doc.location !== "undefined" && doc.location?.hostname ? doc.location.hostname.slice(0, 100) : void 0;
+      const pageZone = classifyPageZone(typeof doc.location !== "undefined" ? doc.location?.href || "" : "");
       const win = doc.defaultView || (typeof window !== "undefined" ? window : null);
       const docElem = doc.documentElement;
       const bodyElem = doc.body;
@@ -1422,10 +1630,11 @@
           dialogTitles,
           statusSummaries,
           counters: counters.slice(0, 20),
-          contentSummaries: contentSummaries.slice(0, 15),
+          contentSummaries: contentSummaries.slice(0, 45),
           routeFingerprint,
           domain,
-          scrollMetrics
+          scrollMetrics,
+          pageZone
         },
         elementMap: this.elementMap
       };
