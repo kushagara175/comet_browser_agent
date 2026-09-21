@@ -208,19 +208,26 @@ test('Orb Section VoiceBeam Footer Glow: orbVoiceBeamFooter markup, CSS, and liv
   assert.equal(beamModule.voicePresets.mobile.reach, 2.8, 'mobile preset reach must be 2.8');
 });
 
-test('Soothing Auroral Bloom & Processing Travel Beam: voice-beam.js renders heavily diffused Gaussian blur and gathers lobes during processing', async () => {
+test('Soothing Auroral Bloom & Processing Travel Beam: voice-beam.js renders authentic chromatic aberration canvas and gathers lobes during processing', async () => {
   const beamModulePath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/voice-beam.js');
   const beamModule = await import(beamModulePath);
 
-  // Default preset has zero bandStrength to prevent sharp line artifacts
-  assert.equal(beamModule.voicePresets.default.bandStrength, 0, 'default bandStrength must be 0 to guarantee soothing gradient without sharp line');
+  // Voice presets have authentic bandStrength matching libraries.dev specification
+  assert.equal(beamModule.voicePresets.default.bandStrength, 1.55, 'default bandStrength must match libraries.dev specification (1.55)');
+  assert.equal(beamModule.voicePresets.mobile.bandStrength, 1.8, 'mobile bandStrength must match libraries.dev mobile specification (1.8)');
   assert.equal(beamModule.voicePresets.default.processingTravel, 1.55, 'processingTravel must match voice-glow specification (1.55)');
   assert.equal(beamModule.voicePresets.default.processingCurve, 2.1, 'processingCurve must match voice-glow specification (2.1)');
 
-  // Generated CSS has heavy Gaussian blur on bloom and canvas layers
+  // Chromatic band colors match libraries.dev optical dispersion
+  assert.equal(beamModule.defaultBandColors.above, '255, 70, 80');
+  assert.equal(beamModule.defaultBandColors.mid, '90, 255, 150');
+  assert.equal(beamModule.defaultBandColors.below, '80, 140, 255');
+  assert.equal(beamModule.defaultBandColors.core, '255, 255, 255');
+
+  // Generated CSS has proper blur and canvas positioning
   const css = beamModule.generateVoiceCss('soothing-test', { borderRadius: 22 });
-  assert.ok(css.includes('filter: blur(18px)'), 'Bloom layer must have heavy 18px Gaussian blur');
-  assert.ok(css.includes('filter: blur(16px)'), 'Band layer must have 16px blur to eliminate sharp strokes');
+  assert.ok(css.includes('filter: blur(10px)'), 'Bloom layer must have 10px Gaussian blur for default preset');
+  assert.ok(css.includes('--vb-band-blur-soothing-test'), 'Band layer must have dynamic --vb-band-blur property');
 
   // Sidepanel CSS has eliminated the 2.5px line pseudo-element
   const cssPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.css');

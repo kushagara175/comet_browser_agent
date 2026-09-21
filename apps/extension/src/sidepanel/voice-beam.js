@@ -13,7 +13,7 @@
  *    - Thinking / Processing ping-pong sweep
  */
 
-// 7 Lobe geometry coordinates (px) for reference element
+// 7 Lobe geometry coordinates (px) for reference element (exact libraries.dev specification)
 export const voiceLobes = [
   { x: 0, w: 74, h: 46, band: 0 },
   { x: -36, w: 54, h: 40, band: 1 },
@@ -36,6 +36,15 @@ export const voicePalettes = {
       'rgb(255, 150, 40)',
       'rgb(90, 100, 255)',
       'rgb(40, 200, 190)'
+    ],
+    light: [
+      'rgb(255, 201, 21)',
+      'rgb(126, 196, 255)',
+      'rgb(180, 40, 230)',
+      'rgb(235, 100, 160)',
+      'rgb(255, 176, 122)',
+      'rgb(154, 160, 255)',
+      'rgb(127, 217, 238)'
     ]
   },
   mono: {
@@ -47,6 +56,15 @@ export const voicePalettes = {
       'rgb(170, 170, 170)',
       'rgb(150, 150, 150)',
       'rgb(155, 155, 155)'
+    ],
+    light: [
+      'rgb(60, 60, 60)',
+      'rgb(90, 90, 90)',
+      'rgb(85, 85, 85)',
+      'rgb(110, 110, 110)',
+      'rgb(105, 105, 105)',
+      'rgb(125, 125, 125)',
+      'rgb(120, 120, 120)'
     ]
   },
   ocean: {
@@ -58,6 +76,15 @@ export const voicePalettes = {
       'rgb(160, 80, 240)',
       'rgb(60, 110, 255)',
       'rgb(40, 190, 180)'
+    ],
+    light: [
+      'rgb(40, 100, 240)',
+      'rgb(20, 160, 200)',
+      'rgb(90, 60, 230)',
+      'rgb(20, 130, 180)',
+      'rgb(130, 50, 220)',
+      'rgb(40, 80, 230)',
+      'rgb(20, 150, 150)'
     ]
   },
   sunset: {
@@ -69,6 +96,15 @@ export const voicePalettes = {
       'rgb(240, 70, 140)',
       'rgb(255, 140, 50)',
       'rgb(230, 50, 110)'
+    ],
+    light: [
+      'rgb(235, 80, 30)',
+      'rgb(230, 150, 10)',
+      'rgb(230, 30, 70)',
+      'rgb(225, 175, 30)',
+      'rgb(215, 40, 110)',
+      'rgb(235, 110, 20)',
+      'rgb(205, 30, 90)'
     ]
   },
   forest: {
@@ -80,6 +116,15 @@ export const voicePalettes = {
       'rgb(190, 235, 70)',
       'rgb(50, 190, 110)',
       'rgb(30, 150, 120)'
+    ],
+    light: [
+      'rgb(30, 170, 80)',
+      'rgb(20, 150, 130)',
+      'rgb(90, 180, 30)',
+      'rgb(20, 130, 100)',
+      'rgb(130, 180, 20)',
+      'rgb(30, 150, 80)',
+      'rgb(20, 120, 90)'
     ]
   },
   candy: {
@@ -91,15 +136,46 @@ export const voicePalettes = {
       'rgb(180, 110, 255)',
       'rgb(255, 70, 140)',
       'rgb(230, 100, 240)'
+    ],
+    light: [
+      'rgb(235, 40, 140)',
+      'rgb(230, 70, 190)',
+      'rgb(180, 40, 230)',
+      'rgb(235, 100, 160)',
+      'rgb(150, 70, 230)',
+      'rgb(230, 30, 110)',
+      'rgb(200, 60, 210)'
+    ]
+  },
+  ice: {
+    dark: [
+      'rgb(150, 230, 255)',
+      'rgb(90, 200, 255)',
+      'rgb(190, 240, 255)',
+      'rgb(120, 190, 255)',
+      'rgb(160, 220, 250)',
+      'rgb(80, 170, 255)',
+      'rgb(200, 235, 255)'
+    ]
+  },
+  gold: {
+    dark: [
+      'rgb(255, 200, 70)',
+      'rgb(255, 170, 40)',
+      'rgb(255, 220, 110)',
+      'rgb(240, 150, 30)',
+      'rgb(255, 235, 140)',
+      'rgb(230, 160, 40)',
+      'rgb(250, 210, 90)'
     ]
   }
 };
 
 export const defaultBandColors = {
   core: '255, 255, 255',
-  above: '255, 70, 120',
-  mid: '168, 85, 247',
-  below: '6, 182, 212'
+  above: '255, 70, 80',
+  mid: '90, 255, 150',
+  below: '80, 140, 255'
 };
 
 function parseRgb(colorStr) {
@@ -136,10 +212,10 @@ export function generateVoiceCss(id, config = {}) {
     borderRadius = 22,
     borderWidth = 1,
     strokeOpacity = 1.0,
-    innerOpacity = 0.6,
-    bloomOpacity = 0.95,
-    brightness = 1.15,
-    saturation = 1.35,
+    innerOpacity = 0.65,
+    bloomOpacity = 0.92,
+    brightness = 1.2,
+    saturation = 1.45,
     colorVariant = 'colorful',
     scale = 1,
     position = 'relative',
@@ -161,14 +237,15 @@ export function generateVoiceCss(id, config = {}) {
 
   const strokeGradients = buildLobeGradients(id, colors, 0.9, 1.0 * gw, 1.0 * gh, 2, fade);
   const innerGradients = buildLobeGradients(id, colors, 0.55, 0.95 * gw, 1.15 * gh, 0, fade);
-  const bloomGradients = buildLobeGradients(id, colors, 0.92, 1.35 * gw * bs, 2.1 * gh * bh, 0, Math.min(95, fade + 4));
+  const bloomGradients = buildLobeGradients(id, colors, 0.92, 1.25 * gw * bs, 2.0 * gh * bh, 0, Math.min(95, fade + 4));
 
-  const centerCoreGrad = `radial-gradient(ellipse calc(${Math.round(34 * gw)}px * var(--vb-w-${id}) * var(--vb-z-${id}, 1)) calc(${Math.round(32 * gh)}px * var(--vb-h-${id}) * var(--vb-z-${id}, 1)) at calc(50% + var(--vb-cx-${id}) * var(--vb-w-${id}) * var(--vb-z-${id}, 1)) calc(100% + (2px + var(--vb-cy-${id})) * var(--vb-z-${id}, 1)), rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.12) 30%, transparent 68%)`;
+  const centerCoreGrad = `radial-gradient(ellipse calc(${Math.round(34 * gw)}px * var(--vb-w-${id}) * var(--vb-z-${id}, 1)) calc(${Math.round(32 * gh)}px * var(--vb-h-${id}) * var(--vb-z-${id}, 1)) at calc(50% + var(--vb-cx-${id}) * var(--vb-w-${id}) * var(--vb-z-${id}, 1)) calc(100% + (2px + var(--vb-cy-${id})) * var(--vb-z-${id}, 1)), rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.15) 30%, transparent 68%)`;
 
   const maskRadial = (w, h, stop1, stop2 = 0) =>
     `radial-gradient(ellipse calc(${Math.round(w * rw)}px * var(--vb-w-${id}) * var(--vb-mw-${id}) * var(--vb-z-${id}, 1)) calc((${Math.round(h * rh)}px * var(--vb-h-${id}) + var(--vb-bh-${id})) * var(--vb-z-${id}, 1)) at calc(50% + var(--vb-cx-${id}) * var(--vb-w-${id}) * var(--vb-z-${id}, 1)) calc(100% + var(--vb-cy-${id}) * var(--vb-z-${id}, 1)), white 0%, rgba(255, 255, 255, 0.5) ${stop1}%${stop2 > 0 ? `, rgba(255, 255, 255, ${stop2}) 85%` : ''}, transparent 100%)`;
 
-  const bloomBlur = isMobile ? '24px' : '18px';
+  // Retain vivid multi-lobe distinction with 12px Gaussian diffusion on bloom
+  const bloomBlur = isMobile ? '12px' : '10px';
 
   return `
 [data-voice-beam="${id}"] {
@@ -241,6 +318,7 @@ ${voiceLobes.map((l, i) => `  --vb-x${i}-${id}: ${l.x}px;\n  --vb-l${i}-${id}: 1
   filter: blur(${bloomBlur}) hue-rotate(var(--vb-hue-${id})) brightness(${brightness}) saturate(${saturation});
 }
 
+/* Canvas layers for Chromatic Aberration Band and Halo */
 [data-voice-beam="${id}"] [data-voice-beam-band],
 [data-voice-beam="${id}"] [data-voice-beam-band-halo] {
   position: absolute;
@@ -248,43 +326,71 @@ ${voiceLobes.map((l, i) => `  --vb-x${i}-${id}: ${l.x}px;\n  --vb-l${i}-${id}: 1
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 3;
-  filter: blur(16px);
+  will-change: transform;
+  z-index: 4;
+  filter: blur(var(--vb-band-blur-${id}, 0px)) hue-rotate(var(--vb-hue-${id})) brightness(${brightness}) saturate(${saturation});
+}
+
+[data-voice-beam="${id}"] [data-voice-beam-band-halo] {
+  filter: blur(var(--vb-band-halo-blur-${id}, 0px)) hue-rotate(var(--vb-hue-${id})) brightness(${brightness}) saturate(${saturation});
 }
 `;
 }
 
-// Organic bell curve math
-function bellCurve(n, curve, spread, skew) {
-  const t = n < 0 ? 1 - skew : 1 + skew;
-  const s = Math.max(0.05, spread * t);
-  const o = Math.exp(-Math.pow(Math.abs(n) / s, curve));
-  const i = Math.exp(-Math.pow(1 / s, curve));
-  return Math.max(0, (o - i) / (1 - i));
+// Organic exponential bell curve math directly from libraries.dev/voice
+function dr(t, e, a, i) {
+  const o = t < 0 ? 1 - i : 1 + i;
+  const r = Math.max(0.05, a * o);
+  const s = Math.exp(-Math.pow(Math.abs(t) / r, e));
+  const n = Math.exp(-Math.pow(1 / r, e));
+  return Math.max(0, (s - n) / (1 - n));
 }
 
-function computeBellPoints(config, state, w, h) {
-  const cx = w / 2 + state.cx * state.w;
-  const s = 170 * (config.rangeWidth || 0.75) * state.w * state.mw;
-  const maxH = h * 0.82 * Math.min(1, config.scale || 1);
-  const liftH = Math.min(maxH, (64 * (config.rangeHeight || 1) * state.h + state.lift) * (config.bandPosition || 0.35));
-  const baseLine = h - (config.bandOffset ?? -27);
-  const cornerLift = Math.min(1, state.corner * 4);
-  const tail = (config.bandTail ?? 0.59) * (1 - cornerLift * cornerLift * (3 - 2 * cornerLift));
-  const hasTail = tail > 1e-3;
-  const overflow = hasTail ? (config.bandTailOverflow || 15) : 0;
-  const startX = hasTail ? -overflow : cx - s;
-  const endX = hasTail ? w + overflow : cx + s;
+function hr(t, e, a, i, o) {
+  if (a <= 0 || e <= 0) return 0;
+  const r = e * Math.max(0, Math.min(0.98, i));
+  if (t <= r) return 0;
+  const s = Math.min(1, (t - r) / Math.max(1, e - r));
+  return a * Math.pow(s, Math.max(0.5, o));
+}
 
-  const points = [];
-  const steps = 56;
-  for (let i = 0; i <= steps; i++) {
-    const x = startX + (endX - startX) * i / steps;
-    const normX = Math.max(-1, Math.min(1, (x - cx) / Math.max(1, s)));
-    const yVal = bellCurve(normX, config.bandCurve || 1.75, config.bandSpread || 0.87, config.bandSkew || 0.12);
-    points.push([x, baseLine - liftH * yVal]);
+function ma(t, e, a) {
+  return Math.max(0, Math.min(t, e / 2, a / 2));
+}
+
+function st(t, e, a, i = 0) {
+  if (a <= 0) return 0;
+  const o = Math.min(t, e - t) - i;
+  if (o >= a) return 0;
+  if (o <= 0) return a;
+  const r = a - o;
+  return a - Math.sqrt(Math.max(0, a * a - r * r));
+}
+
+export function computeBellPoints(config, state, w, h) {
+  const o = w / 2 + state.cx * state.w;
+  const r = 170 * (config.rangeWidth || 1) * state.w * state.mw;
+  const s = h * 0.82 * Math.min(1, config.scale || 1);
+  const n = Math.min(s, (64 * (config.rangeHeight || 1) * state.h + state.lift) * (config.bandPosition || 0.35));
+  const v = h - (config.bandOffset ?? -27);
+  const c = Math.min(1, (state.corner || 0) * 4);
+  const u = (config.bandTail || 0.59) * (1 - c * c * (3 - 2 * c));
+  const f = u > 0.001;
+  const g = f ? (config.bandTailOverflow || 15) : 0;
+  const d = f ? -g : o - r;
+  const p = f ? w + g : o + r;
+  const x = [];
+  const da = 56;
+  for (let j = 0; j <= da; j++) {
+    const E = d + (p - d) * j / da;
+    const q = Math.max(-1, Math.min(1, (E - o) / Math.max(1, r)));
+    const K = (E < o ? o : w - o) + g;
+    const V = dr(q, config.bandCurve || 1.75, config.bandSpread || 0.87, config.bandSkew || 0.12) +
+              hr(Math.abs(E - o), K, u, config.bandTailPosition || 0.67, config.bandTailCurve || 2.4);
+    const L = (state.corner || 0) > 0 ? st(E, w, ma(config.borderRadius || 0, w, h)) * state.corner : 0;
+    x.push([E, v - n * V - L]);
   }
-  return points;
+  return x;
 }
 
 function wrapSpan(n, e) {
@@ -303,89 +409,123 @@ function smoothDamp(current, target, dt, speedUp, speedDown) {
   return current + (target - current) * o;
 }
 
-function renderBandCanvas(ctx, haloCtx, points, w, h, state, config, isProcessing) {
-  if (!ctx || points.length < 2) return;
-  const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+/**
+ * Renders the organic chromatic aberration band on 2D HTML5 Canvas (gr function from libraries.dev/voice)
+ */
+function renderBandCanvas(bandCanvas, haloCanvas, points, w, h, state, config, isProcessing) {
+  if (!bandCanvas || points.length < 2) return;
+  const ctx = bandCanvas.getContext('2d');
+  const haloCtx = haloCanvas ? haloCanvas.getContext('2d') : null;
+  if (!ctx) return;
+
+  const dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
   const pw = Math.round(w * dpr);
   const ph = Math.round(h * dpr);
 
-  if (ctx.canvas.width !== pw || ctx.canvas.height !== ph) {
-    ctx.canvas.width = pw;
-    ctx.canvas.height = ph;
+  if (bandCanvas.width !== pw || bandCanvas.height !== ph) {
+    bandCanvas.width = pw;
+    bandCanvas.height = ph;
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
-  if (haloCtx) {
-    if (haloCtx.canvas.width !== pw || haloCtx.canvas.height !== ph) {
-      haloCtx.canvas.width = pw;
-      haloCtx.canvas.height = ph;
+  if (haloCanvas && haloCtx) {
+    if (haloCanvas.width !== pw || haloCanvas.height !== ph) {
+      haloCanvas.width = pw;
+      haloCanvas.height = ph;
     }
     haloCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     haloCtx.clearRect(0, 0, w, h);
   }
 
-  // If processing is active or bandStrength is 0, completely skip line rendering
-  if (isProcessing || !config.bandStrength || config.bandStrength <= 0) return;
-  const bandOpacity = Math.min(1, 0.45 * config.bandStrength * state.strength);
-  if (bandOpacity < 0.01) return;
+  if (isProcessing) return;
 
-  // Heavily soften canvas stroke with blur so it blends seamlessly
-  if (typeof ctx.filter === 'string') {
-    ctx.filter = 'blur(10px)';
-  }
+  const bandStrength = config.bandStrength ?? 1.55;
+  const bandWidth = config.bandWidth ?? 2.15;
+  const strength = state.strength ?? 1;
+  const p = Math.min(1, 0.6 * bandStrength * strength);
+  if (p < 0.005 || bandWidth <= 0) return;
 
-  const bandColors = config.bandColors || defaultBandColors;
-  const bandWidth = (config.bandWidth || 2.15) * (1 + 0.35 * state.level);
-  const aberration = (config.bandAberration || 0.89) * (0.35 + 0.65 * state.level);
-  const splitY = (4 + 12 * aberration) * (config.scale || 1);
-  const splitX = 4 * aberration * (config.scale || 1);
+  const j = bandWidth * (1 + 0.35 * state.level);
+  const aberration = (config.bandAberration ?? 0.89) * (0.35 + 0.65 * state.level);
+  const q = (4 + 12 * aberration) * (config.scale || 1);
+  const K = 4 * aberration * (config.scale || 1);
 
-  const startX = points[0][0];
-  const endX = points[points.length - 1][0];
-  const grad = ctx.createLinearGradient(startX, 0, endX, 0);
-  grad.addColorStop(0, 'rgba(255, 255, 255, 0)');
-  grad.addColorStop(0.12, `rgba(255, 255, 255, ${bandOpacity.toFixed(3)})`);
-  grad.addColorStop(0.88, `rgba(255, 255, 255, ${bandOpacity.toFixed(3)})`);
-  grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  const L = {
+    r: config.bandColors?.above || defaultBandColors.above,
+    g: config.bandColors?.mid || defaultBandColors.mid,
+    b: config.bandColors?.below || defaultBandColors.below,
+    c: config.bandColors?.core || defaultBandColors.core
+  };
+
+  const H = 0.42 * p;
+  const D = 14 * j;
+  const $ = 3.5 * bandWidth / 2;
+  const Q = $ * dpr;
+  const hasCtxFilter = typeof ctx.filter === 'string';
+
+  const se = [[1, 0.16], [0.72, 0.2], [0.46, 0.26], [0.22, 0.34]];
+  const R = [
+    { rgb: L.r, a: 1, ox: K, oy: -q },
+    { rgb: L.g, a: 0.55, ox: K * 0.35, oy: -q * 0.35 },
+    { rgb: L.b, a: 1, ox: -K, oy: q },
+    { rgb: L.c, a: 0.9, ox: 0, oy: 0 }
+  ];
 
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.lineWidth = bandWidth * 2.2;
-  ctx.strokeStyle = grad;
+  ctx.globalCompositeOperation = 'source-over';
 
-  ctx.beginPath();
-  ctx.moveTo(points[0][0], points[0][1]);
+  const startX = points[0][0];
+  const endX = points[points.length - 1][0];
+  const createGrad = (rgbStr, alpha) => {
+    const grad = ctx.createLinearGradient(startX, 0, endX, 0);
+    const edge = (config.bandTail || 0) > 0 ? 0.015 : 0.18;
+    grad.addColorStop(0, `rgba(${rgbStr}, 0)`);
+    grad.addColorStop(edge, `rgba(${rgbStr}, ${alpha.toFixed(3)})`);
+    grad.addColorStop(1 - edge, `rgba(${rgbStr}, ${alpha.toFixed(3)})`);
+    grad.addColorStop(1, `rgba(${rgbStr}, 0)`);
+    return grad;
+  };
+
+  // 1. Halo wide glow pass
+  const targetHalo = haloCtx || ctx;
+  if (hasCtxFilter && haloCtx) {
+    haloCtx.filter = `blur(${(Q * 3).toFixed(1)}px)`;
+  }
+  targetHalo.lineCap = 'round';
+  targetHalo.lineJoin = 'round';
+  targetHalo.strokeStyle = createGrad(L.c, H * 0.3);
+  targetHalo.lineWidth = D * 2.2;
+  targetHalo.beginPath();
+  targetHalo.moveTo(points[0][0], points[0][1]);
   for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(points[i][0], points[i][1]);
+    targetHalo.lineTo(points[i][0], points[i][1]);
   }
-  ctx.stroke();
+  targetHalo.stroke();
+  if (hasCtxFilter && haloCtx) {
+    haloCtx.filter = 'none';
+  }
 
-  // Chromatic fringes pass
-  const passes = [
-    { rgb: bandColors.above, ox: splitX, oy: -splitY, w: 1.4, a: 0.85 },
-    { rgb: bandColors.mid, ox: splitX * 0.35, oy: -splitY * 0.35, w: 1.8, a: 0.6 },
-    { rgb: bandColors.below, ox: -splitX, oy: splitY, w: 1.4, a: 0.85 }
-  ];
+  // 2. Chromatic aberration passes
+  if (hasCtxFilter) {
+    ctx.filter = `blur(${Q.toFixed(1)}px)`;
+  }
 
-  for (const pass of passes) {
-    const fGrad = ctx.createLinearGradient(startX, 0, endX, 0);
-    fGrad.addColorStop(0, `rgba(${pass.rgb}, 0)`);
-    fGrad.addColorStop(0.15, `rgba(${pass.rgb}, ${(bandOpacity * pass.a).toFixed(3)})`);
-    fGrad.addColorStop(0.85, `rgba(${pass.rgb}, ${(bandOpacity * pass.a).toFixed(3)})`);
-    fGrad.addColorStop(1, `rgba(${pass.rgb}, 0)`);
-
-    ctx.lineWidth = Math.max(0.6, bandWidth * pass.w);
-    ctx.strokeStyle = fGrad;
-    ctx.beginPath();
-    ctx.moveTo(points[0][0] + pass.ox, points[0][1] + pass.oy);
-    for (let i = 1; i < points.length; i++) {
-      ctx.lineTo(points[i][0] + pass.ox, points[i][1] + pass.oy);
+  for (const w of R) {
+    for (const [O, M] of se) {
+      ctx.strokeStyle = createGrad(w.rgb, H * w.a * M);
+      ctx.lineWidth = Math.max(0.6, D * O);
+      ctx.beginPath();
+      ctx.moveTo(points[0][0] + w.ox, points[0][1] + w.oy);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i][0] + w.ox, points[i][1] + w.oy);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
   }
 
-  if (typeof ctx.filter === 'string') {
+  if (hasCtxFilter) {
     ctx.filter = 'none';
   }
 }
@@ -396,7 +536,7 @@ export const voicePresets = {
     reach: 1.2,
     spread: 1.05,
     bend: 60,
-    bandStrength: 0, // Pure soothing diffused gradient bloom (libraries.dev/voice)
+    bandStrength: 1.55,
     bandWidth: 2.15,
     bandPosition: 0.35,
     bandCurve: 1.75,
@@ -404,54 +544,59 @@ export const voicePresets = {
     bandSkew: 0.12,
     bandOffset: -27,
     bandTail: 0.59,
+    bandTailPosition: 0.67,
+    bandTailCurve: 2.4,
+    bandTailOverflow: 15,
     bandAberration: 0.89,
     flow: 48,
     lobeSpacing: 0.85,
     rangeWidth: 0.75,
     rangeHeight: 1,
-    idle: 0.22,
+    idle: 0.18,
     breatheDuration: 5.2,
     processingDuration: 1.1,
     processingTravel: 1.55,
     processingCurve: 2.1,
     processingEase: 0.6,
-    processingLevel: 0.55
+    processingLevel: 0.55,
+    brightness: 1.15,
+    saturation: 1.25,
+    colorVariant: 'colorful'
   },
   mobile: {
     scale: 1.25,
-    spread: 0.55,
+    spread: 0.45,
     reach: 2.8,
     flow: 60,
-    bend: 75,
+    bend: 70,
     bandWidth: 2.4,
     bandCurve: 1.55,
     bandSpread: 0.9,
-    bandOffset: -45,
+    bandOffset: -50,
     bandTail: 0.62,
     bandTailPosition: 0.42,
     bandTailCurve: 2.7,
     bandTailOverflow: 22,
-    bandStrength: 0, // Soft soothing gradient for orb footer
-    bandPosition: 0.38,
-    idle: 0.32,
+    processingDuration: 1.05,
+    processingLevel: 0.35,
+    processingTravel: 1,
+    cornerFollow: 0.4,
+    bandStrength: 1.8,
+    distortionDetail: 2,
+    glowWidth: 1.15,
+    glowHeight: 2.1,
+    lobeSpacing: 1.35,
+    rangeWidth: 1.25,
+    rangeHeight: 1.2,
+    softness: 1.1,
+    idle: 0.28,
     breatheDuration: 4.8,
-    lobeSpacing: 1.25,
-    rangeWidth: 1.35,
-    rangeHeight: 1.6,
-    glowWidth: 1.25,
-    glowHeight: 2.4,
-    bloomScale: 1.2,
-    bloomHeight: 2.3,
     brightness: 1.25,
     saturation: 1.5,
-    strokeOpacity: 0.95,
-    innerOpacity: 0.7,
+    strokeOpacity: 1.0,
+    innerOpacity: 0.75,
     bloomOpacity: 0.95,
-    processingDuration: 1.05,
-    processingTravel: 1.8,
-    processingCurve: 2.1,
-    processingEase: 0.6,
-    processingLevel: 0.45
+    colorVariant: 'colorful'
   }
 };
 
@@ -510,9 +655,6 @@ export function initVoiceBeam(containerEl, userConfig = {}) {
     bandCanvas.setAttribute('aria-hidden', 'true');
     containerEl.appendChild(bandCanvas);
   }
-
-  const bandCtx = bandCanvas.getContext('2d');
-  const haloCtx = haloCanvas.getContext('2d');
 
   // State
   let rafId = null;
@@ -592,8 +734,8 @@ export function initVoiceBeam(containerEl, userConfig = {}) {
     const pingPong = cycleIndex % 2 === 0 ? 2 * curvedFrac - 1 : 1 - 2 * curvedFrac;
 
     const sweepX = hScan * travelRange * pingPong;
-    const lobeCompress = 1 - hScan * 0.6; // lobes gather inward into compact beam
-    const maskWidthCompress = 1 - hScan * 0.45; // mask gathers into traveling pill
+    const lobeCompress = 1 - hScan * 0.6;
+    const maskWidthCompress = 1 - hScan * 0.45;
     const centerPulse = 1 + hScan * 0.3 * (1 - pingPong * pingPong);
 
     const rampW = Math.max(0, Math.min(1, (hScan - 0.25) / 0.75));
@@ -628,8 +770,8 @@ export function initVoiceBeam(containerEl, userConfig = {}) {
       containerEl.style.setProperty(`--vb-l${i}-${id}`, falloff(j, ringSpan).toFixed(3));
     }
 
-    // Render Canvas Bell Band only if not processing and band is configured
-    if (!isProcessing && config.bandStrength > 0) {
+    // Render Canvas Bell Band with chromatic aberration
+    if (!isProcessing && (config.bandStrength ?? 1) > 0) {
       const state = {
         cx: sweepX,
         w: wMult,
@@ -641,10 +783,12 @@ export function initVoiceBeam(containerEl, userConfig = {}) {
         corner: 0
       };
       const points = computeBellPoints(config, state, w, hEl);
-      renderBandCanvas(bandCtx, haloCtx, points, w, hEl, state, config, isProcessing);
+      renderBandCanvas(bandCanvas, haloCanvas, points, w, hEl, state, config, isProcessing);
     } else {
-      if (bandCtx) bandCtx.clearRect(0, 0, w, hEl);
-      if (haloCtx) haloCtx.clearRect(0, 0, w, hEl);
+      const ctx = bandCanvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, w, hEl);
+      const hCtx = haloCanvas ? haloCanvas.getContext('2d') : null;
+      if (hCtx) hCtx.clearRect(0, 0, w, hEl);
     }
   }
 
@@ -693,4 +837,64 @@ export function initVoiceBeam(containerEl, userConfig = {}) {
       if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
     }
   };
+}
+
+/**
+ * useMicrophone hook / helper matching libraries.dev usage
+ */
+export function useMicrophone(options = {}) {
+  let stream = null;
+  let state = 'idle';
+  const listeners = new Set();
+  const notify = () => listeners.forEach(fn => fn({ stream, state }));
+
+  async function start() {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      state = 'unsupported';
+      notify();
+      return null;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, ...options }
+      });
+      state = 'live';
+      notify();
+      return stream;
+    } catch (err) {
+      state = 'idle';
+      notify();
+      throw err;
+    }
+  }
+
+  function stop() {
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+    state = 'idle';
+    notify();
+  }
+
+  return {
+    get stream() { return stream; },
+    get state() { return state; },
+    start,
+    stop,
+    subscribe(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    }
+  };
+}
+
+/**
+ * VoiceBeam component / functional wrapper matching libraries.dev syntax:
+ * <VoiceBeam stream={mic.stream} processing={thinking}>
+ *   <ChatInput />
+ * </VoiceBeam>
+ */
+export function VoiceBeam(props = {}) {
+  return props;
 }
