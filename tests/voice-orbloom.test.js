@@ -236,3 +236,23 @@ test('Soothing Auroral Bloom & Processing Travel Beam: voice-beam.js renders aut
   assert.ok(spCss.includes('display: none !important'), 'voice-glow-backdrop::after must be disabled with display: none !important');
   assert.ok(spCss.includes('filter: blur(20px)'), 'voice-glow-backdrop::before must have heavy 20px blur');
 });
+
+test('Unified Action Button: sendBtn and stopBtn conversion with Image 2 rotating BorderBeam and rounded stop square', () => {
+  const htmlPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.html');
+  const html = fs.readFileSync(htmlPath, 'utf-8');
+  assert.ok(html.includes('id="stopBtn" class="stop-btn chat-circle-btn beam-stop-btn hidden"'), 'stopBtn must initially be hidden in HTML');
+  assert.ok(html.includes('class="icon-stop-sq"'), 'stopBtn must contain rounded square stop icon from Image 2');
+
+  const cssPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.css');
+  const css = fs.readFileSync(cssPath, 'utf-8');
+  assert.ok(css.includes('.beam-stop-btn.hidden'), '.beam-stop-btn.hidden rule must exist');
+  assert.ok(css.includes('stopBtnBeamRotate'), 'stopBtnBeamRotate animation for rotating rainbow border must exist');
+  assert.ok(css.includes('conic-gradient(from var(--stop-beam-angle, 0deg)'), 'conic-gradient BorderBeam must wrap stop button');
+
+  const jsPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.js');
+  const js = fs.readFileSync(jsPath, 'utf-8');
+  assert.ok(js.includes("stopBtn.style.display = 'inline-flex'"), 'setAgentStatus must show stopBtn when isRunning');
+  assert.ok(js.includes("sendBtn.style.display = 'none'"), 'setAgentStatus must hide sendBtn when isRunning');
+  assert.ok(js.includes("stopBtn.style.display = 'none'"), 'setAgentStatus must hide stopBtn when idle');
+  assert.ok(js.includes("sendBtn.style.display = 'inline-flex'"), 'setAgentStatus must show sendBtn when idle');
+});

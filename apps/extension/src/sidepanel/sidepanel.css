@@ -2545,33 +2545,76 @@ html, body {
   display: none !important;
 }
 
-/* Stop Button with Pulse Effect */
+/* Stop Button matching Image 2 with rotating rainbow BorderBeam and rounded stop square */
 .beam-stop-btn {
-  width: 28px !important;
-  height: 28px !important;
+  position: relative !important;
+  width: 32px !important;
+  height: 32px !important;
   border-radius: 50% !important;
-  background: rgba(239, 68, 68, 0.18) !important;
-  color: #ef4444 !important;
-  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+  background: #18181b !important;
+  color: #cbd5e1 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.15s ease;
-  animation: beamStopPulse 1.5s ease-in-out infinite;
+  padding: 0 !important;
+  overflow: hidden !important;
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.45) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.beam-stop-btn.hidden,
+#stopBtn.hidden {
+  display: none !important;
+}
+
+.beam-stop-btn::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  padding: 1.5px;
+  background: conic-gradient(from var(--stop-beam-angle, 0deg), #10b981 0%, #f59e0b 25%, #ec4899 50%, #8b5cf6 75%, #10b981 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: stopBtnBeamRotate 2.4s linear infinite;
+}
+
+.beam-stop-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.12), 0 0 8px rgba(139, 92, 246, 0.35);
+  pointer-events: none;
 }
 
 .beam-stop-btn:hover {
-  background: rgba(239, 68, 68, 0.28) !important;
+  background: #202024 !important;
+  color: #ffffff !important;
   transform: scale(1.05);
 }
 
-@keyframes beamStopPulse {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+.beam-stop-btn:active {
+  transform: scale(0.95);
+}
+
+.beam-stop-btn .icon-stop-sq {
+  position: relative;
+  z-index: 2;
+  transition: transform 0.15s ease;
+}
+
+@keyframes stopBtnBeamRotate {
+  0% {
+    transform: rotate(0deg);
   }
-  50% {
-    box-shadow: 0 0 8px 2px rgba(239, 68, 68, 0.6);
+  100% {
+    transform: rotate(360deg);
   }
 }
 

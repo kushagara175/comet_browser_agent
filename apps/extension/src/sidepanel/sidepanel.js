@@ -2057,15 +2057,21 @@ if (typeof document !== 'undefined') {
         appRoot.setAttribute('data-agent-status', state);
         appRoot.setAttribute('data-run-state', state);
       }
-      const isRunning = ['capturing', 'detecting-sensitive-content', 'sanitizing', 'sending-sanitized-context', 'awaiting-reasoning', 'executing', 'verifying'].includes(state);
+      const isRunning = ['capturing', 'detecting-sensitive-content', 'sanitizing', 'sending-sanitized-context', 'awaiting-reasoning', 'reasoning', 'executing', 'verifying', 'subagent-swarm'].includes(state);
       const sendBtn = document.getElementById('sendBtn');
       const stopBtn = document.getElementById('stopBtn');
       const beamChatCard = document.getElementById('beamChatCard');
       const beamEffectLabel = document.getElementById('beamEffectLabel');
 
       if (isRunning) {
-        if (stopBtn) stopBtn.classList.remove('hidden');
-        if (sendBtn) sendBtn.classList.add('hidden');
+        if (stopBtn) {
+          stopBtn.classList.remove('hidden');
+          stopBtn.style.display = 'inline-flex';
+        }
+        if (sendBtn) {
+          sendBtn.classList.add('hidden');
+          sendBtn.style.display = 'none';
+        }
         if (window.__voiceBeamEngine) {
           window.__voiceBeamEngine.setProcessing(true);
         }
@@ -2075,8 +2081,14 @@ if (typeof document !== 'undefined') {
         }
         if (beamEffectLabel) beamEffectLabel.textContent = 'Pulse 1';
       } else {
-        if (stopBtn) stopBtn.classList.add('hidden');
-        if (sendBtn) sendBtn.classList.remove('hidden');
+        if (stopBtn) {
+          stopBtn.classList.add('hidden');
+          stopBtn.style.display = 'none';
+        }
+        if (sendBtn) {
+          sendBtn.classList.remove('hidden');
+          sendBtn.style.display = 'inline-flex';
+        }
         if (window.__voiceBeamEngine) {
           window.__voiceBeamEngine.setProcessing(false);
         }
@@ -2087,6 +2099,9 @@ if (typeof document !== 'undefined') {
           beamChatCard.style.setProperty('--beam-strength', hasText ? '0.85' : '0.7');
         }
         if (beamEffectLabel) beamEffectLabel.textContent = 'Agent';
+        if (typeof updateSendBtn === 'function') {
+          updateSendBtn();
+        }
       }
 
       if (!agentStatusBadge) return;
