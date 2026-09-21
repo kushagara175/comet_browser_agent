@@ -229,12 +229,20 @@ test('Soothing Auroral Bloom & Processing Travel Beam: voice-beam.js renders aut
   assert.ok(css.includes('filter: blur(10px)'), 'Bloom layer must have 10px Gaussian blur for default preset');
   assert.ok(css.includes('--vb-band-blur-soothing-test'), 'Band layer must have dynamic --vb-band-blur property');
 
+  // Mobile preset for Orb Footer eliminates dividation / column lines with 32px bloom blur, 18px inner blur, and linear spectrum floor
+  const mobileCss = beamModule.generateVoiceCss('mobile-test', { type: 'mobile', borderRadius: 0 });
+  assert.ok(mobileCss.includes('filter: blur(32px)'), 'Mobile bloom layer must have 32px Gaussian blur to eliminate vertical column dividation');
+  assert.ok(mobileCss.includes('filter: blur(18px)'), 'Mobile inner ::before layer must have 18px blur to soften raw radial gradient boundaries');
+  assert.ok(mobileCss.includes('linear-gradient(to right,'), 'CSS must include smooth continuous linear-gradient spectrum floor underlay');
+  assert.equal(beamModule.voicePresets.mobile.lobeSpacing, 0.95, 'mobile lobeSpacing must be 0.95 for continuous lobe overlap');
+
   // Sidepanel CSS has eliminated the 2.5px line pseudo-element
   const cssPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.css');
   const spCss = fs.readFileSync(cssPath, 'utf-8');
   assert.ok(spCss.includes('.voice-glow-backdrop::after'), 'voice-glow-backdrop::after selector exists');
   assert.ok(spCss.includes('display: none !important'), 'voice-glow-backdrop::after must be disabled with display: none !important');
   assert.ok(spCss.includes('filter: blur(20px)'), 'voice-glow-backdrop::before must have heavy 20px blur');
+  assert.ok(spCss.includes('linear-gradient(to top, rgba(0, 0, 0, 1) 0%'), 'orb-voice-beam-footer must have smooth vertical gradient mask');
 });
 
 test('Unified Action Button: sendBtn and stopBtn conversion with Image 2 rotating BorderBeam and rounded stop square', () => {

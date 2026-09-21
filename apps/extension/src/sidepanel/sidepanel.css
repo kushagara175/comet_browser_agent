@@ -4065,6 +4065,8 @@ html, body {
   z-index: 2 !important;
   overflow: hidden !important;
   border-radius: 0 0 16px 16px !important;
+  -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 75%, rgba(0, 0, 0, 0) 100%);
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 75%, rgba(0, 0, 0, 0) 100%);
 }
 
 .orb-voice-beam-footer canvas,

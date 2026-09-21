@@ -3670,7 +3670,7 @@ if (typeof document !== 'undefined') {
               borderRadius: 0,
               scale: 1.25,
               bend: 70,
-              reach: 3.0,
+              reach: 2.8,
               spread: 0.45,
               bandWidth: 2.4,
               bandStrength: 1.8,

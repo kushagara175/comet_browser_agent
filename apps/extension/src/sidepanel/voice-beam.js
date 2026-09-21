@@ -194,6 +194,16 @@ function rgbaStr(rgb, alpha) {
   return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha.toFixed(3)})`;
 }
 
+function buildSpectrumUnderlay(colors, alpha = 0.35) {
+  if (!colors || colors.length === 0) return 'transparent';
+  const stops = colors.map((col, idx) => {
+    const rgb = parseRgb(col) || [255, 255, 255];
+    const pct = Math.round((idx / (colors.length - 1)) * 100);
+    return `${rgbaStr(rgb, alpha)} ${pct}%`;
+  }).join(', ');
+  return `linear-gradient(to right, ${stops})`;
+}
+
 function buildLobeGradients(id, colors, alpha, sw, sh, yOffset, fadePercent) {
   return voiceLobes.map((lobe, i) => {
     const rawCol = colors[i % colors.length];
@@ -226,7 +236,7 @@ export function generateVoiceCss(id, config = {}) {
   const colors = voicePalettes[colorVariant]?.dark || voicePalettes.colorful.dark;
   const rad = borderRadius;
   const radInner = Math.max(0, borderRadius - borderWidth);
-  const fade = 75;
+  const fade = isMobile ? 92 : 82;
 
   const gw = (config.glowWidth || 1) * scale;
   const gh = (config.glowHeight || 1) * scale;
@@ -235,17 +245,20 @@ export function generateVoiceCss(id, config = {}) {
   const bs = config.bloomScale || 1;
   const bh = config.bloomHeight || 1;
 
-  const strokeGradients = buildLobeGradients(id, colors, 0.9, 1.0 * gw, 1.0 * gh, 2, fade);
-  const innerGradients = buildLobeGradients(id, colors, 0.55, 0.95 * gw, 1.15 * gh, 0, fade);
-  const bloomGradients = buildLobeGradients(id, colors, 0.92, 1.25 * gw * bs, 2.0 * gh * bh, 0, Math.min(95, fade + 4));
+  // Broad horizontal lobe widths to ensure wide, organic overlap without vertical division valleys
+  const strokeGradients = buildLobeGradients(id, colors, 0.9, (isMobile ? 1.8 : 1.2) * gw, 1.0 * gh, 2, fade);
+  const innerGradients = buildLobeGradients(id, colors, 0.55, (isMobile ? 2.2 : 1.35) * gw, 1.15 * gh, 0, fade);
+  const bloomGradients = buildLobeGradients(id, colors, 0.92, (isMobile ? 2.6 : 1.75) * gw * bs, 2.0 * gh * bh, 0, Math.min(96, fade + 4));
+
+  const spectrumFloor = buildSpectrumUnderlay(colors, isMobile ? 0.42 : 0.28);
 
   const centerCoreGrad = `radial-gradient(ellipse calc(${Math.round(34 * gw)}px * var(--vb-w-${id}) * var(--vb-z-${id}, 1)) calc(${Math.round(32 * gh)}px * var(--vb-h-${id}) * var(--vb-z-${id}, 1)) at calc(50% + var(--vb-cx-${id}) * var(--vb-w-${id}) * var(--vb-z-${id}, 1)) calc(100% + (2px + var(--vb-cy-${id})) * var(--vb-z-${id}, 1)), rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.15) 30%, transparent 68%)`;
 
   const maskRadial = (w, h, stop1, stop2 = 0) =>
     `radial-gradient(ellipse calc(${Math.round(w * rw)}px * var(--vb-w-${id}) * var(--vb-mw-${id}) * var(--vb-z-${id}, 1)) calc((${Math.round(h * rh)}px * var(--vb-h-${id}) + var(--vb-bh-${id})) * var(--vb-z-${id}, 1)) at calc(50% + var(--vb-cx-${id}) * var(--vb-w-${id}) * var(--vb-z-${id}, 1)) calc(100% + var(--vb-cy-${id}) * var(--vb-z-${id}, 1)), white 0%, rgba(255, 255, 255, 0.5) ${stop1}%${stop2 > 0 ? `, rgba(255, 255, 255, ${stop2}) 85%` : ''}, transparent 100%)`;
 
-  // Retain vivid multi-lobe distinction with 12px Gaussian diffusion on bloom
-  const bloomBlur = isMobile ? '12px' : '10px';
+  // Retain crisp border on chat input (10px) while applying lush 32px Gaussian diffusion on mobile footer
+  const bloomBlur = isMobile ? '32px' : '10px';
 
   return `
 [data-voice-beam="${id}"] {
@@ -289,7 +302,7 @@ ${voiceLobes.map((l, i) => `  --vb-x${i}-${id}: ${l.x}px;\n  --vb-l${i}-${id}: 1
   position: absolute;
   inset: 0;
   border-radius: ${rad}px;
-  background: ${innerGradients};
+  background: ${innerGradients}, ${spectrumFloor};
   box-shadow: inset 0 0 9px 1px rgba(255, 255, 255, 0.08);
   -webkit-mask-image: ${maskRadial(170, 64, 45, 0.3)}${isMobile ? '' : `, linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white)`};
   -webkit-mask-composite: source-in;
@@ -300,7 +313,7 @@ ${voiceLobes.map((l, i) => `  --vb-x${i}-${id}: ${l.x}px;\n  --vb-l${i}-${id}: 1
   z-index: 1;
   clip-path: inset(0 round ${rad}px);
   opacity: calc(var(--vb-glow-${id}) * ${innerOpacity});
-  filter: hue-rotate(var(--vb-hue-${id})) brightness(${brightness}) saturate(${saturation});
+  filter: ${isMobile ? 'blur(18px) ' : ''}hue-rotate(var(--vb-hue-${id})) brightness(${brightness}) saturate(${saturation});
 }
 
 [data-voice-beam="${id}"] [data-voice-beam-bloom] {
@@ -311,7 +324,7 @@ ${voiceLobes.map((l, i) => `  --vb-x${i}-${id}: ${l.x}px;\n  --vb-l${i}-${id}: 1
   will-change: transform;
   -webkit-mask: ${maskRadial(220, 140, 35)};
   mask: ${maskRadial(220, 140, 35)};
-  background: ${bloomGradients};
+  background: ${bloomGradients}, ${spectrumFloor};
   z-index: 1;
   clip-path: inset(0 round ${rad}px);
   opacity: calc(var(--vb-glow-${id}) * ${bloomOpacity});
@@ -583,12 +596,12 @@ export const voicePresets = {
     cornerFollow: 0.4,
     bandStrength: 1.8,
     distortionDetail: 2,
-    glowWidth: 1.15,
+    glowWidth: 1.35,
     glowHeight: 2.1,
-    lobeSpacing: 1.35,
+    lobeSpacing: 0.95,
     rangeWidth: 1.25,
     rangeHeight: 1.2,
-    softness: 1.1,
+    softness: 1.15,
     idle: 0.28,
     breatheDuration: 4.8,
     brightness: 1.25,
