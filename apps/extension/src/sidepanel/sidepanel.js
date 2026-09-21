@@ -3396,11 +3396,11 @@ if (typeof document !== 'undefined') {
         if (liveLevel > 0.012) {
           const vocalExpansion = Math.min(1.0, Math.pow(liveLevel, 0.44));
           const scale = 1.0 + vocalExpansion * 0.55;
-          const h = 75 + vocalExpansion * 95;
-          const brightness = 1.1 + vocalExpansion * 0.75;
-          const opacity = 0.8 + vocalExpansion * 0.2;
-          const hueShift = Math.sin(Date.now() / 180) * 14 * vocalExpansion;
-          const blur = Math.max(6, 9 - vocalExpansion * 3);
+          const h = 85 + vocalExpansion * 95;
+          const brightness = 1.1 + vocalExpansion * 0.7;
+          const opacity = 0.78 + vocalExpansion * 0.22;
+          const hueShift = Math.sin(Date.now() / 180) * 12 * vocalExpansion;
+          const blur = 18 + vocalExpansion * 4;
 
           orbVoiceGlowEl.classList.add('speaking');
           orbVoiceGlowEl.style.setProperty('--orb-voice-glow-scale', scale.toFixed(2));
@@ -3413,7 +3413,7 @@ if (typeof document !== 'undefined') {
           const breatheTime = Date.now() / 1600;
           const breathe = 0.5 + 0.5 * Math.sin(breatheTime);
           const idleScale = 0.94 + breathe * 0.07;
-          const idleH = 68 + breathe * 10;
+          const idleH = 75 + breathe * 12;
           const idleBrightness = 0.95 + breathe * 0.15;
           const idleOpacity = 0.65 + breathe * 0.12;
 

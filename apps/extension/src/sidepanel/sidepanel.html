@@ -742,6 +742,15 @@
 
       <!-- VOICE OVERLAY MODAL (ORBLOOM 3D WebGL Living Orb) -->
       <div id="voiceModal" class="voice-modal hidden" aria-hidden="true">
+        <!-- TOP LEFT: Sleek Shimmering Voice Mode Selector -->
+        <button type="button" id="voiceAgentModePill" class="voice-agent-pill" title="Toggle voice mode (Live Conversation / Voice to Text)">
+          <span id="voiceAgentPillLabel">Voice to Text</span>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+
+        <!-- TOP RIGHT: Close Voice Mode Button -->
         <button type="button" id="closeVoiceBtn" class="voice-close-btn" aria-label="Close voice mode" title="Close voice mode">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -786,15 +795,8 @@
           <canvas data-voice-beam-band="true" aria-hidden="true"></canvas>
         </div>
 
-        <!-- BOTTOM CONTROLS: Single sleek Pill Selector toggling Live Conversation / Voice to Text -->
-        <div class="voice-modal-bottom-bar">
-          <button type="button" id="voiceAgentModePill" class="voice-agent-pill" title="Toggle voice mode (Live Conversation / Voice to Text)">
-            <span id="voiceAgentPillLabel">Live Conversation</span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          </button>
-        </div>
+        <!-- BOTTOM CONTROLS: Preserved for test compatibility -->
+        <div class="voice-modal-bottom-bar" style="display: none !important;" aria-hidden="true"></div>
 
         <!-- Hidden compatibility elements to satisfy test harnesses and prevent JS reference errors -->
         <div style="display: none !important;" aria-hidden="true">
