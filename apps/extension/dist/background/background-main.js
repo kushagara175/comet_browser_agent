@@ -14114,6 +14114,7 @@ var GENERIC_CONTROL_NAMES = /* @__PURE__ */ new Set([
   "control"
 ]);
 function scoreCandidate(element, intent, activeDialogVisible = false) {
+  const caps = element.actionCapabilities || [];
   let requiredCap = null;
   if (intent.intent === "click" || intent.intent === "dismiss") {
     requiredCap = "click";
@@ -14122,19 +14123,19 @@ function scoreCandidate(element, intent, activeDialogVisible = false) {
   } else if (intent.intent === "select") {
     requiredCap = "select";
   } else if (intent.intent === "hover") {
-    if (!element.actionCapabilities.includes("hover") && !element.actionCapabilities.includes("click")) {
+    if (!caps.includes("hover") && !caps.includes("click")) {
       requiredCap = "hover";
     }
   } else if (intent.intent === "drag_and_drop") {
-    if (!element.actionCapabilities.includes("drag") && !element.actionCapabilities.includes("click")) {
+    if (!caps.includes("drag") && !caps.includes("click")) {
       requiredCap = "drag";
     }
   } else if (intent.intent === "upload_file") {
-    if (!element.actionCapabilities.includes("upload") && !element.actionCapabilities.includes("type")) {
+    if (!caps.includes("upload") && !caps.includes("type")) {
       requiredCap = "upload";
     }
   }
-  if (requiredCap && !element.actionCapabilities.includes(requiredCap)) {
+  if (requiredCap && caps.length > 0 && !caps.includes(requiredCap)) {
     return {
       score: 0,
       confidence: 0,
@@ -14142,7 +14143,8 @@ function scoreCandidate(element, intent, activeDialogVisible = false) {
       isDisqualified: true
     };
   }
-  if (element.state.includes("disabled")) {
+  const states = element.state || [];
+  if (states.includes("disabled")) {
     return {
       score: 0,
       confidence: 0,
@@ -15206,10 +15208,10 @@ var BHUVAN_PLAYBOOK = {
   routes: [
     {
       name: "geoportal",
-      path: "/bhuvan_geoportal.php",
-      aliases: ["/bhuvan_geoportal.php", "/2d", "/3d", "/viewer", "/geoportal"],
-      description: "Bhuvan 2D/3D map viewer and Earth observation geoportal",
-      matchKeywords: ["geoportal", "map", "2d", "3d", "earth observation", "viewer", "satellite imagery", "imagery", "location", "locations"]
+      path: "/ngmaps",
+      aliases: ["/ngmaps", "/bhuvan_geoportal.php", "/2d", "/3d", "/viewer", "/geoportal"],
+      description: "Bhuvan NextGen 2D/3D map viewer and Earth observation geoportal",
+      matchKeywords: ["geoportal", "map", "maps", "2d", "3d", "earth observation", "viewer", "satellite imagery", "imagery", "location", "locations", "ngmaps"]
     },
     {
       name: "thematic",
@@ -15243,15 +15245,33 @@ var BHUVAN_PLAYBOOK = {
     {
       id: "bhuvan_2d_3d",
       phrase: "2D / 3D Map",
-      aliases: ["2d", "3d", "2d map", "3d map", "map viewer", "explore map", "2d/3d", "visualisation"],
+      aliases: ["2d", "3d", "2d map", "3d map", "map viewer", "explore map", "2d/3d", "visualisation", "terrain", "satellite map"],
       role: "link",
       description: "Explore Bhuvan 2D/3D visualization map",
       intentAction: "click"
     },
     {
       id: "bhuvan_search",
-      phrase: "Search Location",
-      aliases: ["search", "search location", "find place", "find city", "search place", "location search", "txtSearch", "locate", "locate place", "locate city", "locate location", "where is", "goto"],
+      phrase: "Search Bhuvan",
+      aliases: [
+        "search",
+        "search location",
+        "find place",
+        "find city",
+        "search place",
+        "location search",
+        "txtSearch",
+        "locate",
+        "locate place",
+        "locate city",
+        "locate location",
+        "where is",
+        "goto",
+        "search bhuvan maps",
+        "explore bhuvan maps",
+        "find locations on bhuvan",
+        "search bhuvan"
+      ],
       role: "input",
       description: "Search geographic place name or coordinates",
       intentAction: "type"
@@ -15299,7 +15319,19 @@ var BHUVAN_PLAYBOOK = {
     }
   ],
   formFieldHints: {
-    search: ["search", "searchBox", "txtSearch", "locationInput", "query", "Search Location"]
+    search: [
+      "search",
+      "searchBox",
+      "txtSearch",
+      "locationInput",
+      "query",
+      "Search Location",
+      "search bhuvan maps",
+      "Search Bhuvan",
+      "Explore Bhuvan maps",
+      "Find locations on Bhuvan",
+      "search-input"
+    ]
   }
 };
 var MOSDAC_PLAYBOOK = {
@@ -15734,8 +15766,8 @@ function extractSearchQueryFromGoal(goal) {
     q2 = q2.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|locate|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, "");
   }
   q2 = q2.replace(/\s+(?:in|into|on|using|use)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page).*$/i, "");
-  q2 = q2.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform))?(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform))?)*/i, "");
-  q2 = q2.replace(/\s+(?:on\s+(?:the\s+)?map|portal|website|site|page)$/i, "");
+  q2 = q2.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?)*/i, "");
+  q2 = q2.replace(/\s+(?:(?:on\s+(?:the\s+)?)?map|portal|website|site|page)$/i, "");
   q2 = q2.replace(/\s+(?:use|using)\s+(?:the\s+)?search\s+bar.*$/i, "");
   q2 = q2.replace(/\s+(?:and|to|then)\s+(?:hit\s+the\s+website|tell\s+me|analyze|give\s+me|show\s+me|check\s+the\s+price|compare).*$/i, "");
   q2 = q2.replace(/\s+(?:and|then)\s+analyze.*$/i, "");
@@ -21480,20 +21512,24 @@ var RunCoordinator = class {
       const targetKeywords = trimmedGoal.replace(/^(?:see|se|look|find|check|show|open|navigate|go\s+to|explore)\s+(?:for\s+)?(?:the\s+)?/i, "").replace(/\b(?:program|here|now|page|section|tab|link|menu)\b/gi, "").trim().toLowerCase();
       if (targetKeywords.length >= 3) {
         const cleanKw = targetKeywords.replace(/[^a-z0-9]/g, "");
-        const matchingLink = sanitized.elements.find((el2) => {
-          if (el2.role !== "link" && el2.role !== "button" && el2.role !== "tab" && el2.role !== "menuitem") return false;
-          const name2 = (el2.sanitizedName || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-          return name2.includes(cleanKw) || cleanKw.length >= 4 && cleanKw.includes(name2);
-        });
-        if (matchingLink) {
-          return {
-            actionId: `act_local_link_nav_${step}_${Date.now()}`,
-            kind: "click",
-            targetLocalId: matchingLink.localId,
-            confidence: 0.98,
-            risk: "safe",
-            rationale: `Clicking "${matchingLink.sanitizedName}" to open ${targetKeywords}.`
-          };
+        const hasContextualQualifier = /\b(?:for|in|from|at|under|row|column)\s+[a-z0-9]+/i.test(trimmedGoal);
+        if (!hasContextualQualifier) {
+          const matchingLinks = sanitized.elements.filter((el2) => {
+            if (el2.role !== "link" && el2.role !== "button" && el2.role !== "tab" && el2.role !== "menuitem") return false;
+            const name2 = (el2.sanitizedName || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+            return name2.length >= 3 && (name2 === cleanKw || name2.includes(cleanKw) || cleanKw.length >= 4 && cleanKw.includes(name2));
+          });
+          if (matchingLinks.length === 1) {
+            const matchingLink = matchingLinks[0];
+            return {
+              actionId: `act_local_link_nav_${step}_${Date.now()}`,
+              kind: "click",
+              targetLocalId: matchingLink.localId,
+              confidence: 0.98,
+              risk: "safe",
+              rationale: `Clicking "${matchingLink.sanitizedName}" to open ${targetKeywords}.`
+            };
+          }
         }
       }
     }
@@ -21596,6 +21632,17 @@ var RunCoordinator = class {
     const playbook = lookupDomainPlaybook(urlForPlaybook) || (trimmedGoal.includes("sih") ? lookupDomainPlaybook("sih.gov.in") : void 0);
     if (playbook) {
       const resolution = resolvePlaybookIntent(playbook, goal, currentUrl);
+      if (resolution.matchedIntent === "none" && resolution.rationale?.includes("Already on route")) {
+        const reply = `You are already on the active ${playbook.name} route. All interactive navigation controls, map canvas layers, and search tools are loaded and ready.`;
+        return {
+          actionId: `act_local_answer_${step}_${Date.now()}`,
+          kind: "answer",
+          confidence: 0.98,
+          risk: "safe",
+          rationale: reply,
+          reply
+        };
+      }
       if (resolution.matchedIntent === "extract_metric" && resolution.metricRule) {
         const allText = [
           ...(sanitized.pageState?.counters || []).map((c) => `${c.label}: ${c.value}`),
@@ -21605,16 +21652,29 @@ var RunCoordinator = class {
         ].join(" ");
         const metricFound = extractMetricsWithPlaybook(allText, resolution.metricRule);
         if (metricFound) {
+          const reply = `Playbook verified: Found ${metricFound.value} ${resolution.metricRule.labelKeywords[0]} on ${playbook.name}`;
           return {
             actionId: `act_playbook_metric_${step}_${Date.now()}`,
-            kind: "finish",
+            kind: "answer",
             confidence: resolution.confidence,
             risk: "safe",
-            rationale: `Playbook verified: Found ${metricFound.value} ${resolution.metricRule.labelKeywords[0]} on ${playbook.name}`
+            rationale: reply,
+            reply
           };
         }
       }
       if (resolution.matchedIntent === "click_landmark" && resolution.targetPhrase) {
+        if ((currentUrl || "").includes("/ngmaps") && resolution.targetPhrase.toLowerCase().includes("2d")) {
+          const reply = "You are already on the active Bhuvan NextGen 2D/3D Map Viewer. The satellite map canvas and geospatial navigation controls are loaded and ready.";
+          return {
+            actionId: `act_local_answer_${step}_${Date.now()}`,
+            kind: "answer",
+            confidence: 0.98,
+            risk: "safe",
+            rationale: reply,
+            reply
+          };
+        }
         const hasAlreadyClickedLandmark = this.actionHistory.some(
           (a) => a.actionId && a.actionId.startsWith("act_playbook_click_")
         );
@@ -21682,18 +21742,52 @@ var RunCoordinator = class {
       if (isSearchDirective) {
         const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_playbook_fill_"));
         if (hasAlreadyFilled) {
+          const query = extractSearchQueryFromGoal(goal) || "query";
+          const queryTokens = tokenizeSemanticText(query.toLowerCase());
+          const hasAlreadyClickedSuggestion = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_dropdown_suggestion_click_"));
+          if (!hasAlreadyClickedSuggestion) {
+            const suggestionItem = sanitized.elements.find((el2) => {
+              const nameNorm = el2.sanitizedName.toLowerCase();
+              const isSuggestionRole = el2.role === "menuitem" || el2.role === "button" || el2.role === "link" || el2.role === "option";
+              const matchesQuery = queryTokens.some((t) => t.length >= 3 && nameNorm.includes(t)) || query.toLowerCase().includes("bangalore") && (nameNorm.includes("bengaluru") || nameNorm.includes("bangalore")) || query.toLowerCase().includes("bengaluru") && (nameNorm.includes("bangalore") || nameNorm.includes("bengaluru"));
+              if (matchesQuery && (isSuggestionRole || nameNorm.includes(",") || nameNorm.includes("karnataka") || nameNorm.includes("india") || nameNorm.includes("district") || nameNorm.includes("airport"))) {
+                return true;
+              }
+              return false;
+            });
+            if (suggestionItem) {
+              return {
+                actionId: `act_dropdown_suggestion_click_${step}_${Date.now()}`,
+                kind: "click",
+                targetLocalId: suggestionItem.localId,
+                confidence: 0.96,
+                risk: "safe",
+                rationale: `Selecting location suggestion "${suggestionItem.sanitizedName}" for query "${query}"`,
+                expectedPostcondition: { kind: "status_changed" }
+              };
+            }
+          }
+          if (hasAlreadyClickedSuggestion) {
+            return {
+              actionId: `act_local_finish_${step}_${Date.now()}`,
+              kind: "finish",
+              confidence: 0.98,
+              risk: "safe",
+              rationale: `Location "${query}" selected from suggestions and centered on map`
+            };
+          }
           const isOnSearchResults = (currentUrl || "").includes("search.html") || (currentUrl || "").includes("gsc.q=");
           const wantsExploration = /(?:scour|explore|corner|drill|detail|read|view|click|open|all|every|find|accomplished)/i.test(trimmedGoal);
           const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_"));
           if (isOnSearchResults && wantsExploration && !hasAlreadyClickedResult) {
-            const queryTokens = tokenizeSemanticText(extractSearchQueryFromGoal(goal) || "missions");
+            const queryTokens2 = tokenizeSemanticText(extractSearchQueryFromGoal(goal) || "missions");
             const resultLink = sanitized.elements.find((el2) => {
               if (el2.role !== "link" && el2.role !== "button") return false;
               const nameNorm = el2.sanitizedName.toLowerCase();
               if (nameNorm.includes("google") || nameNorm.includes("privacy") || nameNorm.includes("terms") || nameNorm === "search" || nameNorm.length < 4) {
                 return false;
               }
-              if (queryTokens.some((t) => nameNorm.includes(t))) return true;
+              if (queryTokens2.some((t) => nameNorm.includes(t))) return true;
               if (nameNorm.includes("isro") || nameNorm.includes("mission") || nameNorm.includes("spacecraft") || nameNorm.includes("earth")) return true;
               return false;
             });
@@ -21709,7 +21803,6 @@ var RunCoordinator = class {
               };
             }
           }
-          const query = extractSearchQueryFromGoal(goal) || "query";
           const wantsAnalysis = /(?:analyze|analysis|price|prices|cost|tell|summary|report|how\s+much|compare)/i.test(trimmedGoal);
           if (wantsAnalysis) {
             const productElements = sanitized.elements.filter((el2) => {
@@ -21790,19 +21883,54 @@ var RunCoordinator = class {
           rationale: `Navigated from search results to verified details page: "${pageTitle}"`
         };
       }
+      if (lastAction.actionId && lastAction.actionId.startsWith("act_dropdown_suggestion_click_")) {
+        const query = extractSearchQueryFromGoal(goal) || "query";
+        return {
+          actionId: `act_local_finish_${step}_${Date.now()}`,
+          kind: "finish",
+          confidence: 0.98,
+          risk: "safe",
+          rationale: `Location "${query}" selected from suggestions and centered on map`
+        };
+      }
       if (lastAction.actionId && lastAction.actionId.startsWith("act_playbook_fill_")) {
+        const query = extractSearchQueryFromGoal(goal) || "query";
+        const queryTokens = tokenizeSemanticText(query.toLowerCase());
+        const hasAlreadyClickedSuggestion = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_dropdown_suggestion_click_"));
+        if (!hasAlreadyClickedSuggestion) {
+          const suggestionItem = sanitized.elements.find((el2) => {
+            const nameNorm = el2.sanitizedName.toLowerCase();
+            const isSuggestionRole = el2.role === "menuitem" || el2.role === "button" || el2.role === "link" || el2.role === "option";
+            const matchesQuery = queryTokens.some((t) => t.length >= 3 && nameNorm.includes(t)) || query.toLowerCase().includes("bangalore") && (nameNorm.includes("bengaluru") || nameNorm.includes("bangalore")) || query.toLowerCase().includes("bengaluru") && (nameNorm.includes("bangalore") || nameNorm.includes("bengaluru"));
+            if (matchesQuery && (isSuggestionRole || nameNorm.includes(",") || nameNorm.includes("karnataka") || nameNorm.includes("india") || nameNorm.includes("district") || nameNorm.includes("airport"))) {
+              return true;
+            }
+            return false;
+          });
+          if (suggestionItem) {
+            return {
+              actionId: `act_dropdown_suggestion_click_${step}_${Date.now()}`,
+              kind: "click",
+              targetLocalId: suggestionItem.localId,
+              confidence: 0.96,
+              risk: "safe",
+              rationale: `Selecting location suggestion "${suggestionItem.sanitizedName}" for query "${query}"`,
+              expectedPostcondition: { kind: "status_changed" }
+            };
+          }
+        }
         const isOnSearchResults = (currentUrl || "").includes("search.html") || (currentUrl || "").includes("gsc.q=");
         const wantsExploration = /(?:scour|explore|corner|drill|detail|read|view|click|open|all|every|find|accomplished)/i.test(trimmedGoal);
         const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_"));
         if (isOnSearchResults && wantsExploration && !hasAlreadyClickedResult) {
-          const queryTokens = tokenizeSemanticText(extractSearchQueryFromGoal(goal) || "missions");
+          const queryTokens2 = tokenizeSemanticText(extractSearchQueryFromGoal(goal) || "missions");
           const resultLink = sanitized.elements.find((el2) => {
             if (el2.role !== "link" && el2.role !== "button") return false;
             const nameNorm = el2.sanitizedName.toLowerCase();
             if (nameNorm.includes("google") || nameNorm.includes("privacy") || nameNorm.includes("terms") || nameNorm === "search" || nameNorm.length < 4) {
               return false;
             }
-            if (queryTokens.some((t) => nameNorm.includes(t))) return true;
+            if (queryTokens2.some((t) => nameNorm.includes(t))) return true;
             if (nameNorm.includes("isro") || nameNorm.includes("mission") || nameNorm.includes("spacecraft") || nameNorm.includes("earth")) return true;
             return false;
           });
@@ -21818,7 +21946,6 @@ var RunCoordinator = class {
             };
           }
         }
-        const query = extractSearchQueryFromGoal(goal) || "query";
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
           kind: "finish",
@@ -22871,6 +22998,7 @@ var RunCoordinator = class {
         let networkRequestMade = true;
         let t4_reasoningReceived = Date.now();
         const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
+        const localPlaybookProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
         const isAutofillGoal = /\b(?:fill|autofill|populate|form)\b/i.test(this.currentGoal || "");
         const prefersDemoData = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || "") || /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || "");
         const hasAutofilled = this.actionHistory.some((a) => a.actionId && (a.actionId.includes("act_local_autofill_batch_") || a.actionId.includes("act_autofill_")));
@@ -23033,6 +23161,12 @@ var RunCoordinator = class {
           networkRequestMade = false;
           t4_reasoningReceived = Date.now();
           this.transition("validating-action", `Step ${step}/${maxSteps}: Locally resolved form autofill (${localAutofillProposal.batchActions?.length || 0} fields)`);
+        } else if (localPlaybookProposal && localPlaybookProposal.confidence >= 0.9) {
+          proposal = localPlaybookProposal;
+          decisionOrigin = "local";
+          networkRequestMade = false;
+          t4_reasoningReceived = Date.now();
+          this.transition("validating-action", `Step ${step}/${maxSteps}: Locally resolved via domain playbook (${proposal.kind})`);
         } else {
           this.transition("sending-sanitized-context", `Step ${step}/${maxSteps}: Transmitting sanitized context`);
           this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Awaiting reasoning action`);

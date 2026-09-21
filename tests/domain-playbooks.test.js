@@ -543,7 +543,7 @@ test('Domain Playbooks: Earth Observation playbooks (Bhuvan, MOSDAC, VEDAS, Bhoo
   // 3. Bhuvan resolution (route navigation & landmark click)
   const bhuvanNavRes = resolvePlaybookIntent(BHUVAN_PLAYBOOK, 'open 2d 3d map viewer', 'https://bhuvan.nrsc.gov.in');
   assert.equal(bhuvanNavRes.matchedIntent, 'navigate');
-  assert.equal(bhuvanNavRes.targetUrl, 'https://bhuvan.nrsc.gov.in/bhuvan_geoportal.php');
+  assert.equal(bhuvanNavRes.targetUrl, 'https://bhuvan.nrsc.gov.in/ngmaps');
 
   const bhuvanLandmarkRes = resolvePlaybookIntent(BHUVAN_PLAYBOOK, 'explore 2d 3d map', 'https://bhuvan.nrsc.gov.in/bhuvan_geoportal.php');
   assert.equal(bhuvanLandmarkRes.matchedIntent, 'click_landmark');
@@ -674,7 +674,7 @@ test('Domain Playbooks: resolvePlaybookIntent grounds ISRO download document lan
 test('Domain Playbooks: resolvePlaybookIntent grounds Bhuvan location search with "locate" verb', () => {
   const res = resolvePlaybookIntent(BHUVAN_PLAYBOOK, 'locate Hyderabad on map', 'https://bhuvan.nrsc.gov.in/bhuvan_geoportal.php');
   assert.equal(res.matchedIntent, 'fill_field');
-  assert.equal(res.targetPhrase, 'Search Location');
+  assert.equal(res.targetPhrase, 'Search Bhuvan');
   assert.equal(res.targetRole, 'input');
   assert.ok(res.confidence >= 0.9);
 });
@@ -683,6 +683,9 @@ test('Domain Playbooks: extractSearchQueryFromGoal extracts clean query for "loc
   const { extractSearchQueryFromGoal } = await import('../packages/protocol/dist/index.js');
   assert.equal(extractSearchQueryFromGoal('locate New Delhi'), 'New Delhi');
   assert.equal(extractSearchQueryFromGoal('locate Bangalore on bhuvan'), 'Bangalore');
+  assert.equal(extractSearchQueryFromGoal('Locate Bangalore on Bhuvan map'), 'Bangalore');
+  assert.equal(extractSearchQueryFromGoal('locate Bangalore on map'), 'Bangalore');
+  assert.equal(extractSearchQueryFromGoal('locate Bangalore map'), 'Bangalore');
   assert.equal(extractSearchQueryFromGoal('locate Sriharikota in search box'), 'Sriharikota');
   assert.equal(extractSearchQueryFromGoal('search Chandrayaan-3 on isro'), 'Chandrayaan-3');
   assert.equal(extractSearchQueryFromGoal('find Aditya-L1 on isro portal'), 'Aditya-L1');
@@ -694,6 +697,143 @@ test('Domain Playbooks: extractTargetUrlFromGoal handles bhuvan.gov.in and isro.
   assert.equal(extractTargetUrlFromGoal('go to isro.gov.in'), 'https://www.isro.gov.in');
   assert.equal(extractTargetUrlFromGoal('open https://bhuvan.gov.in/bhuvan_geoportal.php'), 'https://bhuvan.nrsc.gov.in/bhuvan_geoportal.php');
   assert.equal(extractTargetUrlFromGoal('in the bhuvan portal find Hyderabad'), 'https://bhuvan.nrsc.gov.in');
+});
+
+test('Domain Playbooks: Coordinator identifies when already on Bhuvan NextGen map viewer and completes without static tutorial', async () => {
+  const { RunCoordinator } = await import('../apps/extension/dist/background/coordinator.js');
+  const currentUrl = 'https://bhuvan.nrsc.gov.in/ngmaps#9.49/12.9168/77.6264';
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 1, url: currentUrl, title: 'Bhuvan-Indian Geoportal of ISRO' };
+    },
+    async sendMessageToTab() {
+      return { success: true, captureId: 'cap_bhuvan', snapshot: { elements: [] } };
+    },
+    async runInSanitizerHost(req) {
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_bhuvan_route',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements: [],
+        pageState: { title: 'Bhuvan NextGen Maps', url: currentUrl, viewport: [1280, 720] },
+        maskCount: 0,
+        payloadDigestSha256: 'digest_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser);
+  const result = await coordinator.startRun('Explore 2D 3D map viewer on Bhuvan', { maxSteps: 3 });
+  assert.equal(result.success, true);
+  assert.equal(result.state, 'complete');
+  assert.ok(result.message.includes('already on the active'));
+});
+
+test('Domain Playbooks: Coordinator searches Bangalore on Bhuvan NextGen and clicks autocomplete suggestion', async () => {
+  const { RunCoordinator } = await import('../apps/extension/dist/background/coordinator.js');
+  let currentUrl = 'https://bhuvan.nrsc.gov.in/ngmaps#9.49/12.9168/77.6264';
+  const executedProposals = [];
+
+  const initialElements = [
+    {
+      localId: 'el_bhuvan_search_input',
+      role: 'input',
+      sanitizedName: 'search bhuvan maps',
+      coarseBounds: [0.02, 0.05, 0.25, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['type', 'click']
+    },
+    {
+      localId: 'el_bhuvan_search_btn',
+      role: 'button',
+      sanitizedName: 'search',
+      coarseBounds: [0.22, 0.05, 0.05, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    }
+  ];
+
+  const postTypingElements = [
+    ...initialElements,
+    {
+      localId: 'el_suggestion_1',
+      role: 'menuitem',
+      sanitizedName: 'Bengaluru, Karnataka, India',
+      coarseBounds: [0.02, 0.11, 0.25, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    },
+    {
+      localId: 'el_suggestion_2',
+      role: 'menuitem',
+      sanitizedName: 'Kempegowda International Airport, Bengaluru, Karnataka',
+      coarseBounds: [0.02, 0.17, 0.25, 0.05],
+      state: ['visible', 'enabled'],
+      actionCapabilities: ['click']
+    }
+  ];
+
+  let stepCount = 0;
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 1, url: currentUrl, title: 'Bhuvan-Indian Geoportal of ISRO' };
+    },
+    async sendMessageToTab(tabId, msg) {
+      if (msg.type === 'EXTRACT_DOM_SNAPSHOT') {
+        const elements = stepCount > 0 ? postTypingElements : initialElements;
+        return { success: true, captureId: msg.captureId || 'cap_bhuvan_search', snapshot: { elements } };
+      }
+      if (msg.type === 'EXECUTE_ACTION') {
+        executedProposals.push(msg.proposal);
+        stepCount++;
+        return { success: true, actionId: msg.proposal.actionId, semanticOutcomeVerified: true };
+      }
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      const elements = stepCount > 0 ? postTypingElements : initialElements;
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_bhuvan_search',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements,
+        pageState: { title: 'Bhuvan NextGen Maps', url: currentUrl, viewport: [1280, 720] },
+        maskCount: 0,
+        payloadDigestSha256: 'digest_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser);
+  const result = await coordinator.startRun('Locate Bangalore on Bhuvan map', { maxSteps: 5 });
+
+  assert.equal(result.success, true);
+  assert.equal(result.state, 'complete');
+  assert.equal(executedProposals.length, 2);
+
+  // Step 1: Types "Bangalore" (clean, NOT "Bangalore map") into search input
+  assert.equal(executedProposals[0].kind, 'type');
+  assert.equal(executedProposals[0].targetLocalId, 'el_bhuvan_search_input');
+  assert.equal(executedProposals[0].textToType, 'Bangalore');
+
+  // Step 2: Clicks the autocomplete suggestion item
+  assert.equal(executedProposals[1].kind, 'click');
+  assert.equal(executedProposals[1].targetLocalId, 'el_suggestion_1');
+  assert.ok(executedProposals[1].actionId.startsWith('act_dropdown_suggestion_click_'));
 });
 
 

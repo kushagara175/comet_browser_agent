@@ -14966,7 +14966,7 @@ as ORT format: ${n}`);
       let surfaceCounter = 0;
       const processDocumentLevel = (currentDoc, offset = { x: 0, y: 0 }, depth = 0) => {
         const candidates = currentDoc.querySelectorAll(
-          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [contenteditable="true"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed]'
+          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [role="option"], [role="menuitem"], [contenteditable="true"], [role="listbox"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed], .MuiListItemButton-root, [class*="suggestion" i], [class*="autocomplete-item" i], [class*="dropdown-item" i]'
         );
         candidates.forEach((node) => {
           const el2 = node;
@@ -14998,7 +14998,7 @@ as ORT format: ${n}`);
             role = "link";
           } else if (roleAttr === "tab") {
             role = "tab";
-          } else if (roleAttr === "menuitem") {
+          } else if (roleAttr === "menuitem" || roleAttr === "option" || el2.classList && typeof el2.classList.contains === "function" && el2.classList.contains("MuiListItemButton-root")) {
             role = "menuitem";
           }
           const caps = ["click", "hover"];

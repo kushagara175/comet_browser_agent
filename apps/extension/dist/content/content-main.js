@@ -940,7 +940,7 @@
       let surfaceCounter = 0;
       const processDocumentLevel = (currentDoc, offset = { x: 0, y: 0 }, depth = 0) => {
         const candidates = currentDoc.querySelectorAll(
-          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [contenteditable="true"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed]'
+          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [role="option"], [role="menuitem"], [contenteditable="true"], [role="listbox"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed], .MuiListItemButton-root, [class*="suggestion" i], [class*="autocomplete-item" i], [class*="dropdown-item" i]'
         );
         candidates.forEach((node) => {
           const el = node;
@@ -972,7 +972,7 @@
             role = "link";
           } else if (roleAttr === "tab") {
             role = "tab";
-          } else if (roleAttr === "menuitem") {
+          } else if (roleAttr === "menuitem" || roleAttr === "option" || el.classList && typeof el.classList.contains === "function" && el.classList.contains("MuiListItemButton-root")) {
             role = "menuitem";
           }
           const caps = ["click", "hover"];
@@ -2159,37 +2159,54 @@
           if (typeof targetEl.focus === "function") {
             targetEl.focus();
           }
+          const textToType = proposal.textToType;
           if (KeyboardEventCtor) {
             targetEl.dispatchEvent(
               new KeyboardEventCtor("keydown", {
                 bubbles: true,
                 cancelable: true,
                 composed: true,
-                key: "Process"
+                key: textToType.length === 1 ? textToType : "Process"
               })
             );
           }
-          const textToType = proposal.textToType;
-          if (tag === "input") {
-            const inputProto = win?.HTMLInputElement?.prototype || (typeof HTMLInputElement !== "undefined" ? HTMLInputElement.prototype : Object.getPrototypeOf(targetEl));
-            const descriptor2 = inputProto ? Object.getOwnPropertyDescriptor(inputProto, "value") : void 0;
-            if (descriptor2 && descriptor2.set) {
-              descriptor2.set.call(targetEl, textToType);
+          let execCommandSucceeded = false;
+          if (typeof document !== "undefined" && typeof document.execCommand === "function") {
+            try {
+              if (typeof targetEl.select === "function") {
+                targetEl.select();
+              }
+              execCommandSucceeded = document.execCommand("insertText", false, textToType);
+            } catch (_) {
+              execCommandSucceeded = false;
+            }
+          }
+          if (!execCommandSucceeded || targetEl.value !== textToType) {
+            if (tag === "input") {
+              const inputProto = win?.HTMLInputElement?.prototype || (typeof HTMLInputElement !== "undefined" ? HTMLInputElement.prototype : Object.getPrototypeOf(targetEl));
+              const descriptor2 = inputProto ? Object.getOwnPropertyDescriptor(inputProto, "value") : void 0;
+              if (descriptor2 && descriptor2.set) {
+                descriptor2.set.call(targetEl, textToType);
+              } else if ("value" in targetEl) {
+                targetEl.value = textToType;
+              }
+            } else if (tag === "textarea") {
+              const textAreaProto = win?.HTMLTextAreaElement?.prototype || (typeof HTMLTextAreaElement !== "undefined" ? HTMLTextAreaElement.prototype : Object.getPrototypeOf(targetEl));
+              const descriptor2 = textAreaProto ? Object.getOwnPropertyDescriptor(textAreaProto, "value") : void 0;
+              if (descriptor2 && descriptor2.set) {
+                descriptor2.set.call(targetEl, textToType);
+              } else if ("value" in targetEl) {
+                targetEl.value = textToType;
+              }
             } else if ("value" in targetEl) {
               targetEl.value = textToType;
+            } else {
+              targetEl.textContent = textToType;
             }
-          } else if (tag === "textarea") {
-            const textAreaProto = win?.HTMLTextAreaElement?.prototype || (typeof HTMLTextAreaElement !== "undefined" ? HTMLTextAreaElement.prototype : Object.getPrototypeOf(targetEl));
-            const descriptor2 = textAreaProto ? Object.getOwnPropertyDescriptor(textAreaProto, "value") : void 0;
-            if (descriptor2 && descriptor2.set) {
-              descriptor2.set.call(targetEl, textToType);
-            } else if ("value" in targetEl) {
-              targetEl.value = textToType;
+            const tracker = targetEl._valueTracker;
+            if (tracker && typeof tracker.setValue === "function") {
+              tracker.setValue("");
             }
-          } else if ("value" in targetEl) {
-            targetEl.value = textToType;
-          } else {
-            targetEl.textContent = textToType;
           }
           let inputDispatched = false;
           if (InputEventCtor) {
@@ -2231,7 +2248,7 @@
                 bubbles: true,
                 cancelable: true,
                 composed: true,
-                key: "Process"
+                key: textToType.length === 1 ? textToType : "Process"
               })
             );
             if (proposal.pressEnter) {
@@ -2285,7 +2302,7 @@
                 }
               } else if (!form) {
                 const container = targetEl.parentElement?.parentElement || targetEl.parentElement;
-                const searchBtn = container?.querySelector?.('button[aria-label*="search" i], button[title*="search" i], [role="button"][aria-label*="search" i]');
+                const searchBtn = container?.querySelector?.('button[aria-label*="search" i], button[title*="search" i], [role="button"][aria-label*="search" i], [aria-label="search"]');
                 if (searchBtn && typeof searchBtn.click === "function") {
                   try {
                     searchBtn.click();
@@ -2295,11 +2312,14 @@
               }
             }
           }
-          const FocusEventCtor = win?.FocusEvent || (typeof FocusEvent !== "undefined" ? FocusEvent : null);
-          if (FocusEventCtor) {
-            try {
-              targetEl.dispatchEvent(new FocusEventCtor("blur", { bubbles: false, cancelable: false, composed: true }));
-            } catch (_) {
+          const isSearchOrAutocomplete = Boolean(targetEl.closest?.('[role="search"], [role="combobox"], [aria-autocomplete], .search, .search-box, .searchbar, #search, [class*="search" i]')) || (targetEl.getAttribute?.("type") || "").toLowerCase() === "search" || (targetEl.getAttribute?.("role") || "").toLowerCase() === "combobox" || (targetEl.getAttribute?.("role") || "").toLowerCase() === "searchbox" || targetEl.hasAttribute?.("aria-autocomplete") || /search|find|filter|locate|query/i.test(targetEl.getAttribute?.("placeholder") || "") || /search|find|filter|locate|query/i.test(targetEl.getAttribute?.("aria-label") || "");
+          if (!isSearchOrAutocomplete) {
+            const FocusEventCtor = win?.FocusEvent || (typeof FocusEvent !== "undefined" ? FocusEvent : null);
+            if (FocusEventCtor) {
+              try {
+                targetEl.dispatchEvent(new FocusEventCtor("blur", { bubbles: false, cancelable: false, composed: true }));
+              } catch (_) {
+              }
             }
           }
           return {

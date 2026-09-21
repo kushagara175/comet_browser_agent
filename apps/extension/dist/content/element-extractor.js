@@ -109,8 +109,8 @@ export class ElementExtractor {
         let surfaceCounter = 0;
         // Helper to recursively process a document or same-origin frame with coordinate offsets
         const processDocumentLevel = (currentDoc, offset = { x: 0, y: 0 }, depth = 0) => {
-            // 1. Extract interactive controls & form inputs (including custom dropdowns, comboboxes, and tabs)
-            const candidates = currentDoc.querySelectorAll('button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [contenteditable="true"], [role="listbox"], [role="menuitem"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed]');
+            // 1. Extract interactive controls & form inputs (including custom dropdowns, comboboxes, suggestions, and tabs)
+            const candidates = currentDoc.querySelectorAll('button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [role="option"], [role="menuitem"], [contenteditable="true"], [role="listbox"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed], .MuiListItemButton-root, [class*="suggestion" i], [class*="autocomplete-item" i], [class*="dropdown-item" i]');
             candidates.forEach((node) => {
                 const el = node;
                 // Overlay Safety: Never extract extension overlays, HUD controls, or debug containers
@@ -156,7 +156,7 @@ export class ElementExtractor {
                 else if (roleAttr === 'tab') {
                     role = 'tab';
                 }
-                else if (roleAttr === 'menuitem') {
+                else if (roleAttr === 'menuitem' || roleAttr === 'option' || (el.classList && typeof el.classList.contains === 'function' && el.classList.contains('MuiListItemButton-root'))) {
                     role = 'menuitem';
                 }
                 // Determine capabilities

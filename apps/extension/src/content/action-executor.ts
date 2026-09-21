@@ -609,6 +609,8 @@ export class ActionExecutor {
           targetEl.focus();
         }
 
+        const textToType = proposal.textToType;
+
         // Dispatch keydown
         if (KeyboardEventCtor) {
           targetEl.dispatchEvent(
@@ -616,38 +618,57 @@ export class ActionExecutor {
               bubbles: true,
               cancelable: true,
               composed: true,
-              key: 'Process'
+              key: textToType.length === 1 ? textToType : 'Process'
             })
           );
         }
 
-        const textToType = proposal.textToType;
+        // Try document.execCommand('insertText') first (ideal for React/Next.js/Angular/Vue controlled inputs)
+        let execCommandSucceeded = false;
+        if (typeof document !== 'undefined' && typeof document.execCommand === 'function') {
+          try {
+            if (typeof (targetEl as HTMLInputElement).select === 'function') {
+              (targetEl as HTMLInputElement).select();
+            }
+            execCommandSucceeded = document.execCommand('insertText', false, textToType);
+          } catch (_) {
+            execCommandSucceeded = false;
+          }
+        }
 
-        // Apply native prototype value setter
-        if (tag === 'input') {
-          const inputProto =
-            win?.HTMLInputElement?.prototype ||
-            (typeof HTMLInputElement !== 'undefined' ? HTMLInputElement.prototype : Object.getPrototypeOf(targetEl));
-          const descriptor = inputProto ? Object.getOwnPropertyDescriptor(inputProto, 'value') : undefined;
-          if (descriptor && descriptor.set) {
-            descriptor.set.call(targetEl, textToType);
+        // Fallback to prototype value setter with React 16+ _valueTracker reset
+        if (!execCommandSucceeded || (targetEl as any).value !== textToType) {
+          if (tag === 'input') {
+            const inputProto =
+              win?.HTMLInputElement?.prototype ||
+              (typeof HTMLInputElement !== 'undefined' ? HTMLInputElement.prototype : Object.getPrototypeOf(targetEl));
+            const descriptor = inputProto ? Object.getOwnPropertyDescriptor(inputProto, 'value') : undefined;
+            if (descriptor && descriptor.set) {
+              descriptor.set.call(targetEl, textToType);
+            } else if ('value' in targetEl) {
+              (targetEl as HTMLInputElement).value = textToType;
+            }
+          } else if (tag === 'textarea') {
+            const textAreaProto =
+              win?.HTMLTextAreaElement?.prototype ||
+              (typeof HTMLTextAreaElement !== 'undefined' ? HTMLTextAreaElement.prototype : Object.getPrototypeOf(targetEl));
+            const descriptor = textAreaProto ? Object.getOwnPropertyDescriptor(textAreaProto, 'value') : undefined;
+            if (descriptor && descriptor.set) {
+              descriptor.set.call(targetEl, textToType);
+            } else if ('value' in targetEl) {
+              (targetEl as HTMLTextAreaElement).value = textToType;
+            }
           } else if ('value' in targetEl) {
-            (targetEl as HTMLInputElement).value = textToType;
+            (targetEl as any).value = textToType;
+          } else {
+            targetEl.textContent = textToType;
           }
-        } else if (tag === 'textarea') {
-          const textAreaProto =
-            win?.HTMLTextAreaElement?.prototype ||
-            (typeof HTMLTextAreaElement !== 'undefined' ? HTMLTextAreaElement.prototype : Object.getPrototypeOf(targetEl));
-          const descriptor = textAreaProto ? Object.getOwnPropertyDescriptor(textAreaProto, 'value') : undefined;
-          if (descriptor && descriptor.set) {
-            descriptor.set.call(targetEl, textToType);
-          } else if ('value' in targetEl) {
-            (targetEl as HTMLTextAreaElement).value = textToType;
+
+          // Reset React 16+ value tracker so synthetic input event triggers React's onChange
+          const tracker = (targetEl as any)._valueTracker;
+          if (tracker && typeof tracker.setValue === 'function') {
+            tracker.setValue('');
           }
-        } else if ('value' in targetEl) {
-          (targetEl as any).value = textToType;
-        } else {
-          targetEl.textContent = textToType;
         }
 
         // Dispatch input event with proper bubbling and composition
@@ -696,7 +717,7 @@ export class ActionExecutor {
               bubbles: true,
               cancelable: true,
               composed: true,
-              key: 'Process'
+              key: textToType.length === 1 ? textToType : 'Process'
             })
           );
 
@@ -759,7 +780,7 @@ export class ActionExecutor {
               }
             } else if (!form) {
               const container = targetEl.parentElement?.parentElement || targetEl.parentElement;
-              const searchBtn = container?.querySelector?.('button[aria-label*="search" i], button[title*="search" i], [role="button"][aria-label*="search" i]') as HTMLElement | null;
+              const searchBtn = container?.querySelector?.('button[aria-label*="search" i], button[title*="search" i], [role="button"][aria-label*="search" i], [aria-label="search"]') as HTMLElement | null;
               if (searchBtn && typeof searchBtn.click === 'function') {
                 try { searchBtn.click(); } catch (_) {}
               }
@@ -767,12 +788,25 @@ export class ActionExecutor {
           }
         }
 
-        // Stagehand pattern: Dispatch synthetic blur event for modern SPAs to trigger field validation
-        const FocusEventCtor = win?.FocusEvent || (typeof FocusEvent !== 'undefined' ? FocusEvent : null);
-        if (FocusEventCtor) {
-          try {
-            targetEl.dispatchEvent(new FocusEventCtor('blur', { bubbles: false, cancelable: false, composed: true }));
-          } catch (_) {}
+        // Only dispatch synthetic blur for non-search form fields.
+        // Never dispatch blur on search inputs, comboboxes, or autocomplete targets because
+        // blur immediately dismisses autocomplete dropdown popups and can revert React controlled values.
+        const isSearchOrAutocomplete =
+          Boolean(targetEl.closest?.('[role="search"], [role="combobox"], [aria-autocomplete], .search, .search-box, .searchbar, #search, [class*="search" i]')) ||
+          (targetEl.getAttribute?.('type') || '').toLowerCase() === 'search' ||
+          (targetEl.getAttribute?.('role') || '').toLowerCase() === 'combobox' ||
+          (targetEl.getAttribute?.('role') || '').toLowerCase() === 'searchbox' ||
+          targetEl.hasAttribute?.('aria-autocomplete') ||
+          /search|find|filter|locate|query/i.test(targetEl.getAttribute?.('placeholder') || '') ||
+          /search|find|filter|locate|query/i.test(targetEl.getAttribute?.('aria-label') || '');
+
+        if (!isSearchOrAutocomplete) {
+          const FocusEventCtor = win?.FocusEvent || (typeof FocusEvent !== 'undefined' ? FocusEvent : null);
+          if (FocusEventCtor) {
+            try {
+              targetEl.dispatchEvent(new FocusEventCtor('blur', { bubbles: false, cancelable: false, composed: true }));
+            } catch (_) {}
+          }
         }
 
         return {

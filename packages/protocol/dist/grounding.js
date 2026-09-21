@@ -93,6 +93,7 @@ const GENERIC_CONTROL_NAMES = new Set([
  */
 export function scoreCandidate(element, intent, activeDialogVisible = false) {
     // 1. Capability verification (Hard requirement)
+    const caps = element.actionCapabilities || [];
     let requiredCap = null;
     if (intent.intent === 'click' || intent.intent === 'dismiss') {
         requiredCap = 'click';
@@ -104,21 +105,21 @@ export function scoreCandidate(element, intent, activeDialogVisible = false) {
         requiredCap = 'select';
     }
     else if (intent.intent === 'hover') {
-        if (!element.actionCapabilities.includes('hover') && !element.actionCapabilities.includes('click')) {
+        if (!caps.includes('hover') && !caps.includes('click')) {
             requiredCap = 'hover';
         }
     }
     else if (intent.intent === 'drag_and_drop') {
-        if (!element.actionCapabilities.includes('drag') && !element.actionCapabilities.includes('click')) {
+        if (!caps.includes('drag') && !caps.includes('click')) {
             requiredCap = 'drag';
         }
     }
     else if (intent.intent === 'upload_file') {
-        if (!element.actionCapabilities.includes('upload') && !element.actionCapabilities.includes('type')) {
+        if (!caps.includes('upload') && !caps.includes('type')) {
             requiredCap = 'upload';
         }
     }
-    if (requiredCap && !element.actionCapabilities.includes(requiredCap)) {
+    if (requiredCap && caps.length > 0 && !caps.includes(requiredCap)) {
         return {
             score: 0,
             confidence: 0,
@@ -127,7 +128,8 @@ export function scoreCandidate(element, intent, activeDialogVisible = false) {
         };
     }
     // 2. State verification (Disabled elements cannot execute active tasks)
-    if (element.state.includes('disabled')) {
+    const states = element.state || [];
+    if (states.includes('disabled')) {
         return {
             score: 0,
             confidence: 0,

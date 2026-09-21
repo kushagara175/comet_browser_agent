@@ -705,21 +705,26 @@ export class RunCoordinator {
 
       if (targetKeywords.length >= 3) {
         const cleanKw = targetKeywords.replace(/[^a-z0-9]/g, '');
-        const matchingLink = sanitized.elements.find(el => {
-          if (el.role !== 'link' && el.role !== 'button' && el.role !== 'tab' && el.role !== 'menuitem') return false;
-          const name = (el.sanitizedName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-          return name.includes(cleanKw) || (cleanKw.length >= 4 && cleanKw.includes(name));
-        });
+        // Do not use this fast-path if there are contextual qualifiers ("for ...", "row ...") or multiple matching elements
+        const hasContextualQualifier = /\b(?:for|in|from|at|under|row|column)\s+[a-z0-9]+/i.test(trimmedGoal);
+        if (!hasContextualQualifier) {
+          const matchingLinks = sanitized.elements.filter(el => {
+            if (el.role !== 'link' && el.role !== 'button' && el.role !== 'tab' && el.role !== 'menuitem') return false;
+            const name = (el.sanitizedName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            return name.length >= 3 && (name === cleanKw || name.includes(cleanKw) || (cleanKw.length >= 4 && cleanKw.includes(name)));
+          });
 
-        if (matchingLink) {
-          return {
-            actionId: `act_local_link_nav_${step}_${Date.now()}`,
-            kind: 'click',
-            targetLocalId: matchingLink.localId,
-            confidence: 0.98,
-            risk: 'safe',
-            rationale: `Clicking "${matchingLink.sanitizedName}" to open ${targetKeywords}.`
-          };
+          if (matchingLinks.length === 1) {
+            const matchingLink = matchingLinks[0];
+            return {
+              actionId: `act_local_link_nav_${step}_${Date.now()}`,
+              kind: 'click',
+              targetLocalId: matchingLink.localId,
+              confidence: 0.98,
+              risk: 'safe',
+              rationale: `Clicking "${matchingLink.sanitizedName}" to open ${targetKeywords}.`
+            };
+          }
         }
       }
     }
@@ -878,6 +883,19 @@ export class RunCoordinator {
     if (playbook) {
       const resolution = resolvePlaybookIntent(playbook, goal, currentUrl);
 
+      // 0. If user is already on the requested route (e.g. Map Viewer on Bhuvan or Problem Statements on SIH)
+      if (resolution.matchedIntent === 'none' && resolution.rationale?.includes('Already on route')) {
+        const reply = `You are already on the active ${playbook.name} route. All interactive navigation controls, map canvas layers, and search tools are loaded and ready.`;
+        return {
+          actionId: `act_local_answer_${step}_${Date.now()}`,
+          kind: 'answer',
+          confidence: 0.98,
+          risk: 'safe',
+          rationale: reply,
+          reply
+        };
+      }
+
       // A. Metric Extraction from page context
       if (resolution.matchedIntent === 'extract_metric' && resolution.metricRule) {
         const allText = [
@@ -889,18 +907,33 @@ export class RunCoordinator {
 
         const metricFound = extractMetricsWithPlaybook(allText, resolution.metricRule);
         if (metricFound) {
+          const reply = `Playbook verified: Found ${metricFound.value} ${resolution.metricRule.labelKeywords[0]} on ${playbook.name}`;
           return {
             actionId: `act_playbook_metric_${step}_${Date.now()}`,
-            kind: 'finish',
+            kind: 'answer',
             confidence: resolution.confidence,
             risk: 'safe',
-            rationale: `Playbook verified: Found ${metricFound.value} ${resolution.metricRule.labelKeywords[0]} on ${playbook.name}`
+            rationale: reply,
+            reply
           };
         }
       }
 
       // B. Click Landmark (e.g. "Know Your SPOC", "SIH Login", "Problem Statements")
       if (resolution.matchedIntent === 'click_landmark' && resolution.targetPhrase) {
+        // If already on Bhuvan NextGen map viewer (/ngmaps), the 2D/3D viewer is already active and loaded
+        if ((currentUrl || '').includes('/ngmaps') && resolution.targetPhrase.toLowerCase().includes('2d')) {
+          const reply = 'You are already on the active Bhuvan NextGen 2D/3D Map Viewer. The satellite map canvas and geospatial navigation controls are loaded and ready.';
+          return {
+            actionId: `act_local_answer_${step}_${Date.now()}`,
+            kind: 'answer',
+            confidence: 0.98,
+            risk: 'safe',
+            rationale: reply,
+            reply
+          };
+        }
+
         const hasAlreadyClickedLandmark = this.actionHistory.some(
           (a) => a.actionId && a.actionId.startsWith('act_playbook_click_')
         );
@@ -982,6 +1015,48 @@ export class RunCoordinator {
       if (isSearchDirective) {
         const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_playbook_fill_'));
         if (hasAlreadyFilled) {
+          const query = extractSearchQueryFromGoal(goal) || 'query';
+          const queryTokens = tokenizeSemanticText(query.toLowerCase());
+          const hasAlreadyClickedSuggestion = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_dropdown_suggestion_click_'));
+
+          // Check if an autocomplete dropdown suggestion item is available in DOM (e.g. Bhuvan, Maps, airlines, banking)
+          if (!hasAlreadyClickedSuggestion) {
+            const suggestionItem = sanitized.elements.find((el) => {
+              const nameNorm = el.sanitizedName.toLowerCase();
+              const isSuggestionRole = el.role === 'menuitem' || el.role === 'button' || el.role === 'link' || (el as any).role === 'option';
+              const matchesQuery = queryTokens.some((t) => t.length >= 3 && nameNorm.includes(t)) ||
+                (query.toLowerCase().includes('bangalore') && (nameNorm.includes('bengaluru') || nameNorm.includes('bangalore'))) ||
+                (query.toLowerCase().includes('bengaluru') && (nameNorm.includes('bangalore') || nameNorm.includes('bengaluru')));
+
+              if (matchesQuery && (isSuggestionRole || nameNorm.includes(',') || nameNorm.includes('karnataka') || nameNorm.includes('india') || nameNorm.includes('district') || nameNorm.includes('airport'))) {
+                return true;
+              }
+              return false;
+            });
+
+            if (suggestionItem) {
+              return {
+                actionId: `act_dropdown_suggestion_click_${step}_${Date.now()}`,
+                kind: 'click',
+                targetLocalId: suggestionItem.localId,
+                confidence: 0.96,
+                risk: 'safe',
+                rationale: `Selecting location suggestion "${suggestionItem.sanitizedName}" for query "${query}"`,
+                expectedPostcondition: { kind: 'status_changed' }
+              };
+            }
+          }
+
+          if (hasAlreadyClickedSuggestion) {
+            return {
+              actionId: `act_local_finish_${step}_${Date.now()}`,
+              kind: 'finish',
+              confidence: 0.98,
+              risk: 'safe',
+              rationale: `Location "${query}" selected from suggestions and centered on map`
+            };
+          }
+
           const isOnSearchResults = (currentUrl || '').includes('search.html') || (currentUrl || '').includes('gsc.q=');
           const wantsExploration = /(?:scour|explore|corner|drill|detail|read|view|click|open|all|every|find|accomplished)/i.test(trimmedGoal);
           const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_search_result_click_'));
@@ -1012,7 +1087,6 @@ export class RunCoordinator {
             }
           }
 
-          const query = extractSearchQueryFromGoal(goal) || 'query';
           const wantsAnalysis = /(?:analyze|analysis|price|prices|cost|tell|summary|report|how\s+much|compare)/i.test(trimmedGoal);
 
           if (wantsAnalysis) {
@@ -1107,9 +1181,52 @@ export class RunCoordinator {
         };
       }
 
+      // Local finish for dropdown suggestion click
+      if (lastAction.actionId && lastAction.actionId.startsWith('act_dropdown_suggestion_click_')) {
+        const query = extractSearchQueryFromGoal(goal) || 'query';
+        return {
+          actionId: `act_local_finish_${step}_${Date.now()}`,
+          kind: 'finish',
+          confidence: 0.98,
+          risk: 'safe',
+          rationale: `Location "${query}" selected from suggestions and centered on map`
+        };
+      }
+
       // Local finish for playbook search/fill execution:
-      // When a playbook fill action was executed with enter, search results are now filtered and displayed.
+      // When a playbook fill action was executed, check for autocomplete suggestions before finishing
       if (lastAction.actionId && lastAction.actionId.startsWith('act_playbook_fill_')) {
+        const query = extractSearchQueryFromGoal(goal) || 'query';
+        const queryTokens = tokenizeSemanticText(query.toLowerCase());
+        const hasAlreadyClickedSuggestion = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_dropdown_suggestion_click_'));
+
+        if (!hasAlreadyClickedSuggestion) {
+          const suggestionItem = sanitized.elements.find((el) => {
+            const nameNorm = el.sanitizedName.toLowerCase();
+            const isSuggestionRole = el.role === 'menuitem' || el.role === 'button' || el.role === 'link' || (el as any).role === 'option';
+            const matchesQuery = queryTokens.some((t) => t.length >= 3 && nameNorm.includes(t)) ||
+              (query.toLowerCase().includes('bangalore') && (nameNorm.includes('bengaluru') || nameNorm.includes('bangalore'))) ||
+              (query.toLowerCase().includes('bengaluru') && (nameNorm.includes('bangalore') || nameNorm.includes('bengaluru')));
+
+            if (matchesQuery && (isSuggestionRole || nameNorm.includes(',') || nameNorm.includes('karnataka') || nameNorm.includes('india') || nameNorm.includes('district') || nameNorm.includes('airport'))) {
+              return true;
+            }
+            return false;
+          });
+
+          if (suggestionItem) {
+            return {
+              actionId: `act_dropdown_suggestion_click_${step}_${Date.now()}`,
+              kind: 'click',
+              targetLocalId: suggestionItem.localId,
+              confidence: 0.96,
+              risk: 'safe',
+              rationale: `Selecting location suggestion "${suggestionItem.sanitizedName}" for query "${query}"`,
+              expectedPostcondition: { kind: 'status_changed' }
+            };
+          }
+        }
+
         const isOnSearchResults = (currentUrl || '').includes('search.html') || (currentUrl || '').includes('gsc.q=');
         const wantsExploration = /(?:scour|explore|corner|drill|detail|read|view|click|open|all|every|find|accomplished)/i.test(trimmedGoal);
         const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_search_result_click_'));
@@ -1140,7 +1257,6 @@ export class RunCoordinator {
           }
         }
 
-        const query = extractSearchQueryFromGoal(goal) || 'query';
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
           kind: 'finish',
@@ -2409,6 +2525,7 @@ export class RunCoordinator {
       let t4_reasoningReceived = Date.now();
 
       const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
+      const localPlaybookProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
 
       // Smart Zero-Knowledge Local Personal Vault Autofill / Synthetic Demo Data
       const isAutofillGoal = /\b(?:fill|autofill|populate|form)\b/i.test(this.currentGoal || '');
@@ -2587,6 +2704,12 @@ export class RunCoordinator {
         networkRequestMade = false;
         t4_reasoningReceived = Date.now();
         this.transition('validating-action', `Step ${step}/${maxSteps}: Locally resolved form autofill (${localAutofillProposal.batchActions?.length || 0} fields)`);
+      } else if (localPlaybookProposal && localPlaybookProposal.confidence >= 0.9) {
+        proposal = localPlaybookProposal;
+        decisionOrigin = 'local';
+        networkRequestMade = false;
+        t4_reasoningReceived = Date.now();
+        this.transition('validating-action', `Step ${step}/${maxSteps}: Locally resolved via domain playbook (${proposal.kind})`);
       } else {
         this.transition('sending-sanitized-context', `Step ${step}/${maxSteps}: Transmitting sanitized context`);
         this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Awaiting reasoning action`);

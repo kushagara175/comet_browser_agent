@@ -910,10 +910,10 @@ export const BHUVAN_PLAYBOOK = {
     routes: [
         {
             name: 'geoportal',
-            path: '/bhuvan_geoportal.php',
-            aliases: ['/bhuvan_geoportal.php', '/2d', '/3d', '/viewer', '/geoportal'],
-            description: 'Bhuvan 2D/3D map viewer and Earth observation geoportal',
-            matchKeywords: ['geoportal', 'map', '2d', '3d', 'earth observation', 'viewer', 'satellite imagery', 'imagery', 'location', 'locations']
+            path: '/ngmaps',
+            aliases: ['/ngmaps', '/bhuvan_geoportal.php', '/2d', '/3d', '/viewer', '/geoportal'],
+            description: 'Bhuvan NextGen 2D/3D map viewer and Earth observation geoportal',
+            matchKeywords: ['geoportal', 'map', 'maps', '2d', '3d', 'earth observation', 'viewer', 'satellite imagery', 'imagery', 'location', 'locations', 'ngmaps']
         },
         {
             name: 'thematic',
@@ -947,15 +947,33 @@ export const BHUVAN_PLAYBOOK = {
         {
             id: 'bhuvan_2d_3d',
             phrase: '2D / 3D Map',
-            aliases: ['2d', '3d', '2d map', '3d map', 'map viewer', 'explore map', '2d/3d', 'visualisation'],
+            aliases: ['2d', '3d', '2d map', '3d map', 'map viewer', 'explore map', '2d/3d', 'visualisation', 'terrain', 'satellite map'],
             role: 'link',
             description: 'Explore Bhuvan 2D/3D visualization map',
             intentAction: 'click'
         },
         {
             id: 'bhuvan_search',
-            phrase: 'Search Location',
-            aliases: ['search', 'search location', 'find place', 'find city', 'search place', 'location search', 'txtSearch', 'locate', 'locate place', 'locate city', 'locate location', 'where is', 'goto'],
+            phrase: 'Search Bhuvan',
+            aliases: [
+                'search',
+                'search location',
+                'find place',
+                'find city',
+                'search place',
+                'location search',
+                'txtSearch',
+                'locate',
+                'locate place',
+                'locate city',
+                'locate location',
+                'where is',
+                'goto',
+                'search bhuvan maps',
+                'explore bhuvan maps',
+                'find locations on bhuvan',
+                'search bhuvan'
+            ],
             role: 'input',
             description: 'Search geographic place name or coordinates',
             intentAction: 'type'
@@ -1003,7 +1021,19 @@ export const BHUVAN_PLAYBOOK = {
         }
     ],
     formFieldHints: {
-        search: ['search', 'searchBox', 'txtSearch', 'locationInput', 'query', 'Search Location']
+        search: [
+            'search',
+            'searchBox',
+            'txtSearch',
+            'locationInput',
+            'query',
+            'Search Location',
+            'search bhuvan maps',
+            'Search Bhuvan',
+            'Explore Bhuvan maps',
+            'Find locations on Bhuvan',
+            'search-input'
+        ]
     }
 };
 /**
@@ -1495,10 +1525,10 @@ export function extractSearchQueryFromGoal(goal) {
     }
     // Strip trailing search box / prepositional phrases
     q = q.replace(/\s+(?:in|into|on|using|use)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page).*$/i, '');
-    // Strip portal mentions like "on amazon", "in flipkart", "across amazon and flipkart", "on isro portal"
-    q = q.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform))?(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform))?)*/i, '');
-    // Strip trailing "on map", "on the map", or remaining portal descriptors
-    q = q.replace(/\s+(?:on\s+(?:the\s+)?map|portal|website|site|page)$/i, '');
+    // Strip portal mentions like "on amazon", "in flipkart", "across amazon and flipkart", "on isro portal", "on bhuvan map"
+    q = q.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?)*/i, '');
+    // Strip trailing "on map", "on the map", "map", or remaining portal descriptors
+    q = q.replace(/\s+(?:(?:on\s+(?:the\s+)?)?map|portal|website|site|page)$/i, '');
     // Strip trailing action directives like "use the search bar and hit the website as said and then analyze", "and tell me the price", "and analyze"
     q = q.replace(/\s+(?:use|using)\s+(?:the\s+)?search\s+bar.*$/i, '');
     q = q.replace(/\s+(?:and|to|then)\s+(?:hit\s+the\s+website|tell\s+me|analyze|give\s+me|show\s+me|check\s+the\s+price|compare).*$/i, '');
