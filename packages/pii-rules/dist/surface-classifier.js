@@ -5,9 +5,9 @@
  * 1. Distinguishes page security zones:
  *    - PRIVATE_WORKSPACE: Webmail, banking, private chat, medical, HRMS (strict confidential handling)
  *    - HYBRID: YouTube, Twitter/X, GitHub, Amazon (private account tray vs public broadcast feed)
- *    - PUBLIC_BROADCAST: Bhuvan/ISRO, Wikipedia, open data, documentation, news
- * 2. Recognizes functional interactive map canvases (Bhuvan OpenLayers/Leaflet) to prevent blackout
- * 3. Distinguishes public media players from private WebRTC camera/telehealth streams
+ *    - PUBLIC_BROADCAST: Bhuvan/ISRO, Wikipedia, open data, documentation, news, generic web
+ * 2. Recognizes functional interactive map canvases (Bhuvan, OpenLayers, Leaflet, Mapbox, ArcGIS)
+ * 3. Distinguishes public media players from private WebRTC camera/telehealth streams (Domain-Agnostic)
  * 4. Identifies private account shells on hybrid platforms
  */
 const PRIVATE_WORKSPACE_PATTERNS = [
@@ -83,10 +83,16 @@ const PUBLIC_BROADCAST_PATTERNS = [
     /thehindu\.com/i
 ];
 /**
- * Classifies the active page into a security zone based on URL and optional document hints.
+ * Classifies the active page into a security zone based on generic URL path semantics and domain patterns.
  */
 export function classifyPageZone(url = '') {
     const cleanUrl = (url || '').toLowerCase();
+    // 1. Generic URL path & keyword semantics (Domain-Agnostic)
+    // Paths indicating private personal workspace, webmail, banking, or payroll
+    if (/(?:\/inbox|\/mail(?:\/|$|\?)|\/compose|\/messages(?:\/|$|\?)|\/chat(?:\/|$|\?)|\/banking|\/netbanking|\/payroll|\/hrms|\/myaccount|\/statements|\/checkout)\b/i.test(cleanUrl)) {
+        return 'private_workspace';
+    }
+    // 2. Domain pattern checks
     for (const pattern of PRIVATE_WORKSPACE_PATTERNS) {
         if (pattern.test(cleanUrl)) {
             return 'private_workspace';
@@ -102,10 +108,11 @@ export function classifyPageZone(url = '') {
             return 'public_broadcast';
         }
     }
+    // Default: Public web content
     return 'public_broadcast';
 }
 /**
- * Determines whether a canvas is a functional interactive map (e.g. Bhuvan, OpenLayers, Leaflet).
+ * Determines whether a canvas is a functional interactive map (e.g. Bhuvan, OpenLayers, Leaflet, Mapbox, ArcGIS).
  * Functional map canvases must NOT be blacked out, allowing the agent to view spatial layers and map coordinates.
  */
 export function isFunctionalMapCanvas(el, url = '') {
@@ -121,7 +128,7 @@ export function isFunctionalMapCanvas(el, url = '') {
         cleanUrl.includes('bhoonidhi')) {
         return true;
     }
-    // 2. DOM Class & Attribute checks for OpenLayers, Leaflet, Mapbox, Cesium
+    // 2. Universal DOM Class & Framework checks for OpenLayers, Leaflet, Mapbox, Cesium, ArcGIS, Google Maps
     try {
         const className = String(el.className || '').toLowerCase();
         const id = String(el.id || '').toLowerCase();
@@ -131,12 +138,14 @@ export function isFunctionalMapCanvas(el, url = '') {
             className.includes('mapboxgl') ||
             className.includes('maplibregl') ||
             className.includes('cesium') ||
+            className.includes('esri-view') ||
+            className.includes('gm-style') ||
             id.includes('map') ||
             id.includes('bhuvan')) {
             return true;
         }
         if (typeof el.closest === 'function') {
-            const parentMap = el.closest('.ol-viewport, .leaflet-container, .mapboxgl-map, .maplibregl-map, .cesium-viewer, #map, #map_canvas, [class*="map-container" i], [id*="bhuvan" i]');
+            const parentMap = el.closest('.ol-viewport, .leaflet-container, .mapboxgl-map, .maplibregl-map, .cesium-viewer, .esri-view, .gm-style, #map, #map_canvas, [class*="map-container" i], [id*="bhuvan" i]');
             if (parentMap)
                 return true;
         }
@@ -146,33 +155,42 @@ export function isFunctionalMapCanvas(el, url = '') {
 }
 /**
  * Determines whether a video element represents public media playback rather than a private WebRTC stream.
+ * Purely structural & domain-agnostic: checks HTMLMediaElement properties rather than domain whitelists alone.
  */
 export function isPublicMediaStream(el, url = '') {
     if (!el)
         return false;
     const cleanUrl = (url || '').toLowerCase();
-    // Public video streaming domains
-    const isStreamingDomain = cleanUrl.includes('youtube.com') ||
-        cleanUrl.includes('youtu.be') ||
-        cleanUrl.includes('vimeo.com') ||
-        cleanUrl.includes('twitch.tv') ||
-        cleanUrl.includes('dailymotion.com');
-    if (isStreamingDomain) {
-        // If it's a known player element or has an HTTP/blob source, it's public media
-        try {
-            const src = (el.src || el.currentSrc || el.getAttribute?.('src') || '').toLowerCase();
-            const hasHttpOrBlob = src.startsWith('http') || src.startsWith('blob:');
-            const isPlayerClass = (el.className || '').includes('video-stream') || (el.className || '').includes('html5-main-video');
-            // Ensure it is not an active camera WebRTC streamObject
-            const hasLiveCameraStream = Boolean(el.srcObject && el.srcObject.getVideoTracks?.()?.length > 0);
-            if (hasLiveCameraStream)
-                return false;
-            if (hasHttpOrBlob || isPlayerClass)
-                return true;
+    try {
+        // 1. Strict WebRTC / Camera Stream Check (Always Fail-Closed)
+        // If the video has an active WebRTC srcObject with camera tracks, it is private (e.g. Meet, Zoom, doctor consultation)
+        const hasLiveCameraStream = Boolean(el.srcObject && el.srcObject.getVideoTracks?.()?.length > 0);
+        if (hasLiveCameraStream)
+            return false;
+        // 2. Universal HTML5 Media Attributes & State (Domain-Agnostic)
+        const hasControls = Boolean(el.hasAttribute?.('controls') || el.controls === true);
+        const hasDuration = typeof el.duration === 'number' && Number.isFinite(el.duration) && el.duration > 0;
+        const hasTrackOrSource = Boolean(el.querySelector?.('source, track') || el.hasAttribute?.('poster'));
+        const src = (el.src || el.currentSrc || el.getAttribute?.('src') || '').toLowerCase();
+        const hasMediaSrc = src.startsWith('http://') || src.startsWith('https://') || src.startsWith('blob:');
+        const isPlayerClass = (el.className || '').includes('video-stream') ||
+            (el.className || '').includes('html5-main-video') ||
+            (el.className || '').includes('vjs-tech') ||
+            (el.className || '').includes('jw-video');
+        if ((hasControls || hasDuration || hasTrackOrSource || isPlayerClass) && hasMediaSrc) {
+            return true;
         }
-        catch (_) { }
-        return true;
+        // 3. Known Public video streaming domains (secondary fast-path)
+        const isStreamingDomain = cleanUrl.includes('youtube.com') ||
+            cleanUrl.includes('youtu.be') ||
+            cleanUrl.includes('vimeo.com') ||
+            cleanUrl.includes('twitch.tv') ||
+            cleanUrl.includes('dailymotion.com');
+        if (isStreamingDomain && (hasMediaSrc || isPlayerClass)) {
+            return true;
+        }
     }
+    catch (_) { }
     return false;
 }
 /**
@@ -186,7 +204,6 @@ export function isPrivateAccountShell(el) {
         const aria = (el.getAttribute?.('aria-label') || '').toLowerCase();
         const testId = (el.getAttribute?.('data-testid') || '').toLowerCase();
         const id = (el.id || '').toLowerCase();
-        const role = (el.getAttribute?.('role') || '').toLowerCase();
         if (aria.includes('google account') ||
             aria.includes('account menu') ||
             aria.includes('switch account') ||

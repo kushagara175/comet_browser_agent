@@ -14784,6 +14784,9 @@ as ORT format: ${n}`);
   ];
   function classifyPageZone(url = "") {
     const cleanUrl = (url || "").toLowerCase();
+    if (/(?:\/inbox|\/mail(?:\/|$|\?)|\/compose|\/messages(?:\/|$|\?)|\/chat(?:\/|$|\?)|\/banking|\/netbanking|\/payroll|\/hrms|\/myaccount|\/statements|\/checkout)\b/i.test(cleanUrl)) {
+      return "private_workspace";
+    }
     for (const pattern of PRIVATE_WORKSPACE_PATTERNS) {
       if (pattern.test(cleanUrl)) {
         return "private_workspace";
@@ -14811,11 +14814,11 @@ as ORT format: ${n}`);
     try {
       const className = String(el2.className || "").toLowerCase();
       const id2 = String(el2.id || "").toLowerCase();
-      if (className.includes("ol-layer") || className.includes("ol-unselectable") || className.includes("leaflet") || className.includes("mapboxgl") || className.includes("maplibregl") || className.includes("cesium") || id2.includes("map") || id2.includes("bhuvan")) {
+      if (className.includes("ol-layer") || className.includes("ol-unselectable") || className.includes("leaflet") || className.includes("mapboxgl") || className.includes("maplibregl") || className.includes("cesium") || className.includes("esri-view") || className.includes("gm-style") || id2.includes("map") || id2.includes("bhuvan")) {
         return true;
       }
       if (typeof el2.closest === "function") {
-        const parentMap = el2.closest('.ol-viewport, .leaflet-container, .mapboxgl-map, .maplibregl-map, .cesium-viewer, #map, #map_canvas, [class*="map-container" i], [id*="bhuvan" i]');
+        const parentMap = el2.closest('.ol-viewport, .leaflet-container, .mapboxgl-map, .maplibregl-map, .cesium-viewer, .esri-view, .gm-style, #map, #map_canvas, [class*="map-container" i], [id*="bhuvan" i]');
         if (parentMap)
           return true;
       }
@@ -14827,20 +14830,24 @@ as ORT format: ${n}`);
     if (!el2)
       return false;
     const cleanUrl = (url || "").toLowerCase();
-    const isStreamingDomain = cleanUrl.includes("youtube.com") || cleanUrl.includes("youtu.be") || cleanUrl.includes("vimeo.com") || cleanUrl.includes("twitch.tv") || cleanUrl.includes("dailymotion.com");
-    if (isStreamingDomain) {
-      try {
-        const src = (el2.src || el2.currentSrc || el2.getAttribute?.("src") || "").toLowerCase();
-        const hasHttpOrBlob = src.startsWith("http") || src.startsWith("blob:");
-        const isPlayerClass = (el2.className || "").includes("video-stream") || (el2.className || "").includes("html5-main-video");
-        const hasLiveCameraStream = Boolean(el2.srcObject && el2.srcObject.getVideoTracks?.()?.length > 0);
-        if (hasLiveCameraStream)
-          return false;
-        if (hasHttpOrBlob || isPlayerClass)
-          return true;
-      } catch (_) {
+    try {
+      const hasLiveCameraStream = Boolean(el2.srcObject && el2.srcObject.getVideoTracks?.()?.length > 0);
+      if (hasLiveCameraStream)
+        return false;
+      const hasControls = Boolean(el2.hasAttribute?.("controls") || el2.controls === true);
+      const hasDuration = typeof el2.duration === "number" && Number.isFinite(el2.duration) && el2.duration > 0;
+      const hasTrackOrSource = Boolean(el2.querySelector?.("source, track") || el2.hasAttribute?.("poster"));
+      const src = (el2.src || el2.currentSrc || el2.getAttribute?.("src") || "").toLowerCase();
+      const hasMediaSrc = src.startsWith("http://") || src.startsWith("https://") || src.startsWith("blob:");
+      const isPlayerClass = (el2.className || "").includes("video-stream") || (el2.className || "").includes("html5-main-video") || (el2.className || "").includes("vjs-tech") || (el2.className || "").includes("jw-video");
+      if ((hasControls || hasDuration || hasTrackOrSource || isPlayerClass) && hasMediaSrc) {
+        return true;
       }
-      return true;
+      const isStreamingDomain = cleanUrl.includes("youtube.com") || cleanUrl.includes("youtu.be") || cleanUrl.includes("vimeo.com") || cleanUrl.includes("twitch.tv") || cleanUrl.includes("dailymotion.com");
+      if (isStreamingDomain && (hasMediaSrc || isPlayerClass)) {
+        return true;
+      }
+    } catch (_) {
     }
     return false;
   }
@@ -14851,7 +14858,6 @@ as ORT format: ${n}`);
       const aria = (el2.getAttribute?.("aria-label") || "").toLowerCase();
       const testId = (el2.getAttribute?.("data-testid") || "").toLowerCase();
       const id2 = (el2.id || "").toLowerCase();
-      const role = (el2.getAttribute?.("role") || "").toLowerCase();
       if (aria.includes("google account") || aria.includes("account menu") || aria.includes("switch account") || aria.includes("sign out") || testId.includes("useravatar") || testId.includes("user-menu") || testId.includes("profile-button") || id2 === "avatar-btn") {
         return true;
       }

@@ -5,23 +5,24 @@
  * 1. Distinguishes page security zones:
  *    - PRIVATE_WORKSPACE: Webmail, banking, private chat, medical, HRMS (strict confidential handling)
  *    - HYBRID: YouTube, Twitter/X, GitHub, Amazon (private account tray vs public broadcast feed)
- *    - PUBLIC_BROADCAST: Bhuvan/ISRO, Wikipedia, open data, documentation, news
- * 2. Recognizes functional interactive map canvases (Bhuvan OpenLayers/Leaflet) to prevent blackout
- * 3. Distinguishes public media players from private WebRTC camera/telehealth streams
+ *    - PUBLIC_BROADCAST: Bhuvan/ISRO, Wikipedia, open data, documentation, news, generic web
+ * 2. Recognizes functional interactive map canvases (Bhuvan, OpenLayers, Leaflet, Mapbox, ArcGIS)
+ * 3. Distinguishes public media players from private WebRTC camera/telehealth streams (Domain-Agnostic)
  * 4. Identifies private account shells on hybrid platforms
  */
 export type PageZone = 'private_workspace' | 'hybrid' | 'public_broadcast';
 /**
- * Classifies the active page into a security zone based on URL and optional document hints.
+ * Classifies the active page into a security zone based on generic URL path semantics and domain patterns.
  */
 export declare function classifyPageZone(url?: string): PageZone;
 /**
- * Determines whether a canvas is a functional interactive map (e.g. Bhuvan, OpenLayers, Leaflet).
+ * Determines whether a canvas is a functional interactive map (e.g. Bhuvan, OpenLayers, Leaflet, Mapbox, ArcGIS).
  * Functional map canvases must NOT be blacked out, allowing the agent to view spatial layers and map coordinates.
  */
 export declare function isFunctionalMapCanvas(el: any, url?: string): boolean;
 /**
  * Determines whether a video element represents public media playback rather than a private WebRTC stream.
+ * Purely structural & domain-agnostic: checks HTMLMediaElement properties rather than domain whitelists alone.
  */
 export declare function isPublicMediaStream(el: any, url?: string): boolean;
 /**

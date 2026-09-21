@@ -758,6 +758,9 @@
   ];
   function classifyPageZone(url = "") {
     const cleanUrl = (url || "").toLowerCase();
+    if (/(?:\/inbox|\/mail(?:\/|$|\?)|\/compose|\/messages(?:\/|$|\?)|\/chat(?:\/|$|\?)|\/banking|\/netbanking|\/payroll|\/hrms|\/myaccount|\/statements|\/checkout)\b/i.test(cleanUrl)) {
+      return "private_workspace";
+    }
     for (const pattern of PRIVATE_WORKSPACE_PATTERNS) {
       if (pattern.test(cleanUrl)) {
         return "private_workspace";
@@ -785,11 +788,11 @@
     try {
       const className = String(el.className || "").toLowerCase();
       const id = String(el.id || "").toLowerCase();
-      if (className.includes("ol-layer") || className.includes("ol-unselectable") || className.includes("leaflet") || className.includes("mapboxgl") || className.includes("maplibregl") || className.includes("cesium") || id.includes("map") || id.includes("bhuvan")) {
+      if (className.includes("ol-layer") || className.includes("ol-unselectable") || className.includes("leaflet") || className.includes("mapboxgl") || className.includes("maplibregl") || className.includes("cesium") || className.includes("esri-view") || className.includes("gm-style") || id.includes("map") || id.includes("bhuvan")) {
         return true;
       }
       if (typeof el.closest === "function") {
-        const parentMap = el.closest('.ol-viewport, .leaflet-container, .mapboxgl-map, .maplibregl-map, .cesium-viewer, #map, #map_canvas, [class*="map-container" i], [id*="bhuvan" i]');
+        const parentMap = el.closest('.ol-viewport, .leaflet-container, .mapboxgl-map, .maplibregl-map, .cesium-viewer, .esri-view, .gm-style, #map, #map_canvas, [class*="map-container" i], [id*="bhuvan" i]');
         if (parentMap)
           return true;
       }
@@ -801,20 +804,24 @@
     if (!el)
       return false;
     const cleanUrl = (url || "").toLowerCase();
-    const isStreamingDomain = cleanUrl.includes("youtube.com") || cleanUrl.includes("youtu.be") || cleanUrl.includes("vimeo.com") || cleanUrl.includes("twitch.tv") || cleanUrl.includes("dailymotion.com");
-    if (isStreamingDomain) {
-      try {
-        const src = (el.src || el.currentSrc || el.getAttribute?.("src") || "").toLowerCase();
-        const hasHttpOrBlob = src.startsWith("http") || src.startsWith("blob:");
-        const isPlayerClass = (el.className || "").includes("video-stream") || (el.className || "").includes("html5-main-video");
-        const hasLiveCameraStream = Boolean(el.srcObject && el.srcObject.getVideoTracks?.()?.length > 0);
-        if (hasLiveCameraStream)
-          return false;
-        if (hasHttpOrBlob || isPlayerClass)
-          return true;
-      } catch (_) {
+    try {
+      const hasLiveCameraStream = Boolean(el.srcObject && el.srcObject.getVideoTracks?.()?.length > 0);
+      if (hasLiveCameraStream)
+        return false;
+      const hasControls = Boolean(el.hasAttribute?.("controls") || el.controls === true);
+      const hasDuration = typeof el.duration === "number" && Number.isFinite(el.duration) && el.duration > 0;
+      const hasTrackOrSource = Boolean(el.querySelector?.("source, track") || el.hasAttribute?.("poster"));
+      const src = (el.src || el.currentSrc || el.getAttribute?.("src") || "").toLowerCase();
+      const hasMediaSrc = src.startsWith("http://") || src.startsWith("https://") || src.startsWith("blob:");
+      const isPlayerClass = (el.className || "").includes("video-stream") || (el.className || "").includes("html5-main-video") || (el.className || "").includes("vjs-tech") || (el.className || "").includes("jw-video");
+      if ((hasControls || hasDuration || hasTrackOrSource || isPlayerClass) && hasMediaSrc) {
+        return true;
       }
-      return true;
+      const isStreamingDomain = cleanUrl.includes("youtube.com") || cleanUrl.includes("youtu.be") || cleanUrl.includes("vimeo.com") || cleanUrl.includes("twitch.tv") || cleanUrl.includes("dailymotion.com");
+      if (isStreamingDomain && (hasMediaSrc || isPlayerClass)) {
+        return true;
+      }
+    } catch (_) {
     }
     return false;
   }
@@ -825,7 +832,6 @@
       const aria = (el.getAttribute?.("aria-label") || "").toLowerCase();
       const testId = (el.getAttribute?.("data-testid") || "").toLowerCase();
       const id = (el.id || "").toLowerCase();
-      const role = (el.getAttribute?.("role") || "").toLowerCase();
       if (aria.includes("google account") || aria.includes("account menu") || aria.includes("switch account") || aria.includes("sign out") || testId.includes("useravatar") || testId.includes("user-menu") || testId.includes("profile-button") || id === "avatar-btn") {
         return true;
       }
