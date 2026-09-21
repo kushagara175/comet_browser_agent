@@ -3046,6 +3046,12 @@ if (typeof document !== 'undefined') {
         voiceOverlayModeIcon.textContent = currentVoiceMode === 'talk' ? '💬' : '📝';
       }
 
+      // Agent auto pill label matching Image 2
+      const voiceAgentPillLabel = document.getElementById('voiceAgentPillLabel');
+      if (voiceAgentPillLabel) {
+        voiceAgentPillLabel.textContent = currentVoiceMode === 'talk' ? 'Live Conversation' : 'Agent (auto)';
+      }
+
       // Borderless shimmering single-mode toggle
       const voiceShimmerActiveText = document.getElementById('voiceShimmerActiveText');
       if (voiceShimmerActiveText) {
@@ -3083,6 +3089,15 @@ if (typeof document !== 'undefined') {
     }
 
     updateVoiceModeUI();
+
+    // Image 2 Agent (auto) pill toggle handler
+    const voiceAgentModePill = document.getElementById('voiceAgentModePill');
+    voiceAgentModePill?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      currentVoiceMode = currentVoiceMode === 'talk' ? 'dictate' : 'talk';
+      try { localStorage.setItem('privapilot_voice_mode', currentVoiceMode); } catch (_) {}
+      updateVoiceModeUI();
+    });
 
     // Borderless shimmering single-mode toggle button click handler
     const voiceShimmerToggleBtnEl = document.getElementById('voiceShimmerToggleBtn');
@@ -3695,15 +3710,15 @@ if (typeof document !== 'undefined') {
               type: 'mobile',
               position: 'absolute',
               borderRadius: 0,
-              scale: 1.25,
+              scale: 1.0,
               bend: 0,
-              reach: 2.8,
-              spread: 0.45,
+              reach: 1.25,
+              spread: 0.5,
               bandWidth: 0,
               bandStrength: 0,
-              bandOffset: -50,
-              flow: 60,
-              idle: 0.28,
+              bandOffset: -30,
+              flow: 48,
+              idle: 0.16,
               breatheDuration: 4.8,
               colorVariant: 'colorful'
             });
@@ -3972,6 +3987,21 @@ if (typeof document !== 'undefined') {
     }
 
     closeVoiceBtn?.addEventListener('click', closeVoiceMode);
+    const voiceCloseActionBtn = document.getElementById('voiceCloseActionBtn');
+    voiceCloseActionBtn?.addEventListener('click', closeVoiceMode);
+
+    const voiceMicActionBtn = document.getElementById('voiceMicActionBtn');
+    voiceMicActionBtn?.addEventListener('click', () => {
+      if (voiceAudioStream) {
+        const tracks = voiceAudioStream.getAudioTracks();
+        if (tracks.length > 0) {
+          const isEnabled = tracks[0].enabled;
+          tracks.forEach(t => { t.enabled = !isEnabled; });
+          voiceMicActionBtn.classList.toggle('muted', isEnabled);
+        }
+      }
+    });
+
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && isVoiceActive) {
         closeVoiceMode();

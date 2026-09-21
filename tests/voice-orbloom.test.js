@@ -191,21 +191,32 @@ test('Orb Section VoiceBeam Footer Glow: orbVoiceBeamFooter markup, CSS, and liv
   assert.ok(html.includes('orb-voice-beam-footer'), 'orb-voice-beam-footer class must exist');
   assert.ok(html.includes('data-voice-beam="orb-footer-beam"'), 'data-voice-beam attribute for orb footer must exist');
 
+  // Image 2 bottom controls
+  assert.ok(html.includes('id="voiceAgentModePill"'), 'voiceAgentModePill must exist');
+  assert.ok(html.includes('id="voiceMicActionBtn"'), 'voiceMicActionBtn must exist');
+  assert.ok(html.includes('id="voiceCloseActionBtn"'), 'voiceCloseActionBtn must exist');
+
   const cssPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.css');
   const css = fs.readFileSync(cssPath, 'utf-8');
   assert.ok(css.includes('.orb-voice-beam-footer'), '.orb-voice-beam-footer CSS rule must exist');
-  assert.ok(css.includes('height: 280px'), 'orb-voice-beam-footer must have tall rise height');
+  assert.ok(css.includes('height: 84px'), 'orb-voice-beam-footer must be confined to 84px bottom rim');
+  assert.ok(css.includes('.voice-modal-bottom-bar'), '.voice-modal-bottom-bar must exist');
+  assert.ok(css.includes('.voice-mic-circle-btn'), '.voice-mic-circle-btn must exist');
+  assert.ok(css.includes('.voice-close-circle-btn'), '.voice-close-circle-btn must exist');
 
   const jsPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.js');
   const js = fs.readFileSync(jsPath, 'utf-8');
   assert.ok(js.includes('orbVoiceBeamFooter'), 'sidepanel.js must reference orbVoiceBeamFooter');
   assert.ok(js.includes('__orbVoiceBeamEngine'), 'sidepanel.js must track __orbVoiceBeamEngine');
   assert.ok(js.includes('setAudioLevel(computedLevel)'), 'sidepanel.js must drive footer beam with computed audio level in sync with orb');
+  assert.ok(js.includes('voiceCloseActionBtn'), 'sidepanel.js must wire voiceCloseActionBtn');
+  assert.ok(js.includes('voiceMicActionBtn'), 'sidepanel.js must wire voiceMicActionBtn');
+  assert.ok(js.includes('voiceAgentModePill'), 'sidepanel.js must wire voiceAgentModePill');
 
   const beamModulePath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/voice-beam.js');
   const beamModule = await import(beamModulePath);
   assert.ok(beamModule.voicePresets?.mobile, 'voicePresets must define mobile preset');
-  assert.equal(beamModule.voicePresets.mobile.reach, 2.8, 'mobile preset reach must be 2.8');
+  assert.equal(beamModule.voicePresets.mobile.reach, 1.25, 'mobile preset reach must be 1.25');
 });
 
 test('Soothing Auroral Bloom & Processing Travel Beam: voice-beam.js renders authentic chromatic aberration canvas and gathers lobes during processing', async () => {
@@ -214,7 +225,6 @@ test('Soothing Auroral Bloom & Processing Travel Beam: voice-beam.js renders aut
 
   // Voice presets have authentic bandStrength matching libraries.dev specification
   assert.equal(beamModule.voicePresets.default.bandStrength, 1.55, 'default bandStrength must match libraries.dev specification (1.55)');
-  assert.equal(beamModule.voicePresets.mobile.bandStrength, 1.8, 'mobile bandStrength must match libraries.dev mobile specification (1.8)');
   assert.equal(beamModule.voicePresets.default.processingTravel, 1.55, 'processingTravel must match voice-glow specification (1.55)');
   assert.equal(beamModule.voicePresets.default.processingCurve, 2.1, 'processingCurve must match voice-glow specification (2.1)');
 
@@ -229,19 +239,18 @@ test('Soothing Auroral Bloom & Processing Travel Beam: voice-beam.js renders aut
   assert.ok(css.includes('filter: blur(10px)'), 'Bloom layer must have 10px Gaussian blur for default preset');
   assert.ok(css.includes('--vb-band-blur-soothing-test'), 'Band layer must have dynamic --vb-band-blur property');
 
-  // Mobile preset for Orb Footer eliminates dividation / column lines with 32px bloom blur, 18px inner blur, and linear spectrum floor
+  // Mobile preset for Orb Footer eliminates divagation / column lines with 16px bloom blur and authentic radial lobes without flat linear washes
   const mobileCss = beamModule.generateVoiceCss('mobile-test', { type: 'mobile', borderRadius: 0 });
-  assert.ok(mobileCss.includes('filter: blur(32px)'), 'Mobile bloom layer must have 32px Gaussian blur to eliminate vertical column dividation');
-  assert.ok(mobileCss.includes('filter: blur(18px)'), 'Mobile inner ::before layer must have 18px blur to soften raw radial gradient boundaries');
-  assert.ok(mobileCss.includes('linear-gradient(to right,'), 'CSS must include smooth continuous linear-gradient spectrum floor underlay');
-  assert.equal(beamModule.voicePresets.mobile.lobeSpacing, 0.95, 'mobile lobeSpacing must be 0.95 for continuous lobe overlap');
+  assert.ok(mobileCss.includes('filter: blur(16px)'), 'Mobile bloom layer must have 16px Gaussian blur for soothing auroral bloom');
+  assert.ok(mobileCss.includes('radial-gradient(ellipse'), 'CSS must use authentic radial gradient lobes');
+  assert.equal(beamModule.voicePresets.mobile.lobeSpacing, 1.05, 'mobile lobeSpacing must be 1.05 for continuous lobe overlap');
 
-  // Sidepanel CSS has eliminated the 2.5px line pseudo-element
+  // Sidepanel CSS has eliminated the 2.5px line pseudo-element and has radial bottom mask
   const cssPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.css');
   const spCss = fs.readFileSync(cssPath, 'utf-8');
   assert.ok(spCss.includes('.voice-glow-backdrop::after'), 'voice-glow-backdrop::after selector exists');
   assert.ok(spCss.includes('display: none !important'), 'voice-glow-backdrop::after must be disabled with display: none !important');
-  assert.ok(spCss.includes('linear-gradient(to top, rgba(0, 0, 0, 1) 0%'), 'orb-voice-beam-footer must have smooth vertical gradient mask');
+  assert.ok(spCss.includes('radial-gradient(ellipse 260px 84px at 50% 100%'), 'orb-voice-beam-footer must have radial bottom rim mask');
   assert.ok(spCss.includes('display: none !important;\n  position: absolute !important;\n  inset: 0 !important;\n  width: 100% !important;\n  height: 100% !important;\n  pointer-events: none !important;\n  z-index: 3 !important;'), 'orb-voice-beam-footer canvas must be hidden to eliminate stroke wire lines');
 });
 

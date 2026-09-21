@@ -4009,9 +4009,9 @@ html, body {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(10, 12, 18, 0.42);
-  backdrop-filter: blur(6px) saturate(120%);
-  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  background: rgba(13, 15, 18, 0.96); /* Solid, premium dark background as in Image 2 */
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -4019,6 +4019,7 @@ html, body {
   opacity: 1;
   visibility: visible;
   transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.25s ease;
+  overflow: hidden;
 }
 
 .voice-modal.hidden {
@@ -4052,7 +4053,7 @@ html, body {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-/* Bottom Footer VoiceBeam Glow for Voice Modal (Mobile Type from libraries.dev/voice) */
+/* Bottom Footer VoiceBeam Glow for Voice Modal (Confined to bottom rim as in Image 2) */
 .orb-voice-beam-footer,
 [data-voice-beam="orb-footer-beam"] {
   position: absolute !important;
@@ -4060,13 +4061,13 @@ html, body {
   left: 0 !important;
   right: 0 !important;
   width: 100% !important;
-  height: 280px !important;
+  height: 84px !important;
   pointer-events: none !important;
   z-index: 2 !important;
   overflow: hidden !important;
   border-radius: 0 0 16px 16px !important;
-  -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 75%, rgba(0, 0, 0, 0) 100%);
-  mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 75%, rgba(0, 0, 0, 0) 100%);
+  -webkit-mask-image: radial-gradient(ellipse 260px 84px at 50% 100%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.8) 40%, rgba(0, 0, 0, 0) 100%);
+  mask-image: radial-gradient(ellipse 260px 84px at 50% 100%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.8) 40%, rgba(0, 0, 0, 0) 100%);
 }
 
 .orb-voice-beam-footer canvas,
@@ -4090,6 +4091,96 @@ html, body {
   z-index: 1 !important;
 }
 
+/* Bottom Controls Bar matching Image 2 */
+.voice-modal-bottom-bar {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.voice-agent-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f3f4f6;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.voice-agent-pill:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.24);
+  transform: translateY(-1px);
+}
+
+.voice-modal-action-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.voice-mic-circle-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #2dd4bf;
+  color: #0f172a;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(45, 212, 191, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.voice-mic-circle-btn:hover {
+  transform: scale(1.06);
+  box-shadow: 0 6px 20px rgba(45, 212, 191, 0.45);
+}
+
+.voice-mic-circle-btn.muted {
+  background: rgba(255, 255, 255, 0.12);
+  color: #9ca3af;
+  box-shadow: none;
+}
+
+.voice-close-circle-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.voice-close-circle-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  transform: scale(1.06);
+}
+
 .voice-orb-stage {
   position: relative;
   z-index: 5;
@@ -4104,13 +4195,13 @@ html, body {
 }
 
 .voice-live-transcript {
-  min-height: 24px;
-  max-width: 280px;
+  min-height: 28px;
+  max-width: 290px;
   text-align: center;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
-  line-height: 1.5;
-  color: #f1f3f4;
+  line-height: 1.45;
+  color: #f3f4f6;
   letter-spacing: -0.01em;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
   transition: all 0.2s ease;
