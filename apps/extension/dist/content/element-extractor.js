@@ -216,8 +216,9 @@ export class ElementExtractor {
                 }
                 else {
                     // For buttons, links, custom clickable controls
-                    const textContent = el.innerText?.trim() || '';
-                    const aria = (typeof el.getAttribute === 'function' ? el.getAttribute('aria-label')?.trim() || el.getAttribute('title')?.trim() : '') || '';
+                    const textContent = el.innerText?.trim() || (el.textContent && el.textContent.trim().length < 80 ? el.textContent.trim() : '') || '';
+                    const aria = (typeof el.getAttribute === 'function' ? el.getAttribute('aria-label')?.trim() || el.getAttribute('title')?.trim() : '') ||
+                        (el.querySelector?.('[aria-label]')?.getAttribute('aria-label')?.trim() || '');
                     let childName = '';
                     if (!textContent && !aria) {
                         const svgChild = el.querySelector('svg');
@@ -239,8 +240,54 @@ export class ElementExtractor {
                                 childName = 'Search';
                             }
                         }
+                        // data-testid semantic derivation (e.g. Twitter/X "AppTabBar_Bookmarks_Link" -> "Bookmarks")
+                        if (!childName) {
+                            const testId = (typeof el.getAttribute === 'function' ? el.getAttribute('data-testid') : null) ||
+                                el.querySelector?.('[data-testid]')?.getAttribute('data-testid') || '';
+                            if (testId) {
+                                const cleaned = testId
+                                    .replace(/^(?:AppTabBar_|SideNav_|nav_|btn_|tab_)/i, '')
+                                    .replace(/(?:_Link|_Button|_Item|_Tab)$/i, '')
+                                    .replace(/([A-Z])/g, ' $1')
+                                    .trim();
+                                if (cleaned.length > 1) {
+                                    childName = cleaned;
+                                }
+                            }
+                        }
+                        // href semantic derivation for links (e.g. "/i/bookmarks" -> "Bookmarks", or downloadable files)
+                        if (!childName && (tag === 'a' || typeof el.getAttribute === 'function')) {
+                            const rawHref = el.href || el.getAttribute('href') || '';
+                            if (rawHref) {
+                                const hrefLower = rawHref.toLowerCase();
+                                if (hrefLower.includes('/i/bookmarks') || hrefLower.endsWith('/bookmarks'))
+                                    childName = 'Bookmarks';
+                                else if (hrefLower.includes('/notifications'))
+                                    childName = 'Notifications';
+                                else if (hrefLower.includes('/messages'))
+                                    childName = 'Messages';
+                                else if (hrefLower.includes('/explore'))
+                                    childName = 'Explore';
+                                else if (hrefLower.includes('/home'))
+                                    childName = 'Home';
+                                else if (hrefLower.includes('/lists') && !hrefLower.includes('search'))
+                                    childName = 'Lists';
+                                else if (hrefLower.includes('/settings'))
+                                    childName = 'Settings';
+                                else {
+                                    const docMatch = hrefLower.match(/\/([^\/?#]+\.(?:pdf|zip|csv|kmz|kml|doc|docx|xlsx|tif|geotiff))(?:[?#]|$)/i);
+                                    if (docMatch) {
+                                        const rawFile = decodeURIComponent(docMatch[1]).replace(/[_-]+/g, ' ');
+                                        childName = `Download ${rawFile}`;
+                                    }
+                                }
+                            }
+                        }
                     }
                     rawName = textContent || aria || childName || role;
+                    if (tag === 'a' && el.hasAttribute?.('download') && !rawName.toLowerCase().includes('download')) {
+                        rawName = `Download ${rawName}`;
+                    }
                 }
                 // Extract container / row context (e.g. table row, card, list item)
                 let containerContext;
@@ -352,13 +399,16 @@ export class ElementExtractor {
                             // Check if parent element represents user account identity (e.g. User-Name header on X, user-menu button on Claude/ChatGPT, account header on Flipkart)
                             const isAccountIdentity = Boolean(typeof parent.closest === 'function' &&
                                 parent.closest('[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [title*="profile" i], [title*="account" i], [class*="account" i], [class*="profile" i], [class*="user" i], [data-testid*="account" i], [data-testid*="profile" i]'));
-                            // Check if parent element represents delivery address / shipping location widget
+                            // Check if parent element represents delivery address / shipping location widget or address footer
                             const isDeliveryAddressContainer = Boolean(typeof parent.closest === 'function' &&
-                                parent.closest('[class*="deliver" i], [id*="deliver" i], [class*="address" i], [id*="address" i], [class*="location" i], [id*="location" i], [class*="pincode" i], [id*="pincode" i]'));
+                                (parent.closest('[class*="deliver" i], [id*="deliver" i], [class*="address" i], [id*="address" i], [class*="location" i], [id*="location" i], [class*="pincode" i], [id*="pincode" i], address') ||
+                                    parent.parentElement?.textContent?.includes('Address')));
                             // Scan text node for PII matches
                             let matches = scanTextForPII(content);
                             if (matches.length === 0 && isDeliveryAddressContainer && trimmed.length > 2 && trimmed.length < 120 &&
-                                (/\b(?:home|work|office|deliver|katra|nagar|colony|road|street|\d{5,6})\b/i.test(trimmed))) {
+                                !/^(?:address|location|pin\s*code|postal\s*code)$/i.test(trimmed) &&
+                                (/\b(?:home|work|office|deliver|katra|nagar|colony|road|street|bhavan|bhawan|marg|lane|avenue|floor|block|sector|plot|post|pin|[1-9][0-9]{2}\s?[0-9]{3})\b/i.test(trimmed) ||
+                                    /[1-9][0-9]{2}\s?[0-9]{3}/.test(trimmed))) {
                                 matches = [{
                                         category: 'address',
                                         startIndex: 0,
@@ -733,7 +783,7 @@ export class ElementExtractor {
                     contentSummaries.push(`Heading: ${text}`);
                 }
             });
-            // Extract table row counts
+            // Extract table row counts and key-value specifications (common on ISRO mission & data pages)
             const tables = doc.querySelectorAll('table, [role="table"], [role="grid"]');
             tables.forEach((tbl, idx) => {
                 const rows = tbl.querySelectorAll('tr, [role="row"]');
@@ -742,6 +792,40 @@ export class ElementExtractor {
                     .filter(Boolean)
                     .slice(0, 6);
                 contentSummaries.push(`Table ${idx + 1}: ${rows.length > 0 ? rows.length - 1 : 0} records; columns: [${headers.join(', ')}]`);
+                // Extract key-value specifications from 2-column tables
+                for (let r = 0; r < Math.min(rows.length, 8); r++) {
+                    const cells = rows[r].querySelectorAll('th, td, [role="cell"], [role="columnheader"]');
+                    if (cells.length === 2) {
+                        const k = (cells[0].textContent || '').trim().replace(/\s+/g, ' ');
+                        const v = (cells[1].textContent || '').trim().replace(/\s+/g, ' ');
+                        if (k && v && k.length > 1 && k.length < 50 && v.length < 150) {
+                            contentSummaries.push(`Spec: ${k}: ${v}`);
+                        }
+                    }
+                }
+            });
+            // Extract definition lists (<dl>, <dt>, <dd>)
+            const dls = doc.querySelectorAll('dl');
+            dls.forEach(dl => {
+                const dts = dl.querySelectorAll('dt');
+                const dds = dl.querySelectorAll('dd');
+                for (let i = 0; i < Math.min(dts.length, dds.length, 6); i++) {
+                    const term = (dts[i].textContent || '').trim().replace(/\s+/g, ' ');
+                    const desc = (dds[i].textContent || '').trim().replace(/\s+/g, ' ');
+                    if (term && desc && term.length < 50) {
+                        contentSummaries.push(`Spec: ${term}: ${desc.slice(0, 120)}`);
+                    }
+                }
+            });
+            // Extract visible downloadable document links
+            const docLinks = doc.querySelectorAll('a[href$=".pdf" i], a[href$=".zip" i], a[href$=".csv" i], a[href$=".kmz" i]');
+            docLinks.forEach(a => {
+                const aText = (a.textContent || a.getAttribute('aria-label') || '').trim().replace(/\s+/g, ' ');
+                const aHref = a.getAttribute('href') || '';
+                const fileName = aHref.split('/').pop()?.split('?')[0] || '';
+                if (fileName && contentSummaries.length < 25) {
+                    contentSummaries.push(`Document: "${aText || fileName}" (${fileName})`);
+                }
             });
         }
         catch {

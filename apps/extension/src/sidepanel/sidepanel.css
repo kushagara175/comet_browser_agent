@@ -98,70 +98,49 @@ html, body {
 }
 
 /* ========================================= */
-/* VIEW 0: CONNECT TO VALLEY (LIVE SHADER)   */
+/* VIEW 0: COMET FULLSCREEN WELCOME SCREEN   */
 /* ========================================= */
 
 .loading-wrapper {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  width: 100%;
-  flex: 1;
-  min-height: 0;
-  background: transparent;
-  padding: 50px 24px;
-  text-align: center;
-  position: relative;
-  z-index: 20;
-}
-
-.loading-logo-wrap {
-  margin-bottom: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.export-logo-img {
-  width: 96px;
-  height: 96px;
-  object-fit: contain;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 999999;
   display: block;
-  filter: drop-shadow(0 6px 24px rgba(37, 99, 235, 0.60));
+  background: #000000;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  overflow: hidden;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.connecting-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: #ffffff;
-  letter-spacing: -0.4px;
-  margin-bottom: 36px;
-  line-height: 1.25;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+.loading-wrapper.fade-out {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
-.spinner-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.clean-spinner {
-  width: 24px;
-  height: 24px;
-  border: 2.5px solid rgba(255, 255, 255, 0.25);
-  border-top-color: #ffffff;
-  border-right-color: rgba(255, 255, 255, 0.85);
-  border-radius: 50%;
-  animation: spin 0.9s linear infinite;
-  box-shadow: 0 0 12px rgba(255, 255, 255, 0.3);
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.comet-splash-img {
+  width: 100%;
+  height: 100%;
+  min-width: 100%;
+  min-height: 100%;
+  object-fit: cover;
+  object-position: center center;
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 /* ========================================= */
@@ -1680,28 +1659,925 @@ html, body {
   border-top: none;
 }
 
-/* Elevated Gemini Chat Input Card (Outer Container - Rectanglish Edgy Design) */
+@property --beam-x-_R_0_ {
+  syntax: "<number>";
+  initial-value: 0;
+  inherits: true;
+}
+
+@property --beam-w-_R_0_ {
+  syntax: "<number>";
+  initial-value: 1;
+  inherits: true;
+}
+
+@property --beam-h-_R_0_ {
+  syntax: "<number>";
+  initial-value: 1;
+  inherits: true;
+}
+
+@property --beam-spike-_R_0_ {
+  syntax: "<number>";
+  initial-value: 1;
+  inherits: true;
+}
+
+@property --beam-spike2-_R_0_ {
+  syntax: "<number>";
+  initial-value: 1;
+  inherits: true;
+}
+
+@property --beam-edge-_R_0_ {
+  syntax: "<number>";
+  initial-value: 1;
+  inherits: true;
+}
+
+@property --beam-opacity-_R_0_ {
+  syntax: "<number>";
+  initial-value: 0;
+  inherits: true;
+}
+
+[data-beam="_R_0_"] {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+[data-beam="_R_0_"][data-active] {
+  animation:
+    beam-travel-_R_0_ 3.1s linear infinite,
+    beam-edge-fade-_R_0_ 3.1s linear infinite,
+    beam-breathe-_R_0_ 4.0s ease-in-out infinite,
+    beam-spike-_R_0_ 4.1s ease-in-out infinite,
+    beam-spike2-_R_0_ 5.3s ease-in-out infinite,
+    beam-fade-in-_R_0_ 0.6s ease forwards;
+}
+
+[data-beam="_R_0_"][data-fading] {
+  animation:
+    beam-travel-_R_0_ 3.1s linear infinite,
+    beam-edge-fade-_R_0_ 3.1s linear infinite,
+    beam-breathe-_R_0_ 4.0s ease-in-out infinite,
+    beam-spike-_R_0_ 4.1s ease-in-out infinite,
+    beam-spike2-_R_0_ 5.3s ease-in-out infinite,
+    beam-fade-out-_R_0_ 0.5s ease forwards;
+}
+
+[data-beam="_R_0_"][data-active]::after,
+[data-beam="_R_0_"][data-fading]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 15px;
+  padding: 1px;
+  clip-path: inset(0 round 16px);
+  background: radial-gradient(
+        ellipse calc(24px * var(--beam-w-_R_0_)) calc(28px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100%) calc(100% + 2px),
+        rgba(255, 255, 255, 0.38) 0%,
+        rgba(255, 255, 255, 0.12) 30%,
+        transparent 65%
+      ), radial-gradient(ellipse calc(36px * var(--beam-w-_R_0_)) calc(36px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100%) calc(100% + 2px), rgb(255, 50, 100), transparent),
+       radial-gradient(ellipse calc(30px * var(--beam-w-_R_0_)) calc(32px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% + 39px) calc(100%), rgb(40, 180, 220), transparent),
+       radial-gradient(ellipse calc(33px * var(--beam-w-_R_0_)) calc(28px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% - 36px) calc(100% + 2px), rgb(50, 200, 80), transparent),
+       radial-gradient(ellipse calc(29px * var(--beam-w-_R_0_)) calc(34px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% - 54px) calc(100%), rgb(180, 40, 240), transparent),
+       radial-gradient(ellipse calc(27px * var(--beam-w-_R_0_)) calc(30px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% + 51px) calc(100% - 1px), rgb(255, 160, 30), transparent),
+       radial-gradient(ellipse calc(36px * var(--beam-w-_R_0_)) calc(24px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% + 21px) calc(100% + 1px), rgb(100, 70, 255), transparent),
+       radial-gradient(ellipse calc(30px * var(--beam-w-_R_0_)) calc(22px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% - 21px) calc(100%), rgb(40, 140, 255), transparent),
+       radial-gradient(ellipse calc(25px * var(--beam-w-_R_0_)) calc(28px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% + 66px) calc(100% + 1px), rgb(240, 50, 180), transparent),
+       radial-gradient(ellipse calc(23px * var(--beam-w-_R_0_)) calc(30px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% - 66px) calc(100% - 1px), rgb(30, 185, 170), transparent);
+  -webkit-mask:
+    radial-gradient(
+      ellipse calc(78px * var(--beam-w-_R_0_)) calc(60px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100%) 100%,
+      white 0%, rgba(255, 255, 255, 0.5) 45%, transparent 100%
+    ),
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: source-in, xor;
+  mask:
+    radial-gradient(
+      ellipse calc(78px * var(--beam-w-_R_0_)) calc(60px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100%) 100%,
+      white 0%, rgba(255, 255, 255, 0.5) 45%, transparent 100%
+    ),
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: intersect, exclude;
+  pointer-events: none;
+  z-index: 2;
+  opacity: calc(var(--beam-opacity-_R_0_) * var(--beam-edge-_R_0_) * 1.14 * var(--beam-stroke-opacity, 1) * var(--beam-strength, 1));
+  animation: beam-hue-shift-_R_0_ 12s ease-in-out infinite;
+}
+
+[data-beam="_R_0_"][data-active]::before,
+[data-beam="_R_0_"][data-fading]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: radial-gradient(ellipse calc(33px * var(--beam-w-_R_0_)) calc(30px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100%) calc(100%), rgba(255, 50, 100, 0.48), transparent),
+    radial-gradient(ellipse calc(24px * var(--beam-w-_R_0_)) calc(26px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% + 39px) calc(100% - 3px), rgba(40, 180, 220, 0.42), transparent),
+    radial-gradient(ellipse calc(27px * var(--beam-w-_R_0_)) calc(24px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% - 36px) calc(100%), rgba(50, 200, 80, 0.48), transparent),
+    radial-gradient(ellipse calc(23px * var(--beam-w-_R_0_)) calc(28px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% - 54px) calc(100% - 2px), rgba(180, 40, 240, 0.42), transparent),
+    radial-gradient(ellipse calc(24px * var(--beam-w-_R_0_)) calc(24px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% + 51px) calc(100% - 1px), rgba(255, 160, 30, 0.50), transparent),
+    radial-gradient(ellipse calc(30px * var(--beam-w-_R_0_)) calc(20px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% + 21px) calc(100%), rgba(100, 70, 255, 0.45), transparent),
+    radial-gradient(ellipse calc(25px * var(--beam-w-_R_0_)) calc(18px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% - 21px) calc(100% - 2px), rgba(40, 140, 255, 0.40), transparent),
+    radial-gradient(ellipse calc(21px * var(--beam-w-_R_0_)) calc(24px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% + 66px) calc(100%), rgba(240, 50, 180, 0.45), transparent),
+    radial-gradient(ellipse calc(18px * var(--beam-w-_R_0_)) calc(26px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100% - 66px) calc(100% - 1px), rgba(30, 185, 170, 0.52), transparent);
+  box-shadow: inset 0 0 9px 1px rgba(255, 255, 255, 0.1);
+  -webkit-mask-image:
+    radial-gradient(
+      ellipse calc(78px * var(--beam-w-_R_0_)) calc(60px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100%) 100%,
+      white 0%, rgba(255, 255, 255, 0.5) 45%, transparent 100%
+    ),
+    linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white),
+    linear-gradient(to right, white, transparent 28px, transparent calc(100% - 28px), white);
+  -webkit-mask-composite: source-in, source-over;
+  mask-image:
+    radial-gradient(
+      ellipse calc(78px * var(--beam-w-_R_0_)) calc(60px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100%) 100%,
+      white 0%, rgba(255, 255, 255, 0.5) 45%, transparent 100%
+    ),
+    linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white),
+    linear-gradient(to right, white, transparent 28px, transparent calc(100% - 28px), white);
+  mask-composite: intersect, add;
+  pointer-events: none;
+  z-index: 1;
+  opacity: calc(var(--beam-opacity-_R_0_) * var(--beam-edge-_R_0_) * 0.70 * var(--beam-inner-opacity, 1) * var(--beam-strength, 1));
+  clip-path: inset(0 round 16px);
+  animation: beam-hue-shift-_R_0_ 12s ease-in-out infinite;
+}
+
+[data-beam="_R_0_"] [data-beam-bloom] {
+  display: none;
+  position: absolute;
+  inset: 0;
+  border-radius: 15px;
+  clip-path: inset(0 round 16px);
+  padding: 0;
+  -webkit-mask: radial-gradient(
+    ellipse calc(84px * var(--beam-w-_R_0_)) calc(110px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100%) 100%,
+    white 0%, rgba(255, 255, 255, 0.5) 35%, transparent 100%
+  );
+  -webkit-mask-composite: source-over;
+  mask: radial-gradient(
+    ellipse calc(84px * var(--beam-w-_R_0_)) calc(110px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100%) 100%,
+    white 0%, rgba(255, 255, 255, 0.5) 35%, transparent 100%
+  );
+  mask-composite: add;
+  background: radial-gradient(ellipse calc(0.8px * var(--beam-spike-_R_0_)) calc(92px * var(--beam-h-_R_0_)) at 8% calc(100% - 2px), rgb(255, 60, 80), rgb(255, 60, 80) 30%, transparent 88%),
+       radial-gradient(ellipse calc(10px * var(--beam-spike2-_R_0_)) calc(35px * var(--beam-h-_R_0_)) at 22% calc(100% - 4px), rgba(40, 190, 180, 0.98), rgba(40, 190, 180, 0.49) 50%, transparent 95%),
+       radial-gradient(ellipse calc(2px * (2 - var(--beam-spike-_R_0_))) calc(72px * var(--beam-h-_R_0_)) at 36% calc(100% - 3px), rgb(100, 70, 255), rgba(100, 70, 255, 1) 40%, transparent 90%),
+       radial-gradient(ellipse calc(14px * var(--beam-spike2-_R_0_)) calc(28px * var(--beam-h-_R_0_)) at 50% calc(100% - 2px), rgba(255, 170, 40, 0.59), rgba(255, 170, 40, 0.29) 55%, transparent 96%),
+       radial-gradient(ellipse calc(1.2px * (2 - var(--beam-spike2-_R_0_))) calc(85px * var(--beam-h-_R_0_)) at 64% calc(100% - 4px), rgb(50, 200, 100), rgba(50, 200, 100, 1) 35%, transparent 89%),
+       radial-gradient(ellipse calc(7px * var(--beam-spike-_R_0_)) calc(45px * var(--beam-h-_R_0_)) at 78% calc(100% - 2px), rgba(200, 50, 240, 0.91), rgba(200, 50, 240, 0.45) 48%, transparent 94%),
+       radial-gradient(ellipse calc(0.6px * (2 - var(--beam-spike-_R_0_))) calc(60px * var(--beam-h-_R_0_)) at 92% calc(100% - 3px), rgb(40, 140, 255), rgba(40, 140, 255, 1) 42%, transparent 91%),
+       radial-gradient(ellipse calc(21px * var(--beam-spike-_R_0_)) calc(15px * var(--beam-spike2-_R_0_)) at calc(var(--beam-x-_R_0_) * 100%) calc(100% + 1px), rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.9) 20%, rgba(255, 255, 255, 0.5) 50%, transparent 100%),
+       radial-gradient(ellipse calc(42px * var(--beam-w-_R_0_)) calc(40px * var(--beam-h-_R_0_)) at calc(var(--beam-x-_R_0_) * 100%) 100%, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.12) 25%, rgba(255, 255, 255, 0.03) 55%, transparent 80%);
+  
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+}
+
+[data-beam="_R_0_"][data-active] [data-beam-bloom],
+[data-beam="_R_0_"][data-fading] [data-beam-bloom] {
+  display: block;
+  opacity: calc(var(--beam-opacity-_R_0_) * var(--beam-edge-_R_0_) * 0.80 * var(--beam-bloom-opacity, 1) * var(--beam-strength, 1));
+  animation: beam-hue-shift-bloom-_R_0_ 8s ease-in-out infinite;
+}
+
+@keyframes beam-travel-_R_0_ {
+  0%   { --beam-x-_R_0_: 0.06;  --beam-w-_R_0_: 0.5; }
+  10%  { --beam-x-_R_0_: 0.15;  --beam-w-_R_0_: 0.8; }
+  20%  { --beam-x-_R_0_: 0.25;  --beam-w-_R_0_: 1.1; }
+  30%  { --beam-x-_R_0_: 0.35;  --beam-w-_R_0_: 1.3; }
+  40%  { --beam-x-_R_0_: 0.44;  --beam-w-_R_0_: 1.45; }
+  50%  { --beam-x-_R_0_: 0.5;   --beam-w-_R_0_: 1.5; }
+  60%  { --beam-x-_R_0_: 0.56;  --beam-w-_R_0_: 1.45; }
+  70%  { --beam-x-_R_0_: 0.65;  --beam-w-_R_0_: 1.3; }
+  80%  { --beam-x-_R_0_: 0.75;  --beam-w-_R_0_: 1.1; }
+  90%  { --beam-x-_R_0_: 0.85;  --beam-w-_R_0_: 0.8; }
+  100% { --beam-x-_R_0_: 0.94;  --beam-w-_R_0_: 0.5; }
+}
+
+@keyframes beam-edge-fade-_R_0_ {
+  0%    { --beam-edge-_R_0_: 0; }
+  12.5% { --beam-edge-_R_0_: 0; }
+  32.5% { --beam-edge-_R_0_: 1; }
+  67.5% { --beam-edge-_R_0_: 1; }
+  87.5% { --beam-edge-_R_0_: 0; }
+  100%  { --beam-edge-_R_0_: 0; }
+}
+
+@keyframes beam-breathe-_R_0_ {
+  0%, 100% { --beam-h-_R_0_: 0.8; }
+  25%      { --beam-h-_R_0_: 1.25; }
+  55%      { --beam-h-_R_0_: 0.85; }
+  80%      { --beam-h-_R_0_: 1.3; }
+}
+
+@keyframes beam-spike-_R_0_ {
+  0%   { --beam-spike-_R_0_: 0.8; }
+  25%  { --beam-spike-_R_0_: 1.3; }
+  50%  { --beam-spike-_R_0_: 0.9; }
+  75%  { --beam-spike-_R_0_: 1.4; }
+  100% { --beam-spike-_R_0_: 0.8; }
+}
+
+@keyframes beam-spike2-_R_0_ {
+  0%   { --beam-spike2-_R_0_: 1.2; }
+  25%  { --beam-spike2-_R_0_: 0.7; }
+  50%  { --beam-spike2-_R_0_: 1.4; }
+  75%  { --beam-spike2-_R_0_: 0.8; }
+  100% { --beam-spike2-_R_0_: 1.2; }
+}
+
+@keyframes beam-fade-in-_R_0_ {
+  to { --beam-opacity-_R_0_: 1; }
+}
+
+@keyframes beam-fade-out-_R_0_ {
+  from { --beam-opacity-_R_0_: 1; }
+  to { --beam-opacity-_R_0_: 0; }
+}
+
+@keyframes beam-hue-shift-_R_0_ {
+  0% { filter: hue-rotate(calc(var(--beam-hue-base, 0deg) - 13deg)) brightness(1.30) saturate(1.20); }
+  50% { filter: hue-rotate(calc(var(--beam-hue-base, 0deg) + 13deg)) brightness(1.30) saturate(1.20); }
+  100% { filter: hue-rotate(calc(var(--beam-hue-base, 0deg) - 13deg)) brightness(1.30) saturate(1.20); }
+}
+
+@keyframes beam-hue-shift-bloom-_R_0_ {
+  0% { filter: blur(8px) hue-rotate(calc(var(--beam-hue-base, 0deg) - 23deg)) brightness(1.30) saturate(1.20); }
+  50% { filter: blur(8px) hue-rotate(calc(var(--beam-hue-base, 0deg) + 23deg)) brightness(1.30) saturate(1.20); }
+  100% { filter: blur(8px) hue-rotate(calc(var(--beam-hue-base, 0deg) - 23deg)) brightness(1.30) saturate(1.20); }
+}
+
+[data-beam="_R_0_"][data-paused],
+[data-beam="_R_0_"][data-paused]::after,
+[data-beam="_R_0_"][data-paused]::before,
+[data-beam="_R_0_"][data-paused] [data-beam-bloom] {
+  animation-play-state: paused !important;
+}
+
+
+
+@property --beam-angle-_R_0_ {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: true;
+}
+
+@property --beam-opacity-_R_0_ {
+  syntax: "<number>";
+  initial-value: 0;
+  inherits: true;
+}
+
+[data-beam="_R_0_"] {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+[data-beam="_R_0_"][data-active] {
+  animation:
+    beam-spin-_R_0_ 1.96s linear infinite,
+    beam-fade-in-_R_0_ 0.6s ease forwards;
+}
+
+[data-beam="_R_0_"][data-fading] {
+  animation:
+    beam-spin-_R_0_ 1.96s linear infinite,
+    beam-fade-out-_R_0_ 0.5s ease forwards;
+}
+
+[data-beam="_R_0_"][data-active]::after,
+[data-beam="_R_0_"][data-fading]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 15px;
+  padding: 1px;
+  clip-path: inset(0 round 16px);
+  background: conic-gradient(
+        from var(--beam-angle-_R_0_),
+        transparent 0%, transparent 54%,
+        rgba(255, 255, 255, 0.1) 57%,
+        rgba(255, 255, 255, 0.3) 60%,
+        rgba(255, 255, 255, 0.6) 63%,
+        rgba(255, 255, 255, 0.75) 66%,
+        rgba(255, 255, 255, 0.6) 69%,
+        rgba(255, 255, 255, 0.3) 72%,
+        rgba(255, 255, 255, 0.1) 75%,
+        transparent 78%, transparent 100%
+      ),radial-gradient(ellipse 70px 40px at 33% -7.4%, rgb(255, 50, 100), transparent),
+    radial-gradient(ellipse 60px 35px at 12% -5%, rgb(40, 140, 255), transparent),
+    radial-gradient(ellipse 40px 70px at 2.1% 68.3%, rgb(50, 200, 80), transparent),
+    radial-gradient(ellipse 20px 35px at 2.1% 68.3%, rgb(30, 185, 170), transparent),
+    radial-gradient(ellipse 180px 32px at 74.4% 100%, rgb(100, 70, 255), transparent),
+    radial-gradient(ellipse 85px 26px at 55% 100%, rgb(40, 140, 255), transparent),
+    radial-gradient(ellipse 74px 32px at 93.9% 0%, rgb(255, 120, 40), transparent),
+    radial-gradient(ellipse 26px 42px at 100% 27.1%, rgb(240, 50, 180), transparent),
+    radial-gradient(ellipse 52px 48px at 100% 27.1%, rgb(180, 40, 240), transparent);
+  -webkit-mask:
+    conic-gradient(
+      from var(--beam-angle-_R_0_),
+      transparent 0%, transparent 30%,
+      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
+      white 52%, white 80%,
+      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
+      transparent 95%, transparent 100%
+    ),
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: source-in, xor;
+  mask:
+    conic-gradient(
+      from var(--beam-angle-_R_0_),
+      transparent 0%, transparent 30%,
+      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
+      white 52%, white 80%,
+      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
+      transparent 95%, transparent 100%
+    ),
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: intersect, exclude;
+  pointer-events: none;
+  z-index: 2;
+  opacity: calc(var(--beam-opacity-_R_0_) * 0.26 * var(--beam-stroke-opacity, 1) * var(--beam-strength, 1));
+  animation: beam-hue-shift-_R_0_ 12s ease-in-out infinite;
+}
+
+[data-beam="_R_0_"][data-active]::before,
+[data-beam="_R_0_"][data-fading]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: radial-gradient(ellipse 63px 36px at 33% -7.4%, rgba(255, 50, 100, 0.45), transparent),
+    radial-gradient(ellipse 54px 32px at 12% -5%, rgba(40, 140, 255, 0.45), transparent),
+    radial-gradient(ellipse 36px 63px at 2.1% 68.3%, rgba(50, 200, 80, 0.45), transparent),
+    radial-gradient(ellipse 18px 32px at 2.1% 68.3%, rgba(30, 185, 170, 0.45), transparent),
+    radial-gradient(ellipse 162px 29px at 74.4% 100%, rgba(100, 70, 255, 0.45), transparent),
+    radial-gradient(ellipse 77px 23px at 55% 100%, rgba(40, 140, 255, 0.45), transparent),
+    radial-gradient(ellipse 67px 29px at 93.9% 0%, rgba(255, 120, 40, 0.45), transparent),
+    radial-gradient(ellipse 23px 38px at 100% 27.1%, rgba(240, 50, 180, 0.45), transparent),
+    radial-gradient(ellipse 47px 43px at 100% 27.1%, rgba(180, 40, 240, 0.45), transparent);
+  box-shadow: inset 0 0 9px 1px rgba(255, 255, 255, 0.27);
+  -webkit-mask-image:
+    conic-gradient(
+      from var(--beam-angle-_R_0_),
+      transparent 0%, transparent 30%,
+      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
+      white 52%, white 80%,
+      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
+      transparent 95%, transparent 100%
+    ),
+    linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white),
+    linear-gradient(to right, white, transparent 28px, transparent calc(100% - 28px), white);
+  -webkit-mask-composite: source-in, source-over;
+  mask-image:
+    conic-gradient(
+      from var(--beam-angle-_R_0_),
+      transparent 0%, transparent 30%,
+      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
+      white 52%, white 80%,
+      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
+      transparent 95%, transparent 100%
+    ),
+    linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white),
+    linear-gradient(to right, white, transparent 28px, transparent calc(100% - 28px), white);
+  mask-composite: intersect, add;
+  pointer-events: none;
+  z-index: 1;
+  opacity: calc(var(--beam-opacity-_R_0_) * 0.42 * var(--beam-inner-opacity, 1) * var(--beam-strength, 1));
+  clip-path: inset(0 round 16px);
+  animation: beam-hue-shift-_R_0_ 12s ease-in-out infinite;
+}
+
+[data-beam="_R_0_"] [data-beam-bloom] {
+  display: none;
+  position: absolute;
+  inset: 0;
+  border-radius: 15px;
+  clip-path: inset(0 round 16px);
+  background: conic-gradient(
+        from var(--beam-angle-_R_0_),
+        transparent 0%, transparent 58%,
+        rgba(255, 255, 255, 0.03) 62%,
+        rgba(255, 255, 255, 0.08) 65%,
+        rgba(255, 255, 255, 0.2) 67%,
+        rgba(255, 255, 255, 0.45) 69%,
+        rgba(255, 255, 255, 0.85) 70%,
+        rgba(255, 255, 255, 0.85) 70.5%,
+        rgba(255, 255, 255, 0.45) 71.5%,
+        rgba(255, 255, 255, 0.2) 73%,
+        rgba(255, 255, 255, 0.08) 75%,
+        rgba(255, 255, 255, 0.03) 78%,
+        transparent 82%
+      );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  padding: 1px;
+  filter: blur(8px) brightness(1.30) saturate(1.20);
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+}
+
+[data-beam="_R_0_"][data-active] [data-beam-bloom],
+[data-beam="_R_0_"][data-fading] [data-beam-bloom] {
+  display: block;
+  opacity: calc(var(--beam-opacity-_R_0_) * 0.24 * var(--beam-bloom-opacity, 1) * var(--beam-strength, 1));
+}
+
+@keyframes beam-spin-_R_0_ {
+  to { --beam-angle-_R_0_: 360deg; }
+}
+
+@keyframes beam-fade-in-_R_0_ {
+  to { --beam-opacity-_R_0_: 1; }
+}
+
+@keyframes beam-fade-out-_R_0_ {
+  from { --beam-opacity-_R_0_: 1; }
+  to { --beam-opacity-_R_0_: 0; }
+}
+
+@keyframes beam-hue-shift-_R_0_ {
+  0% { filter: hue-rotate(calc(var(--beam-hue-base, 0deg) - 30deg)) brightness(1.30) saturate(1.20); }
+  50% { filter: hue-rotate(calc(var(--beam-hue-base, 0deg) + 30deg)) brightness(1.30) saturate(1.20); }
+  100% { filter: hue-rotate(calc(var(--beam-hue-base, 0deg) - 30deg)) brightness(1.30) saturate(1.20); }
+}
+
+[data-beam="_R_0_"][data-paused],
+[data-beam="_R_0_"][data-paused]::after,
+[data-beam="_R_0_"][data-paused]::before,
+[data-beam="_R_0_"][data-paused] [data-beam-bloom] {
+  animation-play-state: paused !important;
+}
+
+
+
+@property --beam-angle-_R_0_ {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: true;
+}
+
+@property --beam-opacity-_R_0_ {
+  syntax: "<number>";
+  initial-value: 0;
+  inherits: true;
+}
+
+[data-beam="_R_0_"] {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+[data-beam="_R_0_"][data-active] {
+  animation:
+    beam-spin-_R_0_ 1.96s linear infinite,
+    beam-fade-in-_R_0_ 0.6s ease forwards;
+}
+
+[data-beam="_R_0_"][data-fading] {
+  animation:
+    beam-spin-_R_0_ 1.96s linear infinite,
+    beam-fade-out-_R_0_ 0.5s ease forwards;
+}
+
+[data-beam="_R_0_"][data-active]::after,
+[data-beam="_R_0_"][data-fading]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 15px;
+  padding: 1px;
+  clip-path: inset(0 round 16px);
+  background: conic-gradient(
+        from var(--beam-angle-_R_0_),
+        transparent 0%, transparent 54%,
+        rgba(255, 255, 255, 0.1) 57%,
+        rgba(255, 255, 255, 0.3) 60%,
+        rgba(255, 255, 255, 0.6) 63%,
+        rgba(255, 255, 255, 0.75) 66%,
+        rgba(255, 255, 255, 0.6) 69%,
+        rgba(255, 255, 255, 0.3) 72%,
+        rgba(255, 255, 255, 0.1) 75%,
+        transparent 78%, transparent 100%
+      ),radial-gradient(ellipse 70px 40px at 33% -7.4%, rgb(255, 50, 100), transparent),
+    radial-gradient(ellipse 60px 35px at 12% -5%, rgb(40, 140, 255), transparent),
+    radial-gradient(ellipse 40px 70px at 2.1% 68.3%, rgb(50, 200, 80), transparent),
+    radial-gradient(ellipse 20px 35px at 2.1% 68.3%, rgb(30, 185, 170), transparent),
+    radial-gradient(ellipse 180px 32px at 74.4% 100%, rgb(100, 70, 255), transparent),
+    radial-gradient(ellipse 85px 26px at 55% 100%, rgb(40, 140, 255), transparent),
+    radial-gradient(ellipse 74px 32px at 93.9% 0%, rgb(255, 120, 40), transparent),
+    radial-gradient(ellipse 26px 42px at 100% 27.1%, rgb(240, 50, 180), transparent),
+    radial-gradient(ellipse 52px 48px at 100% 27.1%, rgb(180, 40, 240), transparent);
+  -webkit-mask:
+    conic-gradient(
+      from var(--beam-angle-_R_0_),
+      transparent 0%, transparent 30%,
+      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
+      white 52%, white 80%,
+      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
+      transparent 95%, transparent 100%
+    ),
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: source-in, xor;
+  mask:
+    conic-gradient(
+      from var(--beam-angle-_R_0_),
+      transparent 0%, transparent 30%,
+      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
+      white 52%, white 80%,
+      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
+      transparent 95%, transparent 100%
+    ),
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: intersect, exclude;
+  pointer-events: none;
+  z-index: 2;
+  opacity: calc(var(--beam-opacity-_R_0_) * 0.26 * var(--beam-stroke-opacity, 1) * var(--beam-strength, 1));
+  animation: beam-hue-shift-_R_0_ 12s ease-in-out infinite;
+}
+
+[data-beam="_R_0_"][data-active]::before,
+[data-beam="_R_0_"][data-fading]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: radial-gradient(ellipse 63px 36px at 33% -7.4%, rgba(255, 50, 100, 0.45), transparent),
+    radial-gradient(ellipse 54px 32px at 12% -5%, rgba(40, 140, 255, 0.45), transparent),
+    radial-gradient(ellipse 36px 63px at 2.1% 68.3%, rgba(50, 200, 80, 0.45), transparent),
+    radial-gradient(ellipse 18px 32px at 2.1% 68.3%, rgba(30, 185, 170, 0.45), transparent),
+    radial-gradient(ellipse 162px 29px at 74.4% 100%, rgba(100, 70, 255, 0.45), transparent),
+    radial-gradient(ellipse 77px 23px at 55% 100%, rgba(40, 140, 255, 0.45), transparent),
+    radial-gradient(ellipse 67px 29px at 93.9% 0%, rgba(255, 120, 40, 0.45), transparent),
+    radial-gradient(ellipse 23px 38px at 100% 27.1%, rgba(240, 50, 180, 0.45), transparent),
+    radial-gradient(ellipse 47px 43px at 100% 27.1%, rgba(180, 40, 240, 0.45), transparent);
+  box-shadow: inset 0 0 9px 1px rgba(255, 255, 255, 0.27);
+  -webkit-mask-image:
+    conic-gradient(
+      from var(--beam-angle-_R_0_),
+      transparent 0%, transparent 30%,
+      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
+      white 52%, white 80%,
+      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
+      transparent 95%, transparent 100%
+    ),
+    linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white),
+    linear-gradient(to right, white, transparent 28px, transparent calc(100% - 28px), white);
+  -webkit-mask-composite: source-in, source-over;
+  mask-image:
+    conic-gradient(
+      from var(--beam-angle-_R_0_),
+      transparent 0%, transparent 30%,
+      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
+      white 52%, white 80%,
+      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
+      transparent 95%, transparent 100%
+    ),
+    linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white),
+    linear-gradient(to right, white, transparent 28px, transparent calc(100% - 28px), white);
+  mask-composite: intersect, add;
+  pointer-events: none;
+  z-index: 1;
+  opacity: calc(var(--beam-opacity-_R_0_) * 0.42 * var(--beam-inner-opacity, 1) * var(--beam-strength, 1));
+  clip-path: inset(0 round 16px);
+  animation: beam-hue-shift-_R_0_ 12s ease-in-out infinite;
+}
+
+[data-beam="_R_0_"] [data-beam-bloom] {
+  display: none;
+  position: absolute;
+  inset: 0;
+  border-radius: 15px;
+  clip-path: inset(0 round 16px);
+  background: conic-gradient(
+        from var(--beam-angle-_R_0_),
+        transparent 0%, transparent 58%,
+        rgba(255, 255, 255, 0.03) 62%,
+        rgba(255, 255, 255, 0.08) 65%,
+        rgba(255, 255, 255, 0.2) 67%,
+        rgba(255, 255, 255, 0.45) 69%,
+        rgba(255, 255, 255, 0.85) 70%,
+        rgba(255, 255, 255, 0.85) 70.5%,
+        rgba(255, 255, 255, 0.45) 71.5%,
+        rgba(255, 255, 255, 0.2) 73%,
+        rgba(255, 255, 255, 0.08) 75%,
+        rgba(255, 255, 255, 0.03) 78%,
+        transparent 82%
+      );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  padding: 1px;
+  filter: blur(8px) brightness(1.30) saturate(1.20);
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+}
+
+[data-beam="_R_0_"][data-active] [data-beam-bloom],
+[data-beam="_R_0_"][data-fading] [data-beam-bloom] {
+  display: block;
+  opacity: calc(var(--beam-opacity-_R_0_) * 0.24 * var(--beam-bloom-opacity, 1) * var(--beam-strength, 1));
+}
+
+@keyframes beam-spin-_R_0_ {
+  to { --beam-angle-_R_0_: 360deg; }
+}
+
+@keyframes beam-fade-in-_R_0_ {
+  to { --beam-opacity-_R_0_: 1; }
+}
+
+@keyframes beam-fade-out-_R_0_ {
+  from { --beam-opacity-_R_0_: 1; }
+  to { --beam-opacity-_R_0_: 0; }
+}
+
+@keyframes beam-hue-shift-_R_0_ {
+  0% { filter: hue-rotate(calc(var(--beam-hue-base, 0deg) - 30deg)) brightness(1.30) saturate(1.20); }
+  50% { filter: hue-rotate(calc(var(--beam-hue-base, 0deg) + 30deg)) brightness(1.30) saturate(1.20); }
+  100% { filter: hue-rotate(calc(var(--beam-hue-base, 0deg) - 30deg)) brightness(1.30) saturate(1.20); }
+}
+
+[data-beam="_R_0_"][data-paused],
+[data-beam="_R_0_"][data-paused]::after,
+[data-beam="_R_0_"][data-paused]::before,
+[data-beam="_R_0_"][data-paused] [data-beam-bloom] {
+  animation-play-state: paused !important;
+}
+
+
+
+/* Elevated VoiceBeam Chat Input Card - Exactly Matching libraries.dev/voice Preview */
 .chat-input-card {
-  background: #1e1f20;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  position: relative;
+  background: rgba(28, 28, 32, 0.85) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  border-radius: 22px !important;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
-  padding: 0 4px 4px 4px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.45) !important;
+  padding: 12px 14px 10px 14px !important;
 }
 
-/* Dynamic Active Tab Sharing Strip - Tight, Minimal Vertical Spacing */
-.chat-tab-sharing-strip {
+.border-beam-card > * {
+  position: relative;
+  z-index: 5;
+}
+
+/* Inner Input Box */
+.chat-inner-box.beam-inner-box {
+  background: transparent;
+  border: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 10;
+}
+
+.beam-chat-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.beam-chat-bar textarea#chatInput {
+  width: 100%;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 14.5px;
+  font-family: var(--font);
+  color: #f3f4f6;
+  resize: none;
+  min-height: 24px;
+  height: 26px;
+  padding: 2px 2px 4px 2px;
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+
+.beam-chat-bar textarea#chatInput::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 14.5px;
+}
+
+.beam-bar-bottom {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 10px 5px 10px;
-  font-size: 12px;
-  color: #c4c7c5;
-  font-weight: 500;
-  user-select: none;
+  padding-top: 4px;
+}
+
+.chat-bar-left-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-bar-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Circular Buttons matching Image 2 (+, Mic, Send, Close) */
+.chat-circle-btn,
+.beam-at-btn,
+.beam-send-btn,
+.beam-stop-btn {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 50% !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.8) !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: none !important;
+  transition: all 0.15s ease;
+  padding: 0 !important;
+}
+
+.chat-circle-btn:hover,
+.beam-at-btn:hover,
+.beam-stop-btn:hover {
+  background: rgba(255, 255, 255, 0.16) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+/* Agent Mode Pill Button matching Image 2 */
+.chat-pill-btn,
+.beam-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 13px !important;
+  border-radius: 9999px !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chat-pill-btn:hover,
+.beam-pill-btn:hover {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+.beam-send-btn.has-text,
+.beam-send-btn:hover {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.beam-send-btn svg,
+.chat-circle-btn svg,
+.chat-pill-btn svg {
+  color: inherit !important;
+  stroke: currentColor !important;
+}
+
+/* Lively VoiceBeam Auroral Bottom Gradient */
+.voice-glow-backdrop {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+  opacity: 0.85;
+  transition: opacity 0.4s ease;
+}
+
+.voice-glow-backdrop::before {
+  content: "";
+  position: absolute;
+  bottom: -28px;
+  left: 50%;
+  transform: translateX(-50%) scale(var(--voice-glow-scale, 1));
+  width: 150%;
+  height: var(--voice-glow-height, 72px);
+  border-radius: 50%;
+  background: radial-gradient(ellipse 85px 50px at 26% 100%, rgba(244, 63, 94, 0.72), transparent 75%),
+              radial-gradient(ellipse 95px 60px at 40% 100%, rgba(168, 85, 247, 0.78), transparent 70%),
+              radial-gradient(ellipse 105px 65px at 54% 100%, rgba(6, 182, 212, 0.82), transparent 70%),
+              radial-gradient(ellipse 90px 55px at 68% 100%, rgba(245, 158, 11, 0.72), transparent 75%),
+              radial-gradient(ellipse 75px 45px at 82% 100%, rgba(16, 185, 129, 0.68), transparent 80%);
+  filter: blur(20px) saturate(1.5) brightness(1.15);
+  animation: voiceAuroraBreathe 3.8s ease-in-out infinite alternate;
+  mix-blend-mode: screen;
+  transition: height 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.3s ease;
+  pointer-events: none;
+}
+
+.voice-glow-backdrop::after {
+  display: none !important;
+}
+
+@keyframes voiceAuroraBreathe {
+  0% {
+    transform: translateX(-50%) scale(0.96);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translateX(-48%) scale(1.04);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-52%) scale(0.98);
+    opacity: 0.85;
+  }
+}
+
+/* Dynamic Typing Aura Elevation */
+.chat-input-card.typing .voice-glow-backdrop::before {
+  --voice-glow-height: 92px;
+  filter: blur(22px) saturate(1.7) brightness(1.25);
+  opacity: 1;
+}
+
+.beam-send-btn.mode-send .icon-send {
+  display: block !important;
+}
+
+.beam-send-btn.mode-send .icon-mic {
+  display: none !important;
+}
+
+.beam-send-btn.mode-mic .icon-mic {
+  display: block !important;
+}
+
+.beam-send-btn.mode-mic .icon-send {
+  display: none !important;
+}
+
+/* Stop Button with Pulse Effect */
+.beam-stop-btn {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 50% !important;
+  background: rgba(239, 68, 68, 0.18) !important;
+  color: #ef4444 !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  animation: beamStopPulse 1.5s ease-in-out infinite;
+}
+
+.beam-stop-btn:hover {
+  background: rgba(239, 68, 68, 0.28) !important;
+  transform: scale(1.05);
+}
+
+@keyframes beamStopPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 8px 2px rgba(239, 68, 68, 0.6);
+  }
+}
+
+/* Dynamic Active Tab Sharing Strip - Hidden */
+.chat-tab-sharing-strip {
+  display: none !important;
 }
 
 .sharing-left {
@@ -1991,25 +2867,25 @@ html, body {
   color: #ffffff;
 }
 
-.send-btn.mode-mic {
+.send-btn:not(.beam-send-btn).mode-mic {
   background: rgba(255, 255, 255, 0.04) !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   color: #c4c7c5;
 }
 
-.send-btn.mode-mic:hover {
+.send-btn:not(.beam-send-btn).mode-mic:hover {
   background: rgba(138, 180, 248, 0.15) !important;
   border-color: rgba(138, 180, 248, 0.5) !important;
   color: #8ab4f8;
 }
 
-.send-btn.mode-send {
+.send-btn:not(.beam-send-btn).mode-send {
   background: #8ab4f8 !important;
   border-color: #8ab4f8 !important;
   color: #131314;
 }
 
-.send-btn.mode-send:hover {
+.send-btn:not(.beam-send-btn).mode-send:hover {
   background: #a8c7fa !important;
 }
 
@@ -3133,7 +4009,44 @@ html, body {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
+/* Bottom Footer VoiceBeam Glow for Voice Modal (Mobile Type from libraries.dev/voice) */
+.orb-voice-beam-footer,
+[data-voice-beam="orb-footer-beam"] {
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  height: 280px !important;
+  pointer-events: none !important;
+  z-index: 2 !important;
+  overflow: hidden !important;
+  border-radius: 0 0 16px 16px !important;
+}
+
+.orb-voice-beam-footer canvas,
+[data-voice-beam="orb-footer-beam"] canvas {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none !important;
+  z-index: 3 !important;
+}
+
+.orb-voice-beam-footer [data-voice-beam-bloom],
+[data-voice-beam="orb-footer-beam"] [data-voice-beam-bloom] {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none !important;
+  z-index: 1 !important;
+}
+
 .voice-orb-stage {
+  position: relative;
+  z-index: 5;
   display: flex;
   flex-direction: column;
   align-items: center;

@@ -111,6 +111,17 @@ export declare function isRestrictedBrowserUrl(urlStr?: string): {
 };
 export declare const AIRPORT_CODES: Record<string, string>;
 export declare function isSubAgentSwarmGoal(goal: string): boolean;
+/**
+ * Helper to normalize elements from raw or sanitized DOM snapshots
+ */
+export declare function getSnapshotElements(snap: any): any[];
+/**
+ * Dedicated flight element finders for robust, error-free DOM interaction across IndiGo, Air India, etc.
+ */
+export declare function findFlightOriginElement(elements: readonly any[]): any | null;
+export declare function findFlightDestinationElement(elements: readonly any[], originLocalId?: string): any | null;
+export declare function findFlightSearchButton(elements: readonly any[]): any | null;
+export declare function findAirportSuggestion(elements: readonly any[], city: string, airportCode: string, excludeIds?: string[]): any | null;
 export declare class RunCoordinator {
     private state;
     private readonly browser;

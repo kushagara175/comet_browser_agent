@@ -66,7 +66,30 @@ const ALLOWED_PAGE_STATE_KEYS = new Set([
   'counters',
   'contentSummaries',
   'domain',
-  'scrollMetrics'
+  'scrollMetrics',
+  'url',
+  'stateDelta'
+]);
+
+const ALLOWED_STATE_DELTA_KEYS = new Set([
+  'previousAction',
+  'urlChanged',
+  'previousUrl',
+  'currentUrl',
+  'elementsAddedCount',
+  'elementsRemovedCount',
+  'scrollDeltaY',
+  'dialogOpened',
+  'observedOutcome',
+  'verificationPassed'
+]);
+
+const ALLOWED_PREVIOUS_ACTION_KEYS = new Set([
+  'kind',
+  'targetName',
+  'targetLocalId',
+  'textToType',
+  'expectedState'
 ]);
 
 const ALLOWED_SCROLL_METRICS_KEYS = new Set([
@@ -94,6 +117,7 @@ const ALLOWED_MANIFEST_KEYS = new Set([
   'visionSucceeded',
   'visionProvider',
   'visionModel',
+  'categoryBreakdown',
   'durationMs'
 ]);
 
@@ -525,6 +549,79 @@ export function validateSanitizedPayload(body: any): ValidationResult<SanitizedN
     }
   }
 
+  if (body.pageState.url !== undefined) {
+    if (typeof body.pageState.url !== 'string' || body.pageState.url.length > 2048 || hasProhibitedScriptPattern(body.pageState.url)) {
+      return { isValid: false, errorMessage: 'pageState.url must be a safe string up to 2048 characters' };
+    }
+  }
+
+  if (body.pageState.stateDelta !== undefined) {
+    if (!isPlainObject(body.pageState.stateDelta)) {
+      return { isValid: false, errorMessage: 'pageState.stateDelta must be an object' };
+    }
+    const sdKeys = Object.getOwnPropertyNames(body.pageState.stateDelta);
+    for (const k of sdKeys) {
+      if (PROHIBITED_PROPERTY_NAMES.has(k) || !ALLOWED_STATE_DELTA_KEYS.has(k)) {
+        return { isValid: false, errorMessage: 'Closed schema violation: Unknown stateDelta property' };
+      }
+    }
+    const sd = body.pageState.stateDelta;
+    if (sd.urlChanged !== undefined && typeof sd.urlChanged !== 'boolean') {
+      return { isValid: false, errorMessage: 'pageState.stateDelta.urlChanged must be a boolean' };
+    }
+    if (sd.previousUrl !== undefined && (typeof sd.previousUrl !== 'string' || sd.previousUrl.length > 2048 || hasProhibitedScriptPattern(sd.previousUrl))) {
+      return { isValid: false, errorMessage: 'pageState.stateDelta.previousUrl must be a safe string up to 2048 characters' };
+    }
+    if (sd.currentUrl !== undefined && (typeof sd.currentUrl !== 'string' || sd.currentUrl.length > 2048 || hasProhibitedScriptPattern(sd.currentUrl))) {
+      return { isValid: false, errorMessage: 'pageState.stateDelta.currentUrl must be a safe string up to 2048 characters' };
+    }
+    if (sd.elementsAddedCount !== undefined && (typeof sd.elementsAddedCount !== 'number' || !Number.isFinite(sd.elementsAddedCount))) {
+      return { isValid: false, errorMessage: 'pageState.stateDelta.elementsAddedCount must be a number' };
+    }
+    if (sd.elementsRemovedCount !== undefined && (typeof sd.elementsRemovedCount !== 'number' || !Number.isFinite(sd.elementsRemovedCount))) {
+      return { isValid: false, errorMessage: 'pageState.stateDelta.elementsRemovedCount must be a number' };
+    }
+    if (sd.scrollDeltaY !== undefined && (typeof sd.scrollDeltaY !== 'number' || !Number.isFinite(sd.scrollDeltaY))) {
+      return { isValid: false, errorMessage: 'pageState.stateDelta.scrollDeltaY must be a number' };
+    }
+    if (sd.dialogOpened !== undefined && (typeof sd.dialogOpened !== 'string' || sd.dialogOpened.length > 200 || hasProhibitedScriptPattern(sd.dialogOpened))) {
+      return { isValid: false, errorMessage: 'pageState.stateDelta.dialogOpened must be a safe string up to 200 characters' };
+    }
+    if (sd.observedOutcome !== undefined && (typeof sd.observedOutcome !== 'string' || sd.observedOutcome.length > 1000 || hasProhibitedScriptPattern(sd.observedOutcome))) {
+      return { isValid: false, errorMessage: 'pageState.stateDelta.observedOutcome must be a safe string up to 1000 characters' };
+    }
+    if (sd.verificationPassed !== undefined && typeof sd.verificationPassed !== 'boolean') {
+      return { isValid: false, errorMessage: 'pageState.stateDelta.verificationPassed must be a boolean' };
+    }
+    if (sd.previousAction !== undefined) {
+      if (!isPlainObject(sd.previousAction)) {
+        return { isValid: false, errorMessage: 'pageState.stateDelta.previousAction must be an object' };
+      }
+      const paKeys = Object.getOwnPropertyNames(sd.previousAction);
+      for (const pk of paKeys) {
+        if (PROHIBITED_PROPERTY_NAMES.has(pk) || !ALLOWED_PREVIOUS_ACTION_KEYS.has(pk)) {
+          return { isValid: false, errorMessage: 'Closed schema violation: Unknown previousAction property' };
+        }
+      }
+      const pa = sd.previousAction;
+      if (typeof pa.kind !== 'string' || pa.kind.length > 50 || hasProhibitedScriptPattern(pa.kind)) {
+        return { isValid: false, errorMessage: 'pageState.stateDelta.previousAction.kind must be a safe string up to 50 characters' };
+      }
+      if (pa.targetName !== undefined && (typeof pa.targetName !== 'string' || pa.targetName.length > 200 || hasProhibitedScriptPattern(pa.targetName))) {
+        return { isValid: false, errorMessage: 'pageState.stateDelta.previousAction.targetName must be a safe string up to 200 characters' };
+      }
+      if (pa.targetLocalId !== undefined && (typeof pa.targetLocalId !== 'string' || pa.targetLocalId.length > 100 || hasProhibitedScriptPattern(pa.targetLocalId))) {
+        return { isValid: false, errorMessage: 'pageState.stateDelta.previousAction.targetLocalId must be a safe string up to 100 characters' };
+      }
+      if (pa.textToType !== undefined && (typeof pa.textToType !== 'string' || pa.textToType.length > 1000 || hasProhibitedScriptPattern(pa.textToType))) {
+        return { isValid: false, errorMessage: 'pageState.stateDelta.previousAction.textToType must be a safe string up to 1000 characters' };
+      }
+      if (pa.expectedState !== undefined && (typeof pa.expectedState !== 'string' || pa.expectedState.length > 200 || hasProhibitedScriptPattern(pa.expectedState))) {
+        return { isValid: false, errorMessage: 'pageState.stateDelta.previousAction.expectedState must be a safe string up to 200 characters' };
+      }
+    }
+  }
+
   // 6b. Validate redactionManifest if present
   if (body.redactionManifest !== undefined) {
     if (!isPlainObject(body.redactionManifest)) {
@@ -578,6 +675,12 @@ export function validateSanitizedPayload(body: any): ValidationResult<SanitizedN
       const spatialBlur = typeof mc.spatialBlur === 'number' ? mc.spatialBlur : 0;
       if (opaqueBox + spatialBlur !== m.totalRegions) {
         return { isValid: false, errorMessage: 'Contradictory manifest: methodCounts sum does not match totalRegions' };
+      }
+    }
+
+    if (m.categoryBreakdown !== undefined) {
+      if (!isPlainObject(m.categoryBreakdown)) {
+        return { isValid: false, errorMessage: 'redactionManifest.categoryBreakdown must be an object' };
       }
     }
 

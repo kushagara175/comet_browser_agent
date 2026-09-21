@@ -777,11 +777,32 @@ export const ISRO_PLAYBOOK: DomainPlaybook = {
   aliases: ['isro.gov.in', 'www.isro.gov.in', 'isro', 'indian space research organisation', 'isro portal'],
   routes: [
     {
+      name: 'chandrayaan3',
+      path: '/Chandrayaan3_New.html',
+      aliases: ['/Chandrayaan3_New.html', '/Chandrayaan-3.html', '/chandrayaan3', '/chandrayaan-3'],
+      description: 'Chandrayaan-3 lunar exploration mission official page',
+      matchKeywords: ['chandrayaan-3', 'chandrayaan 3', 'chandrayaan3', 'chandrayaan']
+    },
+    {
+      name: 'aditya_l1',
+      path: '/Aditya_L1.html',
+      aliases: ['/Aditya_L1.html', '/aditya-l1', '/aditya_l1', '/aditya'],
+      description: 'Aditya-L1 solar observatory mission official page',
+      matchKeywords: ['aditya-l1', 'aditya l1', 'aditya']
+    },
+    {
+      name: 'gaganyaan',
+      path: '/Gaganyaan.html',
+      aliases: ['/Gaganyaan.html', '/gaganyaan'],
+      description: 'Gaganyaan human spaceflight mission official page',
+      matchKeywords: ['gaganyaan', 'human spaceflight']
+    },
+    {
       name: 'missions',
-      path: '/Missions.html',
-      aliases: ['/Missions.html', '/missions', '/spacecraft.html', '/launchers.html', '/Missions'],
+      path: '/spacecraft_missions.html',
+      aliases: ['/spacecraft_missions.html', '/missions.html', '/Missions.html', '/missions', '/spacecraft.html'],
       description: 'ISRO space missions and satellite timeline directory',
-      matchKeywords: ['mission', 'missions', 'space missions', 'chandrayaan', 'gaganyaan', 'aditya', 'mangalyaan', 'satellites']
+      matchKeywords: ['mission', 'missions', 'space missions', 'all missions', 'satellites']
     },
     {
       name: 'launchers',
@@ -803,6 +824,27 @@ export const ISRO_PLAYBOOK: DomainPlaybook = {
       aliases: ['/Careers.html', '/careers', '/recruitment', '/Careers'],
       description: 'ISRO recruitment notices, vacancies, and ICRB jobs',
       matchKeywords: ['career', 'careers', 'job', 'jobs', 'recruitment', 'vacancy', 'vacancies', 'icrb']
+    },
+    {
+      name: 'internship',
+      path: '/Internship.html',
+      aliases: ['/Internship.html', '/internship', '/internships', '/internship_project'],
+      description: 'ISRO student internships, academic projects, and training opportunities',
+      matchKeywords: ['internship', 'internships', 'intern', 'student project', 'internship & projects', 'training']
+    },
+    {
+      name: 'startups',
+      path: '/Start-ups.html',
+      aliases: ['/Start-ups.html', '/start-ups', '/startups', '/startup'],
+      description: 'ISRO startup initiatives, IN-SPACe mechanism, and commercialisation',
+      matchKeywords: ['start-ups', 'startups', 'startup', 'start-up', 'in-space']
+    },
+    {
+      name: 'tenders',
+      path: '/Tender.html',
+      aliases: ['/Tender.html', '/tender', '/tenders'],
+      description: 'ISRO procurement tenders and notices',
+      matchKeywords: ['tender', 'tenders', 'procurement', 'bids']
     },
     {
       name: 'centres',
@@ -866,6 +908,14 @@ export const ISRO_PLAYBOOK: DomainPlaybook = {
       role: 'link',
       description: 'Navigation link to ISRO research centres',
       intentAction: 'click'
+    },
+    {
+      id: 'isro_download_document',
+      phrase: 'Download Document',
+      aliases: ['download', 'download brochure', 'brochure', 'download report', 'annual report', 'pdf', 'download pdf'],
+      role: 'link',
+      description: 'Download mission brochure, publication, or official report PDF',
+      intentAction: 'click'
     }
   ],
   metricsRules: [
@@ -903,7 +953,18 @@ export const ISRO_PLAYBOOK: DomainPlaybook = {
 export const BHUVAN_PLAYBOOK: DomainPlaybook = {
   domain: 'bhuvan.nrsc.gov.in',
   name: 'Bhuvan Indian Geo-Platform (NRSC/ISRO)',
-  aliases: ['bhuvan.nrsc.gov.in', 'bhuvan', 'bhuvan geoportal', 'bhuvan nrsc', 'nrsc bhuvan', 'bhuvan earth observation'],
+  aliases: [
+    'bhuvan.nrsc.gov.in',
+    'bhuvan.gov.in',
+    'www.bhuvan.gov.in',
+    'bhuvan-app1.nrsc.gov.in',
+    'bhuvan-app2.nrsc.gov.in',
+    'bhuvan',
+    'bhuvan geoportal',
+    'bhuvan nrsc',
+    'nrsc bhuvan',
+    'bhuvan earth observation'
+  ],
   routes: [
     {
       name: 'geoportal',
@@ -944,7 +1005,7 @@ export const BHUVAN_PLAYBOOK: DomainPlaybook = {
     {
       id: 'bhuvan_2d_3d',
       phrase: '2D / 3D Map',
-      aliases: ['2d', '3d', 'map', 'map viewer', 'explore map', '2d/3d', 'visualisation'],
+      aliases: ['2d', '3d', '2d map', '3d map', 'map viewer', 'explore map', '2d/3d', 'visualisation'],
       role: 'link',
       description: 'Explore Bhuvan 2D/3D visualization map',
       intentAction: 'click'
@@ -952,10 +1013,18 @@ export const BHUVAN_PLAYBOOK: DomainPlaybook = {
     {
       id: 'bhuvan_search',
       phrase: 'Search Location',
-      aliases: ['search', 'search location', 'find place', 'find city', 'search place', 'location search', 'txtSearch'],
+      aliases: ['search', 'search location', 'find place', 'find city', 'search place', 'location search', 'txtSearch', 'locate', 'locate place', 'locate city', 'locate location', 'where is', 'goto'],
       role: 'input',
       description: 'Search geographic place name or coordinates',
       intentAction: 'type'
+    },
+    {
+      id: 'bhuvan_layers',
+      phrase: 'Map Layers',
+      aliases: ['layers', 'map layers', 'layer control', 'thematic layers', 'gis layers', 'base map'],
+      role: 'link',
+      description: 'Open map layers and thematic overlays panel',
+      intentAction: 'click'
     },
     {
       id: 'thematic_services',
@@ -976,7 +1045,7 @@ export const BHUVAN_PLAYBOOK: DomainPlaybook = {
     {
       id: 'open_data_download',
       phrase: 'Open Data Archive',
-      aliases: ['open data', 'download satellite data', 'free data', 'data archive'],
+      aliases: ['open data', 'download satellite data', 'free data', 'data archive', 'download data', 'download', 'geotiff', 'shapefile'],
       role: 'link',
       description: 'Download open Earth observation datasets',
       intentAction: 'click'
@@ -1351,7 +1420,18 @@ export function resolvePlaybookIntent(
   }
 
   // 3. Check for landmark match (e.g. "click know your spoc", "sih login")
-  for (const landmark of playbook.landmarks) {
+  const isInputSearchIntent = queryTokens.some((t) =>
+    ['search', 'find', 'locate', 'query', 'type', 'enter', 'filter'].includes(t)
+  );
+  const sortedLandmarks = isInputSearchIntent
+    ? [...playbook.landmarks].sort((a, b) => {
+        const aIsInput = a.role === 'input' || a.intentAction === 'type' ? -1 : 1;
+        const bIsInput = b.role === 'input' || b.intentAction === 'type' ? -1 : 1;
+        return aIsInput - bIsInput;
+      })
+    : playbook.landmarks;
+
+  for (const landmark of sortedLandmarks) {
     const allAliases = [landmark.phrase, ...landmark.aliases];
     const match = allAliases.some((alias) => {
       const aliasNorm = normalizeSemanticText(alias);
@@ -1516,16 +1596,18 @@ export function extractSearchQueryFromGoal(goal: string): string {
   // Strip initial navigation commands like "Open Amazon, ", "Go to google.com and "
   q = q.replace(/^(?:open|go\s+to|visit|launch)\s+[^,;]+[,\s;]+(?:and\s+then|then|after\s+that|and)?\s*/i, '');
 
-  const compoundMatch = q.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type)\s+(.+)$/i);
+  const compoundMatch = q.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+for)?|find|locate|look\s+for|filter(?:\s+by)?|query|type)\s+(.+)$/i);
   if (compoundMatch) {
     q = compoundMatch[1].trim();
   } else {
-    q = q.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, '');
+    q = q.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|locate|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, '');
   }
   // Strip trailing search box / prepositional phrases
   q = q.replace(/\s+(?:in|into|on|using|use)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page).*$/i, '');
-  // Strip portal mentions like "on amazon", "in flipkart", "across amazon and flipkart"
-  q = q.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github)(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github))*/i, '');
+  // Strip portal mentions like "on amazon", "in flipkart", "across amazon and flipkart", "on isro portal"
+  q = q.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform))?(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform))?)*/i, '');
+  // Strip trailing "on map", "on the map", or remaining portal descriptors
+  q = q.replace(/\s+(?:on\s+(?:the\s+)?map|portal|website|site|page)$/i, '');
   // Strip trailing action directives like "use the search bar and hit the website as said and then analyze", "and tell me the price", "and analyze"
   q = q.replace(/\s+(?:use|using)\s+(?:the\s+)?search\s+bar.*$/i, '');
   q = q.replace(/\s+(?:and|to|then)\s+(?:hit\s+the\s+website|tell\s+me|analyze|give\s+me|show\s+me|check\s+the\s+price|compare).*$/i, '');
@@ -1551,7 +1633,6 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
   let prevG = '';
   while (g && g !== prevG) {
     prevG = g;
-    g = g.replace(CONVERSATIONAL_PREFIX, '').trim();
   }
 
   // 1. Explicit http/https URL in goal
@@ -1561,6 +1642,8 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
     u = u.replace(/[.,;!?)]+$/, '');
     if (/^https?:\/\/isro\.gov\.in(\/.*)?$/i.test(u)) {
       u = u.replace('://isro.gov.in', '://www.isro.gov.in');
+    } else if (/^https?:\/\/bhuvan\.gov\.in(\/.*)?$/i.test(u)) {
+      u = u.replace('://bhuvan.gov.in', '://bhuvan.nrsc.gov.in');
     }
     return u;
   }
@@ -1578,6 +1661,8 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
     const path = universalDomainMatch[2] ? `/${universalDomainMatch[2]}` : '';
     if (domain.toLowerCase() === 'isro.gov.in') {
       domain = 'www.isro.gov.in';
+    } else if (domain.toLowerCase() === 'bhuvan.gov.in') {
+      domain = 'bhuvan.nrsc.gov.in';
     } else if (domain.toLowerCase() === 'wikipedia.org') {
       domain = 'www.wikipedia.org';
     } else if (domain.toLowerCase() === 'gmail.com') {

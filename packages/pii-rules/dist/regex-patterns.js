@@ -14,8 +14,8 @@ const HANDLE_REGEX = /(?:^|(?<=\s|[([{"']))(@[A-Za-z0-9_]{1,30})\b/g;
 const DELIVERY_ADDRESS_REGEX = /(?:^|(?<=\s|[([{"']))(?:Deliver(?:y|ing)?\s+to|Ship\s+to|Shipping\s+to|Delivered\s+to)\s+([^\n\r<]{3,80})/gi;
 // Home / Work / Office Named Locations (e.g. "HOME at katra - Allahabad", "WORK at Cyber City")
 const HOME_WORK_LOCATION_REGEX = /\b(?:HOME|WORK|OFFICE|OTHER)\s+(?:at\s+|-\s+)([^\n\r<]{3,80})/gi;
-// Indian 6-digit Postal PIN Codes in context (e.g. "PIN: 211002", "Pincode 560001", or 6 digits in delivery/postal address)
-const PINCODE_IN_CONTEXT_REGEX = /\b(?:pin(?:\s*code)?[\s:]*|postal\s*code[\s:]*|[,\-]\s*)([1-9][0-9]{5})\b/gi;
+// Indian 6-digit Postal PIN Codes in context (e.g. "PIN: 211002", "Pincode 560001", "Bengaluru-560 094", or 6 digits in delivery/postal address)
+const PINCODE_IN_CONTEXT_REGEX = /(?:[A-Za-z]+[\-,]\s*|[,\-]\s*|\b(?:pin(?:\s*code)?|postal(?:\s*code)?|zip(?:\s*code)?)[\s:\-,]*)([1-9][0-9]{2}\s?[0-9]{3})\b/gi;
 // Locality, Colony, Nagar, Marg, Katra street addresses
 const LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt|Sector|Block|Pocket|Street|St\.|Road|Rd\.|Cross|Main|Nagar|Colony|Enclave|Vihar|Kunj|Society|Layout|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Bhavan|Bhawan)\b[^\n\r,;]{2,60}/gi;
 // Account Greeting Names (e.g. "Hello, Kushagra", "Welcome, Alice", "Hi John")
@@ -24,13 +24,18 @@ const ACCOUNT_GREETING_REGEX = /\b(?:Hello|Hi|Welcome),\s+([A-Za-z0-9_]{2,30})\b
 const STREET_ADDRESS_REGEX = /\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir)\b[^\n\r,;]*/gi;
 // Date of Birth / Calendar Dates (e.g. "18 Sep 2026", "14-08-1988", "1998/05/20")
 const DATE_OF_BIRTH_REGEX = /\b(?:\d{1,2}[\s/-](?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s/-]\d{2,4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b/gi;
-// Email: Standard RFC-compliant safe pattern
+// Email: Standard RFC-compliant safe pattern and Obfuscated patterns (e.g. isropr[at]isro[dot]gov[dot]in, contact(at)domain(dot)com)
 const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+const OBFUSCATED_EMAIL_REGEX = /(?:^|(?<=\s|[([{:;,]))[A-Za-z0-9._%+-]+(?:\s*\[at\]\s*|\s*\(at\)\s*|\s*@\s*)[A-Za-z0-9.-]+(?:\s*\[dot\]\s*|\s*\(dot\)\s*|\s*\.\s*)[A-Za-z]{2,}(?:\s*\[dot\]\s*[A-Za-z]{2,}|\s*\.\s*[A-Za-z]{2,})*/gi;
+const EMAIL_LABEL_REGEX = /(?:^|(?<=\s|[([{:;,]))(?:Email|E-mail|Mail)[\s.:]*([^\s\n\r<]+@[^\s\n\r<]+|[A-Za-z0-9._%+-]+(?:\s*\[at\]\s*|\s*\(at\)\s*)[^\s\n\r<]+)/gi;
 // Standard 10-digit Phone Numbers (e.g. 1234567890, (123) 456-7890, 123-456-7890)
 const STANDARD_PHONE_REGEX = /(?:^|(?<!\d))(?:\+?1[\s.-]?)?\(?([0-9]{3})\)?[\s.-]?([0-9]{3})[\s.-]?([0-9]{4})(?!\d)\b/g;
+// Contextual phone prefix (e.g. "Phone: +91 80 22172294 / 96", "Tel: 080-22172294", "Mobile: 9876543210")
+const PHONE_LABEL_REGEX = /(?:^|(?<=\s|[([{:;,]))(?:Phone|Tel(?:ephone)?|Mobile|Mob|Contact|Call|Fax)[\s.:]*([+\d\s()./-]{7,35})(?!\d)/gi;
 // Indian Phone (+91-9876543210, +91 98765 43210, 09876543210, 9876543210) & International E.164
 const INDIAN_PHONE_REGEX = /(?:^|(?<!\d))(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)\b/g;
-const INTL_PHONE_REGEX = /\b\+(?:[1-9]\d{0,2})[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{1,4}[\s.-]?\d{1,9}\b/g;
+const INDIAN_LANDLINE_REGEX = /(?:^|(?<=\s|[([{:;,]))(?:\+91[\s-]?)?0?\d{2,4}[\s-]?\d{6,8}(?:\s*[/,]\s*\d{2,4})*(?!\d)\b/g;
+const INTL_PHONE_REGEX = /(?:^|(?<=\s|[([{:;,]))\+(?:[1-9]\d{0,2})[\s.-]?\(?\d{1,5}\)?[\s.-]?\d{1,5}[\s.-]?\d{3,5}(?:\s*[/,]\s*\d{2,5})*(?!\d)/g;
 // Indian PAN (Permanent Account Number): 5 Letters, 4 Digits, 1 Letter (e.g. ABCDE1234F)
 const PAN_REGEX = /\b[A-Z]{5}[0-9]{4}[A-Z]\b/g;
 // Indian Aadhaar: 12 digits, often formatted as 4-4-4 (e.g. 4532 8901 2345)
@@ -165,6 +170,41 @@ export function scanTextForPII(text) {
             });
         }
     }
+    // 2b. Obfuscated Email (e.g. isropr[at]isro[dot]gov[dot]in, contact(at)domain(dot)com)
+    for (const match of text.matchAll(OBFUSCATED_EMAIL_REGEX)) {
+        if (match.index !== undefined) {
+            const start = match.index;
+            const end = match.index + match[0].length;
+            const alreadyCovered = matches.some(m => m.startIndex <= start && m.endIndex >= end);
+            if (!alreadyCovered) {
+                matches.push({
+                    category: 'email',
+                    startIndex: start,
+                    endIndex: end,
+                    matchedLength: match[0].length,
+                    confidence: 0.97
+                });
+            }
+        }
+    }
+    // 2c. Email with label (e.g. "Email: isropr[at]isro[dot]gov[dot]in" -> masks the email address)
+    for (const match of text.matchAll(EMAIL_LABEL_REGEX)) {
+        if (match.index !== undefined && match[1]) {
+            const emailOffset = match[0].indexOf(match[1]);
+            const emailStart = match.index + emailOffset;
+            const emailEnd = emailStart + match[1].length;
+            const alreadyCovered = matches.some(m => m.startIndex <= emailStart && m.endIndex >= emailEnd);
+            if (!alreadyCovered) {
+                matches.push({
+                    category: 'email',
+                    startIndex: emailStart,
+                    endIndex: emailEnd,
+                    matchedLength: match[1].length,
+                    confidence: 0.98
+                });
+            }
+        }
+    }
     // 3. PAN
     for (const match of text.matchAll(PAN_REGEX)) {
         if (match.index !== undefined) {
@@ -206,6 +246,24 @@ export function scanTextForPII(text) {
             }
         }
     }
+    // 5b. Contextual Phone Labels (e.g. "Phone: +91 80 22172294 / 96", "Tel: 080-22172294")
+    for (const match of text.matchAll(PHONE_LABEL_REGEX)) {
+        if (match.index !== undefined && match[1]) {
+            const phoneOffset = match[0].indexOf(match[1]);
+            const phoneStart = match.index + phoneOffset;
+            const phoneEnd = phoneStart + match[1].length;
+            const alreadyCovered = matches.some(m => m.startIndex <= phoneStart && m.endIndex >= phoneEnd);
+            if (!alreadyCovered) {
+                matches.push({
+                    category: 'phone',
+                    startIndex: phoneStart,
+                    endIndex: phoneEnd,
+                    matchedLength: match[1].length,
+                    confidence: 0.98
+                });
+            }
+        }
+    }
     // 6. Indian Phone Numbers
     for (const match of text.matchAll(INDIAN_PHONE_REGEX)) {
         if (match.index !== undefined) {
@@ -220,6 +278,23 @@ export function scanTextForPII(text) {
                     endIndex: end,
                     matchedLength: match[0].length,
                     confidence: 0.95
+                });
+            }
+        }
+    }
+    // 6b. Indian Landline Numbers with STD codes (e.g. +91 80 22172294 / 96, 080-22172294)
+    for (const match of text.matchAll(INDIAN_LANDLINE_REGEX)) {
+        if (match.index !== undefined) {
+            const start = match.index;
+            const end = match.index + match[0].length;
+            const alreadyCovered = matches.some(m => m.startIndex <= start && m.endIndex >= end);
+            if (!alreadyCovered && match[0].replace(/\D/g, '').length >= 8) {
+                matches.push({
+                    category: 'phone',
+                    startIndex: start,
+                    endIndex: end,
+                    matchedLength: match[0].length,
+                    confidence: 0.94
                 });
             }
         }

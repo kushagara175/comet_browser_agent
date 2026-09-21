@@ -106,10 +106,22 @@ export function isBrowserActionRequest(message) {
     .replace(/\btpye\b/g, 'type')
     .replace(/\bclik\b/g, 'click')
     .replace(/\bcilck\b/g, 'click')
+    .replace(/\bclcik\b/g, 'click')
+    .replace(/\bclck\b/g, 'click')
+    .replace(/\bclikc\b/g, 'click')
     .replace(/\bselet\b/g, 'select')
     .replace(/\bselct\b/g, 'select')
     .replace(/\bserach\b/g, 'search')
     .replace(/\bserch\b/g, 'search')
+    .replace(/\bdown;oad\b/g, 'download')
+    .replace(/\bdownlaod\b/g, 'download')
+    .replace(/\bdoenmlao\b/g, 'download')
+    .replace(/\bdomwloadn\b/g, 'download')
+    .replace(/\bdomwload\b/g, 'download')
+    .replace(/\bdowload\b/g, 'download')
+    .replace(/\bdwnload\b/g, 'download')
+    .replace(/\bdownld\b/g, 'download')
+    .replace(/\bdownlod\b/g, 'download')
     .replace(/\bwnat\b/g, 'want')
     .replace(/\bhoe\b/g, 'how')
     .replace(/\bae\b/g, 'are')
@@ -119,7 +131,15 @@ export function isBrowserActionRequest(message) {
     .replace(/\bststement\b/g, 'statement')
     .replace(/\bprbek\b/g, 'problem')
     .replace(/\btermiankti\b/g, 'termination')
-    .replace(/\bseahc\b/g, 'search');
+    .replace(/\bseahc\b/g, 'search')
+    .replace(/\bse\b(?=\s+(?:for|at|the|thr|in|to|on)\b)/g, 'see')
+    .replace(/\bthr\b/g, 'the')
+    .replace(/\bhre\b/g, 'here')
+    .replace(/\bstrtup\b/g, 'startup')
+    .replace(/\bstrt-up\b/g, 'start-up')
+    .replace(/\bshw\b/g, 'show')
+    .replace(/\bopn\b/g, 'open')
+    .replace(/\bfnd\b/g, 'find');
 
   // Information retrieval & question-answering directives per cababling.md
   if (/(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:the\s+count|the\s+number|the\s+total|the\s+status|about\s+submissions)|find\s+.*?\s+and\s+tell)/i.test(normalized)) {
@@ -238,14 +258,28 @@ export async function computeSidepanelSha256Hex(dataString) {
 /**
  * Computes mask category counts without exposing raw sensitive strings or values.
  */
-export function computeMaskBreakdown(elements = [], totalMasks = 0) {
+export function computeMaskBreakdown(elements = [], totalMasks = 0, redactionManifest = null) {
+  // If true redaction manifest with category breakdown is provided, use authentic category counts!
+  if (redactionManifest && redactionManifest.categoryBreakdown && typeof redactionManifest.categoryBreakdown === 'object') {
+    const rawBreakdown = redactionManifest.categoryBreakdown;
+    const cleanBreakdown = {};
+    for (const [cat, count] of Object.entries(rawBreakdown)) {
+      if (typeof count === 'number' && count > 0) {
+        cleanBreakdown[cat] = count;
+      }
+    }
+    if (Object.keys(cleanBreakdown).length > 0) {
+      return cleanBreakdown;
+    }
+  }
+
   const breakdown = {};
 
   for (const el of elements) {
     const name = (el.sanitizedName || '').toLowerCase();
     if (name.includes('password')) {
       breakdown.password = (breakdown.password || 0) + 1;
-    } else if (name.includes('otp') || name.includes('auth')) {
+    } else if (name.includes('otp') || /\bauth(?:_code)?\b/i.test(name) || name.includes('[otp field]')) {
       breakdown.auth_code = (breakdown.auth_code || 0) + 1;
     } else if (name.includes('payment') || name.includes('card') || name.includes('cvv')) {
       breakdown.payment = (breakdown.payment || 0) + 1;
@@ -255,6 +289,8 @@ export function computeMaskBreakdown(elements = [], totalMasks = 0) {
       breakdown.email = (breakdown.email || 0) + 1;
     } else if (name.includes('phone')) {
       breakdown.phone = (breakdown.phone || 0) + 1;
+    } else if (name.includes('address') || name.includes('location') || name.includes('pincode')) {
+      breakdown.address = (breakdown.address || 0) + 1;
     } else if (name.includes('token') || name.includes('key')) {
       breakdown.token = (breakdown.token || 0) + 1;
     } else if (name.includes('sensitive') || el.role === 'canvas' || el.role === 'iframe') {
@@ -705,12 +741,25 @@ if (typeof document !== 'undefined') {
       window.initWavesShader(shaderCanvas);
     }
 
-    // Immediate HUD activation with zero splash delay
+    // COMET Welcome Page Presentation (Paced smoothly for 4.5s on extension open)
+    const SPLASH_DURATION_MS = 4500; // 4.5 seconds for a well-paced welcome sequence
     if (loadingView && aiWorkerView) {
-      loadingView.classList.add('hidden');
-      loadingView.style.display = 'none';
+      loadingView.classList.remove('hidden');
+      loadingView.style.display = 'flex';
       aiWorkerView.classList.remove('hidden');
-      setTimeout(() => chatInput?.focus(), 50);
+      aiWorkerView.style.opacity = '0';
+      aiWorkerView.style.transition = 'opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1)';
+
+      setTimeout(() => {
+        loadingView.classList.add('fade-out');
+        aiWorkerView.style.opacity = '1';
+
+        setTimeout(() => {
+          loadingView.classList.add('hidden');
+          loadingView.style.display = 'none';
+          chatInput?.focus();
+        }, 700);
+      }, SPLASH_DURATION_MS);
     }
 
     // Top-left logo button: starts fresh new chat session cleanly without loading screen flicker
@@ -2002,12 +2051,44 @@ if (typeof document !== 'undefined') {
       updateInspectorLayout();
     });
 
-    // Set Agent Status
+    // Set Agent Status & Sync Execution Beam
     function setAgentStatus(state) {
       if (appRoot) {
         appRoot.setAttribute('data-agent-status', state);
         appRoot.setAttribute('data-run-state', state);
       }
+      const isRunning = ['capturing', 'detecting-sensitive-content', 'sanitizing', 'sending-sanitized-context', 'awaiting-reasoning', 'executing', 'verifying'].includes(state);
+      const sendBtn = document.getElementById('sendBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const beamChatCard = document.getElementById('beamChatCard');
+      const beamEffectLabel = document.getElementById('beamEffectLabel');
+
+      if (isRunning) {
+        if (stopBtn) stopBtn.classList.remove('hidden');
+        if (sendBtn) sendBtn.classList.add('hidden');
+        if (window.__voiceBeamEngine) {
+          window.__voiceBeamEngine.setProcessing(true);
+        }
+        if (beamChatCard) {
+          beamChatCard.setAttribute('data-beam', 'privapilot_rotate_large');
+          beamChatCard.style.setProperty('--beam-strength', '1.0');
+        }
+        if (beamEffectLabel) beamEffectLabel.textContent = 'Pulse 1';
+      } else {
+        if (stopBtn) stopBtn.classList.add('hidden');
+        if (sendBtn) sendBtn.classList.remove('hidden');
+        if (window.__voiceBeamEngine) {
+          window.__voiceBeamEngine.setProcessing(false);
+        }
+        if (beamChatCard) {
+          const chatInputEl = document.getElementById('chatInput');
+          const hasText = chatInputEl && chatInputEl.value.trim().length > 0;
+          beamChatCard.setAttribute('data-beam', hasText ? 'privapilot_rotate' : 'privapilot_line');
+          beamChatCard.style.setProperty('--beam-strength', hasText ? '0.85' : '0.7');
+        }
+        if (beamEffectLabel) beamEffectLabel.textContent = 'Agent';
+      }
+
       if (!agentStatusBadge) return;
       const info = mapAgentStateToStatusInfo(state);
       agentStatusBadge.className = `status-pill ${info.cssClass}`;
@@ -2075,11 +2156,11 @@ if (typeof document !== 'undefined') {
     });
 
     // Render Mask Category Breakdown
-    function renderMaskBreakdown(elements, maskCount) {
+    function renderMaskBreakdown(elements, maskCount, redactionManifest = null) {
       if (!maskBreakdownList) return;
       maskBreakdownList.innerHTML = '';
 
-      const breakdown = computeMaskBreakdown(elements, maskCount);
+      const breakdown = computeMaskBreakdown(elements, maskCount, redactionManifest);
       const categories = Object.keys(breakdown);
 
       if (categories.length === 0 || maskCount === 0) {
@@ -2523,7 +2604,7 @@ if (typeof document !== 'undefined') {
           }
           if (statElementsCount) statElementsCount.textContent = String(elementCount);
           if (statMasksCount) statMasksCount.textContent = String(maskCount);
-          renderMaskBreakdown(sanitized.elements || [], maskCount);
+          renderMaskBreakdown(sanitized.elements || [], maskCount, sanitized.redactionManifest);
           updatePayloadDisplay(sanitized, currentGoalText);
           addAuditEntry('MASK', `Rendered ${maskCount} opaque privacy masks locally`, 'mask');
         }
@@ -2650,7 +2731,7 @@ if (typeof document !== 'undefined') {
         }
         if (statElementsCount) statElementsCount.textContent = String(elementCount);
         if (statMasksCount) statMasksCount.textContent = String(maskCount);
-        renderMaskBreakdown(sanitized.elements || [], maskCount);
+        renderMaskBreakdown(sanitized.elements || [], maskCount, sanitized.redactionManifest);
         updatePayloadDisplay(sanitized, currentGoalText);
         addAuditEntry('MASK', `Rendered ${maskCount} opaque privacy masks locally`, 'mask');
       }
@@ -3233,6 +3314,30 @@ if (typeof document !== 'undefined') {
           activeVoiceOrb.setState('listening');
         }
       }
+
+      // 3b. Drive bottom footer VoiceBeam in exact sync with current voice audio
+      if (window.__orbVoiceBeamEngine) {
+        window.__orbVoiceBeamEngine.setAudioLevel(computedLevel);
+        if (isVoiceThinking) {
+          window.__orbVoiceBeamEngine.setProcessing(true);
+        } else {
+          window.__orbVoiceBeamEngine.setProcessing(false);
+        }
+      }
+
+      // 4. Drive chat box VoiceBeam auroral glow in real time
+      const voiceGlowEl = document.getElementById('voiceGlowBackdrop');
+      if (voiceGlowEl) {
+        if (computedLevel > 0.05) {
+          const scale = 1 + computedLevel * 0.45;
+          const h = 65 + computedLevel * 45;
+          voiceGlowEl.style.setProperty('--voice-glow-scale', scale.toFixed(2));
+          voiceGlowEl.style.setProperty('--voice-glow-height', `${h.toFixed(0)}px`);
+        } else {
+          voiceGlowEl.style.removeProperty('--voice-glow-scale');
+          voiceGlowEl.style.removeProperty('--voice-glow-height');
+        }
+      }
     }
 
     // Handle full Voice Conversation turn (Thinking -> Reasoning -> Speaking Back)
@@ -3537,6 +3642,38 @@ if (typeof document !== 'undefined') {
         }
       }
 
+      // Initialize or activate VoiceBeam Sound-Reactive Glow at bottom footer of Voice Modal (Mobile Type)
+      try {
+        const orbFooterEl = document.getElementById('orbVoiceBeamFooter');
+        if (orbFooterEl) {
+          if (!window.__orbVoiceBeamEngine) {
+            const { initVoiceBeam } = await import('./voice-beam.js');
+            window.__orbVoiceBeamEngine = initVoiceBeam(orbFooterEl, {
+              id: 'orb-footer-beam',
+              type: 'mobile',
+              position: 'absolute',
+              borderRadius: 0,
+              scale: 1.25,
+              bend: 75,
+              reach: 2.8,
+              spread: 0.55,
+              bandWidth: 2.4,
+              bandStrength: 0,
+              flow: 60,
+              idle: 0.32,
+              breatheDuration: 4.8,
+              colorVariant: 'colorful'
+            });
+          }
+          if (voiceAudioStream) {
+            window.__orbVoiceBeamEngine?.setStream(voiceAudioStream);
+          }
+          window.__orbVoiceBeamEngine?.setAudioLevel(0.42);
+        }
+      } catch (vbErr) {
+        console.warn('[PrivaPilot Voice] Failed to initialize footer VoiceBeam:', vbErr);
+      }
+
       // Start 60 FPS audio reactive visualizer loop
       if (voiceAnimFrame) {
         cancelAnimationFrame(voiceAnimFrame);
@@ -3768,6 +3905,11 @@ if (typeof document !== 'undefined') {
         } catch (_) {}
       }
 
+      if (window.__orbVoiceBeamEngine) {
+        window.__orbVoiceBeamEngine.setAudioLevel(0);
+        window.__orbVoiceBeamEngine.setProcessing(false);
+      }
+
       // In dictate mode, ensure whatever was spoken is safely written into the chatbox
       if (lastSpokenPrompt && chatInput) {
         chatInput.value = lastSpokenPrompt.trim();
@@ -3805,37 +3947,176 @@ if (typeof document !== 'undefined') {
       });
     }
 
-    // Chat Form Submit & Input Handling
+    // Chat Form Submit & Input Handling (Synced with border-beam Rotate & Color playground)
     if (chatForm && chatInput) {
       const sendBtn = document.getElementById('sendBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const beamChatCard = document.getElementById('beamChatCard');
+      const beamRotatePill = document.getElementById('beamRotatePill');
+      const beamColorPill = document.getElementById('beamColorPill');
+      const beamEffectLabel = document.getElementById('beamEffectLabel');
+      const beamColorLabel = document.getElementById('beamColorLabel');
+
+      let userSelectedEffect = 'rotate'; // 'rotate', 'pulse', 'line'
+      let colorIndex = 0;
+      const colorPalettes = ['Color', 'Ocean', 'Sunset', 'Mono'];
+
+      // Initialize sound & typing reactive VoiceBeam engine from libraries.dev/voice
+      let voiceBeamEngine = null;
+      (async () => {
+        try {
+          const { initVoiceBeam } = await import('./voice-beam.js');
+          if (beamChatCard) {
+            voiceBeamEngine = initVoiceBeam(beamChatCard, {
+              id: 'privapilot-beam',
+              borderRadius: 22,
+              colorVariant: 'colorful',
+              idle: 0.22,
+              breatheDuration: 5.2,
+              bend: 58,
+              bandStrength: 1.6,
+              bandWidth: 2.2
+            });
+            window.__voiceBeamEngine = voiceBeamEngine;
+          }
+        } catch (err) {
+          console.warn('VoiceBeam init notice:', err);
+        }
+      })();
+
+      function syncBeamEffect() {
+        if (!beamChatCard) return;
+        const val = chatInput.value.trim();
+        const hasText = val.length > 0;
+        const isProceed = val.toLowerCase() === 'proceed' || val.toLowerCase().startsWith('proceed');
+
+        if (isProceed) {
+          voiceBeamEngine?.triggerTypingPulse(0.9);
+          beamChatCard.setAttribute('data-beam', 'privapilot_rotate_large');
+          beamChatCard.style.setProperty('--beam-strength', '1.0');
+          if (beamEffectLabel) beamEffectLabel.textContent = 'Rotate Large';
+        } else if (hasText) {
+          if (userSelectedEffect === 'pulse') {
+            beamChatCard.setAttribute('data-beam', 'privapilot_rotate_large');
+            beamChatCard.style.setProperty('--beam-strength', '0.95');
+            if (beamEffectLabel) beamEffectLabel.textContent = 'Pulse 1';
+          } else if (userSelectedEffect === 'line') {
+            beamChatCard.setAttribute('data-beam', 'privapilot_line');
+            beamChatCard.style.setProperty('--beam-strength', '0.85');
+            if (beamEffectLabel) beamEffectLabel.textContent = 'Agent';
+          } else {
+            beamChatCard.setAttribute('data-beam', 'privapilot_rotate');
+            beamChatCard.style.setProperty('--beam-strength', '0.85');
+            if (beamEffectLabel) beamEffectLabel.textContent = 'Agent';
+          }
+        } else {
+          beamChatCard.setAttribute('data-beam', 'privapilot_line');
+          beamChatCard.style.setProperty('--beam-strength', '0.7');
+          if (beamEffectLabel) beamEffectLabel.textContent = 'Agent';
+        }
+
+        if (sendBtn) {
+          if (hasText) {
+            sendBtn.classList.add('has-text');
+          } else {
+            sendBtn.classList.remove('has-text');
+          }
+        }
+      }
 
       function updateSendBtn() {
-        const hasText = chatInput.value.trim().length > 0;
+        const val = chatInput.value.trim();
+        const hasText = val.length > 0;
         if (hasText) {
-          sendBtn?.classList.add('mode-send');
+          sendBtn?.classList.add('mode-send', 'has-text');
           sendBtn?.classList.remove('mode-mic');
           sendBtn?.setAttribute('title', 'Send Instruction');
           sendBtn?.setAttribute('aria-label', 'Send Instruction');
+          beamChatCard?.classList.add('typing');
         } else {
           sendBtn?.classList.add('mode-mic');
-          sendBtn?.classList.remove('mode-send');
+          sendBtn?.classList.remove('mode-send', 'has-text');
           sendBtn?.setAttribute('title', 'Voice Input');
           sendBtn?.setAttribute('aria-label', 'Voice Input');
+          beamChatCard?.classList.remove('typing');
         }
+        syncBeamEffect();
       }
 
       updateSendBtn();
 
-      ['input', 'keyup', 'change', 'paste', 'focus'].forEach(evt => {
-        chatInput.addEventListener(evt, updateSendBtn);
+      // Agent / Rotate / Pulse cycle pill
+      beamRotatePill?.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (userSelectedEffect === 'rotate') {
+          userSelectedEffect = 'pulse';
+        } else if (userSelectedEffect === 'pulse') {
+          userSelectedEffect = 'line';
+        } else {
+          userSelectedEffect = 'rotate';
+        }
+        syncBeamEffect();
+      });
+
+      // Color cycle pill
+      beamColorPill?.addEventListener('click', (e) => {
+        e.preventDefault();
+        colorIndex = (colorIndex + 1) % colorPalettes.length;
+        const pal = colorPalettes[colorIndex].toLowerCase();
+        const mappedPal = pal === 'color' ? 'colorful' : pal;
+        voiceBeamEngine?.setColorVariant(mappedPal);
+        window.__voiceBeamEngine?.setColorVariant(mappedPal);
+        if (beamColorLabel) beamColorLabel.textContent = colorPalettes[colorIndex];
+      });
+
+      // Stop Button Handler
+      stopBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        setAgentStatus('idle');
+        addAuditEntry('HALT', 'User Stopped Agent Execution', 'warn');
+        if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+          chrome.runtime.sendMessage({ type: 'ABORT_ACTION' });
+        }
+      });
+
+      function autoResizeTextarea() {
+        if (chatInput.tagName.toLowerCase() === 'textarea') {
+          chatInput.style.height = 'auto';
+          chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
+        }
+      }
+
+      ['input', 'keydown', 'keyup', 'change', 'paste', 'focus'].forEach(evt => {
+        chatInput.addEventListener(evt, () => {
+          voiceBeamEngine?.triggerTypingPulse(0.55);
+          window.__voiceBeamEngine?.triggerTypingPulse(0.55);
+          updateSendBtn();
+          autoResizeTextarea();
+        });
+      });
+
+      chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (chatInput.value.trim().length > 0) {
+            chatForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          }
+        }
       });
 
       sendBtn?.addEventListener('click', (e) => {
         e.preventDefault();
-        if (sendBtn.classList.contains('mode-send')) {
-          chatForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-        } else if (sendBtn.classList.contains('mode-mic')) {
-          openVoiceMode();
+        if (sendBtn.classList.contains('mode-mic')) {
+          if (typeof openVoiceMode === 'function') {
+            openVoiceMode();
+          }
+        } else {
+          const text = chatInput.value.trim();
+          if (text) {
+            chatForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          } else {
+            chatInput.focus();
+          }
         }
       });
 
@@ -3844,6 +4125,9 @@ if (typeof document !== 'undefined') {
         const text = chatInput.value.trim();
         if (text) {
           executeGoal(text);
+          if (chatInput.tagName.toLowerCase() === 'textarea') {
+            chatInput.style.height = 'auto';
+          }
           setTimeout(updateSendBtn, 50);
         }
       });
@@ -4003,7 +4287,7 @@ if (typeof document !== 'undefined') {
             if (statElementsCount) statElementsCount.textContent = String(message.elementCount ?? 0);
             if (statMasksCount) statMasksCount.textContent = String(message.maskCount ?? 0);
 
-            renderMaskBreakdown(message.elements || [], message.maskCount ?? 0);
+            renderMaskBreakdown(message.elements || [], message.maskCount ?? 0, message.redactionManifest || message.sanitized?.redactionManifest);
 
             let realDigest = message.payloadDigestSha256 || 'Not available';
             if (realDigest && realDigest !== 'Not available') {

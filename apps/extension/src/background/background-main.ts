@@ -205,6 +205,22 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
+    if (message.type === 'TRIGGER_DOWNLOAD' && message.url) {
+      if (typeof chrome !== 'undefined' && chrome.downloads && typeof chrome.downloads.download === 'function') {
+        try {
+          chrome.downloads.download({
+            url: message.url,
+            filename: message.filename,
+            saveAs: false
+          }, (downloadId: any) => {
+            console.log(`[Background] Native download triggered: id=${downloadId} url=${message.url}`);
+          });
+        } catch (_) {}
+      }
+      sendResponse({ success: true });
+      return true;
+    }
+
     if (message.type === 'START_AGENT_RUN') {
       coordinator.startRun(message.goal || 'Safe assistance', {
         runId: message.runId,

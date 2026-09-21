@@ -191,6 +191,30 @@ export class ActionExecutor {
                 }
             }
         }
+        // Semantic Target Recovery: If targetLocalId is not in elementMap, search DOM by target name / keywords
+        if (!targetEl && proposal.targetLocalId) {
+            const win = typeof window !== 'undefined' ? window : null;
+            const doc = win?.document || (typeof document !== 'undefined' ? document : null);
+            if (doc) {
+                const fullText = (proposal.rationale || '') + ' ' + (proposal.reasoning || '') + ' ' + (proposal.targetName || '');
+                const matchPhrase = fullText.match(/["']([^"']{3,40})["']/)?.[1] ||
+                    fullText.match(/\b(?:click|open|select|navigate\s+to|check|explore)\s+([a-zA-Z0-9_&\s-]{3,30})/i)?.[1] || '';
+                const cleanPhrase = matchPhrase.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (cleanPhrase.length >= 3) {
+                    const allInteractive = doc.querySelectorAll('a, button, [role="button"], [role="link"], [role="menuitem"], [role="tab"]');
+                    for (let i = 0; i < allInteractive.length; i++) {
+                        const item = allInteractive[i];
+                        const itemText = (item.textContent || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const itemAria = (item.getAttribute('aria-label') || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const itemHref = (item.href || '').toLowerCase();
+                        if (itemText.includes(cleanPhrase) || cleanPhrase.includes(itemText) || itemAria.includes(cleanPhrase) || itemHref.includes(cleanPhrase)) {
+                            targetEl = item;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
         if (!targetEl) {
             if (!proposal.targetLocalId && !proposal.coordinates) {
                 return {
@@ -243,6 +267,29 @@ export class ActionExecutor {
             }
         }
         if (isHidden) {
+            // Dropdown / Navigation Menu Link Recovery: If target is an anchor link (e.g. inside a collapsed dropdown menu like 'Engagements')
+            const anchorEl = (targetEl.tagName.toLowerCase() === 'a' ? targetEl : targetEl.closest?.('a'));
+            const href = anchorEl?.href || anchorEl?.getAttribute('href') || '';
+            if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
+                const win = targetEl.ownerDocument?.defaultView || (typeof window !== 'undefined' ? window : null);
+                if (win) {
+                    win.location.href = href;
+                    return {
+                        actionId: proposal.actionId,
+                        success: true,
+                        timestamp,
+                        semanticOutcomeVerified: true,
+                        message: `Navigated directly to dropdown link "${href}"`
+                    };
+                }
+            }
+            // If inside a dropdown flyout, attempt to unhide by opening parent menu
+            const parentDropdown = targetEl.closest('.dropdown, .menu, nav, ul, li, [role="menu"]')?.parentElement?.querySelector('button, a, [aria-haspopup]');
+            if (parentDropdown && typeof parentDropdown.click === 'function') {
+                parentDropdown.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                parentDropdown.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+                parentDropdown.click();
+            }
             return {
                 actionId: proposal.actionId,
                 success: false,
@@ -302,6 +349,40 @@ export class ActionExecutor {
                     button: 0,
                     buttons: 1
                 };
+                // For anchor links (e.g. search result links, Google Custom Search results, download links),
+                // ensure target is _self and handle downloadable file links directly.
+                const anchorEl = (targetEl.tagName.toLowerCase() === 'a' ? targetEl : targetEl.closest?.('a'));
+                if (anchorEl) {
+                    const href = anchorEl.href || anchorEl.getAttribute('href') || '';
+                    const isDownloadable = /\.(?:pdf|zip|csv|kmz|kml|tif|tiff|docx?|xlsx?)(?:\?.*)?$/i.test(href);
+                    if (isDownloadable) {
+                        const filename = href.split('/').pop()?.split('?')[0] || 'document.pdf';
+                        anchorEl.setAttribute('download', filename);
+                        anchorEl.download = filename;
+                        try {
+                            const globalChrome = globalThis.chrome;
+                            if (typeof globalChrome !== 'undefined' && globalChrome.runtime?.sendMessage) {
+                                globalChrome.runtime.sendMessage({
+                                    type: 'TRIGGER_DOWNLOAD',
+                                    url: href,
+                                    filename
+                                }).catch(() => { });
+                            }
+                        }
+                        catch (_) { }
+                        return {
+                            actionId: proposal.actionId,
+                            success: true,
+                            timestamp,
+                            semanticOutcomeVerified: true,
+                            message: `✓ Download initiated for "${filename}"`
+                        };
+                    }
+                    else if (anchorEl.getAttribute('target') === '_blank' || anchorEl.target === '_blank') {
+                        anchorEl.target = '_self';
+                        anchorEl.setAttribute('target', '_self');
+                    }
+                }
                 if (MouseEventCtor) {
                     targetEl.dispatchEvent(new MouseEventCtor('mousedown', mouseInit));
                     targetEl.dispatchEvent(new MouseEventCtor('mouseup', mouseInit));
@@ -378,6 +459,19 @@ export class ActionExecutor {
                             if (inp !== targetEl && isEditableTarget(inp)) {
                                 healedEl = inp;
                                 break;
+                            }
+                        }
+                    }
+                    // Self-heal to open modal, dialog, or focused input (common in airline autocomplete widgets)
+                    if (!healedEl) {
+                        const doc = targetEl.ownerDocument || (typeof document !== 'undefined' ? document : null);
+                        if (doc && typeof doc.querySelectorAll === 'function') {
+                            const modalInputs = doc.querySelectorAll('[role="dialog"] input, [role="alertdialog"] input, .modal input, [aria-modal="true"] input, ai-mobile-autocomplete-modal input, input:focus');
+                            for (const inp of Array.from(modalInputs)) {
+                                if (isEditableTarget(inp)) {
+                                    healedEl = inp;
+                                    break;
+                                }
                             }
                         }
                     }

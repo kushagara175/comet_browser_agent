@@ -152,4 +152,80 @@ test('Dual Voice Modes & Shimmering Thinking UI: sidepanel supports Voice to Tex
   assert.ok(js.includes('spiral-cyan-03'), 'spiral-cyan-03 celestial theme preset must be used');
 });
 
+test('VoiceBeam Sound & Typing Reactive Live Glow: voice-beam.js module integrity and sidepanel integration', async () => {
+  const beamModulePath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/voice-beam.js');
+  assert.ok(fs.existsSync(beamModulePath), 'voice-beam.js must exist in sidepanel directory');
 
+  const beamModule = await import(beamModulePath);
+  assert.equal(typeof beamModule.initVoiceBeam, 'function', 'initVoiceBeam must be exported as a function');
+  assert.equal(typeof beamModule.generateVoiceCss, 'function', 'generateVoiceCss must be exported as a function');
+  assert.ok(Array.isArray(beamModule.voiceLobes), 'voiceLobes must be an array');
+  assert.equal(beamModule.voiceLobes.length, 7, 'voiceLobes must contain 7 lobes');
+  assert.ok(beamModule.voicePalettes.colorful, 'colorful palette must exist');
+
+  const css = beamModule.generateVoiceCss('test-id', { borderRadius: 22 });
+  assert.ok(css.includes('[data-voice-beam="test-id"]'), 'Generated CSS must include data-voice-beam selector');
+  assert.ok(css.includes('--vb-h-test-id'), 'Generated CSS must include height custom property');
+  assert.ok(css.includes('--vb-w-test-id'), 'Generated CSS must include width custom property');
+
+  // Verify HTML markup
+  const htmlPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.html');
+  const html = fs.readFileSync(htmlPath, 'utf-8');
+  assert.ok(html.includes('data-voice-beam="privapilot-beam"'), 'beamChatCard must have data-voice-beam attribute');
+  assert.ok(html.includes('data-voice-beam-bloom'), 'bloom element must exist');
+  assert.ok(html.includes('data-voice-beam-band'), 'canvas band element must exist');
+  assert.ok(html.includes('placeholder="Ask me anything.."'), 'chatInput placeholder must be "Ask me anything.."');
+
+  // Verify JS wiring
+  const jsPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.js');
+  const js = fs.readFileSync(jsPath, 'utf-8');
+  assert.ok(js.includes('voice-beam.js'), 'sidepanel.js must import voice-beam.js');
+  assert.ok(js.includes('triggerTypingPulse'), 'sidepanel.js must call triggerTypingPulse on keystroke');
+  assert.ok(js.includes('setProcessing'), 'sidepanel.js must wire setProcessing for agent execution');
+});
+
+test('Orb Section VoiceBeam Footer Glow: orbVoiceBeamFooter markup, CSS, and live audio sync', async () => {
+  const htmlPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.html');
+  const html = fs.readFileSync(htmlPath, 'utf-8');
+  assert.ok(html.includes('id="orbVoiceBeamFooter"'), 'orbVoiceBeamFooter must exist in sidepanel.html');
+  assert.ok(html.includes('orb-voice-beam-footer'), 'orb-voice-beam-footer class must exist');
+  assert.ok(html.includes('data-voice-beam="orb-footer-beam"'), 'data-voice-beam attribute for orb footer must exist');
+
+  const cssPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.css');
+  const css = fs.readFileSync(cssPath, 'utf-8');
+  assert.ok(css.includes('.orb-voice-beam-footer'), '.orb-voice-beam-footer CSS rule must exist');
+  assert.ok(css.includes('height: 280px'), 'orb-voice-beam-footer must have tall rise height');
+
+  const jsPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.js');
+  const js = fs.readFileSync(jsPath, 'utf-8');
+  assert.ok(js.includes('orbVoiceBeamFooter'), 'sidepanel.js must reference orbVoiceBeamFooter');
+  assert.ok(js.includes('__orbVoiceBeamEngine'), 'sidepanel.js must track __orbVoiceBeamEngine');
+  assert.ok(js.includes('setAudioLevel(computedLevel)'), 'sidepanel.js must drive footer beam with computed audio level in sync with orb');
+
+  const beamModulePath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/voice-beam.js');
+  const beamModule = await import(beamModulePath);
+  assert.ok(beamModule.voicePresets?.mobile, 'voicePresets must define mobile preset');
+  assert.equal(beamModule.voicePresets.mobile.reach, 2.8, 'mobile preset reach must be 2.8');
+});
+
+test('Soothing Auroral Bloom & Processing Travel Beam: voice-beam.js renders heavily diffused Gaussian blur and gathers lobes during processing', async () => {
+  const beamModulePath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/voice-beam.js');
+  const beamModule = await import(beamModulePath);
+
+  // Default preset has zero bandStrength to prevent sharp line artifacts
+  assert.equal(beamModule.voicePresets.default.bandStrength, 0, 'default bandStrength must be 0 to guarantee soothing gradient without sharp line');
+  assert.equal(beamModule.voicePresets.default.processingTravel, 1.55, 'processingTravel must match voice-glow specification (1.55)');
+  assert.equal(beamModule.voicePresets.default.processingCurve, 2.1, 'processingCurve must match voice-glow specification (2.1)');
+
+  // Generated CSS has heavy Gaussian blur on bloom and canvas layers
+  const css = beamModule.generateVoiceCss('soothing-test', { borderRadius: 22 });
+  assert.ok(css.includes('filter: blur(18px)'), 'Bloom layer must have heavy 18px Gaussian blur');
+  assert.ok(css.includes('filter: blur(16px)'), 'Band layer must have 16px blur to eliminate sharp strokes');
+
+  // Sidepanel CSS has eliminated the 2.5px line pseudo-element
+  const cssPath = path.join(ROOT_DIR, 'apps/extension/src/sidepanel/sidepanel.css');
+  const spCss = fs.readFileSync(cssPath, 'utf-8');
+  assert.ok(spCss.includes('.voice-glow-backdrop::after'), 'voice-glow-backdrop::after selector exists');
+  assert.ok(spCss.includes('display: none !important'), 'voice-glow-backdrop::after must be disabled with display: none !important');
+  assert.ok(spCss.includes('filter: blur(20px)'), 'voice-glow-backdrop::before must have heavy 20px blur');
+});

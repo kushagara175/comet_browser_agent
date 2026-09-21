@@ -40,6 +40,8 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "orbloom": "^0.1.0"
+    "border-beam": "^1.3.0",
+    "orbloom": "^0.1.0",
+    "voice-glow": "^0.2.0"
   }
 }

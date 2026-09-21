@@ -160,6 +160,59 @@ test('Payload Validator: Rejects unknown properties in scrollMetrics (closed sch
   assert.match(res.errorMessage, /Closed schema violation: Unknown scrollMetrics property/);
 });
 
+test('Payload Validator: Accepts valid pageState.url and pageState.stateDelta (multi-step context)', () => {
+  const payload = createBasePayload({
+    pageState: {
+      title: 'X Home',
+      viewport: [1280, 800],
+      url: 'https://x.com/home',
+      stateDelta: {
+        previousAction: {
+          kind: 'click',
+          targetName: 'Bookmarks',
+          targetLocalId: 'el_bm'
+        },
+        urlChanged: true,
+        previousUrl: 'https://x.com/explore',
+        currentUrl: 'https://x.com/home',
+        elementsAddedCount: 12,
+        elementsRemovedCount: 3,
+        scrollDeltaY: 0,
+        observedOutcome: 'Navigated to X Home',
+        verificationPassed: true
+      }
+    }
+  });
+  const res = validateSanitizedPayload(payload);
+  assert.strictEqual(res.isValid, true, res.errorMessage);
+  assert.strictEqual(res.payload.pageState.url, 'https://x.com/home');
+  assert.strictEqual(res.payload.pageState.stateDelta.currentUrl, 'https://x.com/home');
+  assert.strictEqual(res.payload.pageState.stateDelta.verificationPassed, true);
+});
+
+test('Payload Validator: Rejects unknown properties in stateDelta or pageState (closed schema)', () => {
+  const payload = createBasePayload({
+    pageState: {
+      title: 'X Home',
+      viewport: [1280, 800],
+      url: 'https://x.com/home',
+      stateDelta: {
+        urlChanged: false,
+        currentUrl: 'https://x.com/home',
+        elementsAddedCount: 0,
+        elementsRemovedCount: 0,
+        scrollDeltaY: 0,
+        observedOutcome: 'No change',
+        verificationPassed: true,
+        evilInjectedState: 'attacker_control'
+      }
+    }
+  });
+  const res = validateSanitizedPayload(payload);
+  assert.strictEqual(res.isValid, false);
+  assert.match(res.errorMessage, /Closed schema violation: Unknown stateDelta property/);
+});
+
 // ==========================================
 // 2. Semantic Field Matching (Synonym Groups)
 // ==========================================

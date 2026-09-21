@@ -4,7 +4,14 @@
 
 import test from 'node:test';
 import assert from 'node:assert';
-import { RunCoordinator, isSubAgentSwarmGoal } from '../apps/extension/dist/background/coordinator.js';
+import {
+  RunCoordinator,
+  isSubAgentSwarmGoal,
+  findFlightOriginElement,
+  findFlightDestinationElement,
+  findFlightSearchButton,
+  findAirportSuggestion
+} from '../apps/extension/dist/background/coordinator.js';
 
 function createSampleElements() {
   return [
@@ -682,6 +689,62 @@ test('Coordinator: isSubAgentSwarmGoal detects multi-airline and comparison quer
   assert.strictEqual(isSubAgentSwarmGoal('Compare flights from Delhi to Mumbai on IndiGo and Air India'), true);
   assert.strictEqual(isSubAgentSwarmGoal('compare iPhone 16 on Amazon and Flipkart'), true);
   assert.strictEqual(isSubAgentSwarmGoal('flights from Delhi to Mumbai'), false);
+
+  // Negative overrides: explicit single-agent or without subagent directives
+  assert.strictEqual(isSubAgentSwarmGoal('Compare flights from Delhi to Mumbai on IndiGo and Air India without subagents'), false);
+  assert.strictEqual(isSubAgentSwarmGoal('flights from Delhi to Mumbai IndiGo Air India single agent'), false);
+  assert.strictEqual(isSubAgentSwarmGoal('compare iPhone 16 on Amazon and Flipkart no subagents'), false);
+  assert.strictEqual(isSubAgentSwarmGoal('search flights on IndiGo and Air India single tab'), false);
+});
+
+test('Coordinator: Dedicated flight element finders accurately identify form fields and reject banners', () => {
+  const mockElements = [
+    { localId: 'el_login', role: 'button', sanitizedName: 'Login to unlock your IndiGo BluChip benefits!', state: [] },
+    { localId: 'el_promo', role: 'button', sanitizedName: 'Save up to ₹1000 off on flights', state: [] },
+    { localId: 'el_cancel', role: 'generic', sanitizedName: 'Free cancellation up to 48 hrs', state: [] },
+    { localId: 'el_from', role: 'input', sanitizedName: 'From Delhi, DEL', state: [] },
+    { localId: 'el_to', role: 'input', sanitizedName: 'Going to? Search by place/airport', state: [] },
+    { localId: 'el_hotel', role: 'button', sanitizedName: 'Search Hotels', state: [] },
+    { localId: 'el_search', role: 'button', sanitizedName: 'Search Flight', state: [] }
+  ];
+
+  // Origin finder rejects login and promo buttons, matches 'From'
+  const origin = findFlightOriginElement(mockElements);
+  assert.ok(origin);
+  assert.strictEqual(origin.localId, 'el_from');
+
+  // Destination finder rejects 'Login to unlock...' and 'up to' promo, matches 'Going to'
+  const dest = findFlightDestinationElement(mockElements, 'el_from');
+  assert.ok(dest);
+  assert.strictEqual(dest.localId, 'el_to');
+
+  // Focused destination priority check (IndiGo auto-focuses destination input after origin selection)
+  const focusedElements = [
+    { localId: 'el_login', role: 'button', sanitizedName: 'Login to unlock your IndiGo BluChip benefits!', state: [] },
+    { localId: 'el_from', role: 'input', sanitizedName: 'From Delhi, DEL', state: [] },
+    { localId: 'el_focused_to', role: 'input', sanitizedName: 'Search destination', state: ['focused'] }
+  ];
+  const focusedDest = findFlightDestinationElement(focusedElements, 'el_from');
+  assert.ok(focusedDest);
+  assert.strictEqual(focusedDest.localId, 'el_focused_to');
+
+  // Search button finder matches 'Search Flight' and excludes 'Search Hotels'
+  const searchBtn = findFlightSearchButton(mockElements);
+  assert.ok(searchBtn);
+  assert.strictEqual(searchBtn.localId, 'el_search');
+
+  // Airport suggestion finder
+  const suggestions = [
+    { localId: 'sug_1', role: 'option', sanitizedName: 'BOM - Mumbai, India Chhatrapati Shivaji International Airport', state: [] },
+    { localId: 'sug_2', role: 'option', sanitizedName: 'DEL - Delhi, India Indira Gandhi International Airport', state: [] }
+  ];
+  const bom = findAirportSuggestion(suggestions, 'Mumbai', 'BOM');
+  assert.ok(bom);
+  assert.strictEqual(bom.localId, 'sug_1');
+
+  const del = findAirportSuggestion(suggestions, 'Delhi', 'DEL');
+  assert.ok(del);
+  assert.strictEqual(del.localId, 'sug_2');
 });
 
 test('Coordinator: Drives physical DOM typing and clicking across multi-agent flight comparison tabs', async () => {
@@ -842,6 +905,204 @@ test('Coordinator: Automatically clicks autocomplete popup suggestions and reuse
 
   assert.ok(clickedOrigPopup, 'Must click Origin airport autocomplete popup item (DEL - Delhi)');
   assert.ok(clickedDestPopup, 'Must click Destination airport autocomplete popup item (BOM - Mumbai)');
+});
+
+test('Coordinator: Ignores Google Search tabs and navigates directly to official airline portals', async () => {
+  const navigatedTabs = [];
+  const browser = createFakeBrowserAdapter();
+
+  // Simulate user having Google Search open for IndiGo and Air India
+  browser.queryTabs = async () => [
+    { id: 8, url: 'https://www.google.com/search?q=indigo+flights+delhi+to+mumbai', title: 'indigo flights Delhi to Mumbai - Google Search' },
+    { id: 9, url: 'https://www.google.com/search?q=air+india+flights+delhi+to+mumbai', title: 'air india flights Delhi to Mumbai - Google Search' }
+  ];
+  browser.navigateTab = async (tabId, url, opts) => {
+    navigatedTabs.push({ tabId, url, opts });
+    return { tabId: tabId || 10, url };
+  };
+
+  browser.sendMessageToTab = async (tabId, message) => {
+    if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
+      return {
+        success: true,
+        snapshot: {
+          elements: [
+            { localId: 'el_from', role: 'input', text: 'FROM Origin', sanitizedName: 'FROM Origin', state: [] },
+            { localId: 'el_to', role: 'input', text: 'TO Destination', sanitizedName: 'TO Destination', state: [] },
+            { localId: 'el_search', role: 'button', text: 'SEARCH FLIGHTS', sanitizedName: 'SEARCH FLIGHTS', state: [] }
+          ]
+        }
+      };
+    }
+    return { success: true };
+  };
+
+  const reasoningHttpClient = {
+    async requestReasoningAction() { throw new Error('Not for swarm'); },
+    async dispatchPlatformTask() {
+      return { taskId: 'flight_test', status: 'completed' };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, reasoningHttpClient, undefined, { defaultMaxSteps: 1 });
+  const result = await coordinator.startRun('Compare flights from Delhi to Mumbai on IndiGo and Air India');
+
+  assert.ok(result);
+  assert.strictEqual(result.success, true);
+  // Must NOT reuse Tab 8 or Tab 9 (Google Search tabs) as existing airline tabs
+  assert.ok(navigatedTabs.length > 0, 'Must navigate to official portals instead of treating Google Search tabs as airline portals');
+  assert.ok(navigatedTabs.some(n => n.url.includes('airindia.com') || n.url.includes('goindigo.in')));
+});
+
+test('Coordinator: Automatically dismisses/crosses popups and types into modal inputs for button-based flight booking widgets (Air India style)', async () => {
+  const dispatchedActions = [];
+  const browser = createFakeBrowserAdapter();
+
+  browser.sendMessageToTab = async (tabId, message) => {
+    if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
+      // After popup dismissal
+      if (message.captureId?.includes('postdismiss')) {
+        return {
+          success: true,
+          snapshot: {
+            elements: [
+              { localId: 'el_orig_btn', role: 'button', text: 'Select origin airport', sanitizedName: 'Select origin airport', state: [] },
+              { localId: 'el_dest_btn', role: 'button', text: 'Select destination airport', sanitizedName: 'Select destination airport', state: [] },
+              { localId: 'el_search_btn', role: 'button', text: 'SEARCH FLIGHTS', sanitizedName: 'SEARCH FLIGHTS', state: [] }
+            ]
+          }
+        };
+      }
+      // Step 1: initial snapshot has a cookie consent popup and button triggers for origin/dest
+      if (message.captureId?.includes('sub_snap_indigo_') || message.captureId?.includes('sub_snap_air india_')) {
+        return {
+          success: true,
+          snapshot: {
+            elements: [
+              { localId: 'el_cookie_btn', role: 'button', text: 'Accept all cookies', sanitizedName: 'Accept all cookies', state: [] },
+              { localId: 'el_orig_btn', role: 'button', text: 'Select origin airport', sanitizedName: 'Select origin airport', state: [] },
+              { localId: 'el_dest_btn', role: 'button', text: 'Select destination airport', sanitizedName: 'Select destination airport', state: [] },
+              { localId: 'el_search_btn', role: 'button', text: 'SEARCH FLIGHTS', sanitizedName: 'SEARCH FLIGHTS', state: [] }
+            ]
+          }
+        };
+      }
+      // When Origin button is clicked, modal opens with modal input
+      if (message.captureId?.includes('orig_modal')) {
+        return {
+          success: true,
+          snapshot: {
+            elements: [
+              { localId: 'el_modal_input_orig', role: 'input', text: 'FROM', placeholder: 'FROM', sanitizedName: 'FROM', state: ['focused'] }
+            ]
+          }
+        };
+      }
+      // Suggestions for Origin
+      if (message.captureId?.includes('orig_popup')) {
+        return {
+          success: true,
+          snapshot: {
+            elements: [
+              { localId: 'el_del_opt', role: 'button', text: 'Delhi, DEL - Indira Gandhi Intl', sanitizedName: 'Delhi DEL', state: [] }
+            ]
+          }
+        };
+      }
+      // When Destination button is clicked, modal opens with modal input
+      if (message.captureId?.includes('dest_modal')) {
+        return {
+          success: true,
+          snapshot: {
+            elements: [
+              { localId: 'el_modal_input_dest', role: 'input', text: 'TO', placeholder: 'TO', sanitizedName: 'TO', state: ['focused'] }
+            ]
+          }
+        };
+      }
+      // Suggestions for Destination
+      if (message.captureId?.includes('dest_popup')) {
+        return {
+          success: true,
+          snapshot: {
+            elements: [
+              { localId: 'el_bom_opt', role: 'button', text: 'Mumbai, BOM - Chhatrapati Shivaji', sanitizedName: 'Mumbai BOM', state: [] }
+            ]
+          }
+        };
+      }
+      // Post search results
+      if (message.captureId?.includes('post_') || message.captureId?.includes('delayed_')) {
+        return {
+          success: true,
+          snapshot: {
+            elements: [
+              { localId: 'el_card1', role: 'generic', text: 'AI-805 06:00 AM ₹2,999 Non-stop', sanitizedName: 'AI-805 06:00 AM ₹2,999', state: [] }
+            ]
+          }
+        };
+      }
+      return {
+        success: true,
+        snapshot: {
+          elements: [
+            { localId: 'el_orig_btn', role: 'button', text: 'Select origin airport', sanitizedName: 'Select origin airport', state: [] },
+            { localId: 'el_dest_btn', role: 'button', text: 'Select destination airport', sanitizedName: 'Select destination airport', state: [] },
+            { localId: 'el_search_btn', role: 'button', text: 'SEARCH FLIGHTS', sanitizedName: 'SEARCH FLIGHTS', state: [] }
+          ]
+        }
+      };
+    }
+    if (message.type === 'EXECUTE_ACTION') {
+      dispatchedActions.push({ tabId, proposal: message.proposal });
+      return { success: true };
+    }
+    return { success: true };
+  };
+
+  const reasoningHttpClient = {
+    async requestReasoningAction() { throw new Error('Not for swarm'); },
+    async dispatchPlatformTask() {
+      return {
+        taskId: 'ai_angular_test',
+        status: 'completed',
+        finalSynthesis: 'AI-805 available at ₹2,999.'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, reasoningHttpClient, undefined, { defaultMaxSteps: 1 });
+  const result = await coordinator.startRun('Compare flights from Delhi to Mumbai on IndiGo and Air India');
+
+  assert.ok(result);
+  assert.strictEqual(result.success, true);
+
+  // 1. Verify popup dismissal was clicked
+  const dismissedPopup = dispatchedActions.find(a => a.proposal.kind === 'click' && a.proposal.targetLocalId === 'el_cookie_btn');
+  assert.ok(dismissedPopup, 'Must automatically dismiss/cross obstructing cookie banner/popup');
+
+  // 2. Verify Origin trigger was clicked AND typing went into the modal input
+  const clickedOrigTrigger = dispatchedActions.find(a => a.proposal.kind === 'click' && a.proposal.targetLocalId === 'el_orig_btn');
+  const typedIntoOrigModal = dispatchedActions.find(a => a.proposal.kind === 'type' && a.proposal.targetLocalId === 'el_modal_input_orig');
+  const clickedOrigSuggestion = dispatchedActions.find(a => a.proposal.kind === 'click' && a.proposal.targetLocalId === 'el_del_opt');
+
+  assert.ok(clickedOrigTrigger, 'Must click Origin button trigger');
+  assert.ok(typedIntoOrigModal, 'Must type origin "Delhi" into modal input rather than button');
+  assert.ok(clickedOrigSuggestion, 'Must click airport suggestion from list');
+
+  // 3. Verify Destination trigger was clicked AND typing went into modal input
+  const typedIntoDestModal = dispatchedActions.find(a => a.proposal.kind === 'type' && a.proposal.targetLocalId === 'el_modal_input_dest');
+  const clickedDestSuggestion = dispatchedActions.find(a => a.proposal.kind === 'click' && a.proposal.targetLocalId === 'el_bom_opt');
+
+  assert.ok(typedIntoDestModal, 'Must type destination "Mumbai" into modal input rather than button');
+  assert.ok(clickedDestSuggestion, 'Must click destination airport suggestion');
+
+  // 4. Verify Search Flights button clicked
+  const clickedSearch = dispatchedActions.find(a => a.proposal.kind === 'click' && a.proposal.targetLocalId === 'el_search_btn');
+  assert.ok(clickedSearch, 'Must click SEARCH FLIGHTS button');
+
+  // 5. Verify live extracted flight fares are present in reply
+  assert.ok(result.reply.includes('₹2,999') || result.reply.includes('Live Page Data'), 'Must include live extracted fare in reply');
 });
 
 

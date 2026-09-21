@@ -126,10 +126,20 @@ export async function handleMessage(message: any): Promise<any> {
     const mergedDialogTitles = [...(extracted.snapshot.dialogTitles || []), ...trappedTitles];
     const mergedDialogCount = (extracted.snapshot.visibleDialogCount || 0) + trappedTitles.length;
 
+    const elementsWithAliases = (extracted.snapshot.interactiveElements || []).map((e: any) => ({
+      ...e,
+      text: e.text || e.rawName || '',
+      sanitizedName: e.sanitizedName || e.rawName || '',
+      name: e.name || e.rawName || '',
+      rawName: e.rawName || ''
+    }));
+
     const snapshot = {
       ...extracted.snapshot,
       visibleDialogCount: mergedDialogCount,
-      dialogTitles: mergedDialogTitles
+      dialogTitles: mergedDialogTitles,
+      interactiveElements: elementsWithAliases,
+      elements: elementsWithAliases
     };
 
     return {

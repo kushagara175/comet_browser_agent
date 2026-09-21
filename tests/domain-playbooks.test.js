@@ -4,7 +4,9 @@ import {
   lookupDomainPlaybook,
   resolvePlaybookIntent,
   extractMetricsWithPlaybook,
-  SIH_PLAYBOOK
+  SIH_PLAYBOOK,
+  ISRO_PLAYBOOK,
+  BHUVAN_PLAYBOOK
 } from '../packages/protocol/dist/index.js';
 
 test('Domain Playbooks: lookupDomainPlaybook matches sih.gov.in hostnames and aliases', () => {
@@ -652,6 +654,48 @@ test('Domain Playbooks: Coordinator drills into search results when exploring IS
   assert.ok(clickAction, 'Should click on top search result');
   assert.equal(clickAction.targetLocalId, 'el_result_1');
 });
+
+test('Domain Playbooks: BHUVAN_PLAYBOOK matches bhuvan.gov.in, bhuvan-app1, and bhuvan.nrsc.gov.in', () => {
+  assert.equal(lookupDomainPlaybook('https://bhuvan.gov.in')?.domain, 'bhuvan.nrsc.gov.in');
+  assert.equal(lookupDomainPlaybook('https://www.bhuvan.gov.in/viewer')?.domain, 'bhuvan.nrsc.gov.in');
+  assert.equal(lookupDomainPlaybook('https://bhuvan.nrsc.gov.in/bhuvan_geoportal.php')?.domain, 'bhuvan.nrsc.gov.in');
+  assert.equal(lookupDomainPlaybook('https://bhuvan-app1.nrsc.gov.in/thematic')?.domain, 'bhuvan.nrsc.gov.in');
+  assert.equal(lookupDomainPlaybook('bhuvan.gov.in')?.domain, 'bhuvan.nrsc.gov.in');
+});
+
+test('Domain Playbooks: resolvePlaybookIntent grounds ISRO download document landmark', () => {
+  const res = resolvePlaybookIntent(ISRO_PLAYBOOK, 'download Chandrayaan-3 brochure', 'https://www.isro.gov.in/Chandrayaan-3.html');
+  assert.equal(res.matchedIntent, 'click_landmark');
+  assert.equal(res.targetPhrase, 'Download Document');
+  assert.equal(res.targetRole, 'link');
+  assert.ok(res.confidence >= 0.9);
+});
+
+test('Domain Playbooks: resolvePlaybookIntent grounds Bhuvan location search with "locate" verb', () => {
+  const res = resolvePlaybookIntent(BHUVAN_PLAYBOOK, 'locate Hyderabad on map', 'https://bhuvan.nrsc.gov.in/bhuvan_geoportal.php');
+  assert.equal(res.matchedIntent, 'fill_field');
+  assert.equal(res.targetPhrase, 'Search Location');
+  assert.equal(res.targetRole, 'input');
+  assert.ok(res.confidence >= 0.9);
+});
+
+test('Domain Playbooks: extractSearchQueryFromGoal extracts clean query for "locate" and domain prefixes', async () => {
+  const { extractSearchQueryFromGoal } = await import('../packages/protocol/dist/index.js');
+  assert.equal(extractSearchQueryFromGoal('locate New Delhi'), 'New Delhi');
+  assert.equal(extractSearchQueryFromGoal('locate Bangalore on bhuvan'), 'Bangalore');
+  assert.equal(extractSearchQueryFromGoal('locate Sriharikota in search box'), 'Sriharikota');
+  assert.equal(extractSearchQueryFromGoal('search Chandrayaan-3 on isro'), 'Chandrayaan-3');
+  assert.equal(extractSearchQueryFromGoal('find Aditya-L1 on isro portal'), 'Aditya-L1');
+});
+
+test('Domain Playbooks: extractTargetUrlFromGoal handles bhuvan.gov.in and isro.gov.in canonicalization', async () => {
+  const { extractTargetUrlFromGoal } = await import('../packages/protocol/dist/index.js');
+  assert.equal(extractTargetUrlFromGoal('open bhuvan.gov.in'), 'https://bhuvan.nrsc.gov.in');
+  assert.equal(extractTargetUrlFromGoal('go to isro.gov.in'), 'https://www.isro.gov.in');
+  assert.equal(extractTargetUrlFromGoal('open https://bhuvan.gov.in/bhuvan_geoportal.php'), 'https://bhuvan.nrsc.gov.in/bhuvan_geoportal.php');
+  assert.equal(extractTargetUrlFromGoal('in the bhuvan portal find Hyderabad'), 'https://bhuvan.nrsc.gov.in');
+});
+
 
 
 

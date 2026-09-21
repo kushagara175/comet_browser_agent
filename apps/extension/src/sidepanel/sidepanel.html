@@ -12,14 +12,9 @@
     <div class="valley-img-bg"></div>
     <canvas id="shaderCanvas" class="shader-bg-canvas"></canvas>
 
-    <!-- VIEW 0: Loading Splash (Hidden by default for instant HUD boot) -->
-    <div id="loadingView" class="loading-wrapper hidden" style="display: none;">
-      <div class="loading-logo-wrap">
-        <img src="../../assets/export.png" width="80" height="80" alt="PrivaPilot Logo" class="export-logo-img" />
-      </div>
-      <div class="spinner-wrap">
-        <div class="clean-spinner"></div>
-      </div>
+    <!-- VIEW 0: COMET Fullscreen Welcome Screen (First screen on extension open) -->
+    <div id="loadingView" class="loading-wrapper comet-splash-wrapper">
+      <img src="../../assets/final2.png" alt="COMET" class="comet-splash-img" />
     </div>
 
     <!-- VIEW 1: AI Mission Control HUD (Instant Ready) -->
@@ -158,82 +153,95 @@
 
         <!-- Bottom Chat Input Bar -->
         <div class="ai-footer">
-          <div class="chat-input-card">
-            <!-- Active Tab Sharing Strip -->
-            <div class="chat-tab-sharing-strip">
-              <div class="sharing-left">
-                <span class="sharing-icon">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <circle cx="12" cy="12" r="4"></circle>
-                    <line x1="21.17" y1="8" x2="12" y2="8"></line>
-                    <line x1="3.95" y1="6.06" x2="8.54" y2="14"></line>
-                    <line x1="10.88" y1="21.94" x2="15.46" y2="14"></line>
-                  </svg>
-                </span>
-                <span id="sharingTabTitle" class="sharing-tab-title">Sharing &ldquo;New Tab&rdquo;</span>
-              </div>
-              <button type="button" id="closeSharingBtn" class="close-sharing-btn" title="Toggle active tab context">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
+          <!-- Exact VoiceBeam container matching libraries.dev/voice preview -->
+          <div
+            id="beamChatCard"
+            class="chat-input-card border-beam-card"
+            data-voice-beam="privapilot-beam"
+            data-active=""
+            style="--beam-strength: 1.0;"
+          >
+            <!-- Hidden backward-compatibility elements for active tab context -->
+            <div style="display: none;" aria-hidden="true">
+              <span id="sharingTabTitle">Sharing &ldquo;New Tab&rdquo;</span>
+              <button type="button" id="closeSharingBtn"></button>
             </div>
 
-            <!-- Inner Edgy Input Box -->
-            <div class="chat-inner-box">
-              <form id="chatForm" class="chat-bar">
-                <input
-                  type="text"
+            <!-- VoiceBeam canvas and bloom elements -->
+            <div data-voice-beam-bloom="true"></div>
+            <canvas data-voice-beam-band-halo="true" aria-hidden="true"></canvas>
+            <canvas data-voice-beam-band="true" aria-hidden="true"></canvas>
+            <div id="voiceGlowBackdrop" class="voice-glow-backdrop" aria-hidden="true"></div>
+
+            <!-- Inner Input Box -->
+            <div class="chat-inner-box beam-inner-box">
+              <form id="chatForm" class="chat-bar beam-chat-bar">
+                <!-- Textarea Input with "Ask me anything.." placeholder -->
+                <textarea
                   id="chatInput"
                   name="taskInput"
-                  placeholder="Type @ to add tabs"
+                  placeholder="Ask me anything.."
+                  rows="1"
                   autocomplete="off"
-                />
-                <div class="chat-bar-bottom">
+                ></textarea>
+
+                <!-- Bottom Action Tools matching libraries.dev/voice Preview -->
+                <div class="chat-bar-bottom beam-bar-bottom">
+                  <!-- Left Tool: Plus (+) context button -->
                   <div class="chat-bar-left-tools">
-                    <button type="button" id="chatToolBtn" class="chat-tool-btn" title="Add tools &amp; skills">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <button type="button" id="chatAtBtn" class="chat-circle-btn beam-at-btn" title="Add context / Mention tabs (+)">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
                       </svg>
                     </button>
-                    <button type="button" id="chatSlidersBtn" class="chat-tool-btn" title="Inspector &amp; Telemetry">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="7" cy="8" r="3"></circle>
-                        <line x1="10" y1="8" x2="21" y2="8"></line>
-                        <line x1="3" y1="16" x2="14" y2="16"></line>
-                        <circle cx="17" cy="16" r="3"></circle>
-                      </svg>
-                    </button>
-                  </div>
-                  <div class="chat-bar-right-actions">
-                    <button type="button" id="modelSelectBtn" class="model-select-chip" title="Active Reasoning Model: Mistral-Large-3 (Azure AI Foundry)">
-                      <span id="visionProviderBadge" class="connection-indicator connected" title="Mistral-Large-3 Online">
+                    <!-- Hidden compat elements for existing JS logic -->
+                    <button type="button" id="beamColorPill" style="display: none;"><span id="beamColorLabel">Color</span></button>
+                    <button type="button" id="beamAgentPill" style="display: none;"></button>
+                    <button type="button" id="beamAutoPill" style="display: none;"></button>
+                    <button type="button" id="modelSelectBtn" class="model-select-chip" style="display: none;" title="Active Reasoning Model">
+                      <span id="visionProviderBadge" class="connection-indicator connected">
                         <span class="provider-dot"></span>
                         <span id="visionProviderText" style="display: none;"></span>
                       </span>
-                      <span>Mistral-Large-3</span>
+                    </button>
+                    <button type="button" id="chatToolBtn" class="chat-tool-btn" style="display: none;"></button>
+                    <button type="button" id="chatSlidersBtn" class="chat-tool-btn" style="display: none;"></button>
+                  </div>
+
+                  <!-- Right Action Buttons: Agent pill, Mic/Send button, Close/Stop button -->
+                  <div class="chat-bar-right-actions">
+                    <button type="button" id="beamRotatePill" class="chat-pill-btn beam-pill-btn" title="Agent Mode: Agent / Rotate / Pulse">
+                      <span id="beamEffectLabel">Agent</span>
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="6 9 12 15 18 9"></polyline>
                       </svg>
-                    <button type="button" id="sendBtn" class="send-btn mode-mic" title="Voice Input" aria-label="Voice Input or Send">
-                      <svg class="icon-send" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    </button>
+                    <button type="button" id="sendBtn" class="send-btn chat-circle-btn beam-send-btn mode-mic" title="Voice Input" aria-label="Voice Input">
+                      <svg class="icon-send" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="19" x2="12" y2="5"></line>
                         <polyline points="5 12 12 5 19 12"></polyline>
                       </svg>
-                      <svg class="icon-mic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <svg class="icon-mic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
                         <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
                         <line x1="12" y1="19" x2="12" y2="23"></line>
                         <line x1="8" y1="23" x2="16" y2="23"></line>
                       </svg>
                     </button>
+                    <button type="button" id="stopBtn" class="stop-btn chat-circle-btn beam-stop-btn" title="Stop Execution / Cancel" aria-label="Stop Execution">
+                      <svg class="icon-stop-x" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                    </button>
                   </div>
                 </div>
               </form>
             </div>
+
+            <!-- border-beam bloom element -->
+            <div data-beam-bloom="true"></div>
           </div>
         </div>
       </div>
@@ -759,6 +767,13 @@
               <span>💬 Live Conversation</span>
             </button>
           </div>
+        </div>
+
+        <!-- BOTTOM FOOTER VOICEBEAM SOUND-REACTIVE GLOW (Mobile Type from libraries.dev/voice) -->
+        <div id="orbVoiceBeamFooter" class="orb-voice-beam-footer" data-voice-beam="orb-footer-beam" data-active="" aria-hidden="true">
+          <div data-voice-beam-bloom="true"></div>
+          <canvas data-voice-beam-band-halo="true" aria-hidden="true"></canvas>
+          <canvas data-voice-beam-band="true" aria-hidden="true"></canvas>
         </div>
 
         <!-- BOTTOM RIGHT CRISP BORDERLESS MODE DROPDOWN SELECTOR -->

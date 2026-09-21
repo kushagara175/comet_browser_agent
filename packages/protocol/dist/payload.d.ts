@@ -115,6 +115,7 @@ export interface RedactionManifest {
         readonly face: number;
         readonly surface: number;
     };
+    readonly categoryBreakdown?: Record<string, number>;
     readonly methodCounts: {
         readonly opaqueBox: number;
         readonly spatialBlur: number;

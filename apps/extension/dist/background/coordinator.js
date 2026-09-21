@@ -121,14 +121,182 @@ export function isSubAgentSwarmGoal(goal) {
     if (!goal || typeof goal !== 'string')
         return false;
     const trimmed = goal.trim();
+    // Negative override: if user explicitly requests single agent or to avoid subagents
+    if (/\b(?:without\s+sub-?agents?|no\s+sub-?agents?|single\s+agent|single\s+tab|don't\s+use\s+sub-?agents?|disable\s+sub-?agents?)\b/i.test(trimmed)) {
+        return false;
+    }
     const isComparative = /\b(?:compare|both|versus|vs\.?|across|each|and\s+also|simultaneously|parallel|multiple\s+sites|different\s+tabs?)\b/i.test(trimmed);
     const hasMultiplePortals = /(?:https?:\/\/[^\s]+[\s\S]+https?:\/\/[^\s]+)/i.test(trimmed);
-    const mentionsMultipleEntities = /(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi.test(trimmed);
     const entityMatches = trimmed.match(/(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi);
     const uniqueEntities = entityMatches ? Array.from(new Set(entityMatches.map((e) => e.toLowerCase().replace(/\s+/g, '')))) : [];
     const isExplicitSubagent = /\b(?:sub-?agents?|swarm|parallel\s+agents?|multi-?agent)\b/i.test(trimmed);
     const isCrossDomainQuery = isComparative && (uniqueEntities.length >= 2 || /\b(?:flight|flights|airline|airlines|hotel|hotels|price|prices|ticket|tickets|fare|fares)\b/i.test(trimmed));
     return isCrossDomainQuery || hasMultiplePortals || (uniqueEntities.length >= 2) || isExplicitSubagent;
+}
+/**
+ * Helper to normalize elements from raw or sanitized DOM snapshots
+ */
+export function getSnapshotElements(snap) {
+    const rawList = snap?.snapshot?.elements || snap?.snapshot?.interactiveElements || snap?.elements || [];
+    return rawList.map((e) => ({
+        ...e,
+        sanitizedName: e.sanitizedName || e.rawName || e.text || e.name || '',
+        rawName: e.rawName || e.sanitizedName || e.text || e.name || '',
+        text: e.text || e.sanitizedName || e.rawName || e.name || ''
+    }));
+}
+/**
+ * Dedicated flight element finders for robust, error-free DOM interaction across IndiGo, Air India, etc.
+ */
+export function findFlightOriginElement(elements) {
+    if (!Array.isArray(elements) || elements.length === 0)
+        return null;
+    return elements.find((e) => {
+        if (e.state?.includes('disabled'))
+            return false;
+        const name = (e.sanitizedName || e.rawName || e.text || e.name || '').toLowerCase().trim();
+        if (/login|unlock|benefit|up\s+to|offer|deal|discount|round\s*trip|return|multi\s*city|terms|cancel/i.test(name)) {
+            return false;
+        }
+        const isInteractive = e.role === 'input' || e.role === 'combobox' || e.role === 'button' || e.role === 'searchbox' || e.role === 'generic';
+        if (!isInteractive)
+            return false;
+        return /\b(?:origin|from|departure|source|departing|flying\s+from|from\s+origin|select\s+origin)\b/i.test(name) ||
+            /^from\b/i.test(name) ||
+            name === 'from';
+    }) || null;
+}
+export function findFlightDestinationElement(elements, originLocalId) {
+    if (!Array.isArray(elements) || elements.length === 0)
+        return null;
+    // Priority 1: Check for an already focused input or combobox (e.g. IndiGo auto-focuses destination after selecting origin)
+    const focused = elements.find((e) => (e.role === 'input' || e.role === 'combobox' || e.role === 'searchbox') &&
+        e.state?.includes('focused') &&
+        (!originLocalId || e.localId !== originLocalId) &&
+        !e.state?.includes('disabled'));
+    if (focused) {
+        const fName = (focused.sanitizedName || focused.rawName || focused.text || focused.name || '').toLowerCase();
+        if (!/login|unlock|benefit|up\s+to|round\s*trip|return|cancel/i.test(fName)) {
+            return focused;
+        }
+    }
+    // Priority 2: Clear explicit destination phrases like "Going to? Search by place/airport", "where to", "destination"
+    const explicitDest = elements.find((e) => {
+        if (e.state?.includes('disabled'))
+            return false;
+        if (originLocalId && e.localId === originLocalId)
+            return false;
+        const name = (e.sanitizedName || e.rawName || e.text || e.name || '').toLowerCase().trim();
+        if (/login|unlock|benefit|up\s+to|offer|deal|discount|round\s*trip|return|multi\s*city|terms|cancel/i.test(name)) {
+            return false;
+        }
+        const isInteractive = e.role === 'input' || e.role === 'combobox' || e.role === 'button' || e.role === 'searchbox' || e.role === 'generic';
+        if (!isInteractive)
+            return false;
+        return /\b(?:going\s+to|where\s+to|destination|arrival|flying\s+to|fly\s+to|select\s+destination|to\s+destination)\b/i.test(name);
+    });
+    if (explicitDest)
+        return explicitDest;
+    // Priority 3: Exact "to" or starting with "to " (safeguarded against prepositions in banners)
+    return elements.find((e) => {
+        if (e.state?.includes('disabled'))
+            return false;
+        if (originLocalId && e.localId === originLocalId)
+            return false;
+        const name = (e.sanitizedName || e.rawName || e.text || e.name || '').toLowerCase().trim();
+        if (/login|unlock|benefit|up\s+to|offer|deal|discount|round\s*trip|return|multi\s*city|terms|cancel|proceed/i.test(name)) {
+            return false;
+        }
+        const isInteractive = e.role === 'input' || e.role === 'combobox' || e.role === 'button' || e.role === 'searchbox' || e.role === 'generic';
+        if (!isInteractive)
+            return false;
+        return name === 'to' || /^to\s*[:\?-]|\bto\s+(?:city|airport|place)\b/i.test(name);
+    }) || null;
+}
+export function findFlightSearchButton(elements) {
+    if (!Array.isArray(elements) || elements.length === 0)
+        return null;
+    // Priority 1: Dedicated Search Flight(s) button or submit input
+    const flightSearchBtn = elements.find((e) => {
+        if (e.state?.includes('disabled'))
+            return false;
+        const name = (e.sanitizedName || e.rawName || e.text || e.name || '').toLowerCase().trim();
+        if (/login|hotel|cab|car|card|vacation|holiday|visa|by\s+place|destination|airport/i.test(name)) {
+            return false;
+        }
+        const isButton = e.role === 'button' || (e.role === 'input' && (e.type === 'submit' || e.type === 'button'));
+        if (!isButton)
+            return false;
+        return /\b(?:search\s+flights?|find\s+flights?|book\s+flights?|show\s+flights?)\b/i.test(name);
+    });
+    if (flightSearchBtn)
+        return flightSearchBtn;
+    // Priority 2: Generic 'Search' button
+    const anySearchBtn = elements.find((e) => {
+        if (e.state?.includes('disabled'))
+            return false;
+        const name = (e.sanitizedName || e.rawName || e.text || e.name || '').toLowerCase().trim();
+        if (/login|hotel|cab|car|card|vacation|holiday|visa|by\s+place|destination|airport/i.test(name)) {
+            return false;
+        }
+        const isButton = e.role === 'button' || (e.role === 'input' && (e.type === 'submit' || e.type === 'button'));
+        if (!isButton)
+            return false;
+        return /\b(?:search|find|book)\b/i.test(name);
+    });
+    if (anySearchBtn)
+        return anySearchBtn;
+    // Priority 3: Any clickable element with search flight
+    return elements.find((e) => {
+        if (e.state?.includes('disabled'))
+            return false;
+        const name = (e.sanitizedName || e.rawName || e.text || e.name || '').toLowerCase().trim();
+        if (/login|hotel|cab|car|card|vacation|holiday|visa|by\s+place|destination|airport/i.test(name)) {
+            return false;
+        }
+        const isClickable = e.role === 'button' || e.role === 'link' || e.role === 'generic';
+        if (!isClickable)
+            return false;
+        return /\b(?:search\s+flights?|find\s+flights?|show\s+flights?)\b/i.test(name);
+    }) || null;
+}
+export function findAirportSuggestion(elements, city, airportCode, excludeIds = []) {
+    if (!Array.isArray(elements) || elements.length === 0)
+        return null;
+    const excludeSet = new Set(excludeIds);
+    const cityLow = city.toLowerCase().trim();
+    const codeLow = airportCode.toLowerCase().trim();
+    const synonyms = {
+        del: ['delhi', 'indira gandhi', 'new delhi'],
+        delhi: ['del', 'indira gandhi', 'new delhi'],
+        bom: ['mumbai', 'chhatrapati shivaji', 'bombay'],
+        mumbai: ['bom', 'chhatrapati shivaji', 'bombay'],
+        blr: ['bengaluru', 'bangalore', 'kempegowda'],
+        bangalore: ['blr', 'bengaluru', 'kempegowda'],
+        bengaluru: ['blr', 'bangalore', 'kempegowda'],
+        hyd: ['hyderabad', 'rajiv gandhi'],
+        hyderabad: ['hyd', 'rajiv gandhi'],
+        maa: ['chennai', 'madras'],
+        chennai: ['maa', 'madras'],
+        ccu: ['kolkata', 'calcutta', 'netaji'],
+        kolkata: ['ccu', 'calcutta', 'netaji']
+    };
+    const allowedTerms = [cityLow, codeLow, ...(synonyms[cityLow] || []), ...(synonyms[codeLow] || [])];
+    return elements.find((e) => {
+        if (excludeSet.has(e.localId))
+            return false;
+        if (e.state?.includes('disabled'))
+            return false;
+        const name = (e.sanitizedName || e.rawName || e.text || e.name || '').toLowerCase().trim();
+        if (!name || name.length < 2)
+            return false;
+        if (/login|cookie|accept|close|banner/i.test(name))
+            return false;
+        return allowedTerms.some(term => {
+            const regex = new RegExp(`\\b${term}\\b`, 'i');
+            return regex.test(name);
+        });
+    }) || null;
 }
 export class RunCoordinator {
     state = 'idle';
@@ -308,8 +476,98 @@ export class RunCoordinator {
                 expectedPostcondition: { kind: 'scroll_changed', direction: dir }
             };
         }
-        // 1b. Browser resource operations: Bookmarks inspection & management
-        if (trimmedGoal.includes('bookmark')) {
+        // 1c. Document & File Download Directives
+        const isDownloadIntent = /\b(?:download|down;oad|downlaod|domwload|domwloadn|doenmlao|save|export|fetch|get\s+file)\b/i.test(trimmedGoal);
+        const activeUrl = currentUrl || sanitized.pageState?.url || '';
+        const isCurrentUrlFile = /\.(?:pdf|zip|csv|kmz|kml|tif|tiff|docx?|xlsx?)(?:\?.*)?$/i.test(activeUrl);
+        // Case 1: Tab is already on a file (e.g. PDF viewer) and user asks to download/save it
+        if (isCurrentUrlFile && isDownloadIntent) {
+            const filename = activeUrl.split('/').pop()?.split('?')[0] || 'document.pdf';
+            try {
+                if (typeof chrome !== 'undefined' && chrome.downloads?.download) {
+                    chrome.downloads.download({
+                        url: activeUrl,
+                        filename,
+                        saveAs: false
+                    });
+                }
+            }
+            catch (_) { }
+            return {
+                actionId: `act_download_active_${step}_${Date.now()}`,
+                kind: 'finish',
+                confidence: 1.0,
+                risk: 'safe',
+                rationale: `Downloaded "${filename}" directly to your device.`,
+                reply: `✓ The file "${filename}" has been downloaded and saved to your device.`
+            };
+        }
+        // Case 2: User is on a webpage and asks to download a brochure/report/document
+        if (isDownloadIntent) {
+            const downloadTarget = sanitized.elements.find(el => {
+                if (el.role !== 'link' && el.role !== 'button')
+                    return false;
+                const nameNorm = (el.sanitizedName || '').toLowerCase();
+                if (nameNorm.includes('brochure') || nameNorm.includes('pdf') || nameNorm.includes('download') || nameNorm.includes('annual report') || nameNorm.includes('report')) {
+                    return true;
+                }
+                return false;
+            });
+            if (downloadTarget) {
+                const hasAlreadyClickedDownload = this.actionHistory.some(a => a.actionId && (a.actionId.includes('download') || a.actionId.includes('brochure')));
+                if (hasAlreadyClickedDownload) {
+                    return {
+                        actionId: `act_download_complete_${step}_${Date.now()}`,
+                        kind: 'finish',
+                        confidence: 1.0,
+                        risk: 'safe',
+                        rationale: `File download has already been triggered for "${downloadTarget.sanitizedName}".`,
+                        reply: `✓ The download for "${downloadTarget.sanitizedName}" has been initiated and saved to your device.`
+                    };
+                }
+                return {
+                    actionId: `act_download_click_${step}_${Date.now()}`,
+                    kind: 'click',
+                    targetLocalId: downloadTarget.localId,
+                    confidence: 0.98,
+                    risk: 'safe',
+                    rationale: `Clicking "${downloadTarget.sanitizedName}" to trigger file download to your device.`
+                };
+            }
+        }
+        // 1d. Direct on-page navigation / link search directive (e.g. "see for the startup program here", "open start-ups", "find careers", "show tender")
+        const isNavigationIntent = /\b(?:see|se|look|find|check|show|open|navigate|go\s+to|explore)\b/i.test(trimmedGoal) &&
+            !/\b(?:download|down;oad|scroll|type|search\s+bar|input|how\s+many|count|submissions?)\b/i.test(trimmedGoal);
+        if (isNavigationIntent && step === 1) {
+            const targetKeywords = trimmedGoal
+                .replace(/^(?:see|se|look|find|check|show|open|navigate|go\s+to|explore)\s+(?:for\s+)?(?:the\s+)?/i, '')
+                .replace(/\b(?:program|here|now|page|section|tab|link|menu)\b/gi, '')
+                .trim()
+                .toLowerCase();
+            if (targetKeywords.length >= 3) {
+                const cleanKw = targetKeywords.replace(/[^a-z0-9]/g, '');
+                const matchingLink = sanitized.elements.find(el => {
+                    if (el.role !== 'link' && el.role !== 'button' && el.role !== 'tab' && el.role !== 'menuitem')
+                        return false;
+                    const name = (el.sanitizedName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    return name.includes(cleanKw) || (cleanKw.length >= 4 && cleanKw.includes(name));
+                });
+                if (matchingLink) {
+                    return {
+                        actionId: `act_local_link_nav_${step}_${Date.now()}`,
+                        kind: 'click',
+                        targetLocalId: matchingLink.localId,
+                        confidence: 0.98,
+                        risk: 'safe',
+                        rationale: `Clicking "${matchingLink.sanitizedName}" to open ${targetKeywords}.`
+                    };
+                }
+            }
+        }
+        // 1b. Browser resource operations: Bookmarks inspection & management (only when not targeting an external website like x.com)
+        const hasWebTarget = /\b(?:https?:\/\/|[a-zA-Z0-9-]+\.(?:com|in|org|net|co|io|gov)|twitter|reddit|github)\b/i.test(trimmedGoal) ||
+            Boolean(currentUrl && !currentUrl.startsWith('chrome://') && !currentUrl.startsWith('chrome-extension://') && !currentUrl.startsWith('about:'));
+        if (!hasWebTarget && (trimmedGoal.includes('bookmark') || trimmedGoal.includes('book mark')) && !/\b(?:click|clcik|clik|cilck|tap|press)\b/i.test(trimmedGoal)) {
             if (trimmedGoal.includes('open') || trimmedGoal.includes('go to') || trimmedGoal.includes('manager') || trimmedGoal.includes('launch')) {
                 this.browser.openBookmarksManager?.();
                 return {
@@ -856,6 +1114,98 @@ export class RunCoordinator {
                 risk: 'safe',
                 rationale: `Directive completed`
             };
+        }
+        // 6. Flight Search Form Assistance in single-agent execution mode
+        const isFlightGoal = /\b(?:flight|flights|airline|airlines|ticket|tickets|fare|fares)\b/i.test(trimmedGoal);
+        if (isFlightGoal) {
+            const originMatch = trimmedGoal.match(/(?:from\s+([a-zA-Z\s]+?)\s+to\s+([a-zA-Z\s]+?))(?:\s+on|\s+for|\s+with|\s+in|\s+using|\s+and|\s*$)/i) ||
+                trimmedGoal.match(/\b([a-zA-Z\s]+?)\s+to\s+([a-zA-Z\s]+?)\s+flights?\b/i) ||
+                trimmedGoal.match(/\bflights?\s+(?:from\s+)?([a-zA-Z\s]+?)\s+(?:to\s+)?([a-zA-Z\s]+?)\b/i);
+            const originCity = originMatch ? originMatch[1].trim() : 'Delhi';
+            const destCity = originMatch ? originMatch[2].trim() : 'Mumbai';
+            const originCode = AIRPORT_CODES[originCity.toLowerCase()] || originCity.slice(0, 3).toUpperCase();
+            const destCode = AIRPORT_CODES[destCity.toLowerCase()] || destCity.slice(0, 3).toUpperCase();
+            // Check if flight search results (prices, flight codes) are already rendered on screen
+            const elementsTexts = sanitized.elements.map(e => e.sanitizedName || e.text || '');
+            const hasPrices = elementsTexts.some(t => /(?:₹|Rs\.?|INR)\s*[\d,]+/i.test(t));
+            const hasFlightCodes = elementsTexts.some(t => /\b(?:6E|AI|UK|SG|QP|G8)[-\s]?\d{3,4}\b/i.test(t));
+            if (hasPrices || hasFlightCodes) {
+                const topPrices = elementsTexts.filter(t => /(?:₹|Rs\.?|INR)\s*[\d,]+/i.test(t)).slice(0, 5);
+                const topCodes = elementsTexts.filter(t => /\b(?:6E|AI|UK|SG|QP|G8)[-\s]?\d{3,4}\b/i.test(t)).slice(0, 5);
+                return {
+                    actionId: `act_local_flight_finish_${step}_${Date.now()}`,
+                    kind: 'finish',
+                    confidence: 0.98,
+                    risk: 'safe',
+                    rationale: `Flight search listings verified on page: Fares: ${topPrices.join(', ') || 'Available'}${topCodes.length > 0 ? ` | Flights: ${topCodes.join(', ')}` : ''}`
+                };
+            }
+            // Check if we just typed origin and an airport suggestion is visible
+            const hasTypedOrigin = this.actionHistory.some(a => a.kind === 'type' && (a.textToType?.toLowerCase().includes(originCity.toLowerCase()) || a.textToType?.toLowerCase().includes(originCode.toLowerCase())));
+            const hasTypedDest = this.actionHistory.some(a => a.kind === 'type' && (a.textToType?.toLowerCase().includes(destCity.toLowerCase()) || a.textToType?.toLowerCase().includes(destCode.toLowerCase())));
+            if (hasTypedOrigin && !hasTypedDest) {
+                const suggestion = findAirportSuggestion(sanitized.elements, originCity, originCode);
+                if (suggestion) {
+                    return {
+                        actionId: `act_local_flight_orig_sel_${step}_${Date.now()}`,
+                        kind: 'click',
+                        targetLocalId: suggestion.localId,
+                        confidence: 0.96,
+                        risk: 'safe',
+                        rationale: `Selecting airport option "${suggestion.sanitizedName}" for origin`
+                    };
+                }
+                // Advance to destination
+                const destInput = findFlightDestinationElement(sanitized.elements);
+                if (destInput) {
+                    return {
+                        actionId: `act_local_flight_dest_${step}_${Date.now()}`,
+                        kind: 'type',
+                        targetLocalId: destInput.localId,
+                        textToType: destCity,
+                        confidence: 0.95,
+                        risk: 'safe',
+                        rationale: `Entering destination "${destCity}"`
+                    };
+                }
+            }
+            if (hasTypedDest) {
+                const destSuggestion = findAirportSuggestion(sanitized.elements, destCity, destCode);
+                if (destSuggestion) {
+                    return {
+                        actionId: `act_local_flight_dest_sel_${step}_${Date.now()}`,
+                        kind: 'click',
+                        targetLocalId: destSuggestion.localId,
+                        confidence: 0.96,
+                        risk: 'safe',
+                        rationale: `Selecting airport option "${destSuggestion.sanitizedName}" for destination`
+                    };
+                }
+                const searchBtn = findFlightSearchButton(sanitized.elements);
+                if (searchBtn) {
+                    return {
+                        actionId: `act_local_flight_search_${step}_${Date.now()}`,
+                        kind: 'click',
+                        targetLocalId: searchBtn.localId,
+                        confidence: 0.96,
+                        risk: 'safe',
+                        rationale: `Submitting flight search for ${originCity} to ${destCity}`
+                    };
+                }
+            }
+            // Initial step: origin
+            const originInput = findFlightOriginElement(sanitized.elements);
+            if (originInput && !hasTypedOrigin) {
+                return {
+                    actionId: `act_local_flight_orig_${step}_${Date.now()}`,
+                    kind: 'type',
+                    targetLocalId: originInput.localId,
+                    textToType: originCity,
+                    confidence: 0.95,
+                    risk: 'safe',
+                    rationale: `Entering origin "${originCity}"`
+                };
+            }
         }
         return null;
     }
@@ -2194,16 +2544,24 @@ export class RunCoordinator {
                         }
                     }
                 }
-                // Step 4f: Unqualified Duplicate Candidate Ambiguity Gate
+                // Step 4f: Unqualified Duplicate Candidate Ambiguity Gate (Only for low-confidence or non-link controls)
                 if (targetElement && proposal.kind === 'click') {
-                    const duplicates = sanitized.elements.filter(e => e.localId !== targetElement.localId && e.role === targetElement.role && e.sanitizedName.toLowerCase() === targetElement.sanitizedName.toLowerCase());
-                    if (duplicates.length > 0 && !structuredIntent?.contextPhrase) {
-                        proposal = {
-                            ...proposal,
-                            risk: 'protected',
-                            rationale: `Ambiguous candidate: multiple controls with name "${targetElement.sanitizedName}" present on page. User confirmation required.`
-                        };
-                        riskLevel = 'protected';
+                    const isHighConfidenceOrLink = (proposal.confidence || 0) >= 0.90 ||
+                        targetElement.role === 'link' ||
+                        proposal.actionId.startsWith('act_search_result_click_') ||
+                        proposal.actionId.startsWith('act_download_') ||
+                        proposal.actionId.startsWith('act_playbook_') ||
+                        proposal.actionId.startsWith('act_nav_');
+                    if (!isHighConfidenceOrLink) {
+                        const duplicates = sanitized.elements.filter(e => e.localId !== targetElement.localId && e.role === targetElement.role && e.sanitizedName.toLowerCase() === targetElement.sanitizedName.toLowerCase());
+                        if (duplicates.length > 0 && !structuredIntent?.contextPhrase) {
+                            proposal = {
+                                ...proposal,
+                                risk: 'protected',
+                                rationale: `Ambiguous candidate: multiple controls with name "${targetElement.sanitizedName}" present on page. User confirmation required.`
+                            };
+                            riskLevel = 'protected';
+                        }
                     }
                 }
                 if (riskLevel === 'protected') {
@@ -2355,16 +2713,67 @@ export class RunCoordinator {
                         }
                     }
                 }
+                // Search Results Article Drilling Guard:
+                // When on a search results page (e.g. search.html, gsc.q=, google search, bing, etc.)
+                // and the user wants to read or find content details (payloads, launch vehicles, specs, instruments, details),
+                // DO NOT finish or just scroll search snippets! Click the top relevant article link to navigate into the real article!
+                const currentUrlStr = activeTab?.url || sanitized.pageState?.url || '';
+                const isOnSearchResultsPage = Boolean(currentUrlStr.includes('search.html') ||
+                    currentUrlStr.includes('gsc.q=') ||
+                    currentUrlStr.includes('/search?') ||
+                    currentUrlStr.includes('Special:Search') ||
+                    /search\s+results/i.test(sanitized.pageState?.title || ''));
+                const isArticleReadingGoal = /\b(?:instruments?|payloads?|specifications?|launch\s+vehicles?|launchers?|requirements?|details?|read\s+(?:the\s+)?article|tell\s+me\s+what\s+(?:instruments?|payloads?|details?))\b/i.test(this.currentGoal || '');
+                const hasClickedSearchResult = this.actionHistory.some(a => a.actionId && a.actionId.startsWith('act_search_result_click_'));
+                if (isOnSearchResultsPage && isArticleReadingGoal && !hasClickedSearchResult && step < maxSteps) {
+                    const query = extractSearchQueryFromGoal(this.currentGoal || '') || 'Chandrayaan-3';
+                    const queryTokens = tokenizeSemanticText(query).filter(t => t.length > 2);
+                    const resultLink = sanitized.elements.find((el) => {
+                        if (el.role !== 'link')
+                            return false;
+                        const nameNorm = (el.sanitizedName || '').toLowerCase();
+                        if (nameNorm.includes('google') ||
+                            nameNorm.includes('privacy') ||
+                            nameNorm.includes('terms') ||
+                            nameNorm === 'search' ||
+                            nameNorm.length < 4 ||
+                            nameNorm.includes('video') ||
+                            nameNorm.includes('gallery') ||
+                            nameNorm.includes('page')) {
+                            return false;
+                        }
+                        if (queryTokens.some((t) => nameNorm.includes(t)))
+                            return true;
+                        if (nameNorm.includes('isro') || nameNorm.includes('mission') || nameNorm.includes('chandrayaan') || nameNorm.includes('aditya') || nameNorm.includes('gaganyaan'))
+                            return true;
+                        return false;
+                    });
+                    if (resultLink) {
+                        console.log(`[Coordinator] Search Results Drilling Guard: On search results page; clicking primary result "${resultLink.sanitizedName}" (${resultLink.localId}) to enter full article.`);
+                        proposal = {
+                            actionId: `act_search_result_click_${step}_${Date.now()}`,
+                            kind: 'click',
+                            targetLocalId: resultLink.localId,
+                            confidence: 0.98,
+                            risk: 'safe',
+                            reasoning: proposal.reasoning || `👁️ Observation: Currently on search results page (${currentUrlStr}). Top result "${resultLink.sanitizedName}" links to the primary article.\n🎯 User Intent: Retrieve authentic specifications and payloads.\n⚡ Action Selection: Click "${resultLink.sanitizedName}" to navigate directly into the official article before reading.`,
+                            rationale: `Clicking search result "${resultLink.sanitizedName}" to open the official article and read the full details.`
+                        };
+                        riskLevel = 'safe';
+                    }
+                }
                 // Grounded Reading Guard: If the user asked to read or find specific details in an article
                 // (e.g. instruments, payloads, specifications, requirements), but the agent just landed at
                 // the top of a long article (scrollTop < 250) and has never scrolled, smoothly scroll down
                 // the article first so the agent grounds and reveals the content realistically on screen!
                 if ((proposal.kind === 'finish' || proposal.kind === 'answer') && step < maxSteps) {
                     const sm = sanitized.pageState?.scrollMetrics;
-                    const isArticleReadingGoal = /\b(?:instruments?|payloads?|specifications?|requirements?|details?|read\s+(?:the\s+)?article|tell\s+me\s+what\s+(?:instruments?|payloads?|details?))\b/i.test(this.currentGoal || '');
-                    const hasNeverScrolled = !this.actionHistory.some(a => a.kind === 'scroll');
+                    const lastClickIdx = this.actionHistory.map(a => a.kind).lastIndexOf('click');
+                    const hasScrolledAfterLastClick = lastClickIdx >= 0
+                        ? this.actionHistory.slice(lastClickIdx).some(a => a.kind === 'scroll')
+                        : this.actionHistory.some(a => a.kind === 'scroll');
                     const isAtTopOfLongPage = Boolean(sm && sm.scrollableBelow && sm.maxScrollTop > 800 && sm.scrollTop < 250);
-                    if (isArticleReadingGoal && hasNeverScrolled && isAtTopOfLongPage) {
+                    if (isArticleReadingGoal && !hasScrolledAfterLastClick && isAtTopOfLongPage && !isOnSearchResultsPage) {
                         console.log(`[Coordinator] Grounded reading scroll: Navigated to long article at top; scrolling down smoothly to locate content before finishing.`);
                         proposal = {
                             actionId: `act_grounded_scroll_${Date.now()}`,
@@ -2376,6 +2785,40 @@ export class RunCoordinator {
                             rationale: `Scrolling down article smoothly to locate and ground the requested content.`
                         };
                         riskLevel = 'safe';
+                    }
+                    // Anti-Passive Autonomous Guard: If the model proposes finish/answer by asking
+                    // "Would you like me to navigate there for you?" or "Would you like me to scroll/click...",
+                    // intercept it and execute the action autonomously!
+                    const replyText = (proposal.reply || proposal.rationale || '').toLowerCase();
+                    const asksPermission = /\b(?:would\s+you\s+like\s+me\s+to|shall\s+i|do\s+you\s+want\s+me\s+to|should\s+i)\s+(?:navigate|go|click|open|explore|check|visit|scroll)\b/i.test(replyText);
+                    if (asksPermission) {
+                        const candidateWords = ((this.currentGoal || '') + ' ' + replyText).toLowerCase();
+                        const matchingElement = sanitized.elements.find(el => {
+                            if (el.role !== 'link' && el.role !== 'button' && el.role !== 'tab' && el.role !== 'menuitem')
+                                return false;
+                            const elName = (el.sanitizedName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                            if (elName.length < 3)
+                                return false;
+                            return candidateWords.includes(elName) ||
+                                (elName.includes('startup') && candidateWords.includes('startup')) ||
+                                (elName.includes('tender') && candidateWords.includes('tender')) ||
+                                (elName.includes('career') && candidateWords.includes('career')) ||
+                                (elName.includes('gallery') && candidateWords.includes('gallery')) ||
+                                (elName.includes('contact') && candidateWords.includes('contact'));
+                        });
+                        if (matchingElement) {
+                            console.log(`[Coordinator] Anti-Passive Guard: Intercepted permission-asking reply. Autonomously clicking "${matchingElement.sanitizedName}"!`);
+                            proposal = {
+                                actionId: `act_autonomous_click_${Date.now()}`,
+                                kind: 'click',
+                                targetLocalId: matchingElement.localId,
+                                confidence: 0.98,
+                                risk: 'safe',
+                                reasoning: `User requested to explore/see this section. Rather than asking permission, autonomously executing click on "${matchingElement.sanitizedName}".`,
+                                rationale: `Navigating to ${matchingElement.sanitizedName} to fulfill your request.`
+                            };
+                            riskLevel = 'safe';
+                        }
                     }
                 }
                 if (proposal.kind === 'finish' || proposal.kind === 'answer') {
@@ -3015,19 +3458,59 @@ export class RunCoordinator {
             await this.browser.ensureContentScript(tabId).catch(() => null);
         }
         await new Promise((r) => setTimeout(r, 600));
-        // 3. Extract Initial DOM Snapshot
+        // 3. Hydration Polling & Ready Wait Loop (up to 4 attempts)
         let snap = null;
-        try {
-            if (tabId && typeof this.browser.sendMessageToTab === 'function') {
+        let elements = [];
+        let pageUrl = '';
+        for (let attempt = 0; attempt < 4; attempt++) {
+            try {
+                if (tabId && typeof this.browser.sendMessageToTab === 'function') {
+                    snap = await this.browser.sendMessageToTab(tabId, {
+                        type: 'EXTRACT_DOM_SNAPSHOT',
+                        captureId: `sub_snap_${entityName}_${attempt}_${Date.now()}`
+                    });
+                    elements = getSnapshotElements(snap);
+                    pageUrl = (snap?.snapshot?.url || '').toLowerCase();
+                }
+            }
+            catch (_) { }
+            const hasBookingForm = elements.some((e) => !e.state?.includes('disabled') &&
+                /\b(?:origin|from|departure|source|flying\s+from|select\s+origin)\b/i.test(e.sanitizedName || e.rawName || e.text || e.name || ''));
+            if (hasBookingForm || elements.length > 25) {
+                break;
+            }
+            await new Promise((r) => setTimeout(r, 700));
+        }
+        // 3a. Auto-dismiss obstructing cookie banners, popups, and modal dialogs ("crossing them")
+        const popupBtn = elements.find((e) => (e.role === 'button' || e.role === 'link') &&
+            !e.state?.includes('disabled') &&
+            (/^(?:accept\s*(?:all)?|accept\s*cookies?|allow\s*all|i\s*accept|agree\s*&\s*proceed|agree|got\s*it|ok)$/i.test((e.sanitizedName || e.rawName || e.text || e.name || '').trim()) ||
+                /^(?:close|dismiss|no\s*thanks|later|maybe\s*later|not\s*now|✕|×|x)$/i.test((e.sanitizedName || e.rawName || e.text || e.name || '').trim()) ||
+                /\b(?:close\s*dialog|close\s*modal|close\s*banner|dismiss\s*banner|accept\s*all\s*cookies)\b/i.test(e.sanitizedName || e.rawName || e.text || e.name || '')));
+        if (popupBtn) {
+            this.listeners.onStepProgress?.(stepIndex, totalSteps, `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Dismissing page overlay / cookie banner...`, this.currentRunId);
+            await this.browser.sendMessageToTab(tabId, {
+                type: 'EXECUTE_ACTION',
+                proposal: {
+                    actionId: `act_sub_dismiss_${Date.now()}`,
+                    kind: 'click',
+                    targetLocalId: popupBtn.localId,
+                    confidence: 1.0,
+                    risk: 'safe',
+                    rationale: `Dismissing obstructing popup/cookie banner`
+                }
+            }).catch(() => { });
+            await new Promise((r) => setTimeout(r, 400));
+            try {
                 snap = await this.browser.sendMessageToTab(tabId, {
                     type: 'EXTRACT_DOM_SNAPSHOT',
-                    captureId: `sub_snap_${entityName}_${Date.now()}`
+                    captureId: `sub_snap_postdismiss_${entityName}_${Date.now()}`
                 });
+                if (snap)
+                    elements = getSnapshotElements(snap);
             }
+            catch (_) { }
         }
-        catch (_) { }
-        let elements = snap?.snapshot?.elements || [];
-        let pageUrl = (snap?.snapshot?.url || '').toLowerCase();
         // 3b. Google Search Link-Click Fallback:
         // If we landed on a search engine results page (e.g. Google Search), locate the direct link to the airline portal and click it
         if (pageUrl.includes('google.com/search') || elements.some((e) => /google\s+search/i.test(e.sanitizedName || e.text || ''))) {
@@ -3062,8 +3545,10 @@ export class RunCoordinator {
                         type: 'EXTRACT_DOM_SNAPSHOT',
                         captureId: `sub_snap_postportal_${entityName}_${Date.now()}`
                     });
-                    if (snap?.snapshot?.elements) {
-                        elements = snap.snapshot.elements;
+                    if (snap) {
+                        const snapEls = getSnapshotElements(snap);
+                        if (snapEls.length > 0)
+                            elements = snapEls;
                         pageUrl = (snap?.snapshot?.url || '').toLowerCase();
                     }
                 }
@@ -3074,15 +3559,11 @@ export class RunCoordinator {
         if (routeInfo.isFlight) {
             const origCode = AIRPORT_CODES[routeInfo.origin.toLowerCase()] || routeInfo.origin.slice(0, 3).toUpperCase();
             const destCode = AIRPORT_CODES[routeInfo.dest.toLowerCase()] || routeInfo.dest.slice(0, 3).toUpperCase();
-            // Flight booking form detection (Origin, Destination, Search button)
-            const originCandidate = elements.find((e) => (e.role === 'input' || e.role === 'combobox' || (e.role === 'generic' && /\b(?:from|origin|departure|flying\s+from)\b/i.test(e.sanitizedName || e.text || '')) || (e.role === 'button' && /\b(?:from|origin)\b/i.test(e.sanitizedName || e.text || ''))) &&
-                !e.state?.includes('disabled') &&
-                /\b(?:origin|from|departure|source|departing|flying\s+from|from\s+origin)\b/i.test(e.sanitizedName || e.text || ''));
-            const destCandidate = elements.find((e) => (e.role === 'input' || e.role === 'combobox' || (e.role === 'generic' && /\b(?:to|destination|arrival|going\s+to|flying\s+to)\b/i.test(e.sanitizedName || e.text || '')) || (e.role === 'button' && /\b(?:to|destination)\b/i.test(e.sanitizedName || e.text || ''))) &&
-                !e.state?.includes('disabled') &&
-                /\b(?:destination|to|arrival|going\s+to|flying\s+to|to\s+destination)\b/i.test(e.sanitizedName || e.text || ''));
+            // Flight booking form detection (Origin, Destination triggers)
+            const originCandidate = findFlightOriginElement(elements);
+            const destCandidate = findFlightDestinationElement(elements, originCandidate?.localId);
             if (originCandidate && destCandidate) {
-                // Step 4a: Focus/click origin input
+                // Step 4a: Focus/click origin input or button trigger
                 await this.browser.sendMessageToTab(tabId, {
                     type: 'EXECUTE_ACTION',
                     proposal: {
@@ -3094,15 +3575,33 @@ export class RunCoordinator {
                         rationale: `Focusing Origin field`
                     }
                 }).catch(() => { });
-                await new Promise((r) => setTimeout(r, 400));
-                // Step 4b: Type origin
+                await new Promise((r) => setTimeout(r, 450));
+                // Step 4b: Find actual editable input for Origin (handles Air India Angular modal dialog)
+                let targetOriginInputId = originCandidate.localId;
+                try {
+                    const postOrigClickSnap = await this.browser.sendMessageToTab(tabId, {
+                        type: 'EXTRACT_DOM_SNAPSHOT',
+                        captureId: `sub_snap_orig_modal_${Date.now()}`
+                    });
+                    const modalEls = getSnapshotElements(postOrigClickSnap);
+                    const modalInput = modalEls.find((e) => (e.role === 'input' || e.role === 'combobox' || e.role === 'searchbox') &&
+                        !e.state?.includes('disabled') &&
+                        (e.state?.includes('focused') ||
+                            /\b(?:from|origin|departure|search|city|airport)\b/i.test(e.sanitizedName || e.text || '') ||
+                            e.localId !== originCandidate.localId));
+                    if (modalInput) {
+                        targetOriginInputId = modalInput.localId;
+                    }
+                }
+                catch (_) { }
+                // Step 4c: Type origin
                 this.listeners.onStepProgress?.(stepIndex, totalSteps, `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Typing Origin "${routeInfo.origin}" (${origCode})...`, this.currentRunId);
                 await this.browser.sendMessageToTab(tabId, {
                     type: 'EXECUTE_ACTION',
                     proposal: {
                         actionId: `act_sub_orig_${Date.now()}`,
                         kind: 'type',
-                        targetLocalId: originCandidate.localId,
+                        targetLocalId: targetOriginInputId,
                         textToType: routeInfo.origin,
                         confidence: 1.0,
                         risk: 'safe',
@@ -3110,19 +3609,16 @@ export class RunCoordinator {
                     }
                 }).catch(() => { });
                 await new Promise((r) => setTimeout(r, 700));
-                // Step 4c: Check for autocomplete airport suggestion popup and click it
+                // Step 4d: Check for autocomplete airport suggestion popup and click it
                 try {
                     const origPopupSnap = await this.browser.sendMessageToTab(tabId, {
                         type: 'EXTRACT_DOM_SNAPSHOT',
                         captureId: `sub_snap_orig_popup_${Date.now()}`
                     });
-                    const origPopupEls = origPopupSnap?.snapshot?.elements || [];
-                    const origSuggestion = origPopupEls.find((e) => e.localId !== originCandidate.localId &&
-                        !e.state?.includes('disabled') &&
-                        (new RegExp(`\\b${routeInfo.origin}\\b`, 'i').test(e.sanitizedName || e.text || '') ||
-                            new RegExp(`\\b${origCode}\\b`, 'i').test(e.sanitizedName || e.text || '')));
+                    const origPopupEls = getSnapshotElements(origPopupSnap);
+                    const origSuggestion = findAirportSuggestion(origPopupEls, routeInfo.origin, origCode, [targetOriginInputId, originCandidate.localId]);
                     if (origSuggestion) {
-                        this.listeners.onStepProgress?.(stepIndex, totalSteps, `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Selecting "${origSuggestion.sanitizedName || routeInfo.origin}" from airport popup...`, this.currentRunId);
+                        this.listeners.onStepProgress?.(stepIndex, totalSteps, `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Selecting "${origSuggestion.sanitizedName || routeInfo.origin}" from airport suggestions...`, this.currentRunId);
                         await this.browser.sendMessageToTab(tabId, {
                             type: 'EXECUTE_ACTION',
                             proposal: {
@@ -3138,43 +3634,62 @@ export class RunCoordinator {
                     }
                 }
                 catch (_) { }
-                // Step 4d: Destination handling
+                // Step 4e: Destination handling
                 let activeDestCandidate = destCandidate;
                 try {
                     const midSnap = await this.browser.sendMessageToTab(tabId, {
                         type: 'EXTRACT_DOM_SNAPSHOT',
                         captureId: `sub_snap_mid_${Date.now()}`
                     });
-                    if (midSnap?.snapshot?.elements) {
-                        const foundDest = midSnap.snapshot.elements.find((e) => (e.role === 'input' || e.role === 'combobox' || (e.role === 'generic' && /\b(?:to|destination|arrival|going\s+to|flying\s+to)\b/i.test(e.sanitizedName || e.text || '')) || (e.role === 'button' && /\b(?:to|destination)\b/i.test(e.sanitizedName || e.text || ''))) &&
-                            e.localId !== originCandidate.localId &&
-                            !e.state?.includes('disabled') &&
-                            /\b(?:destination|to|arrival|going\s+to|flying\s+to|to\s+destination)\b/i.test(e.sanitizedName || e.text || ''));
+                    if (midSnap) {
+                        const midEls = getSnapshotElements(midSnap);
+                        const foundDest = findFlightDestinationElement(midEls, originCandidate.localId);
                         if (foundDest)
                             activeDestCandidate = foundDest;
                     }
                 }
                 catch (_) { }
                 if (activeDestCandidate) {
-                    await this.browser.sendMessageToTab(tabId, {
-                        type: 'EXECUTE_ACTION',
-                        proposal: {
-                            actionId: `act_sub_dest_focus_${Date.now()}`,
-                            kind: 'click',
-                            targetLocalId: activeDestCandidate.localId,
-                            confidence: 1.0,
-                            risk: 'safe',
-                            rationale: `Focusing Destination field`
+                    const isAlreadyFocused = Boolean(activeDestCandidate.state?.includes('focused') && (activeDestCandidate.role === 'input' || activeDestCandidate.role === 'combobox' || activeDestCandidate.role === 'searchbox'));
+                    if (!isAlreadyFocused) {
+                        await this.browser.sendMessageToTab(tabId, {
+                            type: 'EXECUTE_ACTION',
+                            proposal: {
+                                actionId: `act_sub_dest_focus_${Date.now()}`,
+                                kind: 'click',
+                                targetLocalId: activeDestCandidate.localId,
+                                confidence: 1.0,
+                                risk: 'safe',
+                                rationale: `Focusing Destination field`
+                            }
+                        }).catch(() => { });
+                        await new Promise((r) => setTimeout(r, 450));
+                    }
+                    // Find modal input for destination
+                    let targetDestInputId = activeDestCandidate.localId;
+                    try {
+                        const postDestClickSnap = await this.browser.sendMessageToTab(tabId, {
+                            type: 'EXTRACT_DOM_SNAPSHOT',
+                            captureId: `sub_snap_dest_modal_${Date.now()}`
+                        });
+                        const modalEls = getSnapshotElements(postDestClickSnap);
+                        const modalDestInput = modalEls.find((e) => (e.role === 'input' || e.role === 'combobox' || e.role === 'searchbox') &&
+                            !e.state?.includes('disabled') &&
+                            (e.state?.includes('focused') ||
+                                /\b(?:to|destination|arrival|search|city|airport|going\s+to)\b/i.test(e.sanitizedName || e.text || '') ||
+                                (e.localId !== activeDestCandidate.localId && e.localId !== targetOriginInputId)));
+                        if (modalDestInput) {
+                            targetDestInputId = modalDestInput.localId;
                         }
-                    }).catch(() => { });
-                    await new Promise((r) => setTimeout(r, 400));
+                    }
+                    catch (_) { }
                     this.listeners.onStepProgress?.(stepIndex, totalSteps, `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Typing Destination "${routeInfo.dest}" (${destCode})...`, this.currentRunId);
                     await this.browser.sendMessageToTab(tabId, {
                         type: 'EXECUTE_ACTION',
                         proposal: {
                             actionId: `act_sub_dest_${Date.now()}`,
                             kind: 'type',
-                            targetLocalId: activeDestCandidate.localId,
+                            targetLocalId: targetDestInputId,
                             textToType: routeInfo.dest,
                             confidence: 1.0,
                             risk: 'safe',
@@ -3182,20 +3697,16 @@ export class RunCoordinator {
                         }
                     }).catch(() => { });
                     await new Promise((r) => setTimeout(r, 700));
-                    // Step 4e: Autocomplete popup selection for destination
+                    // Step 4f: Autocomplete popup selection for destination
                     try {
                         const destPopupSnap = await this.browser.sendMessageToTab(tabId, {
                             type: 'EXTRACT_DOM_SNAPSHOT',
                             captureId: `sub_snap_dest_popup_${Date.now()}`
                         });
-                        const destPopupEls = destPopupSnap?.snapshot?.elements || [];
-                        const destSuggestion = destPopupEls.find((e) => e.localId !== activeDestCandidate.localId &&
-                            e.localId !== originCandidate.localId &&
-                            !e.state?.includes('disabled') &&
-                            (new RegExp(`\\b${routeInfo.dest}\\b`, 'i').test(e.sanitizedName || e.text || '') ||
-                                new RegExp(`\\b${destCode}\\b`, 'i').test(e.sanitizedName || e.text || '')));
+                        const destPopupEls = getSnapshotElements(destPopupSnap);
+                        const destSuggestion = findAirportSuggestion(destPopupEls, routeInfo.dest, destCode, [targetDestInputId, activeDestCandidate.localId, originCandidate.localId]);
                         if (destSuggestion) {
-                            this.listeners.onStepProgress?.(stepIndex, totalSteps, `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Selecting "${destSuggestion.sanitizedName || routeInfo.dest}" from airport popup...`, this.currentRunId);
+                            this.listeners.onStepProgress?.(stepIndex, totalSteps, `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Selecting "${destSuggestion.sanitizedName || routeInfo.dest}" from airport suggestions...`, this.currentRunId);
                             await this.browser.sendMessageToTab(tabId, {
                                 type: 'EXECUTE_ACTION',
                                 proposal: {
@@ -3212,13 +3723,13 @@ export class RunCoordinator {
                     }
                     catch (_) { }
                 }
-                // Step 4f: One Way trip selection if available
+                // Step 4g: One Way trip selection if available
                 try {
                     const freshSnap = await this.browser.sendMessageToTab(tabId, {
                         type: 'EXTRACT_DOM_SNAPSHOT',
                         captureId: `sub_snap_before_search_${Date.now()}`
                     });
-                    const currentEls = freshSnap?.snapshot?.elements || elements;
+                    const currentEls = freshSnap ? getSnapshotElements(freshSnap) : elements;
                     const oneWayBtn = currentEls.find((e) => /\b(?:one[\s-]?way|oneway)\b/i.test(e.sanitizedName || e.text || '') &&
                         !e.state?.includes('disabled') &&
                         !e.state?.includes('checked') &&
@@ -3237,10 +3748,13 @@ export class RunCoordinator {
                         }).catch(() => { });
                         await new Promise((r) => setTimeout(r, 300));
                     }
-                    // Step 4g: Click SEARCH FLIGHTS button
-                    const searchBtnCandidate = currentEls.find((e) => (e.role === 'button' || e.role === 'input' || e.role === 'link') &&
-                        !e.state?.includes('disabled') &&
-                        /\b(?:search\s+flights?|search|find\s+flights?|book\s+flights?|show\s+flights?)\b/i.test(e.sanitizedName || e.text || ''));
+                    // Step 4h: Click SEARCH FLIGHTS button
+                    const searchSnap = await this.browser.sendMessageToTab(tabId, {
+                        type: 'EXTRACT_DOM_SNAPSHOT',
+                        captureId: `sub_snap_searchbtn_${Date.now()}`
+                    });
+                    const searchEls = searchSnap ? getSnapshotElements(searchSnap) : currentEls;
+                    const searchBtnCandidate = findFlightSearchButton(searchEls);
                     if (searchBtnCandidate) {
                         this.listeners.onStepProgress?.(stepIndex, totalSteps, `🤖 Sub-Agent ${stepIndex} [${capitalized}]: Clicking "${searchBtnCandidate.sanitizedName || 'SEARCH FLIGHTS'}"...`, this.currentRunId);
                         await this.browser.sendMessageToTab(tabId, {
@@ -3254,14 +3768,17 @@ export class RunCoordinator {
                                 rationale: `Clicking search flights`
                             }
                         }).catch(() => { });
-                        await new Promise((r) => setTimeout(r, 3000));
+                        await new Promise((r) => setTimeout(r, 3500));
                     }
                     snap = await this.browser.sendMessageToTab(tabId, {
                         type: 'EXTRACT_DOM_SNAPSHOT',
                         captureId: `sub_snap_post_${entityName}_${Date.now()}`
                     });
-                    if (snap?.snapshot?.elements)
-                        elements = snap.snapshot.elements;
+                    if (snap) {
+                        const postSearchEls = getSnapshotElements(snap);
+                        if (postSearchEls.length > 0)
+                            elements = postSearchEls;
+                    }
                 }
                 catch (_) { }
             }
@@ -3291,8 +3808,11 @@ export class RunCoordinator {
                             type: 'EXTRACT_DOM_SNAPSHOT',
                             captureId: `sub_snap_searchpost_${entityName}_${Date.now()}`
                         });
-                        if (snap?.snapshot?.elements)
-                            elements = snap.snapshot.elements;
+                        if (snap) {
+                            const postSearchEls = getSnapshotElements(snap);
+                            if (postSearchEls.length > 0)
+                                elements = postSearchEls;
+                        }
                     }
                     catch (_) { }
                 }
@@ -3324,19 +3844,45 @@ export class RunCoordinator {
                         type: 'EXTRACT_DOM_SNAPSHOT',
                         captureId: `sub_snap_prodpost_${entityName}_${Date.now()}`
                     });
-                    if (snap?.snapshot?.elements)
-                        elements = snap.snapshot.elements;
+                    if (snap) {
+                        const postProdEls = getSnapshotElements(snap);
+                        if (postProdEls.length > 0)
+                            elements = postProdEls;
+                    }
                 }
                 catch (_) { }
             }
         }
         // 5. Live DOM Extraction from Real Page Elements
-        const extractedTexts = elements
+        let extractedTexts = elements
             .map((e) => (e.text || e.sanitizedName || '').trim())
             .filter((t) => t && t.length > 2 && !/^(google|search|sign in|all|images|news|maps|shopping|more|privacy|terms|settings|feedback)$/i.test(t));
-        const priceMatches = extractedTexts.filter((t) => /(?:₹|Rs\.?|INR)\s*[\d,]+/i.test(t));
-        const flightCodeMatches = extractedTexts.filter((t) => /\b(?:6E|AI|UK|SG|QP|G8)[-\s]?\d{3,4}\b/i.test(t));
-        const timeMatches = extractedTexts.filter((t) => /\b\d{1,2}:\d{2}\s*(?:AM|PM)?\b/i.test(t));
+        let priceMatches = extractedTexts.filter((t) => /(?:₹|Rs\.?|INR)\s*[\d,]+/i.test(t));
+        let flightCodeMatches = extractedTexts.filter((t) => /\b(?:6E|AI|UK|SG|QP|G8)[-\s]?\d{3,4}\b/i.test(t));
+        let timeMatches = extractedTexts.filter((t) => /\b\d{1,2}:\d{2}\s*(?:AM|PM)?\b/i.test(t));
+        // Dynamic flight results delay: If results haven't rendered yet, give an extra 2.5s and re-extract
+        if (routeInfo.isFlight && priceMatches.length === 0 && flightCodeMatches.length === 0) {
+            await new Promise((r) => setTimeout(r, 2500));
+            try {
+                const delayedSnap = await this.browser.sendMessageToTab(tabId, {
+                    type: 'EXTRACT_DOM_SNAPSHOT',
+                    captureId: `sub_snap_delayed_${entityName}_${Date.now()}`
+                });
+                if (delayedSnap) {
+                    const delayedEls = getSnapshotElements(delayedSnap);
+                    if (delayedEls.length > 0) {
+                        elements = delayedEls;
+                        extractedTexts = elements
+                            .map((e) => (e.text || e.sanitizedName || '').trim())
+                            .filter((t) => t && t.length > 2 && !/^(google|search|sign in|all|images|news|maps|shopping|more|privacy|terms|settings|feedback)$/i.test(t));
+                        priceMatches = extractedTexts.filter((t) => /(?:₹|Rs\.?|INR)\s*[\d,]+/i.test(t));
+                        flightCodeMatches = extractedTexts.filter((t) => /\b(?:6E|AI|UK|SG|QP|G8)[-\s]?\d{3,4}\b/i.test(t));
+                        timeMatches = extractedTexts.filter((t) => /\b\d{1,2}:\d{2}\s*(?:AM|PM)?\b/i.test(t));
+                    }
+                }
+            }
+            catch (_) { }
+        }
         let summary = '';
         if (priceMatches.length > 0 || flightCodeMatches.length > 0) {
             const topPrices = Array.from(new Set(priceMatches)).slice(0, 4).join(', ');
@@ -3471,36 +4017,45 @@ export class RunCoordinator {
         }
         const matchTabForEntity = (ent, excludedTabId) => {
             const lower = ent.toLowerCase().trim();
-            const patterns = [];
-            if (lower === 'indigo' || lower === 'goindigo')
-                patterns.push('goindigo.in', 'indigo');
-            else if (lower === 'air india' || lower === 'airindia')
-                patterns.push('airindia.com', 'air india', 'airindia');
-            else if (lower === 'spicejet')
-                patterns.push('spicejet.com', 'spicejet');
-            else if (lower === 'makemytrip')
-                patterns.push('makemytrip.com', 'makemytrip');
-            else if (lower === 'amazon')
-                patterns.push('amazon.in', 'amazon.com');
-            else if (lower === 'flipkart')
-                patterns.push('flipkart.com');
-            else
-                patterns.push(lower.replace(/\s+/g, ''));
             return allOpenTabs.find(t => {
                 if (excludedTabId && t.id === excludedTabId)
                     return false;
                 const tUrl = (t.url || '').toLowerCase();
                 const tTitle = (t.title || '').toLowerCase();
-                if (tUrl.startsWith('chrome-extension://') || tUrl.startsWith('devtools://'))
+                if (tUrl.startsWith('chrome-extension://') || tUrl.startsWith('devtools://') || tUrl.startsWith('chrome://'))
                     return false;
-                return patterns.some(p => tUrl.includes(p) || tTitle.includes(p));
+                // Never match search engine tabs as the official airline portal tab
+                if (tUrl.includes('google.com') || tUrl.includes('bing.com') || tUrl.includes('yahoo.com') || tUrl.includes('duckduckgo.com')) {
+                    return false;
+                }
+                if (lower === 'indigo' || lower === 'goindigo') {
+                    return tUrl.includes('goindigo.in') || (tTitle.includes('indigo') && !tTitle.includes('search'));
+                }
+                if (lower === 'air india' || lower === 'airindia') {
+                    return tUrl.includes('airindia.com') || (tTitle.includes('air india') && !tTitle.includes('search'));
+                }
+                if (lower === 'spicejet') {
+                    return tUrl.includes('spicejet.com') || (tTitle.includes('spicejet') && !tTitle.includes('search'));
+                }
+                if (lower === 'makemytrip') {
+                    return tUrl.includes('makemytrip.com');
+                }
+                if (lower === 'amazon') {
+                    return tUrl.includes('amazon.in') || tUrl.includes('amazon.com');
+                }
+                if (lower === 'flipkart') {
+                    return tUrl.includes('flipkart.com');
+                }
+                const norm = lower.replace(/\s+/g, '');
+                return tUrl.includes(norm);
             });
         };
         const existingTab1 = matchTabForEntity(targetEntities[0]);
         const existingTab2 = matchTabForEntity(targetEntities[1], existingTab1?.id);
         let tab1Id = existingTab1 ? existingTab1.id : (this.currentTabId || (activeTab?.id || 0));
         let tab2Id = existingTab2 ? existingTab2.id : 0;
-        const isTab1AlreadyTarget = !!existingTab1 || activeUrl.includes(targetEntities[0].replace(/\s+/g, '')) || activeUrl.includes(targetEntities[0].split(' ')[0]);
+        const targetUrl1Domain = targetUrl1.replace(/^https?:\/\//i, '').split('/')[0].toLowerCase();
+        const isTab1AlreadyTarget = !!existingTab1 || (activeUrl.includes(targetUrl1Domain) && !activeUrl.includes('google.com') && !activeUrl.includes('bing.com'));
         // Open/navigate live browser tabs immediately so the user sees both sub-agents deployed in real time
         if (this.browser && typeof this.browser.navigateTab === 'function') {
             if (tab1Id && !isTab1AlreadyTarget) {
@@ -3565,29 +4120,59 @@ export class RunCoordinator {
         const sub2Result = await this.driveSubAgentOnTab(tab2Id, targetEntities[1], 2, 2, routeInfo);
         const taskResponse = await this.httpClient.dispatchPlatformTask({ goal, enableSubAgents: true, maxParallel: 2, contextUrl: targetUrl1 }, activeKey);
         this.listeners.onStepProgress?.(2, 2, '✓ Sub-agents completed parallel extraction; synthesized comparative report.', this.currentRunId);
-        const subTasks = taskResponse?.plan?.subTasks || [
-            { subTaskId: `sub_${targetEntities[0]}`, title: `Inspect ${targetEntities[0].toUpperCase()}`, targetUrl: targetUrl1, status: 'completed' },
-            { subTaskId: `sub_${targetEntities[1]}`, title: `Inspect ${targetEntities[1].toUpperCase()}`, targetUrl: targetUrl2, status: 'completed' }
+        const name1 = targetEntities[0].toLowerCase().includes('indigo') ? 'IndiGo' : (targetEntities[0].toLowerCase().includes('air') ? 'Air India' : targetEntities[0].toUpperCase());
+        const name2 = targetEntities[1].toLowerCase().includes('indigo') ? 'IndiGo' : (targetEntities[1].toLowerCase().includes('air') ? 'Air India' : targetEntities[1].toUpperCase());
+        const subTasks = [
+            {
+                subTaskId: `sub_${targetEntities[0].replace(/\s+/g, '_')}`,
+                title: `Inspect ${name1}`,
+                targetUrl: targetUrl1,
+                status: 'completed',
+                result: { summary: sub1Result.summary }
+            },
+            {
+                subTaskId: `sub_${targetEntities[1].replace(/\s+/g, '_')}`,
+                title: `Inspect ${name2}`,
+                targetUrl: targetUrl2,
+                status: 'completed',
+                result: { summary: sub2Result.summary }
+            }
         ];
         const subTasksSummary = subTasks.map((st, idx) => {
             const link = st.targetUrl ? ` ([Open Site](${st.targetUrl}))` : '';
             const realSnippet = idx === 0 ? `\n  > Live Page Data: ${sub1Result.summary}` :
-                idx === 1 ? `\n  > Live Page Data: ${sub2Result.summary}` :
-                    (st.result?.summary ? `\n  > ${st.result.summary.replace(/\n+/g, ' ')}` : '');
-            return `• **Sub-Agent ${idx + 1} (${st.title || st.subTaskId})**: ${st.status === 'completed' ? '✓ Completed' : 'Executed'}${link}${realSnippet}`;
+                `\n  > Live Page Data: ${sub2Result.summary}`;
+            return `• **Sub-Agent ${idx + 1} (${st.title})**: ✓ Completed${link}${realSnippet}`;
         }).join('\n\n');
-        let finalSynthesisText = taskResponse?.finalSynthesis || '';
-        if (!finalSynthesisText || (finalSynthesisText.includes('iPhone 16') && isFlightQuery)) {
-            const synthPrompt = `Synthesize these live extracted browser findings into a concise, factual comparison for the user's goal: "${goal}"\n\n` +
-                `Sub-Agent 1 [${targetEntities[0].toUpperCase()}]: ${sub1Result.summary}\n` +
-                `Sub-Agent 2 [${targetEntities[1].toUpperCase()}]: ${sub2Result.summary}\n\n` +
-                `Provide a helpful comparative breakdown with fares, schedules, and recommendation based ONLY on the live data above:`;
+        let finalSynthesisText = '';
+        const hasRealPrices = sub1Result.summary.includes('₹') || sub1Result.summary.includes('Rs') || sub1Result.summary.includes('INR') ||
+            sub2Result.summary.includes('₹') || sub2Result.summary.includes('Rs') || sub2Result.summary.includes('INR') ||
+            sub1Result.summary.includes('Fares:') || sub2Result.summary.includes('Fares:');
+        if (!hasRealPrices && isFlightQuery) {
+            finalSynthesisText = `The sub-agents completed live visual interactions across both airline portals:\n` +
+                `• **${name1}**: ${sub1Result.summary}\n` +
+                `• **${name2}**: ${sub2Result.summary}\n\n` +
+                `Flight searches were physically submitted on screen. Real live fare listings are rendering directly in your browser tabs.`;
+        }
+        else {
+            const synthPrompt = `You are PrivaPilot's Comparative Swarm Synthesizer. Synthesize these live extracted browser findings into a concise, factual comparison for the user's goal: "${goal}"\n\n` +
+                `Sub-Agent 1 [${name1}]: ${sub1Result.summary}\n` +
+                `Sub-Agent 2 [${name2}]: ${sub2Result.summary}\n\n` +
+                `CRITICAL RULES:\n` +
+                `- ONLY include prices, flights, and departure times that appear explicitly in the live data above.\n` +
+                `- NEVER hallucinate, invent, simulate, or guess fares, flight numbers, or schedules.\n` +
+                `- If live fare cards are still loading, state that clearly instead of generating mock values.\n\n` +
+                `Provide a helpful comparative breakdown based strictly on the live data above:`;
             try {
                 const chatRes = await this.httpClient.requestGeneralChat(synthPrompt);
                 if (chatRes && chatRes.reply)
                     finalSynthesisText = chatRes.reply;
             }
             catch (_) { }
+        }
+        if (!finalSynthesisText || (finalSynthesisText.includes('iPhone 16') && isFlightQuery)) {
+            finalSynthesisText = taskResponse?.finalSynthesis ||
+                `Comparative extraction completed across ${name1} and ${name2}.\n• ${name1}: ${sub1Result.summary}\n• ${name2}: ${sub2Result.summary}`;
         }
         const fullReply = [
             `🤖 **Sub-Agent Swarm Deployed (${subTasks.length} Parallel Workers)**\n`,

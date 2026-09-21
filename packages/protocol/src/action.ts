@@ -161,10 +161,30 @@ export function resolveTaskContract(goal: string): TaskContract {
     .replace(/\btpye\b/g, 'type')
     .replace(/\bclik\b/g, 'click')
     .replace(/\bcilck\b/g, 'click')
+    .replace(/\bclcik\b/g, 'click')
+    .replace(/\bclck\b/g, 'click')
+    .replace(/\bclikc\b/g, 'click')
     .replace(/\bselet\b/g, 'select')
     .replace(/\bselct\b/g, 'select')
     .replace(/\bserach\b/g, 'search')
-    .replace(/\bserch\b/g, 'search');
+    .replace(/\bserch\b/g, 'search')
+    .replace(/\bdown;oad\b/g, 'download')
+    .replace(/\bdownlaod\b/g, 'download')
+    .replace(/\bdoenmlao\b/g, 'download')
+    .replace(/\bdomwloadn\b/g, 'download')
+    .replace(/\bdomwload\b/g, 'download')
+    .replace(/\bdowload\b/g, 'download')
+    .replace(/\bdwnload\b/g, 'download')
+    .replace(/\bdownld\b/g, 'download')
+    .replace(/\bdownlod\b/g, 'download')
+    .replace(/\bse\b(?=\s+(?:for|at|the|thr|in|to|on)\b)/g, 'see')
+    .replace(/\bthr\b/g, 'the')
+    .replace(/\bhre\b/g, 'here')
+    .replace(/\bstrtup\b/g, 'startup')
+    .replace(/\bstrt-up\b/g, 'start-up')
+    .replace(/\bshw\b/g, 'show')
+    .replace(/\bopn\b/g, 'open')
+    .replace(/\bfnd\b/g, 'find');
 
   // Strip leading navigation clauses (e.g. "open bhuvan and explore earth observation" -> "explore earth observation")
   const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
@@ -245,7 +265,9 @@ export function resolveTaskContract(goal: string): TaskContract {
   }
 
   // 1b. Browser resource operations (bookmarks, tabs, history)
-  if (/\b(?:bookmarks?|tabs?|history)\b/i.test(g)) {
+  // Only match when explicitly checking/managing Chrome/browser internal resources (e.g. "open bookmarks manager", "check my bookmarks")
+  // and NOT when clicking an on-page control or button (e.g. "click bookmarks", "clcik bookmarks", "click tabs")
+  if (/\b(?:bookmarks?|tabs?|history)\b/i.test(g) && !/\b(?:click|clcik|clik|cilck|tap|press)\b/i.test(g)) {
     const isManage = /\b(?:open|go\s+to|manage|show|launch)\b/i.test(g);
     return {
       supported: true,
@@ -262,7 +284,10 @@ export function resolveTaskContract(goal: string): TaskContract {
   }
 
   // 1c. Passive observation or immediate finish task
-  if (/^(?:observe|check|inspect|finish|read|summarize|review|analyze|tell|what|scan|look|see)\b/i.test(g)) {
+  if (
+    /^(?:observe|finish|read|summarize|review|analyze|tell|what)\b/i.test(g) ||
+    /^(?:check|scan|look|see|inspect)\s+(?:at\s+)?(?:the\s+)?(?:status|page|screen|view|around)\b/i.test(g)
+  ) {
     return {
       supported: true,
       goalPattern: 'observe_status',
@@ -300,6 +325,25 @@ export function resolveTaskContract(goal: string): TaskContract {
         targetTokens: tokenizeSemanticText(targetPhrase),
         contextPhrase
       }
+    };
+  }
+
+  // 2a. Active element search/exploration intent (e.g. "see for the startup program here", "find startup", "look for career", "explore earth observation")
+  const activeExplorationMatch = g.match(/^(?:see|se|look|find|explore)\s+(?:for\s+)?(?:the\s+)?([a-zA-Z0-9_\-\s]{2,40}?)(?:\s+here|\s+now|\s+page|\s+section)?$/i);
+  if (activeExplorationMatch && activeExplorationMatch[1] && !/^(?:status|page|screen|view|details|preview|drawer)$/i.test(activeExplorationMatch[1].trim())) {
+    const rawTarget = activeExplorationMatch[1].trim().replace(/^(?:to|for|at)\s+/i, '');
+    const cleanTarget = rawTarget.replace(/\b(?:program|tab|link|section|button|menu|item)\b/gi, '').trim() || rawTarget;
+    return {
+      supported: true,
+      goalPattern: 'click_action',
+      expectedTerminal: { kind: 'status_changed' },
+      expectedTargetNameSubstring: cleanTarget,
+      structuredIntent: {
+        intent: 'click',
+        targetPhrase: cleanTarget,
+        targetTokens: tokenizeSemanticText(cleanTarget)
+      },
+      isPassive: false
     };
   }
 
@@ -531,9 +575,9 @@ export function resolveTaskContract(goal: string): TaskContract {
     };
   }
 
-  // 8. Generic clicking / interactions / navigation (button, link, item, admin, finish, sanitize, navigate, go to, show, open, tap, expand, delete, remove)
-  // Extracts target phrase, role hints, and contextual qualifiers (e.g. "Open View Details for SIH26003")
-  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove)\s+(?:on\s+)?(?:the\s+)?/i);
+  // 8. Generic clicking / interactions / navigation (button, link, item, admin, finish, sanitize, navigate, go to, show, open, tap, expand, delete, remove, download, save, export)
+  // Extracts target phrase, role hints, and contextual qualifiers (e.g. "Open View Details for SIH26003", "download Chandrayaan 3 brochure")
+  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove|download|save|export|fetch)\s+(?:on\s+)?(?:the\s+)?/i);
   const hasInteractionVerb = Boolean(verbMatch);
   let cleanStr = hasInteractionVerb ? g.replace(verbMatch![0], '').trim() : g;
 
@@ -543,6 +587,7 @@ export function resolveTaskContract(goal: string): TaskContract {
   if (/\b(?:link)\b/i.test(cleanStr)) roleHint = 'link';
   else if (/\b(?:button)\b/i.test(cleanStr)) roleHint = 'button';
   else if (/\b(?:tab)\b/i.test(cleanStr)) roleHint = 'tab';
+  else if (/\b(?:pdf|brochure|report|document|dataset|file)\b/i.test(cleanStr)) roleHint = 'link';
 
   if (roleHint) {
     cleanStr = cleanStr.replace(new RegExp(`\\s+${roleHint}\\b`, 'i'), '').trim();

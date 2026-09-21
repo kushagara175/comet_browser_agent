@@ -257,6 +257,11 @@ export class SanitizerPipeline {
                 opaqueBoxCount++;
             }
         }
+        const categoryBreakdown = {};
+        for (const r of visibleRegions) {
+            const cat = r.category || 'other';
+            categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + 1;
+        }
         const redactionManifest = {
             manifestVersion: '1.0',
             totalRegions: visibleRegions.length,
@@ -266,6 +271,7 @@ export class SanitizerPipeline {
                 face: faceCount,
                 surface: surfaceCount
             },
+            categoryBreakdown,
             methodCounts: {
                 opaqueBox: opaqueBoxCount,
                 spatialBlur: spatialBlurCount

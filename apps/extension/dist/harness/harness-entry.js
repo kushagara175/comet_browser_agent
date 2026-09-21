@@ -14194,15 +14194,19 @@ as ORT format: ${n}`);
   var HANDLE_REGEX = /(?:^|(?<=\s|[([{"']))(@[A-Za-z0-9_]{1,30})\b/g;
   var DELIVERY_ADDRESS_REGEX = /(?:^|(?<=\s|[([{"']))(?:Deliver(?:y|ing)?\s+to|Ship\s+to|Shipping\s+to|Delivered\s+to)\s+([^\n\r<]{3,80})/gi;
   var HOME_WORK_LOCATION_REGEX = /\b(?:HOME|WORK|OFFICE|OTHER)\s+(?:at\s+|-\s+)([^\n\r<]{3,80})/gi;
-  var PINCODE_IN_CONTEXT_REGEX = /\b(?:pin(?:\s*code)?[\s:]*|postal\s*code[\s:]*|[,\-]\s*)([1-9][0-9]{5})\b/gi;
+  var PINCODE_IN_CONTEXT_REGEX = /(?:[A-Za-z]+[\-,]\s*|[,\-]\s*|\b(?:pin(?:\s*code)?|postal(?:\s*code)?|zip(?:\s*code)?)[\s:\-,]*)([1-9][0-9]{2}\s?[0-9]{3})\b/gi;
   var LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt|Sector|Block|Pocket|Street|St\.|Road|Rd\.|Cross|Main|Nagar|Colony|Enclave|Vihar|Kunj|Society|Layout|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Bhavan|Bhawan)\b[^\n\r,;]{2,60}/gi;
   var ACCOUNT_GREETING_REGEX = /\b(?:Hello|Hi|Welcome),\s+([A-Za-z0-9_]{2,30})\b/gi;
   var STREET_ADDRESS_REGEX = /\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir)\b[^\n\r,;]*/gi;
   var DATE_OF_BIRTH_REGEX = /\b(?:\d{1,2}[\s/-](?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s/-]\d{2,4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b/gi;
   var EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+  var OBFUSCATED_EMAIL_REGEX = /(?:^|(?<=\s|[([{:;,]))[A-Za-z0-9._%+-]+(?:\s*\[at\]\s*|\s*\(at\)\s*|\s*@\s*)[A-Za-z0-9.-]+(?:\s*\[dot\]\s*|\s*\(dot\)\s*|\s*\.\s*)[A-Za-z]{2,}(?:\s*\[dot\]\s*[A-Za-z]{2,}|\s*\.\s*[A-Za-z]{2,})*/gi;
+  var EMAIL_LABEL_REGEX = /(?:^|(?<=\s|[([{:;,]))(?:Email|E-mail|Mail)[\s.:]*([^\s\n\r<]+@[^\s\n\r<]+|[A-Za-z0-9._%+-]+(?:\s*\[at\]\s*|\s*\(at\)\s*)[^\s\n\r<]+)/gi;
   var STANDARD_PHONE_REGEX = /(?:^|(?<!\d))(?:\+?1[\s.-]?)?\(?([0-9]{3})\)?[\s.-]?([0-9]{3})[\s.-]?([0-9]{4})(?!\d)\b/g;
+  var PHONE_LABEL_REGEX = /(?:^|(?<=\s|[([{:;,]))(?:Phone|Tel(?:ephone)?|Mobile|Mob|Contact|Call|Fax)[\s.:]*([+\d\s()./-]{7,35})(?!\d)/gi;
   var INDIAN_PHONE_REGEX = /(?:^|(?<!\d))(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)\b/g;
-  var INTL_PHONE_REGEX = /\b\+(?:[1-9]\d{0,2})[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{1,4}[\s.-]?\d{1,9}\b/g;
+  var INDIAN_LANDLINE_REGEX = /(?:^|(?<=\s|[([{:;,]))(?:\+91[\s-]?)?0?\d{2,4}[\s-]?\d{6,8}(?:\s*[/,]\s*\d{2,4})*(?!\d)\b/g;
+  var INTL_PHONE_REGEX = /(?:^|(?<=\s|[([{:;,]))\+(?:[1-9]\d{0,2})[\s.-]?\(?\d{1,5}\)?[\s.-]?\d{1,5}[\s.-]?\d{3,5}(?:\s*[/,]\s*\d{2,5})*(?!\d)/g;
   var PAN_REGEX = /\b[A-Z]{5}[0-9]{4}[A-Z]\b/g;
   var AADHAAR_REGEX = /\b[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}\b/g;
   var CARD_CANDIDATE_REGEX = /\b(?:\d{4}[\s-]?){3,4}\d{1,4}\b/g;
@@ -14319,6 +14323,39 @@ as ORT format: ${n}`);
         });
       }
     }
+    for (const match of text.matchAll(OBFUSCATED_EMAIL_REGEX)) {
+      if (match.index !== void 0) {
+        const start = match.index;
+        const end = match.index + match[0].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+        if (!alreadyCovered) {
+          matches.push({
+            category: "email",
+            startIndex: start,
+            endIndex: end,
+            matchedLength: match[0].length,
+            confidence: 0.97
+          });
+        }
+      }
+    }
+    for (const match of text.matchAll(EMAIL_LABEL_REGEX)) {
+      if (match.index !== void 0 && match[1]) {
+        const emailOffset = match[0].indexOf(match[1]);
+        const emailStart = match.index + emailOffset;
+        const emailEnd = emailStart + match[1].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= emailStart && m.endIndex >= emailEnd);
+        if (!alreadyCovered) {
+          matches.push({
+            category: "email",
+            startIndex: emailStart,
+            endIndex: emailEnd,
+            matchedLength: match[1].length,
+            confidence: 0.98
+          });
+        }
+      }
+    }
     for (const match of text.matchAll(PAN_REGEX)) {
       if (match.index !== void 0) {
         matches.push({
@@ -14357,6 +14394,23 @@ as ORT format: ${n}`);
         }
       }
     }
+    for (const match of text.matchAll(PHONE_LABEL_REGEX)) {
+      if (match.index !== void 0 && match[1]) {
+        const phoneOffset = match[0].indexOf(match[1]);
+        const phoneStart = match.index + phoneOffset;
+        const phoneEnd = phoneStart + match[1].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= phoneStart && m.endIndex >= phoneEnd);
+        if (!alreadyCovered) {
+          matches.push({
+            category: "phone",
+            startIndex: phoneStart,
+            endIndex: phoneEnd,
+            matchedLength: match[1].length,
+            confidence: 0.98
+          });
+        }
+      }
+    }
     for (const match of text.matchAll(INDIAN_PHONE_REGEX)) {
       if (match.index !== void 0) {
         const start = match.index;
@@ -14369,6 +14423,22 @@ as ORT format: ${n}`);
             endIndex: end,
             matchedLength: match[0].length,
             confidence: 0.95
+          });
+        }
+      }
+    }
+    for (const match of text.matchAll(INDIAN_LANDLINE_REGEX)) {
+      if (match.index !== void 0) {
+        const start = match.index;
+        const end = match.index + match[0].length;
+        const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
+        if (!alreadyCovered && match[0].replace(/\D/g, "").length >= 8) {
+          matches.push({
+            category: "phone",
+            startIndex: start,
+            endIndex: end,
+            matchedLength: match[0].length,
+            confidence: 0.94
           });
         }
       }
@@ -14813,8 +14883,8 @@ as ORT format: ${n}`);
             const ariaControls = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-controls") || "" : "").trim();
             rawName = associatedLabelText || ariaLabel || placeholder || title || (typeAttr === "search" ? "Search" : "") || (ariaControls.toLowerCase().includes("table") ? "Search" : "") || nameAttr || role;
           } else {
-            const textContent = el2.innerText?.trim() || "";
-            const aria = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-label")?.trim() || el2.getAttribute("title")?.trim() : "") || "";
+            const textContent = el2.innerText?.trim() || (el2.textContent && el2.textContent.trim().length < 80 ? el2.textContent.trim() : "") || "";
+            const aria = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-label")?.trim() || el2.getAttribute("title")?.trim() : "") || (el2.querySelector?.("[aria-label]")?.getAttribute("aria-label")?.trim() || "");
             let childName = "";
             if (!textContent && !aria) {
               const svgChild = el2.querySelector("svg");
@@ -14836,8 +14906,40 @@ as ORT format: ${n}`);
                   childName = "Search";
                 }
               }
+              if (!childName) {
+                const testId = (typeof el2.getAttribute === "function" ? el2.getAttribute("data-testid") : null) || el2.querySelector?.("[data-testid]")?.getAttribute("data-testid") || "";
+                if (testId) {
+                  const cleaned = testId.replace(/^(?:AppTabBar_|SideNav_|nav_|btn_|tab_)/i, "").replace(/(?:_Link|_Button|_Item|_Tab)$/i, "").replace(/([A-Z])/g, " $1").trim();
+                  if (cleaned.length > 1) {
+                    childName = cleaned;
+                  }
+                }
+              }
+              if (!childName && (tag === "a" || typeof el2.getAttribute === "function")) {
+                const rawHref = el2.href || el2.getAttribute("href") || "";
+                if (rawHref) {
+                  const hrefLower = rawHref.toLowerCase();
+                  if (hrefLower.includes("/i/bookmarks") || hrefLower.endsWith("/bookmarks")) childName = "Bookmarks";
+                  else if (hrefLower.includes("/notifications")) childName = "Notifications";
+                  else if (hrefLower.includes("/messages")) childName = "Messages";
+                  else if (hrefLower.includes("/explore")) childName = "Explore";
+                  else if (hrefLower.includes("/home")) childName = "Home";
+                  else if (hrefLower.includes("/lists") && !hrefLower.includes("search")) childName = "Lists";
+                  else if (hrefLower.includes("/settings")) childName = "Settings";
+                  else {
+                    const docMatch = hrefLower.match(/\/([^\/?#]+\.(?:pdf|zip|csv|kmz|kml|doc|docx|xlsx|tif|geotiff))(?:[?#]|$)/i);
+                    if (docMatch) {
+                      const rawFile = decodeURIComponent(docMatch[1]).replace(/[_-]+/g, " ");
+                      childName = `Download ${rawFile}`;
+                    }
+                  }
+                }
+              }
             }
             rawName = textContent || aria || childName || role;
+            if (tag === "a" && el2.hasAttribute?.("download") && !rawName.toLowerCase().includes("download")) {
+              rawName = `Download ${rawName}`;
+            }
           }
           let containerContext;
           try {
@@ -14939,12 +15041,12 @@ as ORT format: ${n}`);
                   )
                 );
                 const isDeliveryAddressContainer = Boolean(
-                  typeof parent.closest === "function" && parent.closest(
-                    '[class*="deliver" i], [id*="deliver" i], [class*="address" i], [id*="address" i], [class*="location" i], [id*="location" i], [class*="pincode" i], [id*="pincode" i]'
-                  )
+                  typeof parent.closest === "function" && (parent.closest(
+                    '[class*="deliver" i], [id*="deliver" i], [class*="address" i], [id*="address" i], [class*="location" i], [id*="location" i], [class*="pincode" i], [id*="pincode" i], address'
+                  ) || parent.parentElement?.textContent?.includes("Address"))
                 );
                 let matches = scanTextForPII(content);
-                if (matches.length === 0 && isDeliveryAddressContainer && trimmed.length > 2 && trimmed.length < 120 && /\b(?:home|work|office|deliver|katra|nagar|colony|road|street|\d{5,6})\b/i.test(trimmed)) {
+                if (matches.length === 0 && isDeliveryAddressContainer && trimmed.length > 2 && trimmed.length < 120 && !/^(?:address|location|pin\s*code|postal\s*code)$/i.test(trimmed) && (/\b(?:home|work|office|deliver|katra|nagar|colony|road|street|bhavan|bhawan|marg|lane|avenue|floor|block|sector|plot|post|pin|[1-9][0-9]{2}\s?[0-9]{3})\b/i.test(trimmed) || /[1-9][0-9]{2}\s?[0-9]{3}/.test(trimmed))) {
                   matches = [{
                     category: "address",
                     startIndex: 0,
@@ -15256,6 +15358,37 @@ as ORT format: ${n}`);
           const rows = tbl.querySelectorAll('tr, [role="row"]');
           const headers = Array.from(tbl.querySelectorAll('th, [role="columnheader"]')).map((th2) => (th2.textContent || "").trim()).filter(Boolean).slice(0, 6);
           contentSummaries.push(`Table ${idx + 1}: ${rows.length > 0 ? rows.length - 1 : 0} records; columns: [${headers.join(", ")}]`);
+          for (let r = 0; r < Math.min(rows.length, 8); r++) {
+            const cells = rows[r].querySelectorAll('th, td, [role="cell"], [role="columnheader"]');
+            if (cells.length === 2) {
+              const k2 = (cells[0].textContent || "").trim().replace(/\s+/g, " ");
+              const v = (cells[1].textContent || "").trim().replace(/\s+/g, " ");
+              if (k2 && v && k2.length > 1 && k2.length < 50 && v.length < 150) {
+                contentSummaries.push(`Spec: ${k2}: ${v}`);
+              }
+            }
+          }
+        });
+        const dls = doc.querySelectorAll("dl");
+        dls.forEach((dl2) => {
+          const dts = dl2.querySelectorAll("dt");
+          const dds = dl2.querySelectorAll("dd");
+          for (let i = 0; i < Math.min(dts.length, dds.length, 6); i++) {
+            const term = (dts[i].textContent || "").trim().replace(/\s+/g, " ");
+            const desc = (dds[i].textContent || "").trim().replace(/\s+/g, " ");
+            if (term && desc && term.length < 50) {
+              contentSummaries.push(`Spec: ${term}: ${desc.slice(0, 120)}`);
+            }
+          }
+        });
+        const docLinks = doc.querySelectorAll('a[href$=".pdf" i], a[href$=".zip" i], a[href$=".csv" i], a[href$=".kmz" i]');
+        docLinks.forEach((a) => {
+          const aText = (a.textContent || a.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ");
+          const aHref = a.getAttribute("href") || "";
+          const fileName = aHref.split("/").pop()?.split("?")[0] || "";
+          if (fileName && contentSummaries.length < 25) {
+            contentSummaries.push(`Document: "${aText || fileName}" (${fileName})`);
+          }
         });
       } catch {
       }
@@ -16801,6 +16934,11 @@ as ORT format: ${n}`);
           opaqueBoxCount++;
         }
       }
+      const categoryBreakdown = {};
+      for (const r of visibleRegions) {
+        const cat = r.category || "other";
+        categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + 1;
+      }
       const redactionManifest = {
         manifestVersion: "1.0",
         totalRegions: visibleRegions.length,
@@ -16810,6 +16948,7 @@ as ORT format: ${n}`);
           face: faceCount,
           surface: surfaceCount
         },
+        categoryBreakdown,
         methodCounts: {
           opaqueBox: opaqueBoxCount,
           spatialBlur: spatialBlurCount

@@ -128,3 +128,26 @@ test('Text Scrubber - Replaces Sensitive Data with Clean Token Masks', () => {
   assert.ok(!scrubbed.includes('alex@enterprise.local'));
   assert.ok(!scrubbed.includes('+91 9876543210'));
 });
+
+test('Text PII Scanner - Accurately Detects Indian Landlines, Obfuscated Emails, and City Pincodes', () => {
+  const isroFooter = `
+    Address: Bengaluru-560 094
+    Phone: +91 80 22172294 / 96
+    Email: isropr[at]isro[dot]gov[dot]in
+  `;
+
+  const matches = scanTextForPII(isroFooter);
+  const categories = matches.map(m => m.category);
+
+  assert.ok(categories.includes('address'), 'Must detect Bengaluru-560 094 as address');
+  assert.ok(categories.includes('phone'), 'Must detect +91 80 22172294 / 96 as phone');
+  assert.ok(categories.includes('email'), 'Must detect isropr[at]isro[dot]gov[dot]in as email');
+
+  const scrubbed = scrubText(isroFooter);
+  assert.ok(scrubbed.includes('[REDACTED_ADDRESS]'));
+  assert.ok(scrubbed.includes('[REDACTED_PHONE]'));
+  assert.ok(scrubbed.includes('[REDACTED_EMAIL]'));
+  assert.ok(!scrubbed.includes('22172294'));
+  assert.ok(!scrubbed.includes('isropr'));
+});
+

@@ -254,18 +254,20 @@ export class SubAgentOrchestrator {
 
     try {
       const liveContext = getPortalGroundedKnowledge(subTask.title, subTask.goal, subTask.targetUrl);
-      const prompt = `You are a specialized browser sub-agent operating live on the web.\nTask Goal: ${subTask.goal}\nContext Portal: ${subTask.targetUrl || 'N/A'}\n${liveContext ? `Live Portal Extraction Data:\n${liveContext}\n` : ''}Summarize findings cleanly in 1-3 sentences with concrete prices and details. Note: The product is released and actively on sale.`;
-      const chatRes = await this.vlmEngine.chat(
-        'You are an autonomous sub-agent operating on sanitized browser representations. Emit factual, concise findings with actual numbers and comparisons.',
-        prompt
-      );
-      summary = chatRes.reply || `Successfully extracted live data from ${subTask.title}.`;
+      if (liveContext) {
+        const prompt = `You are a specialized browser sub-agent operating live on the web.\nTask Goal: ${subTask.goal}\nContext Portal: ${subTask.targetUrl || 'N/A'}\nLive Portal Extraction Data:\n${liveContext}\nSummarize findings cleanly in 1-3 sentences strictly based on the live data above. Do not invent details or prices not present in the extraction.`;
+        const chatRes = await this.vlmEngine.chat(
+          'You are an autonomous sub-agent operating on sanitized browser representations. Emit factual, concise findings strictly based on provided data.',
+          prompt
+        );
+        summary = chatRes.reply || `Successfully processed live data from ${subTask.title}.`;
+      } else {
+        summary = `Sub-agent active on ${subTask.title} (${subTask.targetUrl || 'portal'}). Live browser tab session executing with on-device privacy protection.`;
+      }
       extractedData = {
         target: subTask.title,
         status: 'verified_safe',
-        url: subTask.targetUrl,
-        provider: chatRes.provider,
-        model: chatRes.modelName
+        url: subTask.targetUrl
       };
     } catch {
       summary = `Processed ${subTask.title} through on-device privacy pipeline with zero unmasked PII leakage.`;
