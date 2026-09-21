@@ -4062,13 +4062,15 @@ html, body {
   left: 0 !important;
   right: 0 !important;
   width: 100% !important;
-  height: var(--orb-voice-glow-height, 105px) !important;
+  height: var(--orb-voice-glow-height, 68px) !important;
   border-radius: 0 0 16px 16px !important;
   pointer-events: none !important;
   z-index: 2 !important;
   overflow: hidden !important;
   opacity: 1 !important;
-  transition: height 0.1s ease-out, opacity 0.3s ease !important;
+  -webkit-mask-image: radial-gradient(ellipse 260px 100% at 50% 100%, #000 35%, rgba(0, 0, 0, 0.75) 65%, transparent 92%) !important;
+  mask-image: radial-gradient(ellipse 260px 100% at 50% 100%, #000 35%, rgba(0, 0, 0, 0.75) 65%, transparent 92%) !important;
+  transition: height 0.12s ease-out, opacity 0.25s ease !important;
 }
 
 .orb-voice-glow-backdrop::before {
@@ -4083,29 +4085,29 @@ html, body {
   height: 100% !important;
   border-radius: 0 0 16px 16px !important;
   background: 
-    /* 1. Luminous curved chromatic rainbow arch (Image 2 signature crest) */
-    radial-gradient(ellipse 135px 50px at 50% 100%, transparent 82%, rgba(255, 255, 255, 0.95) 87%, rgba(0, 235, 255, 0.9) 92%, transparent 98%),
-    radial-gradient(ellipse 120px 45px at 38% 100%, transparent 80%, rgba(244, 63, 94, 0.9) 88%, transparent 97%),
-    radial-gradient(ellipse 120px 45px at 62% 100%, transparent 80%, rgba(168, 85, 247, 0.9) 88%, transparent 97%),
-    radial-gradient(ellipse 100px 38px at 28% 100%, transparent 78%, rgba(245, 158, 11, 0.85) 87%, transparent 96%),
-    radial-gradient(ellipse 100px 38px at 72% 100%, transparent 78%, rgba(20, 240, 180, 0.8) 87%, transparent 96%),
+    /* 1. Luminous curved chromatic rainbow crest (Image 2 signature dome curve) */
+    radial-gradient(ellipse 135px 44px at 50% 100%, transparent 80%, rgba(255, 255, 255, 0.95) 86%, rgba(0, 235, 255, 0.9) 92%, transparent 98%),
+    radial-gradient(ellipse 120px 40px at 38% 100%, transparent 78%, rgba(244, 63, 94, 0.9) 87%, transparent 96%),
+    radial-gradient(ellipse 120px 40px at 62% 100%, transparent 78%, rgba(168, 85, 247, 0.9) 87%, transparent 96%),
+    radial-gradient(ellipse 100px 34px at 28% 100%, transparent 76%, rgba(245, 158, 11, 0.85) 86%, transparent 95%),
+    radial-gradient(ellipse 100px 34px at 72% 100%, transparent 76%, rgba(20, 240, 180, 0.8) 86%, transparent 95%),
     /* 2. Hot epicenter core wash under the crest */
-    radial-gradient(ellipse 70px 30px at 50% 100%, rgba(255, 255, 255, 0.85) 0%, rgba(0, 230, 255, 0.5) 40%, transparent 75%),
+    radial-gradient(ellipse 70px 26px at 50% 100%, rgba(255, 255, 255, 0.9) 0%, rgba(0, 230, 255, 0.55) 38%, transparent 72%),
     /* 3. Authentic 5-ellipse radial colors matching chat box & test requirements */
     radial-gradient(ellipse 85px 50px at 26% 100%, rgba(244, 63, 94, 0.72), transparent 75%),
     radial-gradient(ellipse 95px 60px at 40% 100%, rgba(168, 85, 247, 0.78), transparent 70%),
     radial-gradient(ellipse 105px 65px at 54% 100%, rgba(6, 182, 212, 0.82), transparent 70%),
     radial-gradient(ellipse 90px 55px at 68% 100%, rgba(245, 158, 11, 0.72), transparent 75%),
     radial-gradient(ellipse 75px 45px at 82% 100%, rgba(16, 185, 129, 0.68), transparent 80%),
-    /* 4. Soft vertical auroral shafts fanning up behind the pill into the darkness */
-    radial-gradient(ellipse 80px 85px at 40% 100%, rgba(244, 63, 94, 0.45), transparent 75%),
-    radial-gradient(ellipse 90px 95px at 50% 100%, rgba(6, 182, 212, 0.5), transparent 75%),
-    radial-gradient(ellipse 85px 90px at 60% 100%, rgba(168, 85, 247, 0.45), transparent 75%),
-    radial-gradient(ellipse 70px 75px at 30% 100%, rgba(245, 158, 11, 0.4), transparent 75%),
+    /* 4. Soft vertical auroral shafts fanning up into the darkness */
+    radial-gradient(ellipse 75px 85px at 42% 100%, rgba(244, 63, 94, 0.42), transparent 72%),
+    radial-gradient(ellipse 85px 95px at 50% 100%, rgba(6, 182, 212, 0.48), transparent 72%),
+    radial-gradient(ellipse 80px 90px at 58% 100%, rgba(168, 85, 247, 0.42), transparent 72%),
+    radial-gradient(ellipse 65px 75px at 34% 100%, rgba(245, 158, 11, 0.38), transparent 72%),
     /* 5. Centered base dispersion leaving corners clean and dark */
-    radial-gradient(ellipse 190px 85px at 50% 100%, rgba(99, 102, 241, 0.35) 0%, transparent 80%) !important;
-  filter: blur(12px) saturate(2.2) brightness(var(--orb-voice-glow-brightness, 1.2)) !important;
-  opacity: var(--orb-voice-glow-opacity, 0.95) !important;
+    radial-gradient(ellipse 180px 80px at 50% 100%, rgba(99, 102, 241, 0.32) 0%, transparent 80%) !important;
+  filter: blur(10px) saturate(2.3) brightness(var(--orb-voice-glow-brightness, 1.0)) !important;
+  opacity: var(--orb-voice-glow-opacity, 0.7) !important;
   transition: transform 0.08s ease-out, filter 0.15s ease, opacity 0.15s ease !important;
   pointer-events: none !important;
 }
@@ -4173,24 +4175,53 @@ html, body {
 .voice-agent-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  gap: 5px;
+  padding: 4px 6px;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
   color: #f3f4f6;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  user-select: none;
 }
 
 .voice-agent-pill:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.24);
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  opacity: 0.95;
   transform: translateY(-1px);
+}
+
+.voice-agent-pill span {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.45) 25%, #ffffff 50%, rgba(255, 255, 255, 0.45) 75%, rgba(255, 255, 255, 0.45) 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: white-shimmer-ltr 2.4s linear infinite;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.18);
+}
+
+.voice-agent-pill svg {
+  opacity: 0.65;
+  color: #ffffff;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.voice-agent-pill:hover svg {
+  opacity: 0.95;
+  transform: translateY(1px);
 }
 
 .voice-modal-action-group {
