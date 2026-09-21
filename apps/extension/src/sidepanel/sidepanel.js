@@ -3336,6 +3336,9 @@ if (typeof document !== 'undefined') {
       // 1. Direct Web Audio frequency analysis from physical microphone stream
       // Focus on human speech band (approx 80Hz - 3500Hz, bins 1 to 64) for maximum sensitivity
       if (voiceAnalyser) {
+        if (voiceAudioCtx && voiceAudioCtx.state === 'suspended') {
+          voiceAudioCtx.resume().catch(() => {});
+        }
         const freqData = new Uint8Array(voiceAnalyser.frequencyBinCount);
         voiceAnalyser.getByteFrequencyData(freqData);
         const vocalBins = Math.min(freqData.length, 64);
@@ -3344,8 +3347,8 @@ if (typeof document !== 'undefined') {
           vocalSum += freqData[i];
         }
         const vocalAvg = vocalBins > 1 ? (vocalSum / (vocalBins - 1)) : 0;
-        if (vocalAvg > 3.5) {
-          computedLevel = Math.min(1.0, Math.max(0, (vocalAvg - 3.5) / 32));
+        if (vocalAvg > 2.5) {
+          computedLevel = Math.min(1.0, Math.max(0, (vocalAvg - 2.5) / 28));
         }
       }
 
@@ -3357,8 +3360,8 @@ if (typeof document !== 'undefined') {
 
       // 2b. User speech recognition vocal pulse reinforcement
       if (isSpeechApiTalking) {
-        const synthRhythm = 0.55 + 0.35 * Math.sin(Date.now() / 95) + ((Math.random() - 0.5) * 0.12);
-        computedLevel = Math.max(computedLevel, Math.min(1.0, Math.max(0.25, synthRhythm)));
+        const synthRhythm = 0.58 + 0.32 * Math.sin(Date.now() / 85) + ((Math.random() - 0.5) * 0.14);
+        computedLevel = Math.max(computedLevel, Math.min(1.0, Math.max(0.35, synthRhythm)));
       }
 
       // Smooth vocal energy curve for silky, organic visual dynamics
@@ -3388,10 +3391,10 @@ if (typeof document !== 'undefined') {
         if (computedLevel > 0.015 || smoothedVoiceGlowLevel > 0.015) {
           const effectiveLevel = Math.max(computedLevel, smoothedVoiceGlowLevel);
           const vocalExpansion = Math.min(1.0, Math.pow(effectiveLevel, 0.65));
-          const scale = 1 + vocalExpansion * 0.45;
-          const h = 84 + vocalExpansion * 96;
-          const brightness = 1.15 + vocalExpansion * 0.35;
-          const opacity = 0.88 + vocalExpansion * 0.12;
+          const scale = 1 + vocalExpansion * 0.28;
+          const h = 100 + vocalExpansion * 35;
+          const brightness = 1.18 + vocalExpansion * 0.42;
+          const opacity = 0.92 + vocalExpansion * 0.08;
           orbVoiceGlowEl.classList.add('speaking');
           orbVoiceGlowEl.style.setProperty('--orb-voice-glow-scale', scale.toFixed(2));
           orbVoiceGlowEl.style.setProperty('--orb-voice-glow-height', `${h.toFixed(0)}px`);
@@ -3798,10 +3801,23 @@ if (typeof document !== 'undefined') {
             speechRecErrored = false;
           };
 
+          voiceRecognition.onaudiostart = () => {
+            if (isAiSpeaking || isVoiceThinking) return;
+            isSpeechApiTalking = true;
+            clearTimeout(speechTalkingDecayTimer);
+            speechTalkingDecayTimer = setTimeout(() => {
+              isSpeechApiTalking = false;
+            }, 1400);
+            activeVoiceOrb?.setState('speaking');
+          };
+
           voiceRecognition.onspeechstart = () => {
             if (isAiSpeaking || isVoiceThinking) return;
             isSpeechApiTalking = true;
             clearTimeout(speechTalkingDecayTimer);
+            speechTalkingDecayTimer = setTimeout(() => {
+              isSpeechApiTalking = false;
+            }, 1400);
             activeVoiceOrb?.setState('speaking');
           };
 
@@ -3809,6 +3825,9 @@ if (typeof document !== 'undefined') {
             if (isAiSpeaking || isVoiceThinking) return;
             isSpeechApiTalking = true;
             clearTimeout(speechTalkingDecayTimer);
+            speechTalkingDecayTimer = setTimeout(() => {
+              isSpeechApiTalking = false;
+            }, 1400);
             activeVoiceOrb?.setState('speaking');
           };
 
@@ -3828,7 +3847,7 @@ if (typeof document !== 'undefined') {
             clearTimeout(speechTalkingDecayTimer);
             speechTalkingDecayTimer = setTimeout(() => {
               isSpeechApiTalking = false;
-            }, 350);
+            }, 800);
 
             // Speech pause: in talk mode, after words are spoken, a snappy 450ms pause triggers auto-send
             if (lastSpokenPrompt.trim() && currentVoiceMode === 'talk') {
@@ -3843,7 +3862,7 @@ if (typeof document !== 'undefined') {
             clearTimeout(speechTalkingDecayTimer);
             speechTalkingDecayTimer = setTimeout(() => {
               isSpeechApiTalking = false;
-            }, 450);
+            }, 1200);
 
             let interimTranscript = '';
             let sessionFinal = '';
