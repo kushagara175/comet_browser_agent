@@ -836,6 +836,155 @@ test('Domain Playbooks: Coordinator searches Bangalore on Bhuvan NextGen and cli
   assert.ok(executedProposals[1].actionId.startsWith('act_dropdown_suggestion_click_'));
 });
 
+test('Domain Playbooks: extractSearchQueryFromGoal accurately extracts search queries for complex compound goals', async () => {
+  const { extractSearchQueryFromGoal } = await import('../packages/protocol/dist/index.js');
+  
+  assert.equal(
+    extractSearchQueryFromGoal('open wikipedia.org and Search for James Webb Space Telescope and summarize the mission key milestones.'),
+    'James Webb Space Telescope'
+  );
+  assert.equal(
+    extractSearchQueryFromGoal('Search for James Webb Space Telescope and summarize the mission key milestones.'),
+    'James Webb Space Telescope'
+  );
+  assert.equal(
+    extractSearchQueryFromGoal('open https://en.wikipedia.org and search for James Webb Space Telescope and tell me the milestones'),
+    'James Webb Space Telescope'
+  );
+  assert.equal(
+    extractSearchQueryFromGoal('search for James Webb Space Telescope on wikipedia'),
+    'James Webb Space Telescope'
+  );
+});
+
+test('Domain Playbooks: Wikipedia search intent grounds to wiki_search input without route hijacking', async () => {
+  const { resolvePlaybookIntent, WIKIPEDIA_PLAYBOOK } = await import('../packages/protocol/dist/index.js');
+  
+  const res = resolvePlaybookIntent(
+    WIKIPEDIA_PLAYBOOK,
+    'open wikipedia.org and Search for James Webb Space Telescope and summarize the mission key milestones.',
+    'https://en.wikipedia.org/wiki/Main_Page'
+  );
+
+  assert.equal(res.matchedIntent, 'fill_field');
+  assert.equal(res.targetPhrase, 'Search Wikipedia');
+  assert.ok(res.confidence >= 0.9);
+});
+
+test('Domain Playbooks: Wikipedia coordinator search does not click "Random article" as a suggestion or center on map', async () => {
+  const { RunCoordinator } = await import('../apps/extension/dist/background/coordinator.js');
+  let currentUrl = 'https://en.wikipedia.org/wiki/Special:Search?search=&go=Go';
+  const executedProposals = [];
+  let stepCount = 0;
+
+  const wikiSearchPageElements = [
+    {
+      localId: 'el_search_input',
+      role: 'input',
+      sanitizedName: 'Search Wikipedia',
+      coarseBounds: [0.1, 0.1, 0.4, 0.05]
+    },
+    {
+      localId: 'el_random_article',
+      role: 'link',
+      sanitizedName: 'Random article',
+      coarseBounds: [0.02, 0.2, 0.1, 0.03]
+    },
+    {
+      localId: 'el_upload_file',
+      role: 'link',
+      sanitizedName: 'Upload file',
+      coarseBounds: [0.02, 0.25, 0.1, 0.03]
+    }
+  ];
+
+  const postSearchElements = [
+    {
+      localId: 'el_article_link',
+      role: 'link',
+      sanitizedName: 'James Webb Space Telescope',
+      coarseBounds: [0.1, 0.2, 0.4, 0.05]
+    },
+    {
+      localId: 'el_random_article',
+      role: 'link',
+      sanitizedName: 'Random article',
+      coarseBounds: [0.02, 0.2, 0.1, 0.03]
+    }
+  ];
+
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 1, url: currentUrl, title: 'Search - Wikipedia' };
+    },
+    async sendMessageToTab(tabId, msg) {
+      if (msg.type === 'EXTRACT_DOM_SNAPSHOT') {
+        const elements = stepCount > 0 ? postSearchElements : wikiSearchPageElements;
+        return { success: true, captureId: msg.captureId || 'cap_wiki', snapshot: { elements } };
+      }
+      if (msg.type === 'EXECUTE_ACTION') {
+        executedProposals.push(msg.proposal);
+        stepCount++;
+        if (msg.proposal.targetLocalId === 'el_article_link') {
+          currentUrl = 'https://en.wikipedia.org/wiki/James_Webb_Space_Telescope';
+        }
+        return { success: true, actionId: msg.proposal.actionId, semanticOutcomeVerified: true };
+      }
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      const elements = stepCount > 0 ? postSearchElements : wikiSearchPageElements;
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_wiki_search',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements,
+        pageState: { title: 'Search - Wikipedia', url: currentUrl, viewport: [1280, 720] },
+        maskCount: 0,
+        payloadDigestSha256: 'digest_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  const mockHttpClient = {
+    async requestReasoningAction(sanitized) {
+      return {
+        actionId: 'act_vlm_summary_1',
+        kind: 'answer',
+        confidence: 0.99,
+        risk: 'safe',
+        rationale: 'Summarized key milestones of James Webb Space Telescope',
+        reply: '# James Webb Space Telescope Key Milestones\n\n- Launched Dec 25, 2021 on Ariane 5\n- Reached Sun-Earth L2 on Jan 24, 2022\n- First full-color operational images released July 12, 2022'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, mockHttpClient);
+  const result = await coordinator.startRun(
+    'Search for James Webb Space Telescope and summarize the mission key milestones.',
+    { maxSteps: 5 }
+  );
+
+  assert.equal(result.success, true);
+  // Must NOT click "Random article"
+  assert.ok(!executedProposals.some(p => p.targetLocalId === 'el_random_article'), 'Must NOT click Random article!');
+  // Must NOT claim "centered on map"
+  assert.ok(!result.message.includes('centered on map'), 'Must NOT claim centered on map!');
+  // Step 1: Types "James Webb Space Telescope" into search
+  assert.equal(executedProposals[0].kind, 'type');
+  assert.equal(executedProposals[0].textToType, 'James Webb Space Telescope');
+  // Final answer came from reasoning model
+  assert.ok(result.message.includes('James Webb Space Telescope Key Milestones'));
+});
+
+
 
 
 

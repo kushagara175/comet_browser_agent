@@ -1319,8 +1319,16 @@ export function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
     // 2. If user intent is explicit navigation (e.g. "go to", "navigate to"), check routes first
     const isNavQuery = /^(?:(?:please|kindly)\s+)?(?:go\s+to|navigate\s+to|visit|open|load|take\s+me\s+to)\b/i.test(userQuery) ||
         (queryTokens.length > 0 && ['go', 'navigate', 'visit', 'load'].includes(queryTokens[0]));
+    const extractedSearch = extractSearchQueryFromGoal(userQuery);
+    const hasSearchDirective = Boolean(extractedSearch && extractedSearch.length > 1) ||
+        /\b(?:search(?:\s+for)?|find|locate|lookup|filter(?:\s+by)?|query|type)\b/i.test(userQuery);
     if (isNavQuery) {
         for (const route of playbook.routes) {
+            // If user has a search directive (e.g. "open wikipedia.org and search for James Webb Space Telescope"),
+            // do not treat the route named 'search' as a pure navigation route, because the intent is to search for a query!
+            if (route.name === 'search' && hasSearchDirective) {
+                continue;
+            }
             const match = route.matchKeywords.some((kw) => {
                 const kwNorm = normalizeSemanticText(kw);
                 if (normQuery.includes(kwNorm))
@@ -1367,7 +1375,8 @@ export function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
         }
     }
     // 3. Check for landmark match (e.g. "click know your spoc", "sih login")
-    const isInputSearchIntent = queryTokens.some((t) => ['search', 'find', 'locate', 'query', 'type', 'enter', 'filter'].includes(t));
+    const isInputSearchIntent = hasSearchDirective ||
+        queryTokens.some((t) => ['search', 'find', 'locate', 'query', 'type', 'enter', 'filter', 'lookup'].includes(t));
     const sortedLandmarks = isInputSearchIntent
         ? [...playbook.landmarks].sort((a, b) => {
             const aIsInput = a.role === 'input' || a.intentAction === 'type' ? -1 : 1;
@@ -1407,6 +1416,9 @@ export function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
     }
     // 4. Secondary route check for queries without explicit "go to"
     for (const route of playbook.routes) {
+        if (route.name === 'search' && hasSearchDirective) {
+            continue;
+        }
         const match = route.matchKeywords.some((kw) => {
             const kwNorm = normalizeSemanticText(kw);
             if (normQuery.includes(kwNorm))
@@ -1511,28 +1523,40 @@ export function extractMetricsWithPlaybook(textContext, metricRule) {
  * Cleanly extracts search target text from a search directive.
  * E.g. "search for PS 171" -> "PS 171"
  *      "search Chinmaya in search box" -> "Chinmaya"
+ *      "open wikipedia.org and Search for James Webb Space Telescope and summarize the mission key milestones." -> "James Webb Space Telescope"
  */
 export function extractSearchQueryFromGoal(goal) {
     let q = (goal || '').trim();
-    // Strip initial navigation commands like "Open Amazon, ", "Go to google.com and "
-    q = q.replace(/^(?:open|go\s+to|visit|launch)\s+[^,;]+[,\s;]+(?:and\s+then|then|after\s+that|and)?\s*/i, '');
-    const compoundMatch = q.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+for)?|find|locate|look\s+for|filter(?:\s+by)?|query|type)\s+(.+)$/i);
+    if (!q)
+        return '';
+    // Check if the goal actually contains a search directive keyword
+    const hasSearchKeyword = /\b(?:search(?:\s+(?:for|about|on))?|find|locate|lookup|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search)\b/i.test(q);
+    if (!hasSearchKeyword) {
+        return '';
+    }
+    // Strip polite conversational prefixes first (e.g. "please", "kindly", "can you")
+    q = q.replace(/^(?:please\s+|kindly\s+|can\s+you\s+|could\s+you\s+)+/i, '');
+    // Strip initial navigation commands with bounded domain/URL matching, e.g.:
+    // "open wikipedia.org and ", "go to google.com then ", "visit https://en.wikipedia.org and then "
+    q = q.replace(/^(?:open|go\s+to|visit|launch|navigate\s+to)\s+(?:https?:\/\/\S+|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/\S*)?|[a-zA-Z0-9_-]+(?:\s+(?:website|portal|site|page|app|url))?)\s*(?:[,\s;]+(?:and\s+then|then|after\s+that|and)\s*|[,\s;]+)/i, '');
+    const compoundMatch = q.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?|type)\s+(.+)$/i);
     if (compoundMatch) {
         q = compoundMatch[1].trim();
     }
     else {
-        q = q.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|locate|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, '');
+        q = q.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?)\s+/i, '');
     }
     // Strip trailing search box / prepositional phrases
     q = q.replace(/\s+(?:in|into|on|using|use)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page).*$/i, '');
-    // Strip portal mentions like "on amazon", "in flipkart", "across amazon and flipkart", "on isro portal", "on bhuvan map"
-    q = q.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?)*/i, '');
+    // Strip portal mentions like "on amazon", "in flipkart", "across amazon and flipkart", "on isro portal", "on bhuvan map", "on wikipedia"
+    q = q.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|wiki|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|wiki|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?)*/i, '');
     // Strip trailing "on map", "on the map", "map", or remaining portal descriptors
     q = q.replace(/\s+(?:(?:on\s+(?:the\s+)?)?map|portal|website|site|page)$/i, '');
-    // Strip trailing action directives like "use the search bar and hit the website as said and then analyze", "and tell me the price", "and analyze"
+    // Strip trailing downstream action / summarization directives:
+    // "and summarize the mission key milestones", "and summarize", "and explain", "and tell me...", "and analyze"
+    q = q.replace(/\s+(?:and|to|then)\s+(?:summarize|summarise|analyze|analyse|explain|give\s+me|show\s+me|tell\s+me|hit\s+the\s+website|check\s+the\s+price|check|compare|extract|review|find\s+out|provide).*$/i, '');
+    q = q.replace(/\s+(?:and|then)\s+(?:what|how|why|list|describe|highlight).*$/i, '');
     q = q.replace(/\s+(?:use|using)\s+(?:the\s+)?search\s+bar.*$/i, '');
-    q = q.replace(/\s+(?:and|to|then)\s+(?:hit\s+the\s+website|tell\s+me|analyze|give\s+me|show\s+me|check\s+the\s+price|compare).*$/i, '');
-    q = q.replace(/\s+(?:and|then)\s+analyze.*$/i, '');
     q = q.replace(/^["']+|["']+$/g, '');
     return q.trim();
 }

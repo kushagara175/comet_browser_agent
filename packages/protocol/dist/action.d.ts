@@ -106,6 +106,8 @@ export interface ActionProposal {
     readonly url?: string;
     readonly targetUrl?: string;
     readonly createNewTab?: boolean;
+    readonly targetName?: string;
+    readonly elementText?: string;
 }
 export interface ActionExecutionResult {
     readonly actionId: string;

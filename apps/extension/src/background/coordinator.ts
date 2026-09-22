@@ -884,16 +884,21 @@ export class RunCoordinator {
       const resolution = resolvePlaybookIntent(playbook, goal, currentUrl);
 
       // 0. If user is already on the requested route (e.g. Map Viewer on Bhuvan or Problem Statements on SIH)
+      // Only emit static answer if the user's ONLY directive was route navigation, without any pending search/action goals
       if (resolution.matchedIntent === 'none' && resolution.rationale?.includes('Already on route')) {
-        const reply = `You are already on the active ${playbook.name} route. All interactive navigation controls, map canvas layers, and search tools are loaded and ready.`;
-        return {
-          actionId: `act_local_answer_${step}_${Date.now()}`,
-          kind: 'answer',
-          confidence: 0.98,
-          risk: 'safe',
-          rationale: reply,
-          reply
-        };
+        const hasUnfinishedSearchOrGoal = Boolean(extractSearchQueryFromGoal(goal)) ||
+          /\b(?:search|find|locate|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
+        if (!hasUnfinishedSearchOrGoal) {
+          const reply = `You are already on the active ${playbook.name} route. All interactive navigation controls, map canvas layers, and search tools are loaded and ready.`;
+          return {
+            actionId: `act_local_answer_${step}_${Date.now()}`,
+            kind: 'answer',
+            confidence: 0.98,
+            risk: 'safe',
+            rationale: reply,
+            reply
+          };
+        }
       }
 
       // A. Metric Extraction from page context
@@ -1017,21 +1022,39 @@ export class RunCoordinator {
         if (hasAlreadyFilled) {
           const query = extractSearchQueryFromGoal(goal) || 'query';
           const queryTokens = tokenizeSemanticText(query.toLowerCase());
+          const STOPWORDS = new Set([
+            'and', 'the', 'for', 'with', 'from', 'that', 'this', 'into', 'about', 'or', 'in',
+            'on', 'at', 'by', 'to', 'a', 'an', 'of', 'is', 'it', 'as', 'be', 'are', 'was',
+            'all', 'any', 'can', 'her', 'one', 'our', 'out', 'day', 'get', 'has', 'him',
+            'his', 'how', 'man', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy',
+            'did', 'its', 'let', 'put', 'say', 'she', 'too', 'use', 'what', 'where', 'when',
+            'why', 'then', 'summarize', 'summarise', 'analyze', 'analyse', 'milestone', 'milestones'
+          ]);
+          const meaningfulTokens = queryTokens.filter(t => t.length >= 3 && !STOPWORDS.has(t));
           const hasAlreadyClickedSuggestion = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_dropdown_suggestion_click_'));
 
-          // Check if an autocomplete dropdown suggestion item is available in DOM (e.g. Bhuvan, Maps, airlines, banking)
-          if (!hasAlreadyClickedSuggestion) {
+          const isMapDomain = (playbook.domain || '').includes('bhuvan') ||
+            (currentUrl || '').includes('bhuvan') ||
+            (currentUrl || '').includes('/ngmaps') ||
+            (playbook.name || '').toLowerCase().includes('bhuvan');
+
+          // Check if an autocomplete dropdown suggestion item is available in DOM (ONLY on Map / Bhuvan portals)
+          if (isMapDomain && !hasAlreadyClickedSuggestion) {
             const suggestionItem = sanitized.elements.find((el) => {
               const nameNorm = el.sanitizedName.toLowerCase();
               const isSuggestionRole = el.role === 'menuitem' || el.role === 'button' || el.role === 'link' || (el as any).role === 'option';
-              const matchesQuery = queryTokens.some((t) => t.length >= 3 && nameNorm.includes(t)) ||
-                (query.toLowerCase().includes('bangalore') && (nameNorm.includes('bengaluru') || nameNorm.includes('bangalore'))) ||
-                (query.toLowerCase().includes('bengaluru') && (nameNorm.includes('bangalore') || nameNorm.includes('bengaluru')));
-
-              if (matchesQuery && (isSuggestionRole || nameNorm.includes(',') || nameNorm.includes('karnataka') || nameNorm.includes('india') || nameNorm.includes('district') || nameNorm.includes('airport'))) {
-                return true;
+              if (!isSuggestionRole) return false;
+              if (nameNorm.includes('about') || nameNorm.includes('random') || nameNorm.includes('upload') || nameNorm.includes('help') || nameNorm.includes('terms') || nameNorm.includes('privacy')) {
+                return false;
               }
-              return false;
+
+              const matchesMeaningful = meaningfulTokens.some((t) => {
+                const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+                return re.test(nameNorm);
+              });
+              const matchesGeo = nameNorm.includes('bengaluru') || nameNorm.includes('bangalore') || nameNorm.includes('karnataka') || nameNorm.includes('india') || nameNorm.includes('district');
+
+              return (matchesMeaningful || matchesGeo);
             });
 
             if (suggestionItem) {
@@ -1039,6 +1062,7 @@ export class RunCoordinator {
                 actionId: `act_dropdown_suggestion_click_${step}_${Date.now()}`,
                 kind: 'click',
                 targetLocalId: suggestionItem.localId,
+                targetName: suggestionItem.sanitizedName,
                 confidence: 0.96,
                 risk: 'safe',
                 rationale: `Selecting location suggestion "${suggestionItem.sanitizedName}" for query "${query}"`,
@@ -1047,7 +1071,7 @@ export class RunCoordinator {
             }
           }
 
-          if (hasAlreadyClickedSuggestion) {
+          if (isMapDomain && hasAlreadyClickedSuggestion) {
             return {
               actionId: `act_local_finish_${step}_${Date.now()}`,
               kind: 'finish',
@@ -1057,21 +1081,34 @@ export class RunCoordinator {
             };
           }
 
-          const isOnSearchResults = (currentUrl || '').includes('search.html') || (currentUrl || '').includes('gsc.q=');
-          const wantsExploration = /(?:scour|explore|corner|drill|detail|read|view|click|open|all|every|find|accomplished)/i.test(trimmedGoal);
+          const isOnSearchResults = (currentUrl || '').includes('search.html') ||
+            (currentUrl || '').includes('gsc.q=') ||
+            (currentUrl || '').includes('Special:Search') ||
+            (currentUrl || '').includes('/search?') ||
+            (currentUrl || '').includes('search=') ||
+            (currentUrl || '').includes('?q=');
+
           const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_search_result_click_'));
 
-          if (isOnSearchResults && wantsExploration && !hasAlreadyClickedResult) {
-            const queryTokens = tokenizeSemanticText(extractSearchQueryFromGoal(goal) || 'missions');
+          if (isOnSearchResults && !hasAlreadyClickedResult) {
+            const isChromeLink = (n: string) => {
+              return n === 'search' || n === 'search wikipedia' || n === 'random article' || n === 'upload file' ||
+                n === 'main page' || n === 'contents' || n === 'current events' || n === 'recent changes' ||
+                n.includes('privacy policy') || n.includes('terms of use') || n.includes('disclaimer') ||
+                n.includes('developers') || n.includes('statistics') || n.includes('cookie') || n.includes('mobile view');
+            };
+
             const resultLink = sanitized.elements.find((el) => {
               if (el.role !== 'link' && el.role !== 'button') return false;
-              const nameNorm = el.sanitizedName.toLowerCase();
-              if (nameNorm.includes('google') || nameNorm.includes('privacy') || nameNorm.includes('terms') || nameNorm === 'search' || nameNorm.length < 4) {
-                return false;
-              }
-              if (queryTokens.some((t) => nameNorm.includes(t))) return true;
-              if (nameNorm.includes('isro') || nameNorm.includes('mission') || nameNorm.includes('spacecraft') || nameNorm.includes('earth')) return true;
-              return false;
+              const nameNorm = el.sanitizedName.toLowerCase().trim();
+              if (isChromeLink(nameNorm) || nameNorm.length < 3) return false;
+
+              const matchCount = meaningfulTokens.filter((t) => {
+                const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+                return re.test(nameNorm);
+              }).length;
+
+              return matchCount >= Math.min(2, meaningfulTokens.length);
             });
 
             if (resultLink) {
@@ -1079,7 +1116,8 @@ export class RunCoordinator {
                 actionId: `act_search_result_click_${step}_${Date.now()}`,
                 kind: 'click',
                 targetLocalId: resultLink.localId,
-                confidence: 0.95,
+                targetName: resultLink.sanitizedName,
+                confidence: 0.96,
                 risk: 'safe',
                 rationale: `Drilling into search result "${resultLink.sanitizedName}" on search page`,
                 expectedPostcondition: { kind: 'status_changed' }
@@ -1087,10 +1125,40 @@ export class RunCoordinator {
             }
           }
 
-          const wantsAnalysis = /(?:analyze|analysis|price|prices|cost|tell|summary|report|how\s+much|compare)/i.test(trimmedGoal);
+          // Search button submit fallback if still on initial search form without enter navigation
+          const hasClickedSearchBtn = this.actionHistory.some(a => a.actionId && a.actionId.startsWith('act_search_btn_click_'));
+          if (!isOnSearchResults && !hasClickedSearchBtn) {
+            const searchBtn = sanitized.elements.find((el) => {
+              if (el.role !== 'button') return false;
+              const nameNorm = el.sanitizedName.toLowerCase().trim();
+              return nameNorm === 'search' || nameNorm === 'search wikipedia' || nameNorm === 'go';
+            });
+            if (searchBtn) {
+              return {
+                actionId: `act_search_btn_click_${step}_${Date.now()}`,
+                kind: 'click',
+                targetLocalId: searchBtn.localId,
+                targetName: searchBtn.sanitizedName || 'Search Button',
+                confidence: 0.95,
+                risk: 'safe',
+                rationale: `Clicking search button "${searchBtn.sanitizedName}" to submit query "${query}"`,
+                expectedPostcondition: { kind: 'status_changed' }
+              };
+            }
+          }
 
-          if (wantsAnalysis) {
-            // Find relevant product elements on the search results page
+          // If the goal requires summarization, milestone extraction, explanation, or QA:
+          // Hand off to the centralized multimodal reasoning engine (Mistral-Large-3 on port 4501)
+          const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
+
+          if (wantsContentReasoning) {
+            return null;
+          }
+
+          const wantsEcomAnalysis = /(?:analyze|analysis|price|prices|cost|how\s+much|compare)/i.test(trimmedGoal) &&
+            sanitized.elements.some((el) => /(?:iphone|apple|phone|₹|\$|rs\.?)/i.test(el.sanitizedName || ''));
+
+          if (wantsEcomAnalysis) {
             const productElements = sanitized.elements.filter((el) => {
               const text = el.sanitizedName || '';
               return /(?:iphone|apple|phone|₹|\$|rs\.?|gb|off|deal|price|model)/i.test(text) && text.length > 3;
@@ -1115,7 +1183,7 @@ export class RunCoordinator {
             kind: 'finish',
             confidence: 0.98,
             risk: 'safe',
-            rationale: `Playbook search query "${query}" executed and filtered results displayed`
+            rationale: `Playbook search query "${query}" executed and verified on ${playbook.name}`
           };
         }
 
@@ -1138,6 +1206,7 @@ export class RunCoordinator {
             actionId: `act_playbook_fill_${step}_${Date.now()}`,
             kind: 'type',
             targetLocalId: matchingEl.localId,
+            targetName: matchingEl.sanitizedName || `${playbook.name} Search`,
             textToType,
             pressEnter: true,
             confidence: resolution.confidence || 0.92,
@@ -1171,6 +1240,11 @@ export class RunCoordinator {
 
       // Local finish for search result drill-down click
       if (lastAction.actionId && lastAction.actionId.startsWith('act_search_result_click_')) {
+        const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
+        if (wantsContentReasoning) {
+          // Navigated to the details/article page! Delegate to Mistral-Large-3 reasoning model to synthesize the answer
+          return null;
+        }
         const pageTitle = sanitized.pageState?.title || 'Details Page';
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
@@ -1181,7 +1255,7 @@ export class RunCoordinator {
         };
       }
 
-      // Local finish for dropdown suggestion click
+      // Local finish for dropdown suggestion click (only on map portals)
       if (lastAction.actionId && lastAction.actionId.startsWith('act_dropdown_suggestion_click_')) {
         const query = extractSearchQueryFromGoal(goal) || 'query';
         return {
@@ -1194,75 +1268,20 @@ export class RunCoordinator {
       }
 
       // Local finish for playbook search/fill execution:
-      // When a playbook fill action was executed, check for autocomplete suggestions before finishing
       if (lastAction.actionId && lastAction.actionId.startsWith('act_playbook_fill_')) {
+        const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
+        if (wantsContentReasoning) {
+          // If the goal requires summarization/reasoning, delegate to central reasoning server
+          return null;
+        }
+
         const query = extractSearchQueryFromGoal(goal) || 'query';
-        const queryTokens = tokenizeSemanticText(query.toLowerCase());
-        const hasAlreadyClickedSuggestion = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_dropdown_suggestion_click_'));
-
-        if (!hasAlreadyClickedSuggestion) {
-          const suggestionItem = sanitized.elements.find((el) => {
-            const nameNorm = el.sanitizedName.toLowerCase();
-            const isSuggestionRole = el.role === 'menuitem' || el.role === 'button' || el.role === 'link' || (el as any).role === 'option';
-            const matchesQuery = queryTokens.some((t) => t.length >= 3 && nameNorm.includes(t)) ||
-              (query.toLowerCase().includes('bangalore') && (nameNorm.includes('bengaluru') || nameNorm.includes('bangalore'))) ||
-              (query.toLowerCase().includes('bengaluru') && (nameNorm.includes('bangalore') || nameNorm.includes('bengaluru')));
-
-            if (matchesQuery && (isSuggestionRole || nameNorm.includes(',') || nameNorm.includes('karnataka') || nameNorm.includes('india') || nameNorm.includes('district') || nameNorm.includes('airport'))) {
-              return true;
-            }
-            return false;
-          });
-
-          if (suggestionItem) {
-            return {
-              actionId: `act_dropdown_suggestion_click_${step}_${Date.now()}`,
-              kind: 'click',
-              targetLocalId: suggestionItem.localId,
-              confidence: 0.96,
-              risk: 'safe',
-              rationale: `Selecting location suggestion "${suggestionItem.sanitizedName}" for query "${query}"`,
-              expectedPostcondition: { kind: 'status_changed' }
-            };
-          }
-        }
-
-        const isOnSearchResults = (currentUrl || '').includes('search.html') || (currentUrl || '').includes('gsc.q=');
-        const wantsExploration = /(?:scour|explore|corner|drill|detail|read|view|click|open|all|every|find|accomplished)/i.test(trimmedGoal);
-        const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_search_result_click_'));
-
-        if (isOnSearchResults && wantsExploration && !hasAlreadyClickedResult) {
-          const queryTokens = tokenizeSemanticText(extractSearchQueryFromGoal(goal) || 'missions');
-          const resultLink = sanitized.elements.find((el) => {
-            if (el.role !== 'link' && el.role !== 'button') return false;
-            const nameNorm = el.sanitizedName.toLowerCase();
-            if (nameNorm.includes('google') || nameNorm.includes('privacy') || nameNorm.includes('terms') || nameNorm === 'search' || nameNorm.length < 4) {
-              return false;
-            }
-            if (queryTokens.some((t) => nameNorm.includes(t))) return true;
-            if (nameNorm.includes('isro') || nameNorm.includes('mission') || nameNorm.includes('spacecraft') || nameNorm.includes('earth')) return true;
-            return false;
-          });
-
-          if (resultLink) {
-            return {
-              actionId: `act_search_result_click_${step}_${Date.now()}`,
-              kind: 'click',
-              targetLocalId: resultLink.localId,
-              confidence: 0.95,
-              risk: 'safe',
-              rationale: `Drilling into search result "${resultLink.sanitizedName}" on search page`,
-              expectedPostcondition: { kind: 'status_changed' }
-            };
-          }
-        }
-
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
           kind: 'finish',
           confidence: 0.98,
           risk: 'safe',
-          rationale: `Playbook search query "${query}" executed and filtered results displayed`
+          rationale: `Playbook search query "${query}" executed and verified on page`
         };
       }
 

@@ -671,6 +671,8 @@ export interface ActionProposal {
   readonly url?: string;
   readonly targetUrl?: string;
   readonly createNewTab?: boolean;
+  readonly targetName?: string;
+  readonly elementText?: string;
 }
 
 export interface ActionExecutionResult {
@@ -722,7 +724,9 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
   'url',
   'targetUrl',
   'createNewTab',
-  'description'
+  'description',
+  'targetName',
+  'elementText'
 ]);
 
 export const ALLOWED_ATOMIC_ACTION_KEYS = new Set([

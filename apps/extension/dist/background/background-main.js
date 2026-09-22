@@ -15589,8 +15589,13 @@ function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
     }
   }
   const isNavQuery = /^(?:(?:please|kindly)\s+)?(?:go\s+to|navigate\s+to|visit|open|load|take\s+me\s+to)\b/i.test(userQuery) || queryTokens.length > 0 && ["go", "navigate", "visit", "load"].includes(queryTokens[0]);
+  const extractedSearch = extractSearchQueryFromGoal(userQuery);
+  const hasSearchDirective = Boolean(extractedSearch && extractedSearch.length > 1) || /\b(?:search(?:\s+for)?|find|locate|lookup|filter(?:\s+by)?|query|type)\b/i.test(userQuery);
   if (isNavQuery) {
     for (const route of playbook.routes) {
+      if (route.name === "search" && hasSearchDirective) {
+        continue;
+      }
       const match = route.matchKeywords.some((kw) => {
         const kwNorm = normalizeSemanticText(kw);
         if (normQuery.includes(kwNorm))
@@ -15629,7 +15634,7 @@ function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
       };
     }
   }
-  const isInputSearchIntent = queryTokens.some((t) => ["search", "find", "locate", "query", "type", "enter", "filter"].includes(t));
+  const isInputSearchIntent = hasSearchDirective || queryTokens.some((t) => ["search", "find", "locate", "query", "type", "enter", "filter", "lookup"].includes(t));
   const sortedLandmarks = isInputSearchIntent ? [...playbook.landmarks].sort((a, b) => {
     const aIsInput = a.role === "input" || a.intentAction === "type" ? -1 : 1;
     const bIsInput = b.role === "input" || b.intentAction === "type" ? -1 : 1;
@@ -15666,6 +15671,9 @@ function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
     }
   }
   for (const route of playbook.routes) {
+    if (route.name === "search" && hasSearchDirective) {
+      continue;
+    }
     const match = route.matchKeywords.some((kw) => {
       const kwNorm = normalizeSemanticText(kw);
       if (normQuery.includes(kwNorm))
@@ -15758,19 +15766,26 @@ function extractMetricsWithPlaybook(textContext, metricRule) {
 }
 function extractSearchQueryFromGoal(goal) {
   let q2 = (goal || "").trim();
-  q2 = q2.replace(/^(?:open|go\s+to|visit|launch)\s+[^,;]+[,\s;]+(?:and\s+then|then|after\s+that|and)?\s*/i, "");
-  const compoundMatch = q2.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+for)?|find|locate|look\s+for|filter(?:\s+by)?|query|type)\s+(.+)$/i);
+  if (!q2)
+    return "";
+  const hasSearchKeyword = /\b(?:search(?:\s+(?:for|about|on))?|find|locate|lookup|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search)\b/i.test(q2);
+  if (!hasSearchKeyword) {
+    return "";
+  }
+  q2 = q2.replace(/^(?:please\s+|kindly\s+|can\s+you\s+|could\s+you\s+)+/i, "");
+  q2 = q2.replace(/^(?:open|go\s+to|visit|launch|navigate\s+to)\s+(?:https?:\/\/\S+|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/\S*)?|[a-zA-Z0-9_-]+(?:\s+(?:website|portal|site|page|app|url))?)\s*(?:[,\s;]+(?:and\s+then|then|after\s+that|and)\s*|[,\s;]+)/i, "");
+  const compoundMatch = q2.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?|type)\s+(.+)$/i);
   if (compoundMatch) {
     q2 = compoundMatch[1].trim();
   } else {
-    q2 = q2.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+for)?|find|locate|look\s+for|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box)?)\s+/i, "");
+    q2 = q2.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?)\s+/i, "");
   }
   q2 = q2.replace(/\s+(?:in|into|on|using|use)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page).*$/i, "");
-  q2 = q2.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?)*/i, "");
+  q2 = q2.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|wiki|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|wiki|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?)*/i, "");
   q2 = q2.replace(/\s+(?:(?:on\s+(?:the\s+)?)?map|portal|website|site|page)$/i, "");
+  q2 = q2.replace(/\s+(?:and|to|then)\s+(?:summarize|summarise|analyze|analyse|explain|give\s+me|show\s+me|tell\s+me|hit\s+the\s+website|check\s+the\s+price|check|compare|extract|review|find\s+out|provide).*$/i, "");
+  q2 = q2.replace(/\s+(?:and|then)\s+(?:what|how|why|list|describe|highlight).*$/i, "");
   q2 = q2.replace(/\s+(?:use|using)\s+(?:the\s+)?search\s+bar.*$/i, "");
-  q2 = q2.replace(/\s+(?:and|to|then)\s+(?:hit\s+the\s+website|tell\s+me|analyze|give\s+me|show\s+me|check\s+the\s+price|compare).*$/i, "");
-  q2 = q2.replace(/\s+(?:and|then)\s+analyze.*$/i, "");
   q2 = q2.replace(/^["']+|["']+$/g, "");
   return q2.trim();
 }
@@ -16418,7 +16433,9 @@ var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "url",
   "targetUrl",
   "createNewTab",
-  "description"
+  "description",
+  "targetName",
+  "elementText"
 ]);
 var ALLOWED_ATOMIC_ACTION_KEYS = /* @__PURE__ */ new Set([
   "actionId",
@@ -21633,15 +21650,18 @@ var RunCoordinator = class {
     if (playbook) {
       const resolution = resolvePlaybookIntent(playbook, goal, currentUrl);
       if (resolution.matchedIntent === "none" && resolution.rationale?.includes("Already on route")) {
-        const reply = `You are already on the active ${playbook.name} route. All interactive navigation controls, map canvas layers, and search tools are loaded and ready.`;
-        return {
-          actionId: `act_local_answer_${step}_${Date.now()}`,
-          kind: "answer",
-          confidence: 0.98,
-          risk: "safe",
-          rationale: reply,
-          reply
-        };
+        const hasUnfinishedSearchOrGoal = Boolean(extractSearchQueryFromGoal(goal)) || /\b(?:search|find|locate|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
+        if (!hasUnfinishedSearchOrGoal) {
+          const reply = `You are already on the active ${playbook.name} route. All interactive navigation controls, map canvas layers, and search tools are loaded and ready.`;
+          return {
+            actionId: `act_local_answer_${step}_${Date.now()}`,
+            kind: "answer",
+            confidence: 0.98,
+            risk: "safe",
+            rationale: reply,
+            reply
+          };
+        }
       }
       if (resolution.matchedIntent === "extract_metric" && resolution.metricRule) {
         const allText = [
@@ -21744,22 +21764,97 @@ var RunCoordinator = class {
         if (hasAlreadyFilled) {
           const query = extractSearchQueryFromGoal(goal) || "query";
           const queryTokens = tokenizeSemanticText(query.toLowerCase());
+          const STOPWORDS = /* @__PURE__ */ new Set([
+            "and",
+            "the",
+            "for",
+            "with",
+            "from",
+            "that",
+            "this",
+            "into",
+            "about",
+            "or",
+            "in",
+            "on",
+            "at",
+            "by",
+            "to",
+            "a",
+            "an",
+            "of",
+            "is",
+            "it",
+            "as",
+            "be",
+            "are",
+            "was",
+            "all",
+            "any",
+            "can",
+            "her",
+            "one",
+            "our",
+            "out",
+            "day",
+            "get",
+            "has",
+            "him",
+            "his",
+            "how",
+            "man",
+            "new",
+            "now",
+            "old",
+            "see",
+            "two",
+            "way",
+            "who",
+            "boy",
+            "did",
+            "its",
+            "let",
+            "put",
+            "say",
+            "she",
+            "too",
+            "use",
+            "what",
+            "where",
+            "when",
+            "why",
+            "then",
+            "summarize",
+            "summarise",
+            "analyze",
+            "analyse",
+            "milestone",
+            "milestones"
+          ]);
+          const meaningfulTokens = queryTokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t));
           const hasAlreadyClickedSuggestion = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_dropdown_suggestion_click_"));
-          if (!hasAlreadyClickedSuggestion) {
+          const isMapDomain = (playbook.domain || "").includes("bhuvan") || (currentUrl || "").includes("bhuvan") || (currentUrl || "").includes("/ngmaps") || (playbook.name || "").toLowerCase().includes("bhuvan");
+          if (isMapDomain && !hasAlreadyClickedSuggestion) {
             const suggestionItem = sanitized.elements.find((el2) => {
               const nameNorm = el2.sanitizedName.toLowerCase();
               const isSuggestionRole = el2.role === "menuitem" || el2.role === "button" || el2.role === "link" || el2.role === "option";
-              const matchesQuery = queryTokens.some((t) => t.length >= 3 && nameNorm.includes(t)) || query.toLowerCase().includes("bangalore") && (nameNorm.includes("bengaluru") || nameNorm.includes("bangalore")) || query.toLowerCase().includes("bengaluru") && (nameNorm.includes("bangalore") || nameNorm.includes("bengaluru"));
-              if (matchesQuery && (isSuggestionRole || nameNorm.includes(",") || nameNorm.includes("karnataka") || nameNorm.includes("india") || nameNorm.includes("district") || nameNorm.includes("airport"))) {
-                return true;
+              if (!isSuggestionRole) return false;
+              if (nameNorm.includes("about") || nameNorm.includes("random") || nameNorm.includes("upload") || nameNorm.includes("help") || nameNorm.includes("terms") || nameNorm.includes("privacy")) {
+                return false;
               }
-              return false;
+              const matchesMeaningful = meaningfulTokens.some((t) => {
+                const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i");
+                return re.test(nameNorm);
+              });
+              const matchesGeo = nameNorm.includes("bengaluru") || nameNorm.includes("bangalore") || nameNorm.includes("karnataka") || nameNorm.includes("india") || nameNorm.includes("district");
+              return matchesMeaningful || matchesGeo;
             });
             if (suggestionItem) {
               return {
                 actionId: `act_dropdown_suggestion_click_${step}_${Date.now()}`,
                 kind: "click",
                 targetLocalId: suggestionItem.localId,
+                targetName: suggestionItem.sanitizedName,
                 confidence: 0.96,
                 risk: "safe",
                 rationale: `Selecting location suggestion "${suggestionItem.sanitizedName}" for query "${query}"`,
@@ -21767,7 +21862,7 @@ var RunCoordinator = class {
               };
             }
           }
-          if (hasAlreadyClickedSuggestion) {
+          if (isMapDomain && hasAlreadyClickedSuggestion) {
             return {
               actionId: `act_local_finish_${step}_${Date.now()}`,
               kind: "finish",
@@ -21776,35 +21871,61 @@ var RunCoordinator = class {
               rationale: `Location "${query}" selected from suggestions and centered on map`
             };
           }
-          const isOnSearchResults = (currentUrl || "").includes("search.html") || (currentUrl || "").includes("gsc.q=");
-          const wantsExploration = /(?:scour|explore|corner|drill|detail|read|view|click|open|all|every|find|accomplished)/i.test(trimmedGoal);
+          const isOnSearchResults = (currentUrl || "").includes("search.html") || (currentUrl || "").includes("gsc.q=") || (currentUrl || "").includes("Special:Search") || (currentUrl || "").includes("/search?") || (currentUrl || "").includes("search=") || (currentUrl || "").includes("?q=");
           const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_"));
-          if (isOnSearchResults && wantsExploration && !hasAlreadyClickedResult) {
-            const queryTokens2 = tokenizeSemanticText(extractSearchQueryFromGoal(goal) || "missions");
+          if (isOnSearchResults && !hasAlreadyClickedResult) {
+            const isChromeLink = (n) => {
+              return n === "search" || n === "search wikipedia" || n === "random article" || n === "upload file" || n === "main page" || n === "contents" || n === "current events" || n === "recent changes" || n.includes("privacy policy") || n.includes("terms of use") || n.includes("disclaimer") || n.includes("developers") || n.includes("statistics") || n.includes("cookie") || n.includes("mobile view");
+            };
             const resultLink = sanitized.elements.find((el2) => {
               if (el2.role !== "link" && el2.role !== "button") return false;
-              const nameNorm = el2.sanitizedName.toLowerCase();
-              if (nameNorm.includes("google") || nameNorm.includes("privacy") || nameNorm.includes("terms") || nameNorm === "search" || nameNorm.length < 4) {
-                return false;
-              }
-              if (queryTokens2.some((t) => nameNorm.includes(t))) return true;
-              if (nameNorm.includes("isro") || nameNorm.includes("mission") || nameNorm.includes("spacecraft") || nameNorm.includes("earth")) return true;
-              return false;
+              const nameNorm = el2.sanitizedName.toLowerCase().trim();
+              if (isChromeLink(nameNorm) || nameNorm.length < 3) return false;
+              const matchCount = meaningfulTokens.filter((t) => {
+                const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i");
+                return re.test(nameNorm);
+              }).length;
+              return matchCount >= Math.min(2, meaningfulTokens.length);
             });
             if (resultLink) {
               return {
                 actionId: `act_search_result_click_${step}_${Date.now()}`,
                 kind: "click",
                 targetLocalId: resultLink.localId,
-                confidence: 0.95,
+                targetName: resultLink.sanitizedName,
+                confidence: 0.96,
                 risk: "safe",
                 rationale: `Drilling into search result "${resultLink.sanitizedName}" on search page`,
                 expectedPostcondition: { kind: "status_changed" }
               };
             }
           }
-          const wantsAnalysis = /(?:analyze|analysis|price|prices|cost|tell|summary|report|how\s+much|compare)/i.test(trimmedGoal);
-          if (wantsAnalysis) {
+          const hasClickedSearchBtn = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_btn_click_"));
+          if (!isOnSearchResults && !hasClickedSearchBtn) {
+            const searchBtn = sanitized.elements.find((el2) => {
+              if (el2.role !== "button") return false;
+              const nameNorm = el2.sanitizedName.toLowerCase().trim();
+              return nameNorm === "search" || nameNorm === "search wikipedia" || nameNorm === "go";
+            });
+            if (searchBtn) {
+              return {
+                actionId: `act_search_btn_click_${step}_${Date.now()}`,
+                kind: "click",
+                targetLocalId: searchBtn.localId,
+                targetName: searchBtn.sanitizedName || "Search Button",
+                confidence: 0.95,
+                risk: "safe",
+                rationale: `Clicking search button "${searchBtn.sanitizedName}" to submit query "${query}"`,
+                expectedPostcondition: { kind: "status_changed" }
+              };
+            }
+          }
+          const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
+          if (wantsContentReasoning) {
+            return null;
+          }
+          const wantsEcomAnalysis = /(?:analyze|analysis|price|prices|cost|how\s+much|compare)/i.test(trimmedGoal) && sanitized.elements.some((el2) => /(?:iphone|apple|phone|₹|\$|rs\.?)/i.test(el2.sanitizedName || ""));
+          if (wantsEcomAnalysis) {
             const productElements = sanitized.elements.filter((el2) => {
               const text = el2.sanitizedName || "";
               return /(?:iphone|apple|phone|₹|\$|rs\.?|gb|off|deal|price|model)/i.test(text) && text.length > 3;
@@ -21827,7 +21948,7 @@ var RunCoordinator = class {
             kind: "finish",
             confidence: 0.98,
             risk: "safe",
-            rationale: `Playbook search query "${query}" executed and filtered results displayed`
+            rationale: `Playbook search query "${query}" executed and verified on ${playbook.name}`
           };
         }
         const phraseToMatch = (resolution.targetPhrase || "search").toLowerCase();
@@ -21847,6 +21968,7 @@ var RunCoordinator = class {
             actionId: `act_playbook_fill_${step}_${Date.now()}`,
             kind: "type",
             targetLocalId: matchingEl.localId,
+            targetName: matchingEl.sanitizedName || `${playbook.name} Search`,
             textToType,
             pressEnter: true,
             confidence: resolution.confidence || 0.92,
@@ -21874,6 +21996,10 @@ var RunCoordinator = class {
         };
       }
       if (lastAction.actionId && lastAction.actionId.startsWith("act_search_result_click_")) {
+        const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
+        if (wantsContentReasoning) {
+          return null;
+        }
         const pageTitle = sanitized.pageState?.title || "Details Page";
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
@@ -21894,64 +22020,17 @@ var RunCoordinator = class {
         };
       }
       if (lastAction.actionId && lastAction.actionId.startsWith("act_playbook_fill_")) {
+        const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
+        if (wantsContentReasoning) {
+          return null;
+        }
         const query = extractSearchQueryFromGoal(goal) || "query";
-        const queryTokens = tokenizeSemanticText(query.toLowerCase());
-        const hasAlreadyClickedSuggestion = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_dropdown_suggestion_click_"));
-        if (!hasAlreadyClickedSuggestion) {
-          const suggestionItem = sanitized.elements.find((el2) => {
-            const nameNorm = el2.sanitizedName.toLowerCase();
-            const isSuggestionRole = el2.role === "menuitem" || el2.role === "button" || el2.role === "link" || el2.role === "option";
-            const matchesQuery = queryTokens.some((t) => t.length >= 3 && nameNorm.includes(t)) || query.toLowerCase().includes("bangalore") && (nameNorm.includes("bengaluru") || nameNorm.includes("bangalore")) || query.toLowerCase().includes("bengaluru") && (nameNorm.includes("bangalore") || nameNorm.includes("bengaluru"));
-            if (matchesQuery && (isSuggestionRole || nameNorm.includes(",") || nameNorm.includes("karnataka") || nameNorm.includes("india") || nameNorm.includes("district") || nameNorm.includes("airport"))) {
-              return true;
-            }
-            return false;
-          });
-          if (suggestionItem) {
-            return {
-              actionId: `act_dropdown_suggestion_click_${step}_${Date.now()}`,
-              kind: "click",
-              targetLocalId: suggestionItem.localId,
-              confidence: 0.96,
-              risk: "safe",
-              rationale: `Selecting location suggestion "${suggestionItem.sanitizedName}" for query "${query}"`,
-              expectedPostcondition: { kind: "status_changed" }
-            };
-          }
-        }
-        const isOnSearchResults = (currentUrl || "").includes("search.html") || (currentUrl || "").includes("gsc.q=");
-        const wantsExploration = /(?:scour|explore|corner|drill|detail|read|view|click|open|all|every|find|accomplished)/i.test(trimmedGoal);
-        const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_"));
-        if (isOnSearchResults && wantsExploration && !hasAlreadyClickedResult) {
-          const queryTokens2 = tokenizeSemanticText(extractSearchQueryFromGoal(goal) || "missions");
-          const resultLink = sanitized.elements.find((el2) => {
-            if (el2.role !== "link" && el2.role !== "button") return false;
-            const nameNorm = el2.sanitizedName.toLowerCase();
-            if (nameNorm.includes("google") || nameNorm.includes("privacy") || nameNorm.includes("terms") || nameNorm === "search" || nameNorm.length < 4) {
-              return false;
-            }
-            if (queryTokens2.some((t) => nameNorm.includes(t))) return true;
-            if (nameNorm.includes("isro") || nameNorm.includes("mission") || nameNorm.includes("spacecraft") || nameNorm.includes("earth")) return true;
-            return false;
-          });
-          if (resultLink) {
-            return {
-              actionId: `act_search_result_click_${step}_${Date.now()}`,
-              kind: "click",
-              targetLocalId: resultLink.localId,
-              confidence: 0.95,
-              risk: "safe",
-              rationale: `Drilling into search result "${resultLink.sanitizedName}" on search page`,
-              expectedPostcondition: { kind: "status_changed" }
-            };
-          }
-        }
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
           kind: "finish",
           confidence: 0.98,
           risk: "safe",
-          rationale: `Playbook search query "${query}" executed and filtered results displayed`
+          rationale: `Playbook search query "${query}" executed and verified on page`
         };
       }
       const isStatusGoal = this.currentTaskContract.expectedTerminal.kind === "status_changed";

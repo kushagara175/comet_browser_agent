@@ -133,6 +133,7 @@ export declare function extractMetricsWithPlaybook(textContext: string, metricRu
  * Cleanly extracts search target text from a search directive.
  * E.g. "search for PS 171" -> "PS 171"
  *      "search Chinmaya in search box" -> "Chinmaya"
+ *      "open wikipedia.org and Search for James Webb Space Telescope and summarize the mission key milestones." -> "James Webb Space Telescope"
  */
 export declare function extractSearchQueryFromGoal(goal: string): string;
 /**

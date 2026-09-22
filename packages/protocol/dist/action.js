@@ -569,7 +569,9 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
     'url',
     'targetUrl',
     'createNewTab',
-    'description'
+    'description',
+    'targetName',
+    'elementText'
 ]);
 export const ALLOWED_ATOMIC_ACTION_KEYS = new Set([
     'actionId',
