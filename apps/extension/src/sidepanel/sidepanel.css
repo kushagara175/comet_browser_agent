@@ -471,21 +471,40 @@ html, body {
 }
 
 .brand-title {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.4px;
-  line-height: 1.2;
-  font-family: 'SF Pro Rounded', 'Plus Jakarta Sans', 'Outfit', 'Google Sans', 'Avenir Next', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: linear-gradient(115deg, #ffffff 0%, #fff7ed 35%, #fde047 70%, #fb923c 100%);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0.25px;
+  line-height: 1.15;
+  font-family: 'Instrument Serif', 'Playfair Display', 'New York', -apple-system-ui-serif, 'Georgia', 'Cambria', serif;
+  background: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0.88) 0%,
+    rgba(255, 255, 255, 0.88) 38%,
+    rgba(255, 255, 255, 1) 50%,
+    rgba(215, 240, 255, 1) 58%,
+    rgba(255, 255, 255, 0.88) 68%,
+    rgba(255, 255, 255, 0.88) 100%
+  );
+  background-size: 240% 100%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   display: inline-block;
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease;
+  animation: comet-brand-shimmer 7s ease-in-out infinite;
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+@keyframes comet-brand-shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  50%, 100% {
+    background-position: -120% 0;
+  }
 }
 
 .brand-row:hover .brand-title {
-  transform: scale(1.04);
-  filter: drop-shadow(0 0 10px rgba(253, 224, 71, 0.45));
+  transform: scale(1.03);
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.45));
 }
 
 .reload-icon-btn {
@@ -968,17 +987,35 @@ html, body {
 }
 
 .gemini-greeting {
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: -0.6px;
-  line-height: 1.2;
+  font-size: 27px;
+  font-weight: 300;
+  letter-spacing: -0.3px;
+  line-height: 1.25;
   margin: 0;
-  background: linear-gradient(105deg, #fef08a 0%, #facc15 25%, #fb923c 58%, #f43f5e 82%, #e879f9 100%);
+  background: linear-gradient(
+    90deg,
+    #93c5fd 0%,
+    #a78bfa 25%,
+    #c084fc 50%,
+    #67e8f9 75%,
+    #93c5fd 100%
+  );
+  background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   display: inline-block;
-  font-family: 'SF Pro Rounded', 'Plus Jakarta Sans', 'Outfit', 'Google Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  filter: drop-shadow(0 2px 18px rgba(251, 146, 60, 0.28));
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', var(--font);
+  animation: greeting-live-flow 8s linear infinite;
+  filter: drop-shadow(0 1px 12px rgba(147, 197, 253, 0.18));
+}
+
+@keyframes greeting-live-flow {
+  0% {
+    background-position: 0% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
 }
 
 .gemini-subheading {
