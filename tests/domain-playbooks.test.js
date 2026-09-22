@@ -984,6 +984,264 @@ test('Domain Playbooks: Wikipedia coordinator search does not click "Random arti
   assert.ok(result.message.includes('James Webb Space Telescope Key Milestones'));
 });
 
+test('Universal Search: Non-playbook website deterministic search input and drill-down execution', async () => {
+  const { RunCoordinator } = await import('../apps/extension/dist/background/coordinator.js');
+
+  let currentUrl = 'https://portal.research-space.org';
+  const executedProposals = [];
+  let stepCount = 0;
+
+  const homeElements = [
+    {
+      localId: 'el_logo',
+      role: 'link',
+      sanitizedName: 'ResearchSpace Logo',
+      coarseBounds: [0.01, 0.01, 0.1, 0.04]
+    },
+    {
+      localId: 'el_generic_search_input',
+      role: 'input',
+      sanitizedName: 'Search articles and publications',
+      state: ['visible', 'enabled'],
+      coarseBounds: [0.3, 0.1, 0.4, 0.05]
+    },
+    {
+      localId: 'el_about_link',
+      role: 'link',
+      sanitizedName: 'About ResearchSpace',
+      coarseBounds: [0.8, 0.01, 0.1, 0.04]
+    }
+  ];
+
+  const searchResultsElements = [
+    {
+      localId: 'el_doc_result',
+      role: 'link',
+      sanitizedName: 'Exoplanet Atmospheric Spectroscopy Results',
+      coarseBounds: [0.1, 0.2, 0.5, 0.06]
+    },
+    {
+      localId: 'el_footer_terms',
+      role: 'link',
+      sanitizedName: 'Terms of Service',
+      coarseBounds: [0.1, 0.9, 0.2, 0.03]
+    }
+  ];
+
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 2, url: currentUrl, title: stepCount === 0 ? 'Home - ResearchSpace' : 'Search: Exoplanet Spectroscopy' };
+    },
+    async sendMessageToTab(tabId, msg) {
+      if (msg.type === 'EXTRACT_DOM_SNAPSHOT') {
+        const elements = stepCount > 0 ? searchResultsElements : homeElements;
+        return { success: true, captureId: msg.captureId || 'cap_gen_search', snapshot: { elements } };
+      }
+      if (msg.type === 'EXECUTE_ACTION') {
+        executedProposals.push(msg.proposal);
+        stepCount++;
+        if (msg.proposal.targetLocalId === 'el_generic_search_input') {
+          currentUrl = 'https://portal.research-space.org/search?q=Exoplanet+Atmospheric+Spectroscopy';
+        }
+        return { success: true, actionId: msg.proposal.actionId, semanticOutcomeVerified: true };
+      }
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      const elements = stepCount > 0 ? searchResultsElements : homeElements;
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_gen_search',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements,
+        pageState: {
+          title: stepCount === 0 ? 'Home - ResearchSpace' : 'Search: Exoplanet Spectroscopy',
+          url: currentUrl,
+          viewport: [1280, 720]
+        },
+        maskCount: 0,
+        payloadDigestSha256: 'digest_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  const mockHttpClient = {
+    async requestReasoningAction(sanitized) {
+      return {
+        actionId: 'act_answer_spectroscopy',
+        kind: 'answer',
+        confidence: 0.99,
+        risk: 'safe',
+        rationale: 'Detailed findings on exoplanet atmospheric spectroscopy',
+        reply: '# Atmospheric Spectroscopy Findings\n\nWater vapor and methane detected in WASP-96b atmosphere.'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, mockHttpClient);
+  const result = await coordinator.startRun(
+    'Search for Exoplanet Atmospheric Spectroscopy and summarize key findings',
+    { maxSteps: 5 }
+  );
+
+  assert.equal(result.success, true);
+  // Must have typed into the generic search input
+  assert.equal(executedProposals[0].kind, 'type');
+  assert.equal(executedProposals[0].targetLocalId, 'el_generic_search_input');
+  assert.equal(executedProposals[0].textToType, 'Exoplanet Atmospheric Spectroscopy');
+  // Must have drilled into search result
+  assert.equal(executedProposals[1].kind, 'click');
+  assert.equal(executedProposals[1].targetLocalId, 'el_doc_result');
+  // Must have final answer
+  assert.ok(result.message.includes('Water vapor and methane'));
+});
+
+test('Anti-Hallucination: Reject premature finish on answer/summarization goals without answer content', async () => {
+  const { RunCoordinator } = await import('../apps/extension/dist/background/coordinator.js');
+
+  const pageElements = [
+    {
+      localId: 'el_heading',
+      role: 'heading',
+      sanitizedName: 'Overview of James Webb Space Telescope',
+      coarseBounds: [0.1, 0.1, 0.6, 0.08]
+    }
+  ];
+
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 3, url: 'https://en.wikipedia.org/wiki/James_Webb_Space_Telescope', title: 'James Webb Space Telescope' };
+    },
+    async sendMessageToTab() {
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_anti_hallucination',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements: pageElements,
+        pageState: { title: 'James Webb Space Telescope', url: 'https://en.wikipedia.org/wiki/James_Webb_Space_Telescope', viewport: [1280, 720] },
+        maskCount: 0,
+        payloadDigestSha256: 'digest_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  // Hallucinating model that returns "finish" with empty reply / trivial confirmation
+  const hallucinatingClient = {
+    async requestReasoningAction() {
+      return {
+        actionId: 'act_premature_finish',
+        kind: 'finish',
+        confidence: 0.99,
+        risk: 'safe',
+        rationale: 'Done'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, hallucinatingClient);
+  const result = await coordinator.startRun(
+    'Summarize the mission key milestones for James Webb Space Telescope',
+    { maxSteps: 3 }
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.state, 'failed-safe');
+  assert.ok(result.error.includes('without providing an answer or summary'), 'Must reject finish without answer');
+});
+
+test('Anti-Random-Clicking: Click action without targetLocalId never clicks arbitrary page links', async () => {
+  const { RunCoordinator } = await import('../apps/extension/dist/background/coordinator.js');
+
+  const pageElements = [
+    {
+      localId: 'el_random_article',
+      role: 'link',
+      sanitizedName: 'Random article',
+      state: ['visible', 'enabled'],
+      coarseBounds: [0.01, 0.1, 0.1, 0.03]
+    },
+    {
+      localId: 'el_donate_link',
+      role: 'link',
+      sanitizedName: 'Donate to Wikipedia',
+      state: ['visible', 'enabled'],
+      coarseBounds: [0.01, 0.2, 0.1, 0.03]
+    }
+  ];
+
+  const executedActions = [];
+
+  const browser = {
+    async captureVisibleTab() {
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    },
+    async getActiveTab() {
+      return { id: 4, url: 'https://en.wikipedia.org', title: 'Wikipedia' };
+    },
+    async sendMessageToTab(tabId, msg) {
+      if (msg.type === 'EXECUTE_ACTION') {
+        executedActions.push(msg.proposal);
+      }
+      return { success: true };
+    },
+    async runInSanitizerHost(req) {
+      return {
+        _brand: 'SanitizedContext_Verified',
+        protocolVersion: '1.0',
+        runId: 'run_anti_random_click',
+        captureId: req.rawCapture.captureId,
+        goal: req.goal,
+        sanitizedScreenshotDataUrl: req.rawCapture.rawScreenshotDataUrl,
+        elements: pageElements,
+        pageState: { title: 'Wikipedia', url: 'https://en.wikipedia.org', viewport: [1280, 720] },
+        maskCount: 0,
+        payloadDigestSha256: 'digest_mock',
+        timestamp: Date.now()
+      };
+    }
+  };
+
+  // Malformed model that returns click without targetLocalId and without matchable name
+  const malformedClient = {
+    async requestReasoningAction() {
+      return {
+        actionId: 'act_bad_click',
+        kind: 'click',
+        confidence: 0.9,
+        risk: 'safe',
+        rationale: 'Clicking something'
+      };
+    }
+  };
+
+  const coordinator = new RunCoordinator(browser, malformedClient);
+  await coordinator.startRun(
+    'Click the submit button',
+    { maxSteps: 2 }
+  );
+
+  // Must NOT have executed click on 'el_random_article' or 'el_donate_link'
+  assert.equal(executedActions.length, 0, 'Must NOT click random links when target is unresolved');
+});
+
+
 
 
 

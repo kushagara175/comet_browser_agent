@@ -877,18 +877,27 @@ export class VlmReasoningEngine {
                     e.sanitizedName.toLowerCase() === lowTarget ||
                     e.sanitizedName.toLowerCase().includes(lowTarget) ||
                     lowTarget.includes(e.sanitizedName.toLowerCase()));
-                // 2. Token overlap match
+                // 2. Token overlap match (filtering English stopwords)
                 if (!found) {
-                    const targetTokens = lowTarget.split(/[\s_-]+/).filter((t) => t.length > 2);
+                    const STOPWORDS = new Set([
+                        'and', 'the', 'for', 'with', 'from', 'that', 'this', 'into', 'about', 'or', 'in',
+                        'on', 'at', 'by', 'to', 'a', 'an', 'of', 'is', 'it', 'as', 'be', 'are', 'was',
+                        'click', 'button', 'link', 'page', 'tab', 'item', 'open', 'show', 'view'
+                    ]);
+                    const targetTokens = lowTarget.split(/[\s_-]+/).filter((t) => t.length > 2 && !STOPWORDS.has(t));
                     if (targetTokens.length > 0) {
                         let maxOverlap = 0;
+                        let bestEl = null;
                         for (const el of payload.elements) {
                             const elName = (el.sanitizedName || '').toLowerCase();
                             const overlap = targetTokens.filter((t) => elName.includes(t)).length;
                             if (overlap > maxOverlap) {
                                 maxOverlap = overlap;
-                                found = el;
+                                bestEl = el;
                             }
+                        }
+                        if (maxOverlap >= 1 && (maxOverlap >= 2 || targetTokens.length === 1)) {
+                            found = bestEl;
                         }
                     }
                 }
@@ -900,14 +909,14 @@ export class VlmReasoningEngine {
                         targetTokens: tokenizeSemanticText(rawTarget)
                     };
                     const groundRes = groundTargetCandidates(payload.elements, intent);
-                    if (groundRes.bestCandidate) {
+                    if (groundRes.bestCandidate && groundRes.bestCandidate.score >= 35) {
                         found = groundRes.bestCandidate.element;
                     }
-                    else if (groundRes.candidates.length > 0) {
+                    else if (groundRes.candidates.length > 0 && groundRes.candidates[0].score >= 40) {
                         found = groundRes.candidates[0].element;
                     }
                 }
-                // 4. Fallback for interactive actions: ground against user's overall goal
+                // 4. Fallback for interactive actions: ground against user's overall goal with strict score gate
                 if (!found && parsed.kind !== 'finish' && parsed.kind !== 'wait') {
                     const goalIntent = {
                         intent: (parsed.kind === 'type' ? 'type' : 'click'),
@@ -915,10 +924,10 @@ export class VlmReasoningEngine {
                         targetTokens: tokenizeSemanticText(payload.goal || '')
                     };
                     const goalGroundRes = groundTargetCandidates(payload.elements, goalIntent);
-                    if (goalGroundRes.bestCandidate) {
+                    if (goalGroundRes.bestCandidate && goalGroundRes.bestCandidate.score >= 40) {
                         found = goalGroundRes.bestCandidate.element;
                     }
-                    else if (goalGroundRes.candidates.length > 0) {
+                    else if (goalGroundRes.candidates.length > 0 && goalGroundRes.candidates[0].score >= 45) {
                         found = goalGroundRes.candidates[0].element;
                     }
                 }
@@ -1220,6 +1229,13 @@ Strict Rules:
       * Identify the anchor link or button pointing to the file (role: "link" or "button" matching "Download", "PDF", "Brochure", "Report", or href ending in .pdf, .zip, .csv, .kmz).
       * Propose kind: "click" on that target element.
       * Once clicked, confirm in "reply" that the download was initiated and propose kind: "finish".
+24. ANTI-HALLUCINATION & RIGOROUS TARGET VERIFICATION (ALL WEBSITES):
+    - Every click or DOM interaction MUST be carefully verified against the user's specific prompt before execution.
+    - NEVER click arbitrary, random, or unrelated elements (e.g. 'Random article', 'Donate', header logos, site-wide navigation links, footer disclaimers, or generic sidebar items).
+    - If you cannot find an interactive element directly matching the user's requested control or entity, DO NOT guess or pick a random button or link. Propose scrolling to bring it into view, or formulate a helpful question/answer to clarify.
+    - For information retrieval, question-answering, or summarization goals (e.g. "summarize mission milestones", "how many submissions", "what are the details"):
+      * NEVER propose kind: 'finish' without providing the authentic, synthesized answer/summary in 'reply' and 'rationale'!
+      * Premature finishes with empty replies, or placeholder replies like "Task finished" / "Done", are strictly prohibited and will be rejected.
 
 JSON Schema:
 {

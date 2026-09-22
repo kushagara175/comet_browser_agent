@@ -168,8 +168,8 @@ export function resolveTaskContract(goal) {
             }
         };
     }
-    // 1a. Information retrieval & question-answering goals (e.g. "how many submissions are done", "tell me when it was first launched and who organizes it", "see for ex how many submissions...")
-    const isQuestionOrRetrieval = /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:about|how|what|the|when|who|which|where|why|if)|find\s+.*?\s+and\s+tell|search\s+.*?\s+and\s+tell|check\s+.*?\s+and\s+tell|(?:when|who|where|why)\s+(?:was|is|are|were|organizes|coordinates|leads|founded|created|launched|started)|when\s+it\s+was|who\s+organizes)/i.test(g);
+    // 1a. Information retrieval, question-answering, and summarization goals (e.g. "how many submissions are done", "summarize the mission key milestones", "analyze pricing", "tell me when it was first launched")
+    const isQuestionOrRetrieval = /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is|what\s+are|which\s+tab|tell\s+me|summarize|summarise|milestones?|key\s+milestones?|explain|analyze|analyse|overview|findings|give\s+me\s+(?:a\s+)?(?:summary|overview|details?|breakdown)|find\s+.*?\s+and\s+(?:tell|summarize|explain)|search\s+.*?\s+and\s+(?:tell|summarize|explain)|check\s+.*?\s+and\s+(?:tell|summarize|explain)|read\s+.*?\s+and\s+(?:tell|summarize|explain)|(?:when|who|where|why)\s+(?:was|is|are|were|organizes|coordinates|leads|founded|created|launched|started)|when\s+it\s+was|who\s+organizes)/i.test(g);
     if (isQuestionOrRetrieval) {
         let queryTopic = 'information';
         if (/submi/i.test(g))
@@ -178,6 +178,12 @@ export function resolveTaskContract(goal) {
             queryTopic = 'problem statements';
         else if (g.includes('count') || g.includes('how many'))
             queryTopic = 'count';
+        else if (/(?:milestone|milestones)/i.test(g))
+            queryTopic = 'mission key milestones';
+        else if (/(?:summarize|summarise|summary)/i.test(g))
+            queryTopic = 'summary';
+        else if (/(?:analyze|analyse|analysis)/i.test(g))
+            queryTopic = 'analysis';
         else if (/(?:launch|start|found|create|when)/i.test(g) && /(?:organiz|lead|head|manage|who)/i.test(g))
             queryTopic = 'launch date and organizer';
         else if (/(?:launch|start|found|create|when)/i.test(g))
@@ -190,7 +196,7 @@ export function resolveTaskContract(goal) {
             mode: 'answer',
             isAnswerGoal: true,
             isMultiStep: true,
-            isPassive: false, // NOT passive - allows active tab switching, navigation, and extraction
+            isPassive: false, // NOT passive - requires active search, navigation, reading, and LLM synthesis
             queryTopic,
             expectedTerminal: { kind: 'answer_supported', queryTopic },
             structuredIntent: {
@@ -218,9 +224,9 @@ export function resolveTaskContract(goal) {
             }
         };
     }
-    // 1c. Passive observation or immediate finish task
-    if (/^(?:observe|finish|read|summarize|review|analyze|tell|what)\b/i.test(g) ||
-        /^(?:check|scan|look|see|inspect)\s+(?:at\s+)?(?:the\s+)?(?:status|page|screen|view|around)\b/i.test(g)) {
+    // 1c. True passive observation or immediate finish task (e.g. "finish goal", "observe page", "look around")
+    if (/^(?:observe|look\s+around|just\s+look|finish)\b/i.test(g) ||
+        /^(?:check|scan|look|see|inspect)\s+(?:at\s+)?(?:the\s+)?(?:status|screen|view|around)\b/i.test(g)) {
         return {
             supported: true,
             goalPattern: 'observe_status',

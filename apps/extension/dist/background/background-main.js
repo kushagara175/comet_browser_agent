@@ -16068,7 +16068,7 @@ function resolveTaskContract(goal) {
       }
     };
   }
-  const isQuestionOrRetrieval = /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is\s+the\s+(?:count|number|total|status)|which\s+tab|tell\s+me\s+(?:about|how|what|the|when|who|which|where|why|if)|find\s+.*?\s+and\s+tell|search\s+.*?\s+and\s+tell|check\s+.*?\s+and\s+tell|(?:when|who|where|why)\s+(?:was|is|are|were|organizes|coordinates|leads|founded|created|launched|started)|when\s+it\s+was|who\s+organizes)/i.test(g);
+  const isQuestionOrRetrieval = /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is|what\s+are|which\s+tab|tell\s+me|summarize|summarise|milestones?|key\s+milestones?|explain|analyze|analyse|overview|findings|give\s+me\s+(?:a\s+)?(?:summary|overview|details?|breakdown)|find\s+.*?\s+and\s+(?:tell|summarize|explain)|search\s+.*?\s+and\s+(?:tell|summarize|explain)|check\s+.*?\s+and\s+(?:tell|summarize|explain)|read\s+.*?\s+and\s+(?:tell|summarize|explain)|(?:when|who|where|why)\s+(?:was|is|are|were|organizes|coordinates|leads|founded|created|launched|started)|when\s+it\s+was|who\s+organizes)/i.test(g);
   if (isQuestionOrRetrieval) {
     let queryTopic = "information";
     if (/submi/i.test(g))
@@ -16077,6 +16077,12 @@ function resolveTaskContract(goal) {
       queryTopic = "problem statements";
     else if (g.includes("count") || g.includes("how many"))
       queryTopic = "count";
+    else if (/(?:milestone|milestones)/i.test(g))
+      queryTopic = "mission key milestones";
+    else if (/(?:summarize|summarise|summary)/i.test(g))
+      queryTopic = "summary";
+    else if (/(?:analyze|analyse|analysis)/i.test(g))
+      queryTopic = "analysis";
     else if (/(?:launch|start|found|create|when)/i.test(g) && /(?:organiz|lead|head|manage|who)/i.test(g))
       queryTopic = "launch date and organizer";
     else if (/(?:launch|start|found|create|when)/i.test(g))
@@ -16090,7 +16096,7 @@ function resolveTaskContract(goal) {
       isAnswerGoal: true,
       isMultiStep: true,
       isPassive: false,
-      // NOT passive - allows active tab switching, navigation, and extraction
+      // NOT passive - requires active search, navigation, reading, and LLM synthesis
       queryTopic,
       expectedTerminal: { kind: "answer_supported", queryTopic },
       structuredIntent: {
@@ -16115,7 +16121,7 @@ function resolveTaskContract(goal) {
       }
     };
   }
-  if (/^(?:observe|finish|read|summarize|review|analyze|tell|what)\b/i.test(g) || /^(?:check|scan|look|see|inspect)\s+(?:at\s+)?(?:the\s+)?(?:status|page|screen|view|around)\b/i.test(g)) {
+  if (/^(?:observe|look\s+around|just\s+look|finish)\b/i.test(g) || /^(?:check|scan|look|see|inspect)\s+(?:at\s+)?(?:the\s+)?(?:status|screen|view|around)\b/i.test(g)) {
     return {
       supported: true,
       goalPattern: "observe_status",
@@ -21570,7 +21576,11 @@ var RunCoordinator = class {
         rationale: "Bookmarks audit verified: Inspected active bookmarks bar and folders. You can manage them directly or ask me to navigate to any bookmarked site."
       };
     }
-    if (this.currentTaskContract?.isAnswerGoal) {
+    const effectivePageUrl = currentUrl || sanitized.pageState?.url || "";
+    const hasSearchDirective = Boolean(extractSearchQueryFromGoal(goal));
+    const isOnSearchResultsPage = effectivePageUrl.includes("search") || (sanitized.pageState?.title || "").toLowerCase().includes("search") || (sanitized.pageState?.title || "").toLowerCase().includes("results");
+    const isSearchingActive = hasSearchDirective && (!this.actionHistory.some((a) => a.actionId && (a.actionId.startsWith("act_playbook_fill_") || a.actionId.startsWith("act_generic_search_fill_") || a.kind === "type")) || isOnSearchResultsPage && !this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_")));
+    if (this.currentTaskContract?.isAnswerGoal && !isSearchingActive) {
       const topic = (this.currentTaskContract.queryTopic || "submission").toLowerCase();
       const pageCounters = sanitized.pageState?.counters || [];
       const pageSummaries = sanitized.pageState?.contentSummaries || [];
@@ -21978,6 +21988,149 @@ var RunCoordinator = class {
         }
       }
     }
+    const genericSearchQuery = extractSearchQueryFromGoal(goal);
+    const hasGenericSearchDirective = Boolean(genericSearchQuery) && /\b(?:search(?:\s+for)?|search\s+box|search\s+bar|search\s+input|query\s+for|lookup)\b/i.test(trimmedGoal);
+    if (!playbook && hasGenericSearchDirective) {
+      const query = genericSearchQuery || "search query";
+      const hasAlreadyFilled = this.actionHistory.some(
+        (a) => a.actionId && (a.actionId.startsWith("act_generic_search_fill_") || a.actionId.startsWith("act_playbook_fill_") || a.kind === "type")
+      );
+      if (!hasAlreadyFilled) {
+        const searchInputCandidates = sanitized.elements.filter((el2) => {
+          if (el2.role !== "input" && el2.role !== "textarea") return false;
+          if (el2.state.includes("disabled")) return false;
+          return true;
+        });
+        const searchInput = searchInputCandidates.find((el2) => {
+          const nameNorm = (el2.sanitizedName || "").toLowerCase();
+          return nameNorm.includes("search") || nameNorm.includes("find") || nameNorm.includes("query") || nameNorm.includes("filter") || nameNorm.includes("keyword") || nameNorm === "q" || nameNorm === "kwd" || nameNorm === "searchbox" || nameNorm === "searchinput";
+        }) || (searchInputCandidates.length === 1 ? searchInputCandidates[0] : null);
+        if (searchInput) {
+          return {
+            actionId: `act_generic_search_fill_${step}_${Date.now()}`,
+            kind: "type",
+            targetLocalId: searchInput.localId,
+            targetName: searchInput.sanitizedName || "Search Input",
+            textToType: query,
+            pressEnter: true,
+            confidence: 0.95,
+            risk: "safe",
+            rationale: `Universal search: Entering query "${query}" into "${searchInput.sanitizedName || "search bar"}" and pressing Enter`
+          };
+        }
+      } else {
+        const queryTokens = tokenizeSemanticText(query.toLowerCase());
+        const STOPWORDS = /* @__PURE__ */ new Set([
+          "and",
+          "the",
+          "for",
+          "with",
+          "from",
+          "that",
+          "this",
+          "into",
+          "about",
+          "or",
+          "in",
+          "on",
+          "at",
+          "by",
+          "to",
+          "a",
+          "an",
+          "of",
+          "is",
+          "it",
+          "as",
+          "be",
+          "are",
+          "was",
+          "all",
+          "any",
+          "can",
+          "her",
+          "one",
+          "our",
+          "out",
+          "day",
+          "get",
+          "has",
+          "him",
+          "his",
+          "how",
+          "man",
+          "new",
+          "now",
+          "old",
+          "see",
+          "two",
+          "way",
+          "who",
+          "boy",
+          "did",
+          "its",
+          "let",
+          "put",
+          "say",
+          "she",
+          "too",
+          "use",
+          "what",
+          "where",
+          "when",
+          "why",
+          "then",
+          "summarize",
+          "summarise",
+          "analyze",
+          "analyse",
+          "milestone",
+          "milestones"
+        ]);
+        const meaningfulTokens = queryTokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t));
+        const activeUrl2 = currentUrl || sanitized.pageState?.url || "";
+        const isOnSearchResults = (activeUrl2 || "").includes("search") || (activeUrl2 || "").includes("?q=") || (activeUrl2 || "").includes("&q=") || (activeUrl2 || "").includes("query=") || (sanitized.pageState?.title || "").toLowerCase().includes("search") || (sanitized.pageState?.title || "").toLowerCase().includes("results");
+        const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_"));
+        if (isOnSearchResults && !hasAlreadyClickedResult) {
+          const isChromeLink = (n) => {
+            return n === "search" || n === "random article" || n === "upload file" || n === "main page" || n === "contents" || n === "current events" || n === "recent changes" || n.includes("privacy policy") || n.includes("terms of use") || n.includes("disclaimer") || n.includes("developers") || n.includes("statistics") || n.includes("cookie") || n.includes("sign in");
+          };
+          const resultLink = sanitized.elements.find((el2) => {
+            if (el2.role !== "link" && el2.role !== "button") return false;
+            const nameNorm = el2.sanitizedName.toLowerCase().trim();
+            if (isChromeLink(nameNorm) || nameNorm.length < 3) return false;
+            const matchCount = meaningfulTokens.filter((t) => {
+              const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i");
+              return re.test(nameNorm);
+            }).length;
+            return matchCount >= Math.min(2, meaningfulTokens.length);
+          });
+          if (resultLink) {
+            return {
+              actionId: `act_search_result_click_${step}_${Date.now()}`,
+              kind: "click",
+              targetLocalId: resultLink.localId,
+              targetName: resultLink.sanitizedName,
+              confidence: 0.96,
+              risk: "safe",
+              rationale: `Drilling into search result "${resultLink.sanitizedName}" on search results page`,
+              expectedPostcondition: { kind: "status_changed" }
+            };
+          }
+        }
+        const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
+        if (wantsContentReasoning) {
+          return null;
+        }
+        return {
+          actionId: `act_local_finish_${step}_${Date.now()}`,
+          kind: "finish",
+          confidence: 0.98,
+          risk: "safe",
+          rationale: `Universal search query "${query}" executed and verified on current page`
+        };
+      }
+    }
     if (step > 1 && this.actionHistory.length > 0 && this.currentTaskContract) {
       const lastAction = this.actionHistory[this.actionHistory.length - 1];
       const isDialogGoal = this.currentTaskContract.expectedTerminal.kind === "dialog_visible";
@@ -22019,7 +22172,7 @@ var RunCoordinator = class {
           rationale: `Location "${query}" selected from suggestions and centered on map`
         };
       }
-      if (lastAction.actionId && lastAction.actionId.startsWith("act_playbook_fill_")) {
+      if (lastAction.actionId && (lastAction.actionId.startsWith("act_playbook_fill_") || lastAction.actionId.startsWith("act_generic_search_fill_"))) {
         const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
         if (wantsContentReasoning) {
           return null;
@@ -22030,7 +22183,7 @@ var RunCoordinator = class {
           kind: "finish",
           confidence: 0.98,
           risk: "safe",
-          rationale: `Playbook search query "${query}" executed and verified on page`
+          rationale: `Search query "${query}" executed and verified on page`
         };
       }
       const isStatusGoal = this.currentTaskContract.expectedTerminal.kind === "status_changed";
@@ -22373,6 +22526,9 @@ var RunCoordinator = class {
         return { satisfied: true };
       }
       case "answer_supported": {
+        if (contract.isMultiStep && actionHistory.length === 0) {
+          return { satisfied: false, reason: "Information retrieval requires navigation, search, or inspecting page content before concluding" };
+        }
         return { satisfied: true };
       }
       default:
@@ -23076,8 +23232,9 @@ var RunCoordinator = class {
         let decisionOrigin = "server";
         let networkRequestMade = true;
         let t4_reasoningReceived = Date.now();
-        const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
-        const localPlaybookProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
+        const currentEffectiveUrl = sanitized.pageState?.url || activeTab?.url;
+        const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, currentEffectiveUrl) : null;
+        const localPlaybookProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, currentEffectiveUrl);
         const isAutofillGoal = /\b(?:fill|autofill|populate|form)\b/i.test(this.currentGoal || "");
         const prefersDemoData = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || "") || /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || "");
         const hasAutofilled = this.actionHistory.some((a) => a.actionId && (a.actionId.includes("act_local_autofill_batch_") || a.actionId.includes("act_autofill_")));
@@ -23257,7 +23414,7 @@ var RunCoordinator = class {
           } catch (err) {
             console.warn("[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:", err?.message || err);
             const msg = (err?.message || "").toLowerCase();
-            const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
+            const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, currentEffectiveUrl);
             if (localProposal) {
               proposal = localProposal;
               decisionOrigin = "local";
@@ -23306,8 +23463,36 @@ var RunCoordinator = class {
             const inputCandidate = sanitized.elements.find((e) => (e.role === "input" || e.role === "textarea") && !e.state.includes("disabled"));
             if (inputCandidate) resolvedTargetId = inputCandidate.localId;
           } else if (proposal.kind === "click") {
-            const clickCandidate = sanitized.elements.find((e) => (e.role === "button" || e.role === "link") && !e.state.includes("disabled"));
-            if (clickCandidate) resolvedTargetId = clickCandidate.localId;
+            const targetQuery = proposal.targetName || proposal.elementText || proposal.target;
+            let matched = void 0;
+            if (targetQuery && typeof targetQuery === "string") {
+              const queryNorm = targetQuery.trim().toLowerCase();
+              matched = sanitized.elements.find((e) => {
+                if (e.state.includes("disabled")) return false;
+                const nameNorm = e.sanitizedName.toLowerCase();
+                return nameNorm === queryNorm || nameNorm.includes(queryNorm) || queryNorm.includes(nameNorm);
+              });
+            }
+            if (!matched && proposal.rationale) {
+              const quoteMatch = proposal.rationale.match(/["']([^"']{2,40})["']/);
+              if (quoteMatch) {
+                const qNorm = quoteMatch[1].toLowerCase();
+                matched = sanitized.elements.find((e) => {
+                  if (e.state.includes("disabled")) return false;
+                  const nameNorm = e.sanitizedName.toLowerCase();
+                  return nameNorm === qNorm || nameNorm.includes(qNorm);
+                });
+              }
+            }
+            if (!matched && this.currentTaskContract?.structuredIntent?.targetPhrase) {
+              const groundRes = groundTargetCandidates(sanitized.elements, this.currentTaskContract.structuredIntent);
+              if (groundRes.bestCandidate && groundRes.bestCandidate.score >= 40) {
+                matched = groundRes.bestCandidate.element;
+              }
+            }
+            if (matched) {
+              resolvedTargetId = matched.localId;
+            }
           }
           if (resolvedTargetId) {
             proposal = { ...proposal, targetLocalId: resolvedTargetId };
@@ -23742,7 +23927,48 @@ var RunCoordinator = class {
         }
         if (proposal.kind === "finish" || proposal.kind === "answer") {
           const terminalCheck = this.currentTaskContract ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory) : { satisfied: true, reason: "Goal completed" };
-          const isAnswerOrConversational = proposal.kind === "answer" || Boolean(proposal.reply) || this.currentTaskContract?.isAnswerGoal || this.currentTaskContract?.goalPattern === "conversational_query";
+          const hasSubstantiveAnswer = Boolean(
+            proposal.reply && proposal.reply.trim().length >= 20 && !/^(?:done|task (?:is )?finished|completed|ok)\.?$/i.test(proposal.reply.trim()) || proposal.rationale && proposal.rationale.trim().length >= 35 && !/^(?:task|action|goal) (?:is )?(?:completed|done|finished)/i.test(proposal.rationale.trim())
+          );
+          if (proposal.kind === "finish" && !proposal.reply && proposal.rationale && hasSubstantiveAnswer) {
+            proposal = { ...proposal, reply: proposal.rationale };
+          }
+          const isAnswerGoal = Boolean(this.currentTaskContract?.isAnswerGoal);
+          const isAnswerOrConversational = proposal.kind === "answer" && hasSubstantiveAnswer || isAnswerGoal && hasSubstantiveAnswer || this.currentTaskContract?.goalPattern === "conversational_query";
+          if (proposal.kind === "finish" && isAnswerGoal && !hasSubstantiveAnswer) {
+            const errorMsg2 = `Task rejected: Model proposed "finish" for an information retrieval / summarization task without providing an answer or summary.`;
+            this.transition("failed-safe", errorMsg2);
+            const stepTrace3 = {
+              step,
+              captureId: sanitized.captureId,
+              pageGeneration: sanitized.captureId,
+              maskCount: sanitized.maskCount,
+              sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+              decisionOrigin,
+              proposal,
+              riskDecision: riskLevel,
+              confidenceDecision: "rejected_false_finish",
+              executed: false,
+              verification: {
+                verified: false,
+                reasonCode: "FALSE_FINISH_NO_ANSWER",
+                durationMs: 0
+              },
+              networkRequestMade,
+              timings: { total: Date.now() - t0_step }
+            };
+            this.stepsTrace.push(stepTrace3);
+            const res3 = {
+              success: false,
+              state: "failed-safe",
+              error: errorMsg2,
+              sanitized,
+              proposal,
+              stepCount: step,
+              steps: this.stepsTrace
+            };
+            return this.completeWithResult(res3);
+          }
           if (proposal.kind === "finish" && !terminalCheck.satisfied && !isAnswerOrConversational) {
             const errorMsg2 = `Task rejected: Model proposed "finish" before required action postconditions were established or verified: ${terminalCheck.reason}`;
             this.transition("failed-safe", errorMsg2);

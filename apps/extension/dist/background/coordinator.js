@@ -593,7 +593,17 @@ export class RunCoordinator {
             };
         }
         // 1c. Information retrieval & question-answering goals (e.g. "how many submissions are done")
-        if (this.currentTaskContract?.isAnswerGoal) {
+        // If the goal also contains an explicit search directive (e.g. "search X and tell me Y"),
+        // let search execution and result drilling (playbook or universal search) run first before answering!
+        const effectivePageUrl = currentUrl || sanitized.pageState?.url || '';
+        const hasSearchDirective = Boolean(extractSearchQueryFromGoal(goal));
+        const isOnSearchResultsPage = effectivePageUrl.includes('search') ||
+            (sanitized.pageState?.title || '').toLowerCase().includes('search') ||
+            (sanitized.pageState?.title || '').toLowerCase().includes('results');
+        const isSearchingActive = hasSearchDirective &&
+            (!this.actionHistory.some(a => a.actionId && (a.actionId.startsWith('act_playbook_fill_') || a.actionId.startsWith('act_generic_search_fill_') || a.kind === 'type')) ||
+                (isOnSearchResultsPage && !this.actionHistory.some(a => a.actionId && a.actionId.startsWith('act_search_result_click_'))));
+        if (this.currentTaskContract?.isAnswerGoal && !isSearchingActive) {
             const topic = (this.currentTaskContract.queryTopic || 'submission').toLowerCase();
             const pageCounters = sanitized.pageState?.counters || [];
             const pageSummaries = sanitized.pageState?.contentSummaries || [];
@@ -1000,6 +1010,116 @@ export class RunCoordinator {
                 }
             }
         }
+        // 1e. Universal Generic Search for ANY Website (Deterministic fast-path for explicit search directives)
+        const genericSearchQuery = extractSearchQueryFromGoal(goal);
+        const hasGenericSearchDirective = Boolean(genericSearchQuery) &&
+            /\b(?:search(?:\s+for)?|search\s+box|search\s+bar|search\s+input|query\s+for|lookup)\b/i.test(trimmedGoal);
+        if (!playbook && hasGenericSearchDirective) {
+            const query = genericSearchQuery || 'search query';
+            const hasAlreadyFilled = this.actionHistory.some(a => a.actionId && (a.actionId.startsWith('act_generic_search_fill_') || a.actionId.startsWith('act_playbook_fill_') || a.kind === 'type'));
+            if (!hasAlreadyFilled) {
+                // Locate search input on page
+                const searchInputCandidates = sanitized.elements.filter(el => {
+                    if (el.role !== 'input' && el.role !== 'textarea')
+                        return false;
+                    if (el.state.includes('disabled'))
+                        return false;
+                    return true;
+                });
+                // Best match: input matching search keywords in sanitizedName, placeholder, or role
+                const searchInput = searchInputCandidates.find(el => {
+                    const nameNorm = (el.sanitizedName || '').toLowerCase();
+                    return (nameNorm.includes('search') ||
+                        nameNorm.includes('find') ||
+                        nameNorm.includes('query') ||
+                        nameNorm.includes('filter') ||
+                        nameNorm.includes('keyword') ||
+                        nameNorm === 'q' ||
+                        nameNorm === 'kwd' ||
+                        nameNorm === 'searchbox' ||
+                        nameNorm === 'searchinput');
+                }) || (searchInputCandidates.length === 1 ? searchInputCandidates[0] : null);
+                if (searchInput) {
+                    return {
+                        actionId: `act_generic_search_fill_${step}_${Date.now()}`,
+                        kind: 'type',
+                        targetLocalId: searchInput.localId,
+                        targetName: searchInput.sanitizedName || 'Search Input',
+                        textToType: query,
+                        pressEnter: true,
+                        confidence: 0.95,
+                        risk: 'safe',
+                        rationale: `Universal search: Entering query "${query}" into "${searchInput.sanitizedName || 'search bar'}" and pressing Enter`
+                    };
+                }
+            }
+            else {
+                // Already typed search query on non-playbook website
+                const queryTokens = tokenizeSemanticText(query.toLowerCase());
+                const STOPWORDS = new Set([
+                    'and', 'the', 'for', 'with', 'from', 'that', 'this', 'into', 'about', 'or', 'in',
+                    'on', 'at', 'by', 'to', 'a', 'an', 'of', 'is', 'it', 'as', 'be', 'are', 'was',
+                    'all', 'any', 'can', 'her', 'one', 'our', 'out', 'day', 'get', 'has', 'him',
+                    'his', 'how', 'man', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy',
+                    'did', 'its', 'let', 'put', 'say', 'she', 'too', 'use', 'what', 'where', 'when',
+                    'why', 'then', 'summarize', 'summarise', 'analyze', 'analyse', 'milestone', 'milestones'
+                ]);
+                const meaningfulTokens = queryTokens.filter(t => t.length >= 3 && !STOPWORDS.has(t));
+                const activeUrl = currentUrl || sanitized.pageState?.url || '';
+                const isOnSearchResults = (activeUrl || '').includes('search') ||
+                    (activeUrl || '').includes('?q=') ||
+                    (activeUrl || '').includes('&q=') ||
+                    (activeUrl || '').includes('query=') ||
+                    (sanitized.pageState?.title || '').toLowerCase().includes('search') ||
+                    (sanitized.pageState?.title || '').toLowerCase().includes('results');
+                const hasAlreadyClickedResult = this.actionHistory.some(a => a.actionId && a.actionId.startsWith('act_search_result_click_'));
+                if (isOnSearchResults && !hasAlreadyClickedResult) {
+                    const isChromeLink = (n) => {
+                        return n === 'search' || n === 'random article' || n === 'upload file' ||
+                            n === 'main page' || n === 'contents' || n === 'current events' || n === 'recent changes' ||
+                            n.includes('privacy policy') || n.includes('terms of use') || n.includes('disclaimer') ||
+                            n.includes('developers') || n.includes('statistics') || n.includes('cookie') || n.includes('sign in');
+                    };
+                    const resultLink = sanitized.elements.find(el => {
+                        if (el.role !== 'link' && el.role !== 'button')
+                            return false;
+                        const nameNorm = el.sanitizedName.toLowerCase().trim();
+                        if (isChromeLink(nameNorm) || nameNorm.length < 3)
+                            return false;
+                        const matchCount = meaningfulTokens.filter(t => {
+                            const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+                            return re.test(nameNorm);
+                        }).length;
+                        return matchCount >= Math.min(2, meaningfulTokens.length);
+                    });
+                    if (resultLink) {
+                        return {
+                            actionId: `act_search_result_click_${step}_${Date.now()}`,
+                            kind: 'click',
+                            targetLocalId: resultLink.localId,
+                            targetName: resultLink.sanitizedName,
+                            confidence: 0.96,
+                            risk: 'safe',
+                            rationale: `Drilling into search result "${resultLink.sanitizedName}" on search results page`,
+                            expectedPostcondition: { kind: 'status_changed' }
+                        };
+                    }
+                }
+                // Check if user requested summarization, milestones, QA, or explanation
+                const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
+                if (wantsContentReasoning) {
+                    // Hand off to multimodal reasoning server to inspect page and synthesize answer
+                    return null;
+                }
+                return {
+                    actionId: `act_local_finish_${step}_${Date.now()}`,
+                    kind: 'finish',
+                    confidence: 0.98,
+                    risk: 'safe',
+                    rationale: `Universal search query "${query}" executed and verified on current page`
+                };
+            }
+        }
         // 2. Local terminal finish if preview/dialog was opened in previous step and is now visible with matching contract
         if (step > 1 && this.actionHistory.length > 0 && this.currentTaskContract) {
             const lastAction = this.actionHistory[this.actionHistory.length - 1];
@@ -1046,8 +1166,8 @@ export class RunCoordinator {
                     rationale: `Location "${query}" selected from suggestions and centered on map`
                 };
             }
-            // Local finish for playbook search/fill execution:
-            if (lastAction.actionId && lastAction.actionId.startsWith('act_playbook_fill_')) {
+            // Local finish for search/fill execution (playbook or generic search):
+            if (lastAction.actionId && (lastAction.actionId.startsWith('act_playbook_fill_') || lastAction.actionId.startsWith('act_generic_search_fill_'))) {
                 const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
                 if (wantsContentReasoning) {
                     // If the goal requires summarization/reasoning, delegate to central reasoning server
@@ -1059,7 +1179,7 @@ export class RunCoordinator {
                     kind: 'finish',
                     confidence: 0.98,
                     risk: 'safe',
-                    rationale: `Playbook search query "${query}" executed and verified on page`
+                    rationale: `Search query "${query}" executed and verified on page`
                 };
             }
             // Local finish for status mutation when targeted button was clicked
@@ -1444,6 +1564,9 @@ export class RunCoordinator {
                 return { satisfied: true };
             }
             case 'answer_supported': {
+                if (contract.isMultiStep && actionHistory.length === 0) {
+                    return { satisfied: false, reason: 'Information retrieval requires navigation, search, or inspecting page content before concluding' };
+                }
                 return { satisfied: true };
             }
             default:
@@ -2215,8 +2338,9 @@ export class RunCoordinator {
                 let decisionOrigin = 'server';
                 let networkRequestMade = true;
                 let t4_reasoningReceived = Date.now();
-                const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url) : null;
-                const localPlaybookProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
+                const currentEffectiveUrl = sanitized.pageState?.url || activeTab?.url;
+                const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, currentEffectiveUrl) : null;
+                const localPlaybookProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, currentEffectiveUrl);
                 // Smart Zero-Knowledge Local Personal Vault Autofill / Synthetic Demo Data
                 const isAutofillGoal = /\b(?:fill|autofill|populate|form)\b/i.test(this.currentGoal || '');
                 const prefersDemoData = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || '') ||
@@ -2401,7 +2525,7 @@ export class RunCoordinator {
                         console.warn('[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:', err?.message || err);
                         const msg = (err?.message || '').toLowerCase();
                         // Fallback to local offline router (Playbooks, Form Filling, Metrics, Bookmarks, Scroll)
-                        const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, activeTab?.url);
+                        const localProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, currentEffectiveUrl);
                         if (localProposal) {
                             proposal = localProposal;
                             decisionOrigin = 'local';
@@ -2459,9 +2583,41 @@ export class RunCoordinator {
                             resolvedTargetId = inputCandidate.localId;
                     }
                     else if (proposal.kind === 'click') {
-                        const clickCandidate = sanitized.elements.find((e) => (e.role === 'button' || e.role === 'link') && !e.state.includes('disabled'));
-                        if (clickCandidate)
-                            resolvedTargetId = clickCandidate.localId;
+                        // Attempt targeted semantic resolution from proposal properties:
+                        const targetQuery = proposal.targetName || proposal.elementText || proposal.target;
+                        let matched = undefined;
+                        if (targetQuery && typeof targetQuery === 'string') {
+                            const queryNorm = targetQuery.trim().toLowerCase();
+                            matched = sanitized.elements.find((e) => {
+                                if (e.state.includes('disabled'))
+                                    return false;
+                                const nameNorm = e.sanitizedName.toLowerCase();
+                                return nameNorm === queryNorm || nameNorm.includes(queryNorm) || queryNorm.includes(nameNorm);
+                            });
+                        }
+                        if (!matched && proposal.rationale) {
+                            // Check for quoted click target in rationale, e.g. Clicking "Search" or Clicking "Submit"
+                            const quoteMatch = proposal.rationale.match(/["']([^"']{2,40})["']/);
+                            if (quoteMatch) {
+                                const qNorm = quoteMatch[1].toLowerCase();
+                                matched = sanitized.elements.find((e) => {
+                                    if (e.state.includes('disabled'))
+                                        return false;
+                                    const nameNorm = e.sanitizedName.toLowerCase();
+                                    return nameNorm === qNorm || nameNorm.includes(qNorm);
+                                });
+                            }
+                        }
+                        if (!matched && this.currentTaskContract?.structuredIntent?.targetPhrase) {
+                            const groundRes = groundTargetCandidates(sanitized.elements, this.currentTaskContract.structuredIntent);
+                            if (groundRes.bestCandidate && groundRes.bestCandidate.score >= 40) {
+                                matched = groundRes.bestCandidate.element;
+                            }
+                        }
+                        if (matched) {
+                            resolvedTargetId = matched.localId;
+                        }
+                        // NEVER fallback to sanitized.elements.find(button or link) - clicking random links is strictly prohibited!
                     }
                     if (resolvedTargetId) {
                         proposal = { ...proposal, targetLocalId: resolvedTargetId };
@@ -2954,10 +3110,49 @@ export class RunCoordinator {
                     const terminalCheck = this.currentTaskContract
                         ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory)
                         : { satisfied: true, reason: 'Goal completed' };
-                    const isAnswerOrConversational = proposal.kind === 'answer' ||
-                        Boolean(proposal.reply) ||
-                        this.currentTaskContract?.isAnswerGoal ||
-                        this.currentTaskContract?.goalPattern === 'conversational_query';
+                    const hasSubstantiveAnswer = Boolean((proposal.reply && proposal.reply.trim().length >= 20 && !/^(?:done|task (?:is )?finished|completed|ok)\.?$/i.test(proposal.reply.trim())) ||
+                        (proposal.rationale && proposal.rationale.trim().length >= 35 && !/^(?:task|action|goal) (?:is )?(?:completed|done|finished)/i.test(proposal.rationale.trim())));
+                    if (proposal.kind === 'finish' && !proposal.reply && proposal.rationale && hasSubstantiveAnswer) {
+                        proposal = { ...proposal, reply: proposal.rationale };
+                    }
+                    const isAnswerGoal = Boolean(this.currentTaskContract?.isAnswerGoal);
+                    const isAnswerOrConversational = (proposal.kind === 'answer' && hasSubstantiveAnswer) ||
+                        (isAnswerGoal && hasSubstantiveAnswer) ||
+                        (this.currentTaskContract?.goalPattern === 'conversational_query');
+                    if (proposal.kind === 'finish' && isAnswerGoal && !hasSubstantiveAnswer) {
+                        const errorMsg = `Task rejected: Model proposed "finish" for an information retrieval / summarization task without providing an answer or summary.`;
+                        this.transition('failed-safe', errorMsg);
+                        const stepTrace = {
+                            step,
+                            captureId: sanitized.captureId,
+                            pageGeneration: sanitized.captureId,
+                            maskCount: sanitized.maskCount,
+                            sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+                            decisionOrigin,
+                            proposal,
+                            riskDecision: riskLevel,
+                            confidenceDecision: 'rejected_false_finish',
+                            executed: false,
+                            verification: {
+                                verified: false,
+                                reasonCode: 'FALSE_FINISH_NO_ANSWER',
+                                durationMs: 0
+                            },
+                            networkRequestMade,
+                            timings: { total: Date.now() - t0_step }
+                        };
+                        this.stepsTrace.push(stepTrace);
+                        const res = {
+                            success: false,
+                            state: 'failed-safe',
+                            error: errorMsg,
+                            sanitized,
+                            proposal,
+                            stepCount: step,
+                            steps: this.stepsTrace
+                        };
+                        return this.completeWithResult(res);
+                    }
                     if (proposal.kind === 'finish' && !terminalCheck.satisfied && !isAnswerOrConversational) {
                         const errorMsg = `Task rejected: Model proposed "finish" before required action postconditions were established or verified: ${terminalCheck.reason}`;
                         this.transition('failed-safe', errorMsg);
