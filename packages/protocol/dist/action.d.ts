@@ -2,6 +2,28 @@ import { SanitizedElement } from './payload.js';
 import { StructuredTaskIntent, FormFieldAssignment } from './grounding.js';
 export type ActionKind = 'observe' | 'navigate' | 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'extract' | 'answer' | 'request_user_confirmation' | 'request_user_input' | 'batch' | 'spawn_subagents' | 'finish' | 'blocked';
 export type RiskLevel = 'safe' | 'protected' | 'blocked';
+export interface ExecutionFeedback {
+    readonly lastActionId?: string;
+    readonly lastActionKind?: string;
+    readonly targetLocalId?: string;
+    readonly verified?: boolean;
+    readonly outcomeCode?: string;
+    readonly stepIndex?: number;
+    readonly completedTasks?: ReadonlyArray<string>;
+    readonly remainingTasks?: ReadonlyArray<string>;
+}
+export interface TaskSpecification {
+    readonly goal: string;
+    readonly tasksToDo: ReadonlyArray<string>;
+    readonly tasksNotToDo: ReadonlyArray<string>;
+    readonly successCriteria: string;
+    readonly requiresSubAgents?: boolean;
+    readonly subAgentTasks?: ReadonlyArray<{
+        readonly subAgentId: string;
+        readonly targetEntityOrUrl: string;
+        readonly goal: string;
+    }>;
+}
 export type ExpectedPostcondition = {
     readonly kind: 'dialog_visible';
     readonly dialogId?: string;

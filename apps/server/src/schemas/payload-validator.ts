@@ -29,7 +29,9 @@ const ALLOWED_REASONING_ROOT_KEYS = new Set([
   'elements',
   'pageState',
   'redactionManifest',
-  'history'
+  'history',
+  'customPrompt',
+  'executionFeedback'
 ]);
 
 const ALLOWED_CHAT_ROOT_KEYS = new Set([
@@ -38,7 +40,8 @@ const ALLOWED_CHAT_ROOT_KEYS = new Set([
   'elements',
   'sanitizedTitle',
   'maskCount',
-  'history'
+  'history',
+  'customPrompt'
 ]);
 
 const ALLOWED_ELEMENT_KEYS = new Set([
@@ -754,6 +757,64 @@ export function validateSanitizedPayload(body: any): ValidationResult<SanitizedN
     }
   }
 
+  // 9. Validate customPrompt if present
+  if (body.customPrompt !== undefined) {
+    if (typeof body.customPrompt !== 'string' || body.customPrompt.length > 4000) {
+      return { isValid: false, errorMessage: 'Field "customPrompt" must be a string up to 4000 characters' };
+    }
+    if (hasProhibitedScriptPattern(body.customPrompt)) {
+      return { isValid: false, errorMessage: 'Field "customPrompt" contains prohibited script patterns' };
+    }
+  }
+
+  // 10. Validate executionFeedback if present
+  if (body.executionFeedback !== undefined) {
+    if (!isPlainObject(body.executionFeedback)) {
+      return { isValid: false, errorMessage: 'Field "executionFeedback" must be an object' };
+    }
+    const efKeys = Object.getOwnPropertyNames(body.executionFeedback);
+    const ALLOWED_FEEDBACK_KEYS = new Set([
+      'lastActionId',
+      'lastActionKind',
+      'targetLocalId',
+      'verified',
+      'outcomeCode',
+      'stepIndex',
+      'completedTasks',
+      'remainingTasks'
+    ]);
+    for (const efK of efKeys) {
+      if (PROHIBITED_PROPERTY_NAMES.has(efK) || !ALLOWED_FEEDBACK_KEYS.has(efK)) {
+        return { isValid: false, errorMessage: 'Closed schema violation: Unknown executionFeedback property' };
+      }
+    }
+    const ef = body.executionFeedback;
+    if (ef.lastActionId !== undefined && (typeof ef.lastActionId !== 'string' || ef.lastActionId.length > 128)) {
+      return { isValid: false, errorMessage: 'executionFeedback.lastActionId must be a string up to 128 chars' };
+    }
+    if (ef.lastActionKind !== undefined && (typeof ef.lastActionKind !== 'string' || ef.lastActionKind.length > 64)) {
+      return { isValid: false, errorMessage: 'executionFeedback.lastActionKind must be a string up to 64 chars' };
+    }
+    if (ef.targetLocalId !== undefined && (typeof ef.targetLocalId !== 'string' || ef.targetLocalId.length > 128)) {
+      return { isValid: false, errorMessage: 'executionFeedback.targetLocalId must be a string up to 128 chars' };
+    }
+    if (ef.verified !== undefined && typeof ef.verified !== 'boolean') {
+      return { isValid: false, errorMessage: 'executionFeedback.verified must be a boolean' };
+    }
+    if (ef.outcomeCode !== undefined && (typeof ef.outcomeCode !== 'string' || ef.outcomeCode.length > 128)) {
+      return { isValid: false, errorMessage: 'executionFeedback.outcomeCode must be a string up to 128 chars' };
+    }
+    if (ef.stepIndex !== undefined && (typeof ef.stepIndex !== 'number' || !Number.isFinite(ef.stepIndex))) {
+      return { isValid: false, errorMessage: 'executionFeedback.stepIndex must be a number' };
+    }
+    if (ef.completedTasks !== undefined && (!Array.isArray(ef.completedTasks) || ef.completedTasks.length > 50)) {
+      return { isValid: false, errorMessage: 'executionFeedback.completedTasks must be an array up to 50 items' };
+    }
+    if (ef.remainingTasks !== undefined && (!Array.isArray(ef.remainingTasks) || ef.remainingTasks.length > 50)) {
+      return { isValid: false, errorMessage: 'executionFeedback.remainingTasks must be an array up to 50 items' };
+    }
+  }
+
   return {
     isValid: true,
     payload: body as SanitizedNetworkPayload
@@ -868,6 +929,16 @@ export function validateSanitizedChatPayload(body: any): ValidationResult<Saniti
       if (hasProhibitedScriptPattern(entry.content)) {
         return { isValid: false, errorMessage: `History entry at index ${i} contains prohibited script patterns` };
       }
+    }
+  }
+
+  // 8. Custom Prompt if present
+  if (body.customPrompt !== undefined) {
+    if (typeof body.customPrompt !== 'string' || body.customPrompt.length > 4000) {
+      return { isValid: false, errorMessage: 'Field "customPrompt" must be a string up to 4000 characters' };
+    }
+    if (hasProhibitedScriptPattern(body.customPrompt)) {
+      return { isValid: false, errorMessage: 'Field "customPrompt" contains prohibited script patterns' };
     }
   }
 

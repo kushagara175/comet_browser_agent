@@ -8,7 +8,7 @@
  * 4. Cryptographic SHA-256 Compliance Audit Proof Generation
  * 5. Multi-Worker Result Synthesis
  */
-import { SubTaskPlan, SubTaskResult, PlatformTaskRequest, PlatformTaskResponse } from '@privapilot/protocol';
+import { SubTaskPlan, SubTaskResult, PlatformTaskRequest, PlatformTaskResponse, TaskSpecification } from '@privapilot/protocol';
 import { VlmReasoningEngine } from './vlm-engine.js';
 export declare class SubAgentOrchestrator {
     private static instance;
@@ -20,6 +20,11 @@ export declare class SubAgentOrchestrator {
      * Evaluates if a goal should be decomposed into sub-agents, and produces a SubTask DAG.
      */
     planTask(goal: string, contextUrl?: string): Promise<SubTaskPlan>;
+    /**
+     * Evaluates a goal to produce an explicit TaskSpecification defining
+     * what tasks to do (ordered steps) and what NOT to do (guardrails).
+     */
+    planTaskSpecification(goal: string, contextUrl?: string, customPrompt?: string): Promise<TaskSpecification>;
     /**
      * Executes a complete platform task, orchestrating sub-agents concurrently.
      */

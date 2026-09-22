@@ -6,6 +6,7 @@
  * RawCapture CANNOT be passed to Network clients.
  */
 import { ScreenshotPixelBox, ViewportCssPixelBox, ViewportMetadata } from './coordinates.js';
+import type { ExecutionFeedback } from './action.js';
 export type SensitiveCategory = 'password' | 'email' | 'phone' | 'credit_card' | 'cvv' | 'bank_account' | 'national_id' | 'date_of_birth' | 'address' | 'username' | 'auth_code' | 'token' | 'face' | 'high_risk_surface' | 'uninspectable';
 export type RedactionMethod = 'opaque_mask' | 'gaussian_blur';
 export interface SensitiveRegion {
@@ -153,6 +154,8 @@ export interface SanitizedContext {
         readonly role: 'user' | 'assistant';
         readonly content: string;
     }>;
+    readonly customPrompt?: string;
+    readonly executionFeedback?: ExecutionFeedback;
 }
 /**
  * Closed Network Payload schema sent over the wire to Centralized Reasoning Server.
@@ -169,6 +172,8 @@ export interface SanitizedNetworkPayload {
         readonly role: 'user' | 'assistant';
         readonly content: string;
     }>;
+    readonly customPrompt?: string;
+    readonly executionFeedback?: ExecutionFeedback;
 }
 /**
  * Converts verified SanitizedContext into canonical wire-ready SanitizedNetworkPayload.
@@ -214,6 +219,7 @@ export interface SanitizedChatPayload {
     readonly sanitizedTitle: string;
     readonly maskCount: number;
     readonly history?: ReadonlyArray<ChatHistoryMessage>;
+    readonly customPrompt?: string;
 }
 /**
  * Contextless General Chat Payload schema. Zero browser/page state.
@@ -222,5 +228,6 @@ export interface GeneralChatPayload {
     readonly protocolVersion: '1.0';
     readonly message: string;
     readonly history?: ReadonlyArray<ChatHistoryMessage>;
+    readonly customPrompt?: string;
 }
 //# sourceMappingURL=payload.d.ts.map

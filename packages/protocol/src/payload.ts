@@ -7,6 +7,7 @@
  */
 
 import { ScreenshotPixelBox, ViewportCssPixelBox, ViewportMetadata } from './coordinates.js';
+import type { ExecutionFeedback } from './action.js';
 
 export type SensitiveCategory =
   | 'password'
@@ -188,6 +189,8 @@ export interface SanitizedContext {
   readonly timestamp: number;
   readonly redactionManifest?: RedactionManifest;
   readonly history?: ReadonlyArray<{ readonly role: 'user' | 'assistant'; readonly content: string }>;
+  readonly customPrompt?: string;
+  readonly executionFeedback?: ExecutionFeedback;
 }
 
 /**
@@ -202,6 +205,8 @@ export interface SanitizedNetworkPayload {
   readonly pageState: SanitizedPageState;
   readonly redactionManifest?: RedactionManifest;
   readonly history?: ReadonlyArray<{ readonly role: 'user' | 'assistant'; readonly content: string }>;
+  readonly customPrompt?: string;
+  readonly executionFeedback?: ExecutionFeedback;
 }
 
 /**
@@ -216,7 +221,9 @@ export function toSanitizedNetworkPayload(context: SanitizedContext): SanitizedN
     elements: context.elements,
     pageState: context.pageState,
     ...(context.redactionManifest ? { redactionManifest: context.redactionManifest } : {}),
-    ...(context.history ? { history: context.history } : {})
+    ...(context.history ? { history: context.history } : {}),
+    ...(context.customPrompt ? { customPrompt: context.customPrompt } : {}),
+    ...(context.executionFeedback ? { executionFeedback: context.executionFeedback } : {})
   };
 }
 
@@ -297,6 +304,7 @@ export interface SanitizedChatPayload {
   readonly sanitizedTitle: string;
   readonly maskCount: number;
   readonly history?: ReadonlyArray<ChatHistoryMessage>;
+  readonly customPrompt?: string;
 }
 
 /**
@@ -306,6 +314,7 @@ export interface GeneralChatPayload {
   readonly protocolVersion: '1.0';
   readonly message: string;
   readonly history?: ReadonlyArray<ChatHistoryMessage>;
+  readonly customPrompt?: string;
 }
 
 

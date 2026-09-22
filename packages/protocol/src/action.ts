@@ -29,6 +29,30 @@ export type ActionKind =
 
 export type RiskLevel = 'safe' | 'protected' | 'blocked';
 
+export interface ExecutionFeedback {
+  readonly lastActionId?: string;
+  readonly lastActionKind?: string;
+  readonly targetLocalId?: string;
+  readonly verified?: boolean;
+  readonly outcomeCode?: string;
+  readonly stepIndex?: number;
+  readonly completedTasks?: ReadonlyArray<string>;
+  readonly remainingTasks?: ReadonlyArray<string>;
+}
+
+export interface TaskSpecification {
+  readonly goal: string;
+  readonly tasksToDo: ReadonlyArray<string>;
+  readonly tasksNotToDo: ReadonlyArray<string>;
+  readonly successCriteria: string;
+  readonly requiresSubAgents?: boolean;
+  readonly subAgentTasks?: ReadonlyArray<{
+    readonly subAgentId: string;
+    readonly targetEntityOrUrl: string;
+    readonly goal: string;
+  }>;
+}
+
 export type ExpectedPostcondition =
   | { readonly kind: 'dialog_visible'; readonly dialogId?: string }
   | { readonly kind: 'url_changed'; readonly expectedPathFragment?: string }

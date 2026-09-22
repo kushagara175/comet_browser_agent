@@ -16,7 +16,8 @@ import {
   SubTaskResult,
   PlatformTaskRequest,
   PlatformTaskResponse,
-  ComplianceAuditProof
+  ComplianceAuditProof,
+  TaskSpecification
 } from '@privapilot/protocol';
 import { VlmReasoningEngine } from './vlm-engine.js';
 
@@ -123,6 +124,70 @@ export class SubAgentOrchestrator {
       shouldDecompose: true,
       rationale: `Goal requires parallel processing across ${subTasks.length} isolated browser contexts to optimize task latency and prevent cross-domain state pollution.`,
       subTasks
+    };
+  }
+
+  /**
+   * Evaluates a goal to produce an explicit TaskSpecification defining
+   * what tasks to do (ordered steps) and what NOT to do (guardrails).
+   */
+  public async planTaskSpecification(
+    goal: string,
+    contextUrl?: string,
+    customPrompt?: string
+  ): Promise<TaskSpecification> {
+    const trimmed = (goal || '').trim();
+    const subTaskPlan = await this.planTask(goal, contextUrl);
+
+    const tasksToDo: string[] = [];
+    const tasksNotToDo: string[] = [
+      'Do not click unrelated sidebar links, advertisements, or navigation chrome',
+      'Do not finish prematurely without substantive verified content',
+      'Do not submit forms without explicit confirmation or required parameters',
+      'Do not click arbitrary elements when a target cannot be resolved'
+    ];
+
+    if (subTaskPlan.shouldDecompose) {
+      for (const st of subTaskPlan.subTasks) {
+        tasksToDo.push(`${st.title}: ${st.goal}`);
+      }
+      tasksNotToDo.push('Do not mix state or credentials between different browser stations/subagents');
+    } else {
+      if (/\b(?:search|find|lookup|query)\b/i.test(trimmed)) {
+        tasksToDo.push('Locate and focus the target search input');
+        tasksToDo.push('Enter the extracted search query and submit with Enter');
+        tasksToDo.push('Wait for search results and navigate into relevant result');
+      }
+      if (/\b(?:summarize|milestones|extract|details|analyze|overview)\b/i.test(trimmed)) {
+        tasksToDo.push('Extract key content, dates, and metrics from visible page elements');
+        tasksToDo.push('Synthesize structured summary and verify all criteria are met');
+      }
+      if (tasksToDo.length === 0) {
+        tasksToDo.push('Inspect page layout and locate primary target control');
+        tasksToDo.push('Execute verified interaction');
+        tasksToDo.push('Confirm live DOM state transition');
+      }
+    }
+
+    if (customPrompt) {
+      tasksToDo.unshift(`Align execution with custom agent instructions: "${customPrompt.slice(0, 100)}..."`);
+    }
+
+    return {
+      goal: trimmed,
+      tasksToDo,
+      tasksNotToDo,
+      successCriteria: subTaskPlan.shouldDecompose
+        ? 'All parallel subagents complete execution and results are synthesized cleanly.'
+        : 'Target content located or verified live DOM state transition observed.',
+      requiresSubAgents: subTaskPlan.shouldDecompose,
+      subAgentTasks: subTaskPlan.shouldDecompose
+        ? subTaskPlan.subTasks.map(st => ({
+            subAgentId: st.subTaskId,
+            targetEntityOrUrl: st.targetUrl || contextUrl || '',
+            goal: st.goal
+          }))
+        : undefined
     };
   }
 

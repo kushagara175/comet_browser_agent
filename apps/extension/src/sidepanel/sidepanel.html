@@ -84,6 +84,21 @@
           </svg>
           <span>Continue Chat in New Tab</span>
         </button>
+        <button type="button" id="menuCreateCustomAgentBtn" class="menu-action-item" style="color: #c084fc;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"></path>
+            <path d="M12 8v8M8 12h8"></path>
+          </svg>
+          <span>Create your custom agent</span>
+          <span class="vault-menu-badge" style="background: rgba(168, 85, 247, 0.2); color: #e9d5ff;">+ NEW</span>
+        </button>
+        <button type="button" id="menuPromptLibraryBtn" class="menu-action-item" style="color: #38bdf8;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7z"></path>
+          </svg>
+          <span>Website Prompts &amp; Workflows</span>
+          <span class="vault-menu-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">IDEAS</span>
+        </button>
         <button type="button" id="menuVaultBtn" class="menu-action-item">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
@@ -214,12 +229,34 @@
 
                   <!-- Right Action Buttons: Agent pill, Mic/Send button, Close/Stop button -->
                   <div class="chat-bar-right-actions">
-                    <button type="button" id="beamRotatePill" class="chat-pill-btn beam-pill-btn" title="Agent Mode: Agent / Rotate / Pulse">
-                      <span id="beamEffectLabel">Agent</span>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="6 9 12 15 18 9"></polyline>
-                      </svg>
-                    </button>
+                    <div class="agent-pill-wrapper">
+                      <button type="button" id="beamRotatePill" class="chat-pill-btn beam-pill-btn" title="Select or Switch Agent">
+                        <span id="beamEffectEmoji" class="agent-pill-emoji">⚡</span>
+                        <span id="beamEffectLabel">Comet Core</span>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                      </button>
+                      <!-- Agent Switcher Popover Dropdown -->
+                      <div id="agentSwitcherDropdown" class="agent-switcher-menu hidden">
+                        <div class="agent-menu-header">
+                          <span class="agent-menu-heading">Active Agent</span>
+                          <button type="button" id="closeAgentSwitcherBtn" class="agent-menu-close" title="Close">&times;</button>
+                        </div>
+                        <div class="agent-menu-section-title">Built-In Agents</div>
+                        <div id="builtinAgentsList" class="agent-options-list"></div>
+                        <div class="agent-menu-section-title">Custom Agents</div>
+                        <div id="customAgentsList" class="agent-options-list"></div>
+                        <div class="agent-menu-divider"></div>
+                        <button type="button" id="quickCreateAgentBtn" class="agent-menu-action-btn">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                          </svg>
+                          <span>Create Custom Agent</span>
+                        </button>
+                      </div>
+                    </div>
                     <button type="button" id="sendBtn" class="send-btn chat-circle-btn beam-send-btn mode-mic" title="Voice Input" aria-label="Voice Input">
                       <svg class="icon-send" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="19" x2="12" y2="5"></line>
@@ -846,6 +883,118 @@
       <div id="voiceModeMenu" class="voice-mode-menu hidden">
         <button type="button" class="voice-mode-option active" data-mode="dictate"></button>
         <button type="button" class="voice-mode-option" data-mode="talk"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Agent Creator Modal -->
+  <div id="customAgentModal" class="custom-agent-modal-backdrop hidden">
+    <div class="custom-agent-modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-sparkle-icon">✨</span>
+          <h2 class="modal-title">Create Custom Agent</h2>
+        </div>
+        <button type="button" id="closeCustomAgentModalBtn" class="modal-close-btn" title="Close">&times;</button>
+      </div>
+      <p class="modal-subtitle">Define a specialized agent with its own user story prompt, domain expertise, and guardrails.</p>
+
+      <form id="customAgentForm" class="custom-agent-form">
+        <div class="form-row-duo">
+          <div class="form-group flex-1">
+            <label for="customAgentNameInput">Agent Name *</label>
+            <input type="text" id="customAgentNameInput" placeholder="e.g. Space Mission Analyst" required maxlength="40" autocomplete="off" />
+          </div>
+          <div class="form-group emoji-group">
+            <label for="customAgentEmojiInput">Emoji</label>
+            <input type="text" id="customAgentEmojiInput" value="🚀" maxlength="4" autocomplete="off" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="customAgentDescInput">Short Description</label>
+          <input type="text" id="customAgentDescInput" placeholder="e.g. Extracts launch vehicle specs, payloads, and milestone dates" maxlength="120" autocomplete="off" />
+        </div>
+
+        <div class="form-group">
+          <label for="customAgentPromptInput">Specialized User Story &amp; System Prompt *</label>
+          <textarea id="customAgentPromptInput" rows="5" placeholder="Define how this agent should think, prioritize, and act. For example:
+You are an aerospace mission researcher. When inspecting space agency portals or articles, extract launch vehicle specs, payload weights, and mission milestones. Prioritize structured lists and tables. Never provide generic fluff." required maxlength="3000"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="customAgentDomainsInput">Target Domains (Optional)</label>
+          <input type="text" id="customAgentDomainsInput" placeholder="e.g. isro.gov.in, nasa.gov, wikipedia.org (comma separated)" maxlength="200" autocomplete="off" />
+        </div>
+
+        <div class="modal-footer-actions">
+          <button type="button" id="cancelCustomAgentBtn" class="modal-cancel-btn">Cancel</button>
+          <button type="submit" id="saveCustomAgentBtn" class="modal-save-btn">Save Agent</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Website Prompts & Workflows Library Modal -->
+  <div id="promptsLibraryModal" class="custom-agent-modal-backdrop hidden">
+    <div class="custom-agent-modal-dialog prompts-library-dialog">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-sparkle-icon">💡</span>
+          <h2 class="modal-title">Website Prompts &amp; Workflows</h2>
+        </div>
+        <button type="button" id="closePromptsLibraryBtn" class="modal-close-btn" title="Close">&times;</button>
+      </div>
+      <p class="modal-subtitle">Click any prompt to instantly load it into the chat bar:</p>
+
+      <div class="prompt-templates-list">
+        <div class="prompt-template-card" data-prompt="Search for James Webb Space Telescope on Wikipedia, open the article, and summarize the key mission milestones and instruments.">
+          <div class="prompt-card-top">
+            <span class="prompt-card-badge">📖 Wikipedia</span>
+            <span class="prompt-card-action">Use Prompt &rarr;</span>
+          </div>
+          <div class="prompt-card-text">&ldquo;Search for James Webb Space Telescope on Wikipedia, open the article, and summarize the key mission milestones and instruments.&rdquo;</div>
+        </div>
+
+        <div class="prompt-template-card" data-prompt="Search for Chandrayaan-3 on ISRO portal and extract the launch vehicle specifications, payload weight, and landing coordinates.">
+          <div class="prompt-card-top">
+            <span class="prompt-card-badge">🪐 ISRO Portal</span>
+            <span class="prompt-card-action">Use Prompt &rarr;</span>
+          </div>
+          <div class="prompt-card-text">&ldquo;Search for Chandrayaan-3 on ISRO portal and extract the launch vehicle specifications, payload weight, and landing coordinates.&rdquo;</div>
+        </div>
+
+        <div class="prompt-template-card" data-prompt="Compare non-stop flights from Delhi to Mumbai for tomorrow across Indigo and Air India, and list the lowest fares and departure times.">
+          <div class="prompt-card-top">
+            <span class="prompt-card-badge">✈️ Flight Swarm</span>
+            <span class="prompt-card-action">Use Prompt &rarr;</span>
+          </div>
+          <div class="prompt-card-text">&ldquo;Compare non-stop flights from Delhi to Mumbai for tomorrow across Indigo and Air India, and list the lowest fares and departure times.&rdquo;</div>
+        </div>
+
+        <div class="prompt-template-card" data-prompt="On the SIH portal, search for Problem Statement SIH26003, extract the organization name, domain bucket, and technology requirements.">
+          <div class="prompt-card-top">
+            <span class="prompt-card-badge">💡 SIH Portal</span>
+            <span class="prompt-card-action">Use Prompt &rarr;</span>
+          </div>
+          <div class="prompt-card-text">&ldquo;On the SIH portal, search for Problem Statement SIH26003, extract the organization name, domain bucket, and technology requirements.&rdquo;</div>
+        </div>
+
+        <div class="prompt-template-card" data-prompt="Compare the price and key specifications of iPhone 16 128GB on Amazon and Flipkart, highlighting which portal has the best deal.">
+          <div class="prompt-card-top">
+            <span class="prompt-card-badge">🛍️ Smart Shopper</span>
+            <span class="prompt-card-action">Use Prompt &rarr;</span>
+          </div>
+          <div class="prompt-card-text">&ldquo;Compare the price and key specifications of iPhone 16 128GB on Amazon and Flipkart, highlighting which portal has the best deal.&rdquo;</div>
+        </div>
+
+        <div class="prompt-template-card" data-prompt="Navigate to the facebook/react repository on GitHub, find the latest release version, and summarize the key breaking changes.">
+          <div class="prompt-card-top">
+            <span class="prompt-card-badge">🐙 GitHub</span>
+            <span class="prompt-card-action">Use Prompt &rarr;</span>
+          </div>
+          <div class="prompt-card-text">&ldquo;Navigate to the facebook/react repository on GitHub, find the latest release version, and summarize the key breaking changes.&rdquo;</div>
+        </div>
       </div>
     </div>
   </div>

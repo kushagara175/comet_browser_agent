@@ -80,16 +80,19 @@ async function handleSidepanelRequest(message: any): Promise<any> {
       runId: message.runId,
       maxSteps: message.maxSteps,
       tabId: message.tabId,
-      history: message.history
+      history: message.history,
+      customPrompt: message.customPrompt,
+      agentId: message.agentId,
+      agentName: message.agentName
     });
   }
 
   if (message.type === 'GENERAL_CHAT') {
-    return coordinator.chatWithoutPage(message.message || '', message.history);
+    return coordinator.chatWithoutPage(message.message || '', message.history, message.customPrompt);
   }
 
   if (message.type === 'CHAT_WITH_PAGE') {
-    return coordinator.chatWithPage(message.message || '', message.history);
+    return coordinator.chatWithPage(message.message || '', message.history, message.customPrompt);
   }
 
   if (message.type === 'SUBMIT_USER_INPUT') {
@@ -236,7 +239,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (message.type === 'GENERAL_CHAT') {
-      coordinator.chatWithoutPage(message.message || '', message.history).then((res) => {
+      coordinator.chatWithoutPage(message.message || '', message.history, message.customPrompt).then((res) => {
         sendResponse(res);
       }).catch((err) => {
         sendResponse({
@@ -251,7 +254,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (message.type === 'CHAT_WITH_PAGE') {
-      coordinator.chatWithPage(message.message || '', message.history).then((res) => {
+      coordinator.chatWithPage(message.message || '', message.history, message.customPrompt).then((res) => {
         sendResponse(res);
       }).catch((err) => {
         sendResponse({

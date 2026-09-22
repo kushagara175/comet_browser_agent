@@ -1213,6 +1213,281 @@ if (typeof document !== 'undefined') {
     renderRecentChatsMenu();
     switchSession(currentSessionId);
 
+    // =========================================================================
+    // CUSTOM AGENTS & AGENT SWITCHER SYSTEM
+    // =========================================================================
+    const BUILTIN_AGENTS = [
+      {
+        id: 'core',
+        name: 'Comet Core',
+        emoji: '⚡',
+        description: 'Autonomous general web navigation & precision actions',
+        prompt: ''
+      },
+      {
+        id: 'research',
+        name: 'Deep Research',
+        emoji: '🔍',
+        description: 'Deep milestone extraction, citations & structured synthesis',
+        prompt: 'You are an exhaustive research specialist. Extract authentic facts, metrics, chronological milestones, and source citations. Synthesize findings into structured, readable sections with zero fluff.'
+      },
+      {
+        id: 'flight_swarm',
+        name: 'Flight & Travel Swarm',
+        emoji: '✈️',
+        description: 'Parallel multi-airline search, ticket comparison & fare matrices',
+        prompt: 'You are a flight intelligence agent. Prioritize non-stop itineraries, lowest base fares, baggage policies, and departure windows across airline portals.'
+      },
+      {
+        id: 'shopper',
+        name: 'Smart Shopper',
+        emoji: '🛍️',
+        description: 'Cross-store e-commerce price extraction and deal analysis',
+        prompt: 'You are a precision e-commerce comparison agent. Extract exact product models, prices, bank discounts, delivery timelines, and highlight the optimal purchase value.'
+      },
+      {
+        id: 'auditor',
+        name: 'Form & Security Auditor',
+        emoji: '🛡️',
+        description: 'Safe credential & form filling with strict privacy boundaries',
+        prompt: 'You are a privacy-first form auditor. Never expose sensitive fields. Verify field labels against the secure local vault before typing, and confirm submissions.'
+      }
+    ];
+
+    const STORAGE_CUSTOM_AGENTS_KEY = 'privapilot_custom_agents';
+    const STORAGE_ACTIVE_AGENT_ID_KEY = 'privapilot_active_agent_id';
+
+    let customAgentsList = [];
+    let activeAgentId = 'core';
+
+    function getStorageData(key, defaultVal, callback) {
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        chrome.storage.local.get([key], (res) => {
+          callback(res && res[key] !== undefined ? res[key] : defaultVal);
+        });
+      } else {
+        try {
+          const raw = localStorage.getItem(key);
+          callback(raw ? JSON.parse(raw) : defaultVal);
+        } catch (_) {
+          callback(defaultVal);
+        }
+      }
+    }
+
+    function setStorageData(key, value, callback) {
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        chrome.storage.local.set({ [key]: value }, () => {
+          if (callback) callback();
+        });
+      } else {
+        try {
+          localStorage.setItem(key, JSON.stringify(value));
+        } catch (_) {}
+        if (callback) callback();
+      }
+    }
+
+    function getActiveCustomAgent() {
+      const custom = customAgentsList.find(a => a.id === activeAgentId);
+      if (custom) return custom;
+      const builtin = BUILTIN_AGENTS.find(a => a.id === activeAgentId);
+      return builtin || BUILTIN_AGENTS[0];
+    }
+
+    function updateAgentPillDisplay() {
+      const active = getActiveCustomAgent();
+      const labelEl = document.getElementById('beamEffectLabel');
+      const emojiEl = document.getElementById('beamEffectEmoji');
+      if (labelEl) labelEl.textContent = active.name;
+      if (emojiEl) emojiEl.textContent = active.emoji || '⚡';
+    }
+
+    function renderAgentSwitcherMenu() {
+      const builtinContainer = document.getElementById('builtinAgentsList');
+      const customContainer = document.getElementById('customAgentsList');
+      if (!builtinContainer || !customContainer) return;
+
+      builtinContainer.innerHTML = '';
+      BUILTIN_AGENTS.forEach(agent => {
+        const isActive = agent.id === activeAgentId;
+        const item = document.createElement('div');
+        item.className = `agent-option-item${isActive ? ' active' : ''}`;
+        item.dataset.agentId = agent.id;
+        item.innerHTML = `
+          <span class="agent-option-emoji">${agent.emoji}</span>
+          <div class="agent-option-meta">
+            <span class="agent-option-name">${escapeHtml(agent.name)}</span>
+            <span class="agent-option-desc">${escapeHtml(agent.description)}</span>
+          </div>
+          ${isActive ? '<span class="agent-option-check">✓</span>' : ''}
+        `;
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          selectAgent(agent.id);
+        });
+        builtinContainer.appendChild(item);
+      });
+
+      customContainer.innerHTML = '';
+      if (customAgentsList.length === 0) {
+        customContainer.innerHTML = `<div style="padding: 6px 8px; font-size: 10px; color: #64748b; font-style: italic;">No custom agents created yet. Click below to add one!</div>`;
+      } else {
+        customAgentsList.forEach(agent => {
+          const isActive = agent.id === activeAgentId;
+          const item = document.createElement('div');
+          item.className = `agent-option-item${isActive ? ' active' : ''}`;
+          item.dataset.agentId = agent.id;
+          item.innerHTML = `
+            <span class="agent-option-emoji">${agent.emoji || '🤖'}</span>
+            <div class="agent-option-meta">
+              <span class="agent-option-name">${escapeHtml(agent.name)}</span>
+              <span class="agent-option-desc">${escapeHtml(agent.description || 'Specialized User Story')}</span>
+            </div>
+            ${isActive ? '<span class="agent-option-check">✓</span>' : ''}
+          `;
+          item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectAgent(agent.id);
+          });
+          customContainer.appendChild(item);
+        });
+      }
+    }
+
+    function selectAgent(id) {
+      activeAgentId = id;
+      setStorageData(STORAGE_ACTIVE_AGENT_ID_KEY, id);
+      updateAgentPillDisplay();
+      renderAgentSwitcherMenu();
+      const dropdown = document.getElementById('agentSwitcherDropdown');
+      dropdown?.classList.add('hidden');
+      addAuditEntry('AGENT_SWITCHED', `Active agent: ${getActiveCustomAgent().name}`, 'info');
+    }
+
+    function loadAgents() {
+      getStorageData(STORAGE_CUSTOM_AGENTS_KEY, [], (savedList) => {
+        customAgentsList = Array.isArray(savedList) ? savedList : [];
+        getStorageData(STORAGE_ACTIVE_AGENT_ID_KEY, 'core', (savedActiveId) => {
+          activeAgentId = savedActiveId;
+          updateAgentPillDisplay();
+          renderAgentSwitcherMenu();
+        });
+      });
+    }
+
+    function saveNewCustomAgent(agentData) {
+      const newAgent = {
+        id: 'custom_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        name: agentData.name.trim(),
+        emoji: agentData.emoji.trim() || '🤖',
+        description: agentData.description.trim(),
+        prompt: agentData.prompt.trim(),
+        domains: agentData.domains ? agentData.domains.split(',').map(d => d.trim()).filter(Boolean) : [],
+        createdAt: Date.now()
+      };
+      customAgentsList.push(newAgent);
+      setStorageData(STORAGE_CUSTOM_AGENTS_KEY, customAgentsList, () => {
+        selectAgent(newAgent.id);
+      });
+    }
+
+    loadAgents();
+
+    // Wire up Agent Switcher Dropdown toggle
+    const beamRotatePill = document.getElementById('beamRotatePill');
+    const agentSwitcherDropdown = document.getElementById('agentSwitcherDropdown');
+    const closeAgentSwitcherBtn = document.getElementById('closeAgentSwitcherBtn');
+
+    beamRotatePill?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      agentSwitcherDropdown?.classList.toggle('hidden');
+    });
+
+    closeAgentSwitcherBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      agentSwitcherDropdown?.classList.add('hidden');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (agentSwitcherDropdown && !agentSwitcherDropdown.classList.contains('hidden')) {
+        if (!agentSwitcherDropdown.contains(e.target) && !beamRotatePill?.contains(e.target)) {
+          agentSwitcherDropdown.classList.add('hidden');
+        }
+      }
+    });
+
+    // Wire up Custom Agent Modal
+    const customAgentModal = document.getElementById('customAgentModal');
+    const menuCreateCustomAgentBtn = document.getElementById('menuCreateCustomAgentBtn');
+    const quickCreateAgentBtn = document.getElementById('quickCreateAgentBtn');
+    const closeCustomAgentModalBtn = document.getElementById('closeCustomAgentModalBtn');
+    const cancelCustomAgentBtn = document.getElementById('cancelCustomAgentBtn');
+    const customAgentForm = document.getElementById('customAgentForm');
+
+    function openCustomAgentModal() {
+      agentSwitcherDropdown?.classList.add('hidden');
+      geminiMenuDropdown?.classList.add('hidden');
+      menuToggleBtn?.classList.remove('active');
+      customAgentModal?.classList.remove('hidden');
+      document.getElementById('customAgentNameInput')?.focus();
+    }
+
+    function closeCustomAgentModal() {
+      customAgentModal?.classList.add('hidden');
+      customAgentForm?.reset();
+    }
+
+    menuCreateCustomAgentBtn?.addEventListener('click', openCustomAgentModal);
+    quickCreateAgentBtn?.addEventListener('click', openCustomAgentModal);
+    closeCustomAgentModalBtn?.addEventListener('click', closeCustomAgentModal);
+    cancelCustomAgentBtn?.addEventListener('click', closeCustomAgentModal);
+
+    customAgentForm?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('customAgentNameInput')?.value || '';
+      const emoji = document.getElementById('customAgentEmojiInput')?.value || '🤖';
+      const description = document.getElementById('customAgentDescInput')?.value || '';
+      const prompt = document.getElementById('customAgentPromptInput')?.value || '';
+      const domains = document.getElementById('customAgentDomainsInput')?.value || '';
+
+      if (!name.trim() || !prompt.trim()) return;
+
+      saveNewCustomAgent({ name, emoji, description, prompt, domains });
+      closeCustomAgentModal();
+    });
+
+    // Wire up Website Prompts & Workflows Modal
+    const promptsLibraryModal = document.getElementById('promptsLibraryModal');
+    const menuPromptLibraryBtn = document.getElementById('menuPromptLibraryBtn');
+    const closePromptsLibraryBtn = document.getElementById('closePromptsLibraryBtn');
+
+    function openPromptsModal() {
+      geminiMenuDropdown?.classList.add('hidden');
+      menuToggleBtn?.classList.remove('active');
+      promptsLibraryModal?.classList.remove('hidden');
+    }
+
+    function closePromptsModal() {
+      promptsLibraryModal?.classList.add('hidden');
+    }
+
+    menuPromptLibraryBtn?.addEventListener('click', openPromptsModal);
+    closePromptsLibraryBtn?.addEventListener('click', closePromptsModal);
+
+    document.querySelectorAll('.prompt-template-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const promptText = card.dataset.prompt;
+        if (promptText && chatInput) {
+          chatInput.value = promptText;
+          if (typeof autoResizeTextarea === 'function') autoResizeTextarea();
+          closePromptsModal();
+          chatInput.focus();
+        }
+      });
+    });
+
     // Close / Toggle Tab Sharing Strip
     const closeSharingBtn = document.getElementById('closeSharingBtn');
     const chatTabSharingStrip = document.querySelector('.chat-tab-sharing-strip');
@@ -2961,13 +3236,17 @@ if (typeof document !== 'undefined') {
           setAgentStatus('failed-safe');
         }, 120000);
 
+        const activeAgentObj = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
         chrome.runtime.sendMessage({
           target: 'privapilot-background',
           type: messageType,
           [payloadKey]: goalText,
           runId: currentRunId,
           tabId: currentActiveTabId,
-          history: conversationHistory.slice(-10)
+          history: conversationHistory.slice(-10),
+          customPrompt: activeAgentObj?.prompt || undefined,
+          agentId: activeAgentObj?.id || 'core',
+          agentName: activeAgentObj?.name || 'Comet Core'
         }, (res) => {
           if (settled) return;
           settled = true;
@@ -3555,13 +3834,17 @@ if (typeof document !== 'undefined') {
 
       if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
         currentRunId = 'run_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+        const activeAgentObj = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
         chrome.runtime.sendMessage({
           target: 'privapilot-background',
           type: messageType,
           [payloadKey]: promptText,
           runId: currentRunId,
           tabId: currentActiveTabId,
-          history: conversationHistory.slice(-10)
+          history: conversationHistory.slice(-10),
+          customPrompt: activeAgentObj?.prompt || undefined,
+          agentId: activeAgentObj?.id || 'core',
+          agentName: activeAgentObj?.name || 'Comet Core'
         }, (res) => {
           isVoiceThinking = false;
           if (voiceThinkingIndicator) {
@@ -4200,18 +4483,7 @@ if (typeof document !== 'undefined') {
 
       updateSendBtn();
 
-      // Agent / Rotate / Pulse cycle pill
-      beamRotatePill?.addEventListener('click', (e) => {
-        e.preventDefault();
-        if (userSelectedEffect === 'rotate') {
-          userSelectedEffect = 'pulse';
-        } else if (userSelectedEffect === 'pulse') {
-          userSelectedEffect = 'line';
-        } else {
-          userSelectedEffect = 'rotate';
-        }
-        syncBeamEffect();
-      });
+      // beamRotatePill click is wired to agentSwitcherDropdown toggle above
 
       // Color cycle pill
       beamColorPill?.addEventListener('click', (e) => {

@@ -153,10 +153,55 @@ export class ReasoningHttpClient {
         return validation.proposal;
     }
     /**
+     * Requests dynamic task decomposition and guardrails (tasks to do & tasks NOT to do)
+     * from the reasoning planner.
+     */
+    async requestTaskSpecification(goal, contextUrl, customPrompt) {
+        try {
+            const response = await this.fetchWithTimeout(`${this.serverBaseUrl}/api/v1/agent/spec`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-PrivaPilot-Version': '1.0'
+                },
+                body: JSON.stringify({
+                    goal,
+                    contextUrl,
+                    customPrompt
+                })
+            }, 'Task specification request', 10000);
+            if (response.ok) {
+                const data = await response.json();
+                if (data && Array.isArray(data.tasksToDo)) {
+                    return data;
+                }
+            }
+        }
+        catch (_) {
+            // Fallback locally
+        }
+        // Graceful local deterministic task specification
+        const isMultiTarget = /\b(?:compare|both|versus|vs\.?|across|each)\b/i.test(goal);
+        return {
+            goal,
+            tasksToDo: [
+                'Inspect layout and identify interactive landmarks',
+                'Execute precision target interaction',
+                'Verify live state outcome'
+            ],
+            tasksNotToDo: [
+                'Do not click unrelated sidebar links or advertisements',
+                'Do not finish prematurely without substantive verified content'
+            ],
+            successCriteria: 'Target content located or verified live DOM state transition observed.',
+            requiresSubAgents: isMultiTarget
+        };
+    }
+    /**
      * Transmits sanitized page-aware context projection to Chat endpoint.
      * Strictly accepts SanitizedContext only (never raw captures or URLs).
      */
-    async requestChat(sanitized, message, history) {
+    async requestChat(sanitized, message, history, customPrompt) {
         const payload = {
             _brand: 'SanitizedChatPayload_Verified',
             protocolVersion: '1.0',
@@ -164,7 +209,8 @@ export class ReasoningHttpClient {
             elements: sanitized.elements,
             sanitizedTitle: sanitized.pageState.title,
             maskCount: sanitized.maskCount,
-            ...(history && history.length > 0 ? { history } : {})
+            ...(history && history.length > 0 ? { history } : {}),
+            ...(customPrompt ? { customPrompt } : {})
         };
         assertNoCanaryLeak(payload, 'Outgoing Chat Payload');
         const response = await this.fetchWithTimeout(`${this.serverBaseUrl}/api/v1/chat`, {
@@ -179,7 +225,8 @@ export class ReasoningHttpClient {
                 elements: payload.elements,
                 sanitizedTitle: payload.sanitizedTitle,
                 maskCount: payload.maskCount,
-                ...(payload.history ? { history: payload.history } : {})
+                ...(payload.history ? { history: payload.history } : {}),
+                ...(payload.customPrompt ? { customPrompt: payload.customPrompt } : {})
             })
         }, 'Chat request', CHAT_TIMEOUT_MS);
         if (!response.ok) {
@@ -191,11 +238,12 @@ export class ReasoningHttpClient {
     /**
      * Transmits contextless general query (zero page or browser state).
      */
-    async requestGeneralChat(message, history) {
+    async requestGeneralChat(message, history, customPrompt) {
         const payload = {
             protocolVersion: '1.0',
             message,
-            ...(history && history.length > 0 ? { history } : {})
+            ...(history && history.length > 0 ? { history } : {}),
+            ...(customPrompt ? { customPrompt } : {})
         };
         const response = await this.fetchWithTimeout(`${this.serverBaseUrl}/api/v1/chat`, {
             method: 'POST',

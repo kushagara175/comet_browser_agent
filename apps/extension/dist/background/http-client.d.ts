@@ -5,7 +5,7 @@
  * This client ONLY accepts `SanitizedContext`.
  * It is impossible to pass `RawCapture` to this client.
  */
-import { SanitizedContext, ChatHistoryMessage, ActionProposal } from '@privapilot/protocol';
+import { SanitizedContext, ChatHistoryMessage, ActionProposal, TaskSpecification } from '@privapilot/protocol';
 export declare const DEFAULT_SERVER_BASE_URL = "http://localhost:4501";
 export interface ModelStatus {
     readonly reachable: boolean;
@@ -51,14 +51,19 @@ export declare class ReasoningHttpClient {
      */
     requestReasoningAction(sanitized: SanitizedContext): Promise<ActionProposal>;
     /**
+     * Requests dynamic task decomposition and guardrails (tasks to do & tasks NOT to do)
+     * from the reasoning planner.
+     */
+    requestTaskSpecification(goal: string, contextUrl?: string, customPrompt?: string): Promise<TaskSpecification>;
+    /**
      * Transmits sanitized page-aware context projection to Chat endpoint.
      * Strictly accepts SanitizedContext only (never raw captures or URLs).
      */
-    requestChat(sanitized: SanitizedContext, message: string, history?: ReadonlyArray<ChatHistoryMessage>): Promise<ChatReply>;
+    requestChat(sanitized: SanitizedContext, message: string, history?: ReadonlyArray<ChatHistoryMessage>, customPrompt?: string): Promise<ChatReply>;
     /**
      * Transmits contextless general query (zero page or browser state).
      */
-    requestGeneralChat(message: string, history?: ReadonlyArray<ChatHistoryMessage>): Promise<ChatReply>;
+    requestGeneralChat(message: string, history?: ReadonlyArray<ChatHistoryMessage>, customPrompt?: string): Promise<ChatReply>;
     getPlatformApiTelemetry(): Promise<any>;
     generatePlatformApiKey(name?: string, tier?: string): Promise<any>;
     dispatchPlatformTask(payload: {

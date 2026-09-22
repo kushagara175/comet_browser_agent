@@ -556,7 +556,7 @@ export class VlmReasoningEngine {
      * Handles Ollama native format (/api/chat) with at most one schema-repair attempt.
      */
     async callOllama(payload, baseUrl, modelName) {
-        const systemPrompt = this.buildSystemPrompt();
+        const systemPrompt = this.buildSystemPrompt(payload.customPrompt);
         const userPrompt = this.buildUserPrompt(payload);
         const chatUrl = `${baseUrl.replace(/\/$/, '')}/api/chat`;
         // Extract base64 image data without data URI prefix for Ollama
@@ -628,7 +628,7 @@ export class VlmReasoningEngine {
      * Handles standard OpenAI-compatible format (/v1/chat/completions) with at most one schema-repair attempt.
      */
     async callOpenAICompatible(payload, endpoint, modelName) {
-        const systemPrompt = this.buildSystemPrompt();
+        const systemPrompt = this.buildSystemPrompt(payload.customPrompt);
         const userPrompt = this.buildUserPrompt(payload);
         const headers = {
             'Content-Type': 'application/json',
@@ -1048,8 +1048,15 @@ export class VlmReasoningEngine {
         }
         return validation.proposal;
     }
-    buildSystemPrompt() {
-        return `
+    buildSystemPrompt(customPrompt) {
+        const customBlock = customPrompt ? `
+=========================================
+ACTIVE SPECIALIZED CUSTOM AGENT PERSONA:
+${customPrompt}
+You MUST adopt this specialized persona, prioritize its domain guidelines, and reflect its user story in all task planning and execution decisions.
+=========================================
+` : '';
+        return `${customBlock}
 You are PrivaPilot's Centralized Reasoning Agent for browser automation and conversational assistance.
 You receive a sanitized screenshot (with all sensitive PII intentionally blacked out or blurred) and a compact list of interactive elements with local IDs (e.g. "el_1", "el_2").
 
@@ -1352,9 +1359,27 @@ IMPORTANT PRIVACY INSTRUCTION: All redacted values and blackened regions are per
             const recent = payload.history.slice(-4).map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}`).join('\n');
             historyBlock = `\nRecent Conversation History:\n${recent}\n`;
         }
+        let customPromptBlock = '';
+        if (payload.customPrompt) {
+            customPromptBlock = `\nActive Custom Agent Directive / User Story:\n"${payload.customPrompt}"\n`;
+        }
+        let executionFeedbackBlock = '';
+        if (payload.executionFeedback) {
+            const fb = payload.executionFeedback;
+            const completedStr = fb.completedTasks && fb.completedTasks.length > 0
+                ? `\n- Completed Tasks: ${fb.completedTasks.join(' -> ')}`
+                : '';
+            const remainingStr = fb.remainingTasks && fb.remainingTasks.length > 0
+                ? `\n- Remaining Tasks: ${fb.remainingTasks.join(' -> ')}`
+                : '';
+            executionFeedbackBlock = `\nStep Execution Feedback from Live Agent (Step ${fb.stepIndex ?? 1}):
+- Last Dispatched Action: ${fb.lastActionId || 'none'} (${fb.lastActionKind || 'none'})${fb.targetLocalId ? ` on [${fb.targetLocalId}]` : ''}
+- Live Verification: ${fb.verified ? 'VERIFIED PASSED' : 'INCOMPLETE / UNVERIFIED'} (Outcome: ${fb.outcomeCode || 'unknown'})${completedStr}${remainingStr}
+- Closed-Loop Directive: Evaluate if the previous step achieved its subtask. Advance to the next task if verified, or issue a corrective action. If all tasks are verified complete, return kind: "finish".\n`;
+        }
         return `Active Web Page: "${pageTitle}"${domainStr}${routeStr}${currentUrlStr}
 User Goal: ${payload.goal || 'Inspect page'}
-${historyBlock}${redactionBlock}${stateDeltaBlock}${landmarksBlock}Active Viewport Elements:
+${historyBlock}${customPromptBlock}${executionFeedbackBlock}${redactionBlock}${stateDeltaBlock}${landmarksBlock}Active Viewport Elements:
 ${JSON.stringify(compactElements, null, 2)}
 
 ${promptSuffix}`;

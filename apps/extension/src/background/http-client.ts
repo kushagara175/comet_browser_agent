@@ -16,7 +16,8 @@ import {
   validateActionProposal,
   ALLOWED_ACTION_PROPOSAL_KEYS,
   ALLOWED_ATOMIC_ACTION_KEYS,
-  toSanitizedNetworkPayload
+  toSanitizedNetworkPayload,
+  TaskSpecification
 } from '@privapilot/protocol';
 import { assertNoCanaryLeak } from '@privapilot/test-fixtures';
 
@@ -226,13 +227,70 @@ export class ReasoningHttpClient {
   }
 
   /**
+   * Requests dynamic task decomposition and guardrails (tasks to do & tasks NOT to do)
+   * from the reasoning planner.
+   */
+  async requestTaskSpecification(
+    goal: string,
+    contextUrl?: string,
+    customPrompt?: string
+  ): Promise<TaskSpecification> {
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.serverBaseUrl}/api/v1/agent/spec`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-PrivaPilot-Version': '1.0'
+          },
+          body: JSON.stringify({
+            goal,
+            contextUrl,
+            customPrompt
+          })
+        },
+        'Task specification request',
+        10000
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && Array.isArray(data.tasksToDo)) {
+          return data as TaskSpecification;
+        }
+      }
+    } catch (_) {
+      // Fallback locally
+    }
+
+    // Graceful local deterministic task specification
+    const isMultiTarget = /\b(?:compare|both|versus|vs\.?|across|each)\b/i.test(goal);
+    return {
+      goal,
+      tasksToDo: [
+        'Inspect layout and identify interactive landmarks',
+        'Execute precision target interaction',
+        'Verify live state outcome'
+      ],
+      tasksNotToDo: [
+        'Do not click unrelated sidebar links or advertisements',
+        'Do not finish prematurely without substantive verified content'
+      ],
+      successCriteria: 'Target content located or verified live DOM state transition observed.',
+      requiresSubAgents: isMultiTarget
+    };
+  }
+
+  /**
    * Transmits sanitized page-aware context projection to Chat endpoint.
    * Strictly accepts SanitizedContext only (never raw captures or URLs).
    */
   async requestChat(
     sanitized: SanitizedContext,
     message: string,
-    history?: ReadonlyArray<ChatHistoryMessage>
+    history?: ReadonlyArray<ChatHistoryMessage>,
+    customPrompt?: string
   ): Promise<ChatReply> {
     const payload: SanitizedChatPayload = {
       _brand: 'SanitizedChatPayload_Verified',
@@ -241,7 +299,8 @@ export class ReasoningHttpClient {
       elements: sanitized.elements,
       sanitizedTitle: sanitized.pageState.title,
       maskCount: sanitized.maskCount,
-      ...(history && history.length > 0 ? { history } : {})
+      ...(history && history.length > 0 ? { history } : {}),
+      ...(customPrompt ? { customPrompt } : {})
     };
 
     assertNoCanaryLeak(payload, 'Outgoing Chat Payload');
@@ -260,7 +319,8 @@ export class ReasoningHttpClient {
           elements: payload.elements,
           sanitizedTitle: payload.sanitizedTitle,
           maskCount: payload.maskCount,
-          ...(payload.history ? { history: payload.history } : {})
+          ...(payload.history ? { history: payload.history } : {}),
+          ...(payload.customPrompt ? { customPrompt: payload.customPrompt } : {})
         })
       },
       'Chat request',
@@ -280,12 +340,14 @@ export class ReasoningHttpClient {
    */
   async requestGeneralChat(
     message: string,
-    history?: ReadonlyArray<ChatHistoryMessage>
+    history?: ReadonlyArray<ChatHistoryMessage>,
+    customPrompt?: string
   ): Promise<ChatReply> {
     const payload: GeneralChatPayload = {
       protocolVersion: '1.0',
       message,
-      ...(history && history.length > 0 ? { history } : {})
+      ...(history && history.length > 0 ? { history } : {}),
+      ...(customPrompt ? { customPrompt } : {})
     };
 
     const response = await this.fetchWithTimeout(

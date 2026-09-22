@@ -33,6 +33,9 @@ export interface CoordinatorRunOptions {
         readonly role: 'user' | 'assistant';
         readonly content: string;
     }>;
+    readonly customPrompt?: string;
+    readonly agentId?: string;
+    readonly agentName?: string;
 }
 export interface CoordinatorListeners {
     onStateChange?(state: AgentState, message?: string, runId?: string): void;
@@ -151,6 +154,9 @@ export declare class RunCoordinator {
     private currentTabId?;
     private lastGoal;
     private conversationHistory;
+    private currentCustomPrompt?;
+    private currentExecutionFeedback?;
+    private currentTaskSpec?;
     private previousSnapshot;
     private previousUrl;
     private lastExecutedProposal;
@@ -199,11 +205,11 @@ export declare class RunCoordinator {
     /**
      * Performs page-aware chat strictly across the privacy boundary.
      */
-    chatWithPage(userMessage: string, history?: ReadonlyArray<ChatHistoryMessage>): Promise<ChatOutcome>;
+    chatWithPage(userMessage: string, history?: ReadonlyArray<ChatHistoryMessage>, customPrompt?: string): Promise<ChatOutcome>;
     /**
      * Directly chats with the reasoning model without page context or perception overhead.
      */
-    chatWithoutPage(userMessage: string, history?: ReadonlyArray<ChatHistoryMessage>): Promise<ChatOutcome>;
+    chatWithoutPage(userMessage: string, history?: ReadonlyArray<ChatHistoryMessage>, customPrompt?: string): Promise<ChatOutcome>;
     /**
      * Contextless chat turn. Reports a real connection failure instead of claiming
      * the model is ready — that claim is what made a broken model look like a

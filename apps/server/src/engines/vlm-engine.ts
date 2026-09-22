@@ -675,7 +675,7 @@ export class VlmReasoningEngine {
     baseUrl: string,
     modelName: string
   ): Promise<ActionProposal> {
-    const systemPrompt = this.buildSystemPrompt();
+    const systemPrompt = this.buildSystemPrompt(payload.customPrompt);
     const userPrompt = this.buildUserPrompt(payload);
     const chatUrl = `${baseUrl.replace(/\/$/, '')}/api/chat`;
 
@@ -770,7 +770,7 @@ export class VlmReasoningEngine {
     endpoint: string,
     modelName: string
   ): Promise<ActionProposal> {
-    const systemPrompt = this.buildSystemPrompt();
+    const systemPrompt = this.buildSystemPrompt(payload.customPrompt);
     const userPrompt = this.buildUserPrompt(payload);
 
     const headers: Record<string, string> = {
@@ -1222,8 +1222,16 @@ export class VlmReasoningEngine {
     return validation.proposal;
   }
 
-  private buildSystemPrompt(): string {
-    return `
+  private buildSystemPrompt(customPrompt?: string): string {
+    const customBlock = customPrompt ? `
+=========================================
+ACTIVE SPECIALIZED CUSTOM AGENT PERSONA:
+${customPrompt}
+You MUST adopt this specialized persona, prioritize its domain guidelines, and reflect its user story in all task planning and execution decisions.
+=========================================
+` : '';
+
+    return `${customBlock}
 You are PrivaPilot's Centralized Reasoning Agent for browser automation and conversational assistance.
 You receive a sanitized screenshot (with all sensitive PII intentionally blacked out or blurred) and a compact list of interactive elements with local IDs (e.g. "el_1", "el_2").
 
@@ -1533,9 +1541,30 @@ IMPORTANT PRIVACY INSTRUCTION: All redacted values and blackened regions are per
       historyBlock = `\nRecent Conversation History:\n${recent}\n`;
     }
 
+    let customPromptBlock = '';
+    if (payload.customPrompt) {
+      customPromptBlock = `\nActive Custom Agent Directive / User Story:\n"${payload.customPrompt}"\n`;
+    }
+
+    let executionFeedbackBlock = '';
+    if (payload.executionFeedback) {
+      const fb = payload.executionFeedback;
+      const completedStr = fb.completedTasks && fb.completedTasks.length > 0
+        ? `\n- Completed Tasks: ${fb.completedTasks.join(' -> ')}`
+        : '';
+      const remainingStr = fb.remainingTasks && fb.remainingTasks.length > 0
+        ? `\n- Remaining Tasks: ${fb.remainingTasks.join(' -> ')}`
+        : '';
+
+      executionFeedbackBlock = `\nStep Execution Feedback from Live Agent (Step ${fb.stepIndex ?? 1}):
+- Last Dispatched Action: ${fb.lastActionId || 'none'} (${fb.lastActionKind || 'none'})${fb.targetLocalId ? ` on [${fb.targetLocalId}]` : ''}
+- Live Verification: ${fb.verified ? 'VERIFIED PASSED' : 'INCOMPLETE / UNVERIFIED'} (Outcome: ${fb.outcomeCode || 'unknown'})${completedStr}${remainingStr}
+- Closed-Loop Directive: Evaluate if the previous step achieved its subtask. Advance to the next task if verified, or issue a corrective action. If all tasks are verified complete, return kind: "finish".\n`;
+    }
+
     return `Active Web Page: "${pageTitle}"${domainStr}${routeStr}${currentUrlStr}
 User Goal: ${payload.goal || 'Inspect page'}
-${historyBlock}${redactionBlock}${stateDeltaBlock}${landmarksBlock}Active Viewport Elements:
+${historyBlock}${customPromptBlock}${executionFeedbackBlock}${redactionBlock}${stateDeltaBlock}${landmarksBlock}Active Viewport Elements:
 ${JSON.stringify(compactElements, null, 2)}
 
 ${promptSuffix}`;

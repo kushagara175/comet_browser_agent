@@ -327,6 +327,9 @@ export class RunCoordinator {
     currentTabId;
     lastGoal = '';
     conversationHistory = [];
+    currentCustomPrompt;
+    currentExecutionFeedback;
+    currentTaskSpec;
     previousSnapshot = null;
     previousUrl = '';
     lastExecutedProposal = null;
@@ -1610,6 +1613,8 @@ export class RunCoordinator {
             this.transition('idle', 'Previous run preempted by new user request');
             await new Promise((r) => setTimeout(r, 40));
         }
+        this.currentCustomPrompt = options?.customPrompt;
+        this.currentExecutionFeedback = undefined;
         if (options?.history && Array.isArray(options.history) && options.history.length > 0) {
             this.conversationHistory = options.history.map((h) => ({
                 role: h.role === 'assistant' ? 'assistant' : 'user',
@@ -1675,8 +1680,15 @@ export class RunCoordinator {
                 label: isSubAgentSwarmGoal(effectiveGoal) ? 'Sub-Agent Swarm Active' : 'PrivaPilot Agent Active'
             }).catch(() => { });
         }
+        // Query dynamic LLM task planner for Tasks To Do & Tasks Not To Do
+        try {
+            this.currentTaskSpec = await this.httpClient.requestTaskSpecification(effectiveGoal, undefined, this.currentCustomPrompt);
+        }
+        catch (_) {
+            this.currentTaskSpec = undefined;
+        }
         // Fast-track: Sub-Agent Swarm / Comparative Multi-Portal Goals
-        if (isSubAgentSwarmGoal(effectiveGoal)) {
+        if (isSubAgentSwarmGoal(effectiveGoal) || this.currentTaskSpec?.requiresSubAgents) {
             return this.dispatchSubAgentSwarm(effectiveGoal);
         }
         // Fast-track: Pure conversational greetings or direct queries bypass heavy perception and potential tab blockages
@@ -2518,6 +2530,12 @@ export class RunCoordinator {
                     try {
                         if (this.conversationHistory && this.conversationHistory.length > 0) {
                             sanitized.history = this.conversationHistory;
+                        }
+                        if (this.currentCustomPrompt) {
+                            sanitized.customPrompt = this.currentCustomPrompt;
+                        }
+                        if (this.currentExecutionFeedback) {
+                            sanitized.executionFeedback = this.currentExecutionFeedback;
                         }
                         proposal = await this.httpClient.requestReasoningAction(sanitized);
                     }
@@ -3554,6 +3572,16 @@ export class RunCoordinator {
                 const t6_actionExecuted = Date.now();
                 this.transition('verifying', `Step ${step}/${maxSteps}: Verifying semantic outcome`);
                 const t7_stateVerified = Date.now();
+                this.currentExecutionFeedback = {
+                    lastActionId: proposal.actionId,
+                    lastActionKind: proposal.kind,
+                    targetLocalId: proposal.targetLocalId,
+                    verified: Boolean(execResponse?.semanticOutcomeVerified ?? execResponse?.success),
+                    outcomeCode: execResponse?.reasonCode || (execResponse?.success ? 'ACTION_VERIFIED_SUCCESS' : 'EXECUTION_FAILED'),
+                    stepIndex: step,
+                    completedTasks: this.currentTaskSpec?.tasksToDo ? this.currentTaskSpec.tasksToDo.slice(0, step) : [],
+                    remainingTasks: this.currentTaskSpec?.tasksToDo ? this.currentTaskSpec.tasksToDo.slice(step) : []
+                };
                 const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
                 if (this.listeners.onTelemetryUpdated) {
                     this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
@@ -4524,7 +4552,7 @@ export class RunCoordinator {
     /**
      * Performs page-aware chat strictly across the privacy boundary.
      */
-    async chatWithPage(userMessage, history) {
+    async chatWithPage(userMessage, history, customPrompt) {
         try {
             if (isSubAgentSwarmGoal(userMessage)) {
                 const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
@@ -4541,11 +4569,11 @@ export class RunCoordinator {
             // bypass heavy DOM snapshot, full-screenshot capture, and ONNX initialization.
             const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening))\s*$/i;
             if (PURE_GREETING_PATTERN.test(userMessage.trim())) {
-                return this.generalChat(userMessage, undefined, history);
+                return this.generalChat(userMessage, undefined, history, customPrompt);
             }
             const activeTab = await this.browser.getActiveTab(this.currentTabId);
             if (!activeTab || !activeTab.id) {
-                return this.generalChat(userMessage, undefined, history);
+                return this.generalChat(userMessage, undefined, history, customPrompt);
             }
             let domResponse = null;
             try {
@@ -4558,7 +4586,7 @@ export class RunCoordinator {
                 // Tab content script not reachable
             }
             if (!domResponse || !domResponse.success || !domResponse.snapshot) {
-                return this.generalChat(userMessage, undefined, history);
+                return this.generalChat(userMessage, undefined, history, customPrompt);
             }
             let screenshotDataUrl = '';
             try {
@@ -4588,12 +4616,12 @@ export class RunCoordinator {
             }
             catch (_) {
                 // Sanitizer host unavailable or timed out; fallback to general chat
-                return this.generalChat(userMessage, undefined, history);
+                return this.generalChat(userMessage, undefined, history, customPrompt);
             }
             if (this.listeners.onSanitizationComplete) {
                 this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
             }
-            const chatRes = await this.httpClient.requestChat(sanitized, userMessage, history);
+            const chatRes = await this.httpClient.requestChat(sanitized, userMessage, history, customPrompt);
             return {
                 success: true,
                 reply: chatRes.reply,
@@ -4604,13 +4632,13 @@ export class RunCoordinator {
             };
         }
         catch (err) {
-            return this.generalChat(userMessage, err, history);
+            return this.generalChat(userMessage, err, history, customPrompt);
         }
     }
     /**
      * Directly chats with the reasoning model without page context or perception overhead.
      */
-    async chatWithoutPage(userMessage, history) {
+    async chatWithoutPage(userMessage, history, customPrompt) {
         if (isSubAgentSwarmGoal(userMessage)) {
             const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
             return {
@@ -4622,14 +4650,14 @@ export class RunCoordinator {
                 modelConnected: true
             };
         }
-        return this.generalChat(userMessage, undefined, history);
+        return this.generalChat(userMessage, undefined, history, customPrompt);
     }
     /**
      * Contextless chat turn. Reports a real connection failure instead of claiming
      * the model is ready — that claim is what made a broken model look like a
      * working one with nothing to say.
      */
-    async generalChat(userMessage, priorError, history) {
+    async generalChat(userMessage, priorError, history, customPrompt) {
         if (isSubAgentSwarmGoal(userMessage)) {
             const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
             return {
@@ -4642,7 +4670,7 @@ export class RunCoordinator {
             };
         }
         try {
-            const genRes = await this.httpClient.requestGeneralChat(userMessage, history);
+            const genRes = await this.httpClient.requestGeneralChat(userMessage, history, customPrompt);
             return {
                 success: true,
                 reply: genRes.reply,

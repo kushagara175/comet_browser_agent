@@ -395,6 +395,27 @@ export function createServer(): http.Server {
       return;
     }
 
+    // 5b. Dynamic Task Specification (Tasks To Do & Not To Do): POST /api/v1/agent/spec
+    if (req.method === 'POST' && (url === '/api/v1/agent/spec' || url === '/api/v1/task-spec')) {
+      const { exceeded, body } = await readJson();
+      if (exceeded) return;
+      if (!body || typeof body.goal !== 'string') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Field "goal" is required' }));
+        return;
+      }
+
+      const spec = await orchestrator.planTaskSpecification(
+        body.goal,
+        body.contextUrl,
+        body.customPrompt
+      );
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(spec));
+      return;
+    }
+
     // 6. Platform Agent Task Dispatch: POST /api/v1/agent/dispatch
     if (req.method === 'POST' && url === '/api/v1/agent/dispatch') {
       const rawKey = apiKeyManager.extractKey(req.headers);

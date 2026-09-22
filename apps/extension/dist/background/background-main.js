@@ -14043,7 +14043,9 @@ function toSanitizedNetworkPayload(context) {
     elements: context.elements,
     pageState: context.pageState,
     ...context.redactionManifest ? { redactionManifest: context.redactionManifest } : {},
-    ...context.history ? { history: context.history } : {}
+    ...context.history ? { history: context.history } : {},
+    ...context.customPrompt ? { customPrompt: context.customPrompt } : {},
+    ...context.executionFeedback ? { executionFeedback: context.executionFeedback } : {}
   };
 }
 
@@ -20313,10 +20315,57 @@ var ReasoningHttpClient = class {
     return validation.proposal;
   }
   /**
+   * Requests dynamic task decomposition and guardrails (tasks to do & tasks NOT to do)
+   * from the reasoning planner.
+   */
+  async requestTaskSpecification(goal, contextUrl, customPrompt) {
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.serverBaseUrl}/api/v1/agent/spec`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-PrivaPilot-Version": "1.0"
+          },
+          body: JSON.stringify({
+            goal,
+            contextUrl,
+            customPrompt
+          })
+        },
+        "Task specification request",
+        1e4
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (data && Array.isArray(data.tasksToDo)) {
+          return data;
+        }
+      }
+    } catch (_) {
+    }
+    const isMultiTarget = /\b(?:compare|both|versus|vs\.?|across|each)\b/i.test(goal);
+    return {
+      goal,
+      tasksToDo: [
+        "Inspect layout and identify interactive landmarks",
+        "Execute precision target interaction",
+        "Verify live state outcome"
+      ],
+      tasksNotToDo: [
+        "Do not click unrelated sidebar links or advertisements",
+        "Do not finish prematurely without substantive verified content"
+      ],
+      successCriteria: "Target content located or verified live DOM state transition observed.",
+      requiresSubAgents: isMultiTarget
+    };
+  }
+  /**
    * Transmits sanitized page-aware context projection to Chat endpoint.
    * Strictly accepts SanitizedContext only (never raw captures or URLs).
    */
-  async requestChat(sanitized, message, history) {
+  async requestChat(sanitized, message, history, customPrompt) {
     const payload = {
       _brand: "SanitizedChatPayload_Verified",
       protocolVersion: "1.0",
@@ -20324,7 +20373,8 @@ var ReasoningHttpClient = class {
       elements: sanitized.elements,
       sanitizedTitle: sanitized.pageState.title,
       maskCount: sanitized.maskCount,
-      ...history && history.length > 0 ? { history } : {}
+      ...history && history.length > 0 ? { history } : {},
+      ...customPrompt ? { customPrompt } : {}
     };
     assertNoCanaryLeak(payload, "Outgoing Chat Payload");
     const response = await this.fetchWithTimeout(
@@ -20341,7 +20391,8 @@ var ReasoningHttpClient = class {
           elements: payload.elements,
           sanitizedTitle: payload.sanitizedTitle,
           maskCount: payload.maskCount,
-          ...payload.history ? { history: payload.history } : {}
+          ...payload.history ? { history: payload.history } : {},
+          ...payload.customPrompt ? { customPrompt: payload.customPrompt } : {}
         })
       },
       "Chat request",
@@ -20356,11 +20407,12 @@ var ReasoningHttpClient = class {
   /**
    * Transmits contextless general query (zero page or browser state).
    */
-  async requestGeneralChat(message, history) {
+  async requestGeneralChat(message, history, customPrompt) {
     const payload = {
       protocolVersion: "1.0",
       message,
-      ...history && history.length > 0 ? { history } : {}
+      ...history && history.length > 0 ? { history } : {},
+      ...customPrompt ? { customPrompt } : {}
     };
     const response = await this.fetchWithTimeout(
       `${this.serverBaseUrl}/api/v1/chat`,
@@ -21345,6 +21397,9 @@ var RunCoordinator = class {
   currentTabId;
   lastGoal = "";
   conversationHistory = [];
+  currentCustomPrompt;
+  currentExecutionFeedback;
+  currentTaskSpec;
   previousSnapshot = null;
   previousUrl = "";
   lastExecutedProposal = null;
@@ -22567,6 +22622,8 @@ var RunCoordinator = class {
       this.transition("idle", "Previous run preempted by new user request");
       await new Promise((r) => setTimeout(r, 40));
     }
+    this.currentCustomPrompt = options?.customPrompt;
+    this.currentExecutionFeedback = void 0;
     if (options?.history && Array.isArray(options.history) && options.history.length > 0) {
       this.conversationHistory = options.history.map((h) => ({
         role: h.role === "assistant" ? "assistant" : "user",
@@ -22623,7 +22680,16 @@ var RunCoordinator = class {
       }).catch(() => {
       });
     }
-    if (isSubAgentSwarmGoal(effectiveGoal)) {
+    try {
+      this.currentTaskSpec = await this.httpClient.requestTaskSpecification(
+        effectiveGoal,
+        void 0,
+        this.currentCustomPrompt
+      );
+    } catch (_) {
+      this.currentTaskSpec = void 0;
+    }
+    if (isSubAgentSwarmGoal(effectiveGoal) || this.currentTaskSpec?.requiresSubAgents) {
       return this.dispatchSubAgentSwarm(effectiveGoal);
     }
     const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|hi\s+there|hello\s+there|greetings|good\s+(?:morning|afternoon|evening|day)|who\s+are\s+you|what\s+can\s+you\s+do)\s*[!.?]*$/i;
@@ -23409,6 +23475,12 @@ var RunCoordinator = class {
           try {
             if (this.conversationHistory && this.conversationHistory.length > 0) {
               sanitized.history = this.conversationHistory;
+            }
+            if (this.currentCustomPrompt) {
+              sanitized.customPrompt = this.currentCustomPrompt;
+            }
+            if (this.currentExecutionFeedback) {
+              sanitized.executionFeedback = this.currentExecutionFeedback;
             }
             proposal = await this.httpClient.requestReasoningAction(sanitized);
           } catch (err) {
@@ -24346,6 +24418,16 @@ var RunCoordinator = class {
         const t6_actionExecuted = Date.now();
         this.transition("verifying", `Step ${step}/${maxSteps}: Verifying semantic outcome`);
         const t7_stateVerified = Date.now();
+        this.currentExecutionFeedback = {
+          lastActionId: proposal.actionId,
+          lastActionKind: proposal.kind,
+          targetLocalId: proposal.targetLocalId,
+          verified: Boolean(execResponse?.semanticOutcomeVerified ?? execResponse?.success),
+          outcomeCode: execResponse?.reasonCode || (execResponse?.success ? "ACTION_VERIFIED_SUCCESS" : "EXECUTION_FAILED"),
+          stepIndex: step,
+          completedTasks: this.currentTaskSpec?.tasksToDo ? this.currentTaskSpec.tasksToDo.slice(0, step) : [],
+          remainingTasks: this.currentTaskSpec?.tasksToDo ? this.currentTaskSpec.tasksToDo.slice(step) : []
+        };
         const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
         if (this.listeners.onTelemetryUpdated) {
           this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
@@ -25295,7 +25377,7 @@ Provide a helpful comparative breakdown based strictly on the live data above:`;
   /**
    * Performs page-aware chat strictly across the privacy boundary.
    */
-  async chatWithPage(userMessage, history) {
+  async chatWithPage(userMessage, history, customPrompt) {
     try {
       if (isSubAgentSwarmGoal(userMessage)) {
         const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
@@ -25310,11 +25392,11 @@ Provide a helpful comparative breakdown based strictly on the live data above:`;
       }
       const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening))\s*$/i;
       if (PURE_GREETING_PATTERN.test(userMessage.trim())) {
-        return this.generalChat(userMessage, void 0, history);
+        return this.generalChat(userMessage, void 0, history, customPrompt);
       }
       const activeTab = await this.browser.getActiveTab(this.currentTabId);
       if (!activeTab || !activeTab.id) {
-        return this.generalChat(userMessage, void 0, history);
+        return this.generalChat(userMessage, void 0, history, customPrompt);
       }
       let domResponse = null;
       try {
@@ -25325,7 +25407,7 @@ Provide a helpful comparative breakdown based strictly on the live data above:`;
       } catch (_) {
       }
       if (!domResponse || !domResponse.success || !domResponse.snapshot) {
-        return this.generalChat(userMessage, void 0, history);
+        return this.generalChat(userMessage, void 0, history, customPrompt);
       }
       let screenshotDataUrl = "";
       try {
@@ -25352,12 +25434,12 @@ Provide a helpful comparative breakdown based strictly on the live data above:`;
           goal: userMessage
         });
       } catch (_) {
-        return this.generalChat(userMessage, void 0, history);
+        return this.generalChat(userMessage, void 0, history, customPrompt);
       }
       if (this.listeners.onSanitizationComplete) {
         this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
       }
-      const chatRes = await this.httpClient.requestChat(sanitized, userMessage, history);
+      const chatRes = await this.httpClient.requestChat(sanitized, userMessage, history, customPrompt);
       return {
         success: true,
         reply: chatRes.reply,
@@ -25367,13 +25449,13 @@ Provide a helpful comparative breakdown based strictly on the live data above:`;
         modelConnected: chatRes.modelConnected !== false
       };
     } catch (err) {
-      return this.generalChat(userMessage, err, history);
+      return this.generalChat(userMessage, err, history, customPrompt);
     }
   }
   /**
    * Directly chats with the reasoning model without page context or perception overhead.
    */
-  async chatWithoutPage(userMessage, history) {
+  async chatWithoutPage(userMessage, history, customPrompt) {
     if (isSubAgentSwarmGoal(userMessage)) {
       const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
       return {
@@ -25385,14 +25467,14 @@ Provide a helpful comparative breakdown based strictly on the live data above:`;
         modelConnected: true
       };
     }
-    return this.generalChat(userMessage, void 0, history);
+    return this.generalChat(userMessage, void 0, history, customPrompt);
   }
   /**
    * Contextless chat turn. Reports a real connection failure instead of claiming
    * the model is ready — that claim is what made a broken model look like a
    * working one with nothing to say.
    */
-  async generalChat(userMessage, priorError, history) {
+  async generalChat(userMessage, priorError, history, customPrompt) {
     if (isSubAgentSwarmGoal(userMessage)) {
       const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
       return {
@@ -25405,7 +25487,7 @@ Provide a helpful comparative breakdown based strictly on the live data above:`;
       };
     }
     try {
-      const genRes = await this.httpClient.requestGeneralChat(userMessage, history);
+      const genRes = await this.httpClient.requestGeneralChat(userMessage, history, customPrompt);
       return {
         success: true,
         reply: genRes.reply,
@@ -25820,14 +25902,17 @@ async function handleSidepanelRequest(message) {
       runId: message.runId,
       maxSteps: message.maxSteps,
       tabId: message.tabId,
-      history: message.history
+      history: message.history,
+      customPrompt: message.customPrompt,
+      agentId: message.agentId,
+      agentName: message.agentName
     });
   }
   if (message.type === "GENERAL_CHAT") {
-    return coordinator.chatWithoutPage(message.message || "", message.history);
+    return coordinator.chatWithoutPage(message.message || "", message.history, message.customPrompt);
   }
   if (message.type === "CHAT_WITH_PAGE") {
-    return coordinator.chatWithPage(message.message || "", message.history);
+    return coordinator.chatWithPage(message.message || "", message.history, message.customPrompt);
   }
   if (message.type === "SUBMIT_USER_INPUT") {
     return coordinator.submitUserInput(
@@ -25952,7 +26037,7 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
     if (message.type === "GENERAL_CHAT") {
-      coordinator.chatWithoutPage(message.message || "", message.history).then((res) => {
+      coordinator.chatWithoutPage(message.message || "", message.history, message.customPrompt).then((res) => {
         sendResponse(res);
       }).catch((err) => {
         sendResponse({
@@ -25966,7 +26051,7 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
     if (message.type === "CHAT_WITH_PAGE") {
-      coordinator.chatWithPage(message.message || "", message.history).then((res) => {
+      coordinator.chatWithPage(message.message || "", message.history, message.customPrompt).then((res) => {
         sendResponse(res);
       }).catch((err) => {
         sendResponse({
