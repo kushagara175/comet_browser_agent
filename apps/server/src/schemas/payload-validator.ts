@@ -60,6 +60,7 @@ const ALLOWED_ELEMENT_KEYS = new Set([
 
 const ALLOWED_PAGE_STATE_KEYS = new Set([
   'title',
+  'pageTitle',
   'viewport',
   'visibleDialogCount',
   'dialogTitles',
@@ -71,6 +72,7 @@ const ALLOWED_PAGE_STATE_KEYS = new Set([
   'domain',
   'scrollMetrics',
   'url',
+  'canonicalUrl',
   'stateDelta',
   'pageZone'
 ]);
@@ -430,7 +432,7 @@ export function validateSanitizedPayload(body: any): ValidationResult<SanitizedN
   const pageStateKeys = Object.getOwnPropertyNames(body.pageState);
   for (const pKey of pageStateKeys) {
     if (PROHIBITED_PROPERTY_NAMES.has(pKey) || !ALLOWED_PAGE_STATE_KEYS.has(pKey)) {
-      return { isValid: false, errorMessage: 'Closed schema violation: Unknown pageState property' };
+      return { isValid: false, errorMessage: `Closed schema violation: Unknown pageState property "${pKey}"` };
     }
   }
 
@@ -439,6 +441,24 @@ export function validateSanitizedPayload(body: any): ValidationResult<SanitizedN
   }
   if (hasProhibitedScriptPattern(body.pageState.title)) {
     return { isValid: false, errorMessage: 'pageState.title contains prohibited script patterns' };
+  }
+
+  if (body.pageState.pageTitle !== undefined) {
+    if (typeof body.pageState.pageTitle !== 'string' || body.pageState.pageTitle.length > 200) {
+      return { isValid: false, errorMessage: 'pageState.pageTitle must be a string up to 200 characters' };
+    }
+    if (hasProhibitedScriptPattern(body.pageState.pageTitle)) {
+      return { isValid: false, errorMessage: 'pageState.pageTitle contains prohibited script patterns' };
+    }
+  }
+
+  if (body.pageState.canonicalUrl !== undefined) {
+    if (typeof body.pageState.canonicalUrl !== 'string' || body.pageState.canonicalUrl.length > 2048) {
+      return { isValid: false, errorMessage: 'pageState.canonicalUrl must be a string up to 2048 characters' };
+    }
+    if (hasProhibitedScriptPattern(body.pageState.canonicalUrl)) {
+      return { isValid: false, errorMessage: 'pageState.canonicalUrl contains prohibited script patterns' };
+    }
   }
 
   if (!Array.isArray(body.pageState.viewport) || body.pageState.viewport.length !== 2) {

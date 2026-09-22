@@ -715,7 +715,7 @@ export class RunCoordinator {
             // Only emit static answer if the user's ONLY directive was route navigation, without any pending search/action goals
             if (resolution.matchedIntent === 'none' && resolution.rationale?.includes('Already on route')) {
                 const hasUnfinishedSearchOrGoal = Boolean(extractSearchQueryFromGoal(goal)) ||
-                    /\b(?:search|find|locate|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
+                    /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
                 if (!hasUnfinishedSearchOrGoal) {
                     const reply = `You are already on the active ${playbook.name} route. All interactive navigation controls, map canvas layers, and search tools are loaded and ready.`;
                     return {
@@ -753,15 +753,19 @@ export class RunCoordinator {
             if (resolution.matchedIntent === 'click_landmark' && resolution.targetPhrase) {
                 // If already on Bhuvan NextGen map viewer (/ngmaps), the 2D/3D viewer is already active and loaded
                 if ((currentUrl || '').includes('/ngmaps') && resolution.targetPhrase.toLowerCase().includes('2d')) {
-                    const reply = 'You are already on the active Bhuvan NextGen 2D/3D Map Viewer. The satellite map canvas and geospatial navigation controls are loaded and ready.';
-                    return {
-                        actionId: `act_local_answer_${step}_${Date.now()}`,
-                        kind: 'answer',
-                        confidence: 0.98,
-                        risk: 'safe',
-                        rationale: reply,
-                        reply
-                    };
+                    const hasPendingDownstreamGoal = Boolean(extractSearchQueryFromGoal(goal)) ||
+                        /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
+                    if (!hasPendingDownstreamGoal) {
+                        const reply = 'You are already on the active Bhuvan NextGen 2D/3D Map Viewer. The satellite map canvas and geospatial navigation controls are loaded and ready.';
+                        return {
+                            actionId: `act_local_answer_${step}_${Date.now()}`,
+                            kind: 'answer',
+                            confidence: 0.98,
+                            risk: 'safe',
+                            rationale: reply,
+                            reply
+                        };
+                    }
                 }
                 const hasAlreadyClickedLandmark = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_playbook_click_'));
                 if (hasAlreadyClickedLandmark) {
@@ -2190,6 +2194,26 @@ export class RunCoordinator {
                         stepCount: step
                     };
                     return this.completeWithResult(res);
+                }
+                // If the page is in a dynamic loading / hydration state (e.g. Bhuvan NextGen / GIS / WebGL / SPA),
+                // wait briefly and refresh the snapshot so interactive controls are available.
+                if (domResponse &&
+                    domResponse.success &&
+                    (domResponse.snapshot?.interactiveElements?.length === 0 || (domResponse.snapshot?.interactiveElements?.length || 0) <= 2) &&
+                    (/loading/i.test(domResponse.snapshot?.pageTitle || '') ||
+                        (domResponse.snapshot?.textNodes || []).some((t) => /loading/i.test(t.text || '')))) {
+                    this.transition('executing', 'Waiting for geospatial application and map canvas to finish loading...');
+                    await new Promise((r) => setTimeout(r, 2500));
+                    try {
+                        const refreshed = await this.browser.sendMessageToTab(activeTab.id, {
+                            type: 'EXTRACT_DOM_SNAPSHOT',
+                            captureId
+                        });
+                        if (refreshed && refreshed.success && ((refreshed.snapshot?.interactiveElements?.length || 0) > 0 || !/loading/i.test(refreshed.snapshot?.pageTitle || ''))) {
+                            domResponse = refreshed;
+                        }
+                    }
+                    catch (_) { }
                 }
                 let screenshotDataUrl;
                 try {

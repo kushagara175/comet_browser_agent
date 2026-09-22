@@ -15785,10 +15785,10 @@ function extractSearchQueryFromGoal(goal) {
   q2 = q2.replace(/\s+(?:in|into|on|using|use)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page).*$/i, "");
   q2 = q2.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|wiki|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|wiki|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?)*/i, "");
   q2 = q2.replace(/\s+(?:(?:on\s+(?:the\s+)?)?map|portal|website|site|page)$/i, "");
-  q2 = q2.replace(/\s+(?:and|to|then)\s+(?:summarize|summarise|analyze|analyse|explain|give\s+me|show\s+me|tell\s+me|hit\s+the\s+website|check\s+the\s+price|check|compare|extract|review|find\s+out|provide).*$/i, "");
+  q2 = q2.replace(/\s*(?:,\s*(?:and\s+)?|\b(?:and|to|then)\s+)(?:navigate\s+to|click|open|inspect|examine|explore|view|see|check|look\s+at|summarize|summarise|analyze|analyse|explain|give\s+me|show\s+me|tell\s+me|compare|extract|review|find\s+out|provide|hit\s+the\s+website|check\s+the\s+price)\b.*$/i, "");
   q2 = q2.replace(/\s+(?:and|then)\s+(?:what|how|why|list|describe|highlight).*$/i, "");
   q2 = q2.replace(/\s+(?:use|using)\s+(?:the\s+)?search\s+bar.*$/i, "");
-  q2 = q2.replace(/^["']+|["']+$/g, "");
+  q2 = q2.replace(/^["'\s]+|["'\s,;.]+$/g, "");
   return q2.trim();
 }
 function extractTargetUrlFromGoal(goal) {
@@ -21715,7 +21715,7 @@ var RunCoordinator = class {
     if (playbook) {
       const resolution = resolvePlaybookIntent(playbook, goal, currentUrl);
       if (resolution.matchedIntent === "none" && resolution.rationale?.includes("Already on route")) {
-        const hasUnfinishedSearchOrGoal = Boolean(extractSearchQueryFromGoal(goal)) || /\b(?:search|find|locate|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
+        const hasUnfinishedSearchOrGoal = Boolean(extractSearchQueryFromGoal(goal)) || /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
         if (!hasUnfinishedSearchOrGoal) {
           const reply = `You are already on the active ${playbook.name} route. All interactive navigation controls, map canvas layers, and search tools are loaded and ready.`;
           return {
@@ -21750,15 +21750,18 @@ var RunCoordinator = class {
       }
       if (resolution.matchedIntent === "click_landmark" && resolution.targetPhrase) {
         if ((currentUrl || "").includes("/ngmaps") && resolution.targetPhrase.toLowerCase().includes("2d")) {
-          const reply = "You are already on the active Bhuvan NextGen 2D/3D Map Viewer. The satellite map canvas and geospatial navigation controls are loaded and ready.";
-          return {
-            actionId: `act_local_answer_${step}_${Date.now()}`,
-            kind: "answer",
-            confidence: 0.98,
-            risk: "safe",
-            rationale: reply,
-            reply
-          };
+          const hasPendingDownstreamGoal = Boolean(extractSearchQueryFromGoal(goal)) || /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
+          if (!hasPendingDownstreamGoal) {
+            const reply = "You are already on the active Bhuvan NextGen 2D/3D Map Viewer. The satellite map canvas and geospatial navigation controls are loaded and ready.";
+            return {
+              actionId: `act_local_answer_${step}_${Date.now()}`,
+              kind: "answer",
+              confidence: 0.98,
+              risk: "safe",
+              rationale: reply,
+              reply
+            };
+          }
         }
         const hasAlreadyClickedLandmark = this.actionHistory.some(
           (a) => a.actionId && a.actionId.startsWith("act_playbook_click_")
@@ -23154,6 +23157,20 @@ var RunCoordinator = class {
             stepCount: step
           };
           return this.completeWithResult(res2);
+        }
+        if (domResponse && domResponse.success && (domResponse.snapshot?.interactiveElements?.length === 0 || (domResponse.snapshot?.interactiveElements?.length || 0) <= 2) && (/loading/i.test(domResponse.snapshot?.pageTitle || "") || (domResponse.snapshot?.textNodes || []).some((t) => /loading/i.test(t.text || "")))) {
+          this.transition("executing", "Waiting for geospatial application and map canvas to finish loading...");
+          await new Promise((r) => setTimeout(r, 2500));
+          try {
+            const refreshed = await this.browser.sendMessageToTab(activeTab.id, {
+              type: "EXTRACT_DOM_SNAPSHOT",
+              captureId
+            });
+            if (refreshed && refreshed.success && ((refreshed.snapshot?.interactiveElements?.length || 0) > 0 || !/loading/i.test(refreshed.snapshot?.pageTitle || ""))) {
+              domResponse = refreshed;
+            }
+          } catch (_) {
+          }
         }
         let screenshotDataUrl;
         try {

@@ -1552,12 +1552,12 @@ export function extractSearchQueryFromGoal(goal) {
     q = q.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|wiki|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|wiki|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?)*/i, '');
     // Strip trailing "on map", "on the map", "map", or remaining portal descriptors
     q = q.replace(/\s+(?:(?:on\s+(?:the\s+)?)?map|portal|website|site|page)$/i, '');
-    // Strip trailing downstream action / summarization directives:
-    // "and summarize the mission key milestones", "and summarize", "and explain", "and tell me...", "and analyze"
-    q = q.replace(/\s+(?:and|to|then)\s+(?:summarize|summarise|analyze|analyse|explain|give\s+me|show\s+me|tell\s+me|hit\s+the\s+website|check\s+the\s+price|check|compare|extract|review|find\s+out|provide).*$/i, '');
+    // Strip trailing downstream action / summarization / inspection directives:
+    // "and summarize...", "and inspect the available thematic satellite layers", "navigate to...", etc.
+    q = q.replace(/\s*(?:,\s*(?:and\s+)?|\b(?:and|to|then)\s+)(?:navigate\s+to|click|open|inspect|examine|explore|view|see|check|look\s+at|summarize|summarise|analyze|analyse|explain|give\s+me|show\s+me|tell\s+me|compare|extract|review|find\s+out|provide|hit\s+the\s+website|check\s+the\s+price)\b.*$/i, '');
     q = q.replace(/\s+(?:and|then)\s+(?:what|how|why|list|describe|highlight).*$/i, '');
     q = q.replace(/\s+(?:use|using)\s+(?:the\s+)?search\s+bar.*$/i, '');
-    q = q.replace(/^["']+|["']+$/g, '');
+    q = q.replace(/^["'\s]+|["'\s,;.]+$/g, '');
     return q.trim();
 }
 /**
