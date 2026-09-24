@@ -530,6 +530,8 @@ export class RunCoordinator {
         type: 'SET_ACTIVE_BORDER',
         active: false
       }).catch(() => {});
+      // Clear all overlays including cursor — hand cursor must not stay stuck after run
+      this.browser.sendMessageToTab(this.currentTabId, { type: 'CLEAR_OVERLAYS' }).catch(() => {});
     }
     return finalRes;
   }
@@ -542,6 +544,7 @@ export class RunCoordinator {
         type: 'SET_ACTIVE_BORDER',
         active: false
       }).catch(() => {});
+      this.browser.sendMessageToTab(this.currentTabId, { type: 'CLEAR_OVERLAYS' }).catch(() => {});
     }
   }
 

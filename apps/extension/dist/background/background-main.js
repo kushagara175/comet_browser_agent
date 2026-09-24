@@ -21598,6 +21598,8 @@ var RunCoordinator = class {
         active: false
       }).catch(() => {
       });
+      this.browser.sendMessageToTab(this.currentTabId, { type: "CLEAR_OVERLAYS" }).catch(() => {
+      });
     }
     return finalRes;
   }
@@ -21609,6 +21611,8 @@ var RunCoordinator = class {
         type: "SET_ACTIVE_BORDER",
         active: false
       }).catch(() => {
+      });
+      this.browser.sendMessageToTab(this.currentTabId, { type: "CLEAR_OVERLAYS" }).catch(() => {
       });
     }
   }

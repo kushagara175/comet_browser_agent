@@ -471,11 +471,7 @@ export class OverlayRenderer {
       cursor.setAttribute('aria-hidden', 'true');
 
       cursor.innerHTML = `
-        <svg class="privapilot-cursor-icon privapilot-cursor-arrow" viewBox="0 0 24 24" width="20" height="20" style="display: block; overflow: visible;">
-          <path d="M 3 2 L 3 19 L 7.5 14.5 L 11.5 22 L 14.2 20.5 L 10.2 13 L 16 13 Z"
-                fill="#0f172a" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round" />
-        </svg>
-        <svg class="privapilot-cursor-icon privapilot-cursor-hand" viewBox="0 0 24 24" width="20" height="20" style="display: none; overflow: visible;">
+        <svg class="privapilot-cursor-icon privapilot-cursor-hand" viewBox="0 0 24 24" width="22" height="22" style="display: block; overflow: visible;">
           <path d="M 8.5 2.5 C 7.4 2.5 6.5 3.4 6.5 4.5 L 6.5 11.5 L 5 10 C 4.1 9.1 2.7 9.1 1.8 10 C 0.9 10.9 0.9 12.3 1.8 13.2 L 6 17.5 C 7.5 19 9.5 20.5 12 20.5 L 15.5 20.5 C 18.5 20.5 19.5 18.5 19.5 15.5 L 19.5 9 C 19.5 7.9 18.6 7 17.5 7 C 17 7 16.2 7.2 15.8 7.5 L 15.8 6.5 C 15.8 5.4 14.9 4.5 13.8 4.5 C 13.3 4.5 12.6 4.7 12.2 5 L 12.2 4.5 C 12.2 3.4 11.3 2.5 10.2 2.5 C 9.7 2.5 9 2.7 8.5 2.5 Z"
                 fill="#0f172a" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round" />
         </svg>
@@ -517,12 +513,10 @@ export class OverlayRenderer {
    */
   setCursorPointerType(type: 'arrow' | 'hand' | 'caret'): void {
     if (!this.cursorEl) return;
-    const arrow = this.cursorEl.querySelector('.privapilot-cursor-arrow') as HTMLElement | null;
     const hand = this.cursorEl.querySelector('.privapilot-cursor-hand') as HTMLElement | null;
     const caret = this.cursorEl.querySelector('.privapilot-cursor-caret') as HTMLElement | null;
-
-    if (arrow) arrow.style.display = type === 'arrow' ? 'block' : 'none';
-    if (hand) hand.style.display = type === 'hand' ? 'block' : 'none';
+    // Arrow is removed — hand is default for all navigation/reading/clicking actions
+    if (hand) hand.style.display = type === 'caret' ? 'none' : 'block';
     if (caret) caret.style.display = type === 'caret' ? 'block' : 'none';
   }
 
