@@ -4114,7 +4114,7 @@
       const viewportH = window.innerHeight;
       const originalScrollY = window.scrollY;
       const isLongPage = pageHeight > viewportH * 2;
-      const sweepCursorVertical = async (fromY, toY, durationMs) => {
+      if (isLongPage) {
         const cursor = overlay.ensureCursor();
         const centerX = Math.round(window.innerWidth * 0.5);
         overlay.setCursorPointerType("arrow");
@@ -4123,13 +4123,18 @@
         if (iconEl) iconEl.innerHTML = '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3v10M4 9l4 4 4-4"/></svg>';
         if (textEl) textEl.textContent = "Reading";
         cursor.style.opacity = "1";
+        const fromScrollY = originalScrollY;
+        const toScrollY = originalScrollY < pageHeight * 0.1 ? Math.min(pageHeight * 0.55, pageHeight - viewportH) : Math.min(originalScrollY + viewportH * 0.5, pageHeight - viewportH);
+        const cursorReadY = Math.round(viewportH * 0.35);
+        const cursorDriftPx = 30;
+        const scrollDuration = 900;
+        window.scrollTo({ top: toScrollY, behavior: "smooth" });
         const startTime = performance.now();
         await new Promise((resolve) => {
           const raf = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb) => setTimeout(cb, 16);
           const step = (now) => {
-            const progress = Math.min(1, (now - startTime) / durationMs);
-            const t = progress * progress * progress * (progress * (progress * 6 - 15) + 10);
-            const curY = Math.round(fromY + (toY - fromY) * t);
+            const progress = Math.min(1, (now - startTime) / scrollDuration);
+            const curY = Math.round(cursorReadY + cursorDriftPx * progress);
             cursor.style.transform = `translate3d(${centerX - 2}px, ${curY - 2}px, 0)`;
             if (progress < 1) {
               raf(step);
@@ -4139,19 +4144,9 @@
           };
           raf(step);
         });
-      };
-      if (isLongPage && originalScrollY < pageHeight * 0.1) {
-        const targetScrollY = Math.min(pageHeight * 0.55, pageHeight - viewportH);
-        window.scrollTo({ top: targetScrollY, behavior: "smooth" });
-        await sweepCursorVertical(80, viewportH - 80, 850);
+        cursor.style.opacity = "0";
         window.scrollTo({ top: 0, behavior: "smooth" });
-        await sweepCursorVertical(viewportH - 80, 80, 380);
-      } else if (isLongPage) {
-        const nudge = Math.min(originalScrollY + viewportH * 0.4, pageHeight - viewportH);
-        window.scrollTo({ top: nudge, behavior: "smooth" });
-        await sweepCursorVertical(viewportH * 0.3, viewportH * 0.75, 550);
-        window.scrollTo({ top: originalScrollY, behavior: "smooth" });
-        await sweepCursorVertical(viewportH * 0.75, viewportH * 0.3, 280);
+        await new Promise((r) => setTimeout(r, 380));
       }
       const extracted = extractor.extractSnapshot(document);
       const captureId = message.captureId || `cap_${Date.now()}`;
