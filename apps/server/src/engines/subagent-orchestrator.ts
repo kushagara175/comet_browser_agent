@@ -174,9 +174,32 @@ export class SubAgentOrchestrator {
       tasksToDo.unshift(`Align execution with custom agent instructions: "${customPrompt.slice(0, 100)}..."`);
     }
 
+    // Ask the LLM to extract the search query from the goal — no regex, no guessing.
+    // A focused prompt is much more reliable than regex for compound/ambiguous goals.
+    let llmSearchQuery: string | undefined;
+    const hasSearchIntent = /\b(?:search|find|lookup|query|look\s+for)\b/i.test(trimmed);
+    if (hasSearchIntent) {
+      try {
+        const extractResult = await this.vlmEngine.chat(
+          `You are a search query extractor. Given a user's browser automation goal, extract ONLY the exact search term to type into a search box. Return a single JSON object: {"searchQuery": "<exact term>"}. If there is no search term, return {"searchQuery": ""}. Never include instructions, action verbs, or downstream tasks in searchQuery. Only the product name, topic, or entity to search for.`,
+          `Goal: "${trimmed}"\n\nWhat is the exact search query to type into the search box?`
+        );
+        try {
+          const jsonMatch = extractResult.reply.match(/\{[^}]*"searchQuery"\s*:\s*"([^"]*)"/);
+          if (jsonMatch) {
+            llmSearchQuery = jsonMatch[1].trim() || undefined;
+          }
+        } catch (_) {}
+      } catch (_) {}
+      // Fallback to local regex if LLM failed or returned empty
+      if (!llmSearchQuery) {
+        llmSearchQuery = extractSearchQueryFromGoal(trimmed) || undefined;
+      }
+    }
+
     return {
       goal: trimmed,
-      extractedSearchQuery: extractSearchQueryFromGoal(trimmed) || undefined,
+      extractedSearchQuery: llmSearchQuery,
       objectives: tasksToDo.map((description, index) => {
         const lower = description.toLowerCase();
         const intent = lower.includes('search input') || lower.includes('enter the extracted search')
