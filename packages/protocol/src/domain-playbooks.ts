@@ -1653,16 +1653,25 @@ export function extractSearchQueryFromGoal(goal: string): string {
   // "open wikipedia.org and ", "go to google.com then ", "visit https://en.wikipedia.org and then "
   q = q.replace(/^(?:open|go\s+to|visit|launch|navigate\s+to)\s+(?:https?:\/\/\S+|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/\S*)?|[a-zA-Z0-9_-]+(?:\s+(?:website|portal|site|page|app|url))?)\s*(?:[,\s;]+(?:and\s+then|then|after\s+that|and)\s*|[,\s;]+)/i, '');
 
-  const compoundMatch = q.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?|type)\s+(.+)$/i);
-  if (compoundMatch) {
-    q = compoundMatch[1].trim();
-    // Strip any trailing ", navigate to the main article" and similar mid-clause navigation directives
-    // that were captured as part of the compound group (e.g. `"Quantum Computing", navigate to the main article,`)
-    q = q.replace(/\s*,\s*(?:navigate\s+to|click\s+(?:on|the)|go\s+to|visit|open|explore|inspect|view|see|check|click)\s+(?:(?:the|a|an)\s+)?(?:main|primary|top|first|article|page|result|link|url|website|entry|item)\b.*$/i, '');
-    // Strip leading/trailing quote characters wrapping the extracted term
-    q = q.replace(/^["'\s]+|["'\s,;.]+$/g, '');
+  // If the string already starts with a search directive (after nav prefix was stripped),
+  // skip compound match entirely — compound match would greedily grab the LAST "find"/"search"
+  // verb in trailing extraction clauses (e.g. ", find the price and rating of the first result")
+  // instead of the actual search target ("boAt Airdopes 141").
+  const hasLeadingSearchKeyword = /^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?|type)\s+/i.test(q);
+
+  if (!hasLeadingSearchKeyword) {
+    // Embedded compound goal: nav already stripped, find the search directive in remainder
+    const compoundMatch = q.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?|type)\s+(.+)$/i);
+    if (compoundMatch) {
+      q = compoundMatch[1].trim();
+      // Strip any trailing ", navigate to the main article" and similar mid-clause navigation directives
+      q = q.replace(/\s*,\s*(?:navigate\s+to|click\s+(?:on|the)|go\s+to|visit|open|explore|inspect|view|see|check|click)\s+(?:(?:the|a|an)\s+)?(?:main|primary|top|first|article|page|result|link|url|website|entry|item)\b.*$/i, '');
+      // Strip leading/trailing quotes
+      q = q.replace(/^["'\s]+|["'\s,;.]+$/g, '');
+    }
   } else {
-    q = q.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?)\s+/i, '');
+    // String leads with search directive — strip it from the front directly
+    q = q.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?|type)\s+/i, '');
   }
 
   // Strip trailing search box / prepositional phrases
@@ -1676,7 +1685,7 @@ export function extractSearchQueryFromGoal(goal: string): string {
 
   // Strip trailing downstream action / summarization / inspection directives:
   // "and summarize...", "and inspect the available thematic satellite layers", "navigate to...", etc.
-  q = q.replace(/\s*(?:,\s*(?:and\s+)?|\b(?:and|to|then)\s+)(?:navigate\s+to|click|open|inspect|examine|explore|view|see|check|look\s+at|summarize|summarise|analyze|analyse|explain|give\s+me|show\s+me|tell\s+me|compare|extract|review|find\s+out|provide|hit\s+the\s+website|check\s+the\s+price)\b.*$/i, '');
+  q = q.replace(/\s*(?:,\s*(?:and\s+)?|\b(?:and|to|then)\s+)(?:navigate\s+to|click|open|inspect|examine|explore|view|see|check|look\s+at|summarize|summarise|analyze|analyse|explain|give\s+me|show\s+me|tell\s+me|compare|extract|review|find(?:\s+out|\s+the|\s+its|\s+their)?|get(?:\s+the|\s+its)?|provide|hit\s+the\s+website|check\s+the\s+price|read\s+the|extract\s+the)\b.*$/i, '');
   q = q.replace(/\s+(?:and|then)\s+(?:what|how|why|list|describe|highlight).*$/i, '');
   q = q.replace(/\s+(?:use|using)\s+(?:the\s+)?search\s+bar.*$/i, '');
   q = q.replace(/^["'\s]+|["'\s,;.]+$/g, '');

@@ -15784,18 +15784,21 @@ function extractSearchQueryFromGoal(goal) {
   }
   q2 = q2.replace(/^(?:please\s+|kindly\s+|can\s+you\s+|could\s+you\s+)+/i, "");
   q2 = q2.replace(/^(?:open|go\s+to|visit|launch|navigate\s+to)\s+(?:https?:\/\/\S+|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/\S*)?|[a-zA-Z0-9_-]+(?:\s+(?:website|portal|site|page|app|url))?)\s*(?:[,\s;]+(?:and\s+then|then|after\s+that|and)\s*|[,\s;]+)/i, "");
-  const compoundMatch = q2.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?|type)\s+(.+)$/i);
-  if (compoundMatch) {
-    q2 = compoundMatch[1].trim();
-    q2 = q2.replace(/\s*,\s*(?:navigate\s+to|click\s+(?:on|the)|go\s+to|visit|open|explore|inspect|view|see|check|click)\s+(?:(?:the|a|an)\s+)?(?:main|primary|top|first|article|page|result|link|url|website|entry|item)\b.*$/i, "");
-    q2 = q2.replace(/^["'\s]+|["'\s,;.]+$/g, "");
+  const hasLeadingSearchKeyword = /^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?|type)\s+/i.test(q2);
+  if (!hasLeadingSearchKeyword) {
+    const compoundMatch = q2.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?|type)\s+(.+)$/i);
+    if (compoundMatch) {
+      q2 = compoundMatch[1].trim();
+      q2 = q2.replace(/\s*,\s*(?:navigate\s+to|click\s+(?:on|the)|go\s+to|visit|open|explore|inspect|view|see|check|click)\s+(?:(?:the|a|an)\s+)?(?:main|primary|top|first|article|page|result|link|url|website|entry|item)\b.*$/i, "");
+      q2 = q2.replace(/^["'\s]+|["'\s,;.]+$/g, "");
+    }
   } else {
-    q2 = q2.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?)\s+/i, "");
+    q2 = q2.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?|type)\s+/i, "");
   }
   q2 = q2.replace(/\s+(?:in|into|on|using|use)\s+(?:the\s+)?(?:search(?:\s+box|\s+bar|\s+input)?|table|page).*$/i, "");
   q2 = q2.replace(/\s+(?:on|in|at|across)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|wiki|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?(?:\s+(?:and|or)\s+(?:amazon|flipkart|google|bing|duckduckgo|wikipedia|wiki|github|isro|bhuvan|nrsc)(?:\s+(?:portal|website|site|page|app|platform|map))?)*/i, "");
   q2 = q2.replace(/\s+(?:(?:on\s+(?:the\s+)?)?map|portal|website|site|page)$/i, "");
-  q2 = q2.replace(/\s*(?:,\s*(?:and\s+)?|\b(?:and|to|then)\s+)(?:navigate\s+to|click|open|inspect|examine|explore|view|see|check|look\s+at|summarize|summarise|analyze|analyse|explain|give\s+me|show\s+me|tell\s+me|compare|extract|review|find\s+out|provide|hit\s+the\s+website|check\s+the\s+price)\b.*$/i, "");
+  q2 = q2.replace(/\s*(?:,\s*(?:and\s+)?|\b(?:and|to|then)\s+)(?:navigate\s+to|click|open|inspect|examine|explore|view|see|check|look\s+at|summarize|summarise|analyze|analyse|explain|give\s+me|show\s+me|tell\s+me|compare|extract|review|find(?:\s+out|\s+the|\s+its|\s+their)?|get(?:\s+the|\s+its)?|provide|hit\s+the\s+website|check\s+the\s+price|read\s+the|extract\s+the)\b.*$/i, "");
   q2 = q2.replace(/\s+(?:and|then)\s+(?:what|how|why|list|describe|highlight).*$/i, "");
   q2 = q2.replace(/\s+(?:use|using)\s+(?:the\s+)?search\s+bar.*$/i, "");
   q2 = q2.replace(/^["'\s]+|["'\s,;.]+$/g, "");
