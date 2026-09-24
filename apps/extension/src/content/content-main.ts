@@ -115,10 +115,36 @@ export async function handleMessage(message: any): Promise<any> {
 
   if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
     overlay.hideAgentWorkingGlow();
+
+    // Visible "reading scroll" — slowly scroll through the page so the user can
+    // see the agent scanning content, then return to original position before capture.
+    const pageHeight = document.documentElement.scrollHeight;
+    const viewportH = window.innerHeight;
+    const originalScrollY = window.scrollY;
+    const isLongPage = pageHeight > viewportH * 2;
+
+    if (isLongPage && originalScrollY < pageHeight * 0.1) {
+      // Scroll down to ~60% of page smoothly so user sees agent reading
+      const targetY = Math.min(pageHeight * 0.55, pageHeight - viewportH);
+      window.scrollTo({ top: targetY, behavior: 'smooth' });
+      await new Promise((r) => setTimeout(r, 900)); // let it scroll visibly
+      // Scroll back to top for clean snapshot from scroll=0
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      await new Promise((r) => setTimeout(r, 400));
+    } else if (isLongPage) {
+      // Already scrolled — do a small readable nudge forward and back
+      const nudge = Math.min(originalScrollY + viewportH * 0.4, pageHeight - viewportH);
+      window.scrollTo({ top: nudge, behavior: 'smooth' });
+      await new Promise((r) => setTimeout(r, 600));
+      window.scrollTo({ top: originalScrollY, behavior: 'smooth' });
+      await new Promise((r) => setTimeout(r, 300));
+    }
+
     const extracted = extractor.extractSnapshot(document);
     const captureId = message.captureId || `cap_${Date.now()}`;
     currentCaptureId = captureId;
     currentElementMap = extracted.elementMap;
+
 
     // Merge recent captured native dialogs into snapshot
     const activeTrapped = capturedDialogs.filter((d) => Date.now() - d.timestamp < 30000);
@@ -297,7 +323,7 @@ export async function handleMessage(message: any): Promise<any> {
       if (targetEl) {
         if (typeof targetEl.scrollIntoView === 'function') {
           try {
-            targetEl.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
+            targetEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
           } catch (_) {}
         }
         overlay.highlightTargetElement(targetEl, proposal.kind.toUpperCase(), 1200);

@@ -4110,6 +4110,23 @@
     }
     if (message.type === "EXTRACT_DOM_SNAPSHOT") {
       overlay.hideAgentWorkingGlow();
+      const pageHeight = document.documentElement.scrollHeight;
+      const viewportH = window.innerHeight;
+      const originalScrollY = window.scrollY;
+      const isLongPage = pageHeight > viewportH * 2;
+      if (isLongPage && originalScrollY < pageHeight * 0.1) {
+        const targetY = Math.min(pageHeight * 0.55, pageHeight - viewportH);
+        window.scrollTo({ top: targetY, behavior: "smooth" });
+        await new Promise((r) => setTimeout(r, 900));
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        await new Promise((r) => setTimeout(r, 400));
+      } else if (isLongPage) {
+        const nudge = Math.min(originalScrollY + viewportH * 0.4, pageHeight - viewportH);
+        window.scrollTo({ top: nudge, behavior: "smooth" });
+        await new Promise((r) => setTimeout(r, 600));
+        window.scrollTo({ top: originalScrollY, behavior: "smooth" });
+        await new Promise((r) => setTimeout(r, 300));
+      }
       const extracted = extractor.extractSnapshot(document);
       const captureId = message.captureId || `cap_${Date.now()}`;
       currentCaptureId = captureId;
@@ -4268,7 +4285,7 @@
         if (targetEl) {
           if (typeof targetEl.scrollIntoView === "function") {
             try {
-              targetEl.scrollIntoView({ behavior: "auto", block: "nearest", inline: "nearest" });
+              targetEl.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
             } catch (_) {
             }
           }
