@@ -116,28 +116,49 @@ export async function handleMessage(message: any): Promise<any> {
   if (message.type === 'EXTRACT_DOM_SNAPSHOT') {
     overlay.hideAgentWorkingGlow();
 
-    // Visible "reading scroll" — slowly scroll through the page so the user can
-    // see the agent scanning content, then return to original position before capture.
+    // Visible "reading scroll" + cursor sweep — scroll through page so user sees agent reading,
+    // while the agent cursor glides down the center of the viewport tracking the scroll.
     const pageHeight = document.documentElement.scrollHeight;
     const viewportH = window.innerHeight;
     const originalScrollY = window.scrollY;
     const isLongPage = pageHeight > viewportH * 2;
 
+    // Helper: animate cursor vertically through viewport center over a duration
+    const sweepCursorVertical = async (fromY: number, toY: number, durationMs: number) => {
+      const cursor = overlay.ensureCursor();
+      const centerX = Math.round(window.innerWidth * 0.5);
+      overlay.setCursorPointerType('arrow');
+      const iconEl = cursor.querySelector('.privapilot-cursor-badge-icon');
+      const textEl = cursor.querySelector('.privapilot-cursor-badge-text');
+      if (iconEl) iconEl.innerHTML = '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3v10M4 9l4 4 4-4"/></svg>';
+      if (textEl) textEl.textContent = 'Reading';
+      cursor.style.opacity = '1';
+      const startTime = performance.now();
+      await new Promise<void>((resolve) => {
+        const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb: any) => setTimeout(cb, 16);
+        const step = (now: number) => {
+          const progress = Math.min(1, (now - startTime) / durationMs);
+          const t = progress * progress * progress * (progress * (progress * 6 - 15) + 10);
+          const curY = Math.round(fromY + (toY - fromY) * t);
+          cursor.style.transform = `translate3d(${centerX - 2}px, ${curY - 2}px, 0)`;
+          if (progress < 1) { raf(step); } else { resolve(); }
+        };
+        raf(step);
+      });
+    };
+
     if (isLongPage && originalScrollY < pageHeight * 0.1) {
-      // Scroll down to ~60% of page smoothly so user sees agent reading
-      const targetY = Math.min(pageHeight * 0.55, pageHeight - viewportH);
-      window.scrollTo({ top: targetY, behavior: 'smooth' });
-      await new Promise((r) => setTimeout(r, 900)); // let it scroll visibly
-      // Scroll back to top for clean snapshot from scroll=0
+      const targetScrollY = Math.min(pageHeight * 0.55, pageHeight - viewportH);
+      window.scrollTo({ top: targetScrollY, behavior: 'smooth' });
+      await sweepCursorVertical(80, viewportH - 80, 850);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      await new Promise((r) => setTimeout(r, 400));
+      await sweepCursorVertical(viewportH - 80, 80, 380);
     } else if (isLongPage) {
-      // Already scrolled — do a small readable nudge forward and back
       const nudge = Math.min(originalScrollY + viewportH * 0.4, pageHeight - viewportH);
       window.scrollTo({ top: nudge, behavior: 'smooth' });
-      await new Promise((r) => setTimeout(r, 600));
+      await sweepCursorVertical(viewportH * 0.3, viewportH * 0.75, 550);
       window.scrollTo({ top: originalScrollY, behavior: 'smooth' });
-      await new Promise((r) => setTimeout(r, 300));
+      await sweepCursorVertical(viewportH * 0.75, viewportH * 0.3, 280);
     }
 
     const extracted = extractor.extractSnapshot(document);
