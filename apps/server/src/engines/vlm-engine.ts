@@ -1213,6 +1213,21 @@ export class VlmReasoningEngine {
       }
     }
 
+    // Defensive: sanitize objectiveId if model returned a non-regex-compliant value (e.g. placeholder text with spaces)
+    const ACTION_ID_REGEX_LOCAL = /^[a-zA-Z0-9_-]{1,128}$/;
+    if (parsed && typeof parsed === 'object' && parsed.objectiveId !== undefined) {
+      if (typeof parsed.objectiveId !== 'string' || !ACTION_ID_REGEX_LOCAL.test(parsed.objectiveId)) {
+        // Coerce: replace spaces and non-allowed chars with underscores, trim to 128
+        const coerced = String(parsed.objectiveId).replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 128);
+        if (coerced.length > 0 && ACTION_ID_REGEX_LOCAL.test(coerced)) {
+          parsed.objectiveId = coerced;
+        } else {
+          // Cannot repair — drop it; field is optional in ActionProposal
+          delete parsed.objectiveId;
+        }
+      }
+    }
+
     // 3. Strict Closed Validation against current context elements
     const validation = validateActionProposal(parsed, payload.elements);
     if (!validation.isValid || !validation.proposal) {
@@ -1261,7 +1276,7 @@ Available Browser Skills Library:
 - Domain Playbooks: Specialized patterns for isro-portal.md (ISRO official portal navigation, missions directory /Missions.html, launchers /Launchers.html, search #txtSearch, specifications tables, PDF brochure/report downloads), bhuvan-geoportal.md (Bhuvan 2D/3D map viewer /bhuvan_geoportal.php, location search, thematic layers, disaster support, open satellite data download), sih-portal.md (SIH Problem Statements portal search, filters, and submission metrics), flight-booking.md (airline flight booking forms, origin/destination inputs, search buttons), x-twitter.md (on X.com / Twitter, Bookmarks is located at /i/bookmarks with the ribbon/bookmark icon; Bookmarks are completely separate from Lists /lists; to view bookmarks on X, click the Bookmarks link or navigate to https://x.com/i/bookmarks; never confuse Lists with Bookmarks), wikipedia.md, github.md, duckduckgo-google.md, youtube.md, reddit.md.
 
 Strict Rules:
-1. Return ONLY schema-valid JSON for exactly one minimal next action or answer. Act only on the current objective and copy its id into objectiveId.
+1. Return ONLY schema-valid JSON for exactly one minimal next action or answer. Act only on the current objective and paste its exact id value (e.g. "objective_1") into the objectiveId field. The objectiveId MUST be a plain alphanumeric/underscore/dash string with no spaces, only letters, digits, underscores, or dashes.
 2. Target elements using "targetLocalId" ONLY for interaction actions ("click", "type", "select", "hover", "drag_and_drop", "upload_file"). NEVER invent CSS selectors, XPath, or JavaScript.
 3. Classify risk as "safe" (read/navigate/preview/filter/hover/drag/upload/finish/answer) or "protected" (submit/delete/pay/sign).
 3b. NAVIGATION & MULTI-TAB DIRECTIVE:
@@ -1300,9 +1315,12 @@ Strict Rules:
 8. FILE UPLOAD DIRECTIVE: When uploading or attaching a file, return kind: "upload_file", set "targetLocalId" to the file input and "fileName" to the file name.
 9. MULTI-STEP REASONING: For compound goals (e.g. "go to X and search Y", "click tab and find Z", "scroll and check count"):
    Execute step 1 (navigation or intermediate click/scroll/hover), observe the updated page state on the next cycle, and continue with the subsequent steps (typing, extracting, or verifying) before proposing "finish". Do NOT propose "finish" prematurely after intermediate navigation clicks.
-10. SAFE ACTION JUSTIFICATION:
-    Do not reveal hidden chain-of-thought or private reasoning. Return only a concise, user-safe rationale and semanticMatchReason.
-    Explain briefly why the selected action and target satisfy the active objective, without internal deliberation.
+10. TACTICAL AGENT MONOLOGUE & NATURAL THINKING (MANDATORY):
+    Always include a "reasoning" string field in your JSON response.
+    Write your reasoning as a natural, continuous stream-of-consciousness monologue paragraph (like a human browser user speaking their mind while completing the task).
+    Explain what you visually observe on the page, your tactical thoughts, and why you are calling this specific browser tool.
+    DO NOT use synthetic category labels, bullet headers, or tags like "Observation:", "Strategy:", or "Action Selection:".
+    Express your thoughts in pure, fluent, natural conversational prose.
 11. Do not return "finish" merely because you have explained what should happen. Use "finish" only when every required objective is completed and the evidence ledger contains verified evidence for each objective.
 12. GOAL COMPLETION & PROGRESSION:
    - For QUESTION-ANSWERING & INFORMATION RETRIEVAL GOALS (e.g. "search for X and tell me Y", "find Z and tell me when it was first launched and who organizes it", "how many submissions..."):
@@ -1420,7 +1438,7 @@ Strict Rules:
 JSON Schema:
 {
   "actionId": "act_1",
-  "objectiveId": "Copy the active objective id",
+  "objectiveId": "objective_1",
   "kind": "click" | "type" | "select" | "scroll" | "hover" | "drag_and_drop" | "upload_file" | "wait" | "batch" | "request_user_input" | "finish" | "extract" | "answer",
   "targetLocalId": "el_1 (Required for click/type/select/hover/drag/upload/request_user_input)",
   "destinationLocalId": "Optional el_2 when kind is drag_and_drop",
