@@ -40,9 +40,76 @@ export interface ExecutionFeedback {
   readonly remainingTasks?: ReadonlyArray<string>;
 }
 
+export type ObjectiveStatus = 'pending' | 'active' | 'completed' | 'blocked' | 'failed';
+
+export type ObjectiveIntent =
+  | 'navigate'
+  | 'search'
+  | 'select_result'
+  | 'open_section'
+  | 'inspect'
+  | 'extract'
+  | 'compare'
+  | 'summarize'
+  | 'fill'
+  | 'submit'
+  | 'download'
+  | 'verify';
+
+export type ObjectiveEvidenceKind =
+  | 'url'
+  | 'element'
+  | 'text'
+  | 'input_value'
+  | 'dialog'
+  | 'attribute'
+  | 'scroll'
+  | 'visual_change';
+
+export type RecoveryStrategy =
+  | 'reperceive'
+  | 'wait_for_hydration'
+  | 'retry_target'
+  | 'scroll_to_target'
+  | 'navigate_fallback'
+  | 'refresh_once'
+  | 'request_user_input'
+  | 'fail_safe';
+
+export interface TaskObjective {
+  readonly id: string;
+  readonly sequence: number;
+  readonly intent: ObjectiveIntent;
+  readonly description: string;
+  readonly targetPhrase?: string;
+  readonly extractedValue?: string;
+  readonly expectedEvidence: ReadonlyArray<string>;
+  readonly status: ObjectiveStatus;
+  readonly dependsOn?: ReadonlyArray<string>;
+}
+
+export interface ObjectiveEvidence {
+  readonly objectiveId: string;
+  readonly kind: ObjectiveEvidenceKind;
+  readonly summary: string;
+  readonly sourceActionId?: string;
+  readonly verified: boolean;
+}
+
+export interface ObjectiveProgress {
+  readonly currentObjectiveId?: string;
+  readonly completedObjectiveIds: ReadonlyArray<string>;
+  readonly blockedObjectiveIds: ReadonlyArray<string>;
+  readonly attemptCountByObjective: Readonly<Record<string, number>>;
+  readonly evidence: ReadonlyArray<ObjectiveEvidence>;
+}
+
 export interface TaskSpecification {
   readonly goal: string;
-  readonly tasksToDo: ReadonlyArray<string>;
+  readonly extractedSearchQuery?: string;
+  readonly objectives: ReadonlyArray<TaskObjective>;
+  /** Compatibility projection. Objectives are authoritative. */
+  readonly tasksToDo?: ReadonlyArray<string>;
   readonly tasksNotToDo: ReadonlyArray<string>;
   readonly successCriteria: string;
   readonly requiresSubAgents?: boolean;
@@ -53,8 +120,88 @@ export interface TaskSpecification {
   }>;
 }
 
+export function createInitialObjectiveProgress(specification: TaskSpecification): ObjectiveProgress {
+  const first = [...specification.objectives]
+    .sort((a, b) => a.sequence - b.sequence)
+    .find((objective) => !objective.dependsOn?.length);
+  return {
+    currentObjectiveId: first?.id,
+    completedObjectiveIds: [],
+    blockedObjectiveIds: [],
+    attemptCountByObjective: {},
+    evidence: []
+  };
+}
+
+export function getCurrentObjective(
+  specification: TaskSpecification,
+  progress: ObjectiveProgress
+): TaskObjective | undefined {
+  const byId = new Map(specification.objectives.map((objective) => [objective.id, objective]));
+  const current = progress.currentObjectiveId ? byId.get(progress.currentObjectiveId) : undefined;
+  if (current && !progress.completedObjectiveIds.includes(current.id) && !progress.blockedObjectiveIds.includes(current.id)) {
+    return current;
+  }
+  return [...specification.objectives]
+    .sort((a, b) => a.sequence - b.sequence)
+    .find((objective) =>
+      !progress.completedObjectiveIds.includes(objective.id) &&
+      !progress.blockedObjectiveIds.includes(objective.id) &&
+      (objective.dependsOn || []).every((id) => progress.completedObjectiveIds.includes(id))
+    );
+}
+
+export function recordObjectiveEvidence(
+  progress: ObjectiveProgress,
+  evidence: ObjectiveEvidence
+): ObjectiveProgress {
+  const duplicate = progress.evidence.some((item) =>
+    item.objectiveId === evidence.objectiveId &&
+    item.kind === evidence.kind &&
+    item.summary === evidence.summary &&
+    item.sourceActionId === evidence.sourceActionId
+  );
+  return duplicate ? progress : { ...progress, evidence: [...progress.evidence, evidence].slice(-100) };
+}
+
+export function completeObjectiveWithEvidence(
+  specification: TaskSpecification,
+  progress: ObjectiveProgress,
+  objectiveId: string
+): ObjectiveProgress {
+  const objective = specification.objectives.find((item) => item.id === objectiveId);
+  if (!objective || !progress.evidence.some((item) => item.objectiveId === objectiveId && item.verified)) return progress;
+  const completedObjectiveIds = [...new Set([...progress.completedObjectiveIds, objectiveId])];
+  const interim = { ...progress, completedObjectiveIds, currentObjectiveId: undefined };
+  return { ...interim, currentObjectiveId: getCurrentObjective(specification, interim)?.id };
+}
+
+export function canFinishTask(
+  specification: TaskSpecification,
+  progress: ObjectiveProgress
+): { readonly satisfied: boolean; readonly reason: string } {
+  const incomplete = specification.objectives.filter((objective) => !progress.completedObjectiveIds.includes(objective.id));
+  if (incomplete.length > 0) {
+    return { satisfied: false, reason: `Incomplete objectives: ${incomplete.map((item) => item.id).join(', ')}` };
+  }
+  const unsupported = specification.objectives.filter((objective) =>
+    !progress.evidence.some((item) => item.objectiveId === objective.id && item.verified)
+  );
+  if (unsupported.length > 0) {
+    return { satisfied: false, reason: `Missing verified evidence: ${unsupported.map((item) => item.id).join(', ')}` };
+  }
+  return { satisfied: true, reason: 'All objectives have verified completion evidence' };
+}
+
 export type ExpectedPostcondition =
   | { readonly kind: 'dialog_visible'; readonly dialogId?: string }
+  | { readonly kind: 'panel_visible'; readonly namePattern?: string }
+  | { readonly kind: 'element_visible'; readonly targetLocalId?: string; readonly namePattern?: string }
+  | { readonly kind: 'element_count_changed'; readonly minimumDelta?: number }
+  | { readonly kind: 'visual_change'; readonly minimumChangeRatio?: number }
+  | { readonly kind: 'map_location_changed'; readonly locationPattern?: string }
+  | { readonly kind: 'search_results_visible'; readonly queryPattern?: string }
+  | { readonly kind: 'content_visible'; readonly textPattern?: string }
   | { readonly kind: 'url_changed'; readonly expectedPathFragment?: string }
   | { readonly kind: 'attribute_changed'; readonly attributeName: 'aria-expanded' | 'aria-checked' | 'aria-selected' | 'disabled' | 'open' | 'class'; readonly expectedValue?: string }
   | { readonly kind: 'value_present'; readonly expectedValueFragment?: string }
@@ -668,6 +815,7 @@ export interface AtomicActionProposal {
 
 export interface ActionProposal {
   readonly actionId: string;
+  readonly objectiveId?: string;
   readonly kind: ActionKind;
   readonly targetLocalId?: string;
   readonly destinationLocalId?: string;
@@ -676,6 +824,9 @@ export interface ActionProposal {
   readonly rationale: string;
   readonly expectedState?: string;
   readonly expectedPostcondition?: ExpectedPostcondition;
+  readonly semanticMatchReason?: string;
+  readonly fallbackStrategy?: RecoveryStrategy;
+  readonly completionEvidence?: ReadonlyArray<ObjectiveEvidenceKind>;
   readonly textToType?: string;
   readonly fileName?: string;
   readonly fileData?: string;
@@ -720,6 +871,7 @@ export interface ActionValidationResult {
 
 export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
   'actionId',
+  'objectiveId',
   'kind',
   'targetLocalId',
   'destinationLocalId',
@@ -728,6 +880,9 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
   'rationale',
   'expectedState',
   'expectedPostcondition',
+  'semanticMatchReason',
+  'fallbackStrategy',
+  'completionEvidence',
   'textToType',
   'fileName',
   'fileData',
@@ -910,6 +1065,10 @@ export function validateActionProposal(
     return { isValid: false, errorMessage: 'actionId contains prohibited script or URL patterns' };
   }
 
+  if (proposal.objectiveId !== undefined && (typeof proposal.objectiveId !== 'string' || !ACTION_ID_REGEX.test(proposal.objectiveId))) {
+    return { isValid: false, errorMessage: 'Invalid "objectiveId"' };
+  }
+
   // 3. kind
   if (typeof proposal.kind !== 'string' || !VALID_ACTION_KINDS.has(proposal.kind)) {
     return { isValid: false, errorMessage: 'Invalid or unsupported action kind' };
@@ -959,6 +1118,19 @@ export function validateActionProposal(
     }
   }
 
+  if (proposal.semanticMatchReason !== undefined && (typeof proposal.semanticMatchReason !== 'string' || proposal.semanticMatchReason.length > 1000 || hasProhibitedScriptPattern(proposal.semanticMatchReason) || hasProhibitedUrlPattern(proposal.semanticMatchReason))) {
+    return { isValid: false, errorMessage: 'Field "semanticMatchReason" must be a safe string up to 1000 characters' };
+  }
+  if (proposal.fallbackStrategy !== undefined && !new Set(['reperceive', 'wait_for_hydration', 'retry_target', 'scroll_to_target', 'navigate_fallback', 'refresh_once', 'request_user_input', 'fail_safe']).has(proposal.fallbackStrategy)) {
+    return { isValid: false, errorMessage: 'Invalid fallbackStrategy' };
+  }
+  if (proposal.completionEvidence !== undefined) {
+    const allowedEvidence = new Set(['url', 'element', 'text', 'input_value', 'dialog', 'attribute', 'scroll', 'visual_change']);
+    if (!Array.isArray(proposal.completionEvidence) || proposal.completionEvidence.length > 8 || proposal.completionEvidence.some((item: any) => typeof item !== 'string' || !allowedEvidence.has(item))) {
+      return { isValid: false, errorMessage: 'completionEvidence must contain only supported evidence kinds' };
+    }
+  }
+
   // 7. expectedState
   if (proposal.expectedState !== undefined) {
     if (typeof proposal.expectedState !== 'string' || proposal.expectedState.length > 500) {
@@ -977,6 +1149,13 @@ export function validateActionProposal(
     const pc = proposal.expectedPostcondition as any;
     const allowedKinds = new Set([
       'dialog_visible',
+      'panel_visible',
+      'element_visible',
+      'element_count_changed',
+      'visual_change',
+      'map_location_changed',
+      'search_results_visible',
+      'content_visible',
       'url_changed',
       'attribute_changed',
       'value_present',
@@ -988,6 +1167,35 @@ export function validateActionProposal(
     ]);
     if (!allowedKinds.has(pc.kind)) {
       return { isValid: false, errorMessage: `Invalid expectedPostcondition kind "${pc.kind}"` };
+    }
+    const allowedPostconditionKeys: Record<string, ReadonlySet<string>> = {
+      dialog_visible: new Set(['kind', 'dialogId']),
+      panel_visible: new Set(['kind', 'namePattern']),
+      element_visible: new Set(['kind', 'targetLocalId', 'namePattern']),
+      element_count_changed: new Set(['kind', 'minimumDelta']),
+      visual_change: new Set(['kind', 'minimumChangeRatio']),
+      map_location_changed: new Set(['kind', 'locationPattern']),
+      search_results_visible: new Set(['kind', 'queryPattern']),
+      content_visible: new Set(['kind', 'textPattern']),
+      url_changed: new Set(['kind', 'expectedPathFragment']),
+      attribute_changed: new Set(['kind', 'attributeName', 'expectedValue']),
+      value_present: new Set(['kind', 'expectedValueFragment']),
+      select_changed: new Set(['kind', 'expectedOptionValue']),
+      status_changed: new Set(['kind', 'statusId']),
+      scroll_changed: new Set(['kind', 'direction']),
+      visibility_changed: new Set(['kind', 'targetLocalId', 'state']),
+      answer_supported: new Set(['kind', 'queryTopic'])
+    };
+    for (const key of Object.getOwnPropertyNames(pc)) {
+      if (PROHIBITED_PROPERTY_NAMES.has(key) || !allowedPostconditionKeys[pc.kind]?.has(key)) {
+        return { isValid: false, errorMessage: `Closed schema violation: Unknown expectedPostcondition property "${key}"` };
+      }
+    }
+    if (pc.minimumDelta !== undefined && (typeof pc.minimumDelta !== 'number' || !Number.isFinite(pc.minimumDelta) || pc.minimumDelta < 1)) {
+      return { isValid: false, errorMessage: 'minimumDelta must be a positive finite number' };
+    }
+    if (pc.minimumChangeRatio !== undefined && (typeof pc.minimumChangeRatio !== 'number' || !Number.isFinite(pc.minimumChangeRatio) || pc.minimumChangeRatio < 0 || pc.minimumChangeRatio > 1)) {
+      return { isValid: false, errorMessage: 'minimumChangeRatio must be between 0 and 1' };
     }
     if (pc.kind === 'attribute_changed') {
       const allowedAttrs = new Set(['aria-expanded', 'aria-checked', 'aria-selected', 'disabled', 'open', 'class']);

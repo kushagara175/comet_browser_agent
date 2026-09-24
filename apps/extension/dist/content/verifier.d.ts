@@ -36,6 +36,7 @@ export interface SafePreActionSnapshot {
     readonly statusRegionTextSummary?: string;
     readonly targetState?: TargetSemanticState;
     readonly documentElementCount: number;
+    readonly scrollTop: number;
 }
 export interface VerificationOutcome {
     readonly verified: boolean;

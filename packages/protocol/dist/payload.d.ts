@@ -6,7 +6,7 @@
  * RawCapture CANNOT be passed to Network clients.
  */
 import { ScreenshotPixelBox, ViewportCssPixelBox, ViewportMetadata } from './coordinates.js';
-import type { ExecutionFeedback } from './action.js';
+import type { ActionProposal, ExecutionFeedback, ExpectedPostcondition, ObjectiveProgress, TaskObjective, TaskSpecification } from './action.js';
 export type SensitiveCategory = 'password' | 'email' | 'phone' | 'credit_card' | 'cvv' | 'bank_account' | 'national_id' | 'date_of_birth' | 'address' | 'username' | 'auth_code' | 'token' | 'face' | 'high_risk_surface' | 'uninspectable';
 export type RedactionMethod = 'opaque_mask' | 'gaussian_blur';
 export interface SensitiveRegion {
@@ -136,6 +136,15 @@ export interface RedactionManifest {
 /**
  * Sanitized context produced by local redaction pipeline. Safe to pass to Network client.
  */
+export interface RecentActionRecord {
+    readonly actionId: string;
+    readonly objectiveId?: string;
+    readonly kind: string;
+    readonly targetLocalId?: string;
+    readonly expectedPostcondition?: ExpectedPostcondition;
+    readonly observedOutcome?: string;
+    readonly meaningfulProgress: boolean;
+}
 export interface SanitizedContext {
     readonly _brand: 'SanitizedContext_Verified';
     readonly protocolVersion: '1.0';
@@ -156,6 +165,14 @@ export interface SanitizedContext {
     }>;
     readonly customPrompt?: string;
     readonly executionFeedback?: ExecutionFeedback;
+    readonly taskSpecification?: TaskSpecification;
+    readonly objectiveProgress?: ObjectiveProgress;
+    readonly currentObjective?: TaskObjective;
+    readonly previousAction?: Pick<ActionProposal, 'actionId' | 'objectiveId' | 'kind' | 'targetLocalId' | 'targetName'>;
+    readonly expectedPostcondition?: ExpectedPostcondition;
+    readonly observedOutcome?: string;
+    readonly meaningfulProgress?: boolean;
+    readonly recentActionHistory?: ReadonlyArray<RecentActionRecord>;
 }
 /**
  * Closed Network Payload schema sent over the wire to Centralized Reasoning Server.
@@ -174,6 +191,14 @@ export interface SanitizedNetworkPayload {
     }>;
     readonly customPrompt?: string;
     readonly executionFeedback?: ExecutionFeedback;
+    readonly taskSpecification?: TaskSpecification;
+    readonly objectiveProgress?: ObjectiveProgress;
+    readonly currentObjective?: TaskObjective;
+    readonly previousAction?: Pick<ActionProposal, 'actionId' | 'objectiveId' | 'kind' | 'targetLocalId' | 'targetName'>;
+    readonly expectedPostcondition?: ExpectedPostcondition;
+    readonly observedOutcome?: string;
+    readonly meaningfulProgress?: boolean;
+    readonly recentActionHistory?: ReadonlyArray<RecentActionRecord>;
 }
 /**
  * Converts verified SanitizedContext into canonical wire-ready SanitizedNetworkPayload.

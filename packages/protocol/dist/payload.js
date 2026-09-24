@@ -19,7 +19,15 @@ export function toSanitizedNetworkPayload(context) {
         ...(context.redactionManifest ? { redactionManifest: context.redactionManifest } : {}),
         ...(context.history ? { history: context.history } : {}),
         ...(context.customPrompt ? { customPrompt: context.customPrompt } : {}),
-        ...(context.executionFeedback ? { executionFeedback: context.executionFeedback } : {})
+        ...(context.executionFeedback ? { executionFeedback: context.executionFeedback } : {}),
+        ...(context.taskSpecification ? { taskSpecification: context.taskSpecification } : {}),
+        ...(context.objectiveProgress ? { objectiveProgress: context.objectiveProgress } : {}),
+        ...(context.currentObjective ? { currentObjective: context.currentObjective } : {}),
+        ...(context.previousAction ? { previousAction: context.previousAction } : {}),
+        ...(context.expectedPostcondition ? { expectedPostcondition: context.expectedPostcondition } : {}),
+        ...(context.observedOutcome !== undefined ? { observedOutcome: context.observedOutcome } : {}),
+        ...(context.meaningfulProgress !== undefined ? { meaningfulProgress: context.meaningfulProgress } : {}),
+        ...(context.recentActionHistory ? { recentActionHistory: context.recentActionHistory.slice(-10) } : {})
     };
 }
 export function calculateBase64ByteLength(dataUrlOrBase64) {

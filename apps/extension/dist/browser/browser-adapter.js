@@ -579,21 +579,28 @@ export class WebExtensionAdapter {
     /**
      * Ensures singleton offscreen document is active in Chrome MV3.
      */
-    async ensureOffscreenDocument() {
+    async ensureOffscreenDocument(forceRecreate = false) {
         const api = this.browserAPI;
         if (!api || !api.offscreen) {
             return;
         }
-        // Check if an offscreen document already exists
+        // Check whether the host exists. A context can remain registered while its
+        // listener is stale, so callers may force one bounded close/recreate cycle.
+        let hasDocument = false;
         if (typeof api.offscreen.hasDocument === 'function') {
-            const hasDoc = await api.offscreen.hasDocument();
-            if (hasDoc)
-                return;
+            hasDocument = await api.offscreen.hasDocument();
         }
         else if (api.runtime && typeof api.runtime.getContexts === 'function') {
             const contexts = await api.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
-            if (contexts && contexts.length > 0)
-                return;
+            hasDocument = Boolean(contexts && contexts.length > 0);
+        }
+        if (hasDocument && !forceRecreate)
+            return;
+        if (hasDocument && forceRecreate && typeof api.offscreen.closeDocument === 'function') {
+            try {
+                await api.offscreen.closeDocument();
+            }
+            catch (_) { }
         }
         if (this.offscreenCreationPromise) {
             await this.offscreenCreationPromise;
@@ -635,57 +642,61 @@ export class WebExtensionAdapter {
                     }
                     catch (_) { }
                 }, 60000);
-                const correlationId = `san_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-                // 15000ms Bounded Timeout Promise (accommodates cold-start ONNX model initialization)
-                const timeoutPromise = new Promise((_, reject) => {
-                    setTimeout(() => {
-                        reject(new Error('Sanitization Host Timeout: Offscreen document did not respond within 15000ms'));
-                    }, 15000);
-                });
-                const messagePromise = new Promise((resolve, reject) => {
-                    let attempts = 0;
-                    const maxAttempts = 15;
-                    let settled = false;
-                    const attemptSend = () => {
-                        attempts++;
-                        api.runtime.sendMessage({
-                            target: 'privapilot-offscreen',
-                            type: 'SANITIZE_CAPTURE',
-                            correlationId,
-                            payload: request
-                        }, (response) => {
-                            if (settled)
-                                return;
-                            if (api.runtime.lastError || !response) {
-                                if (attempts < maxAttempts) {
-                                    // Offscreen script is still mounting/parsing the bundle: retry shortly
-                                    setTimeout(attemptSend, 200);
+                const sendToOffscreen = async () => {
+                    const correlationId = `san_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+                    const timeoutPromise = new Promise((_, reject) => {
+                        setTimeout(() => reject(new Error('Sanitization Host Timeout: Offscreen document did not respond within 15000ms')), 15000);
+                    });
+                    const messagePromise = new Promise((resolve, reject) => {
+                        let attempts = 0;
+                        const maxAttempts = 15;
+                        let settled = false;
+                        const attemptSend = () => {
+                            attempts++;
+                            api.runtime.sendMessage({
+                                target: 'privapilot-offscreen',
+                                type: 'SANITIZE_CAPTURE',
+                                correlationId,
+                                payload: request
+                            }, (response) => {
+                                if (settled)
+                                    return;
+                                if (api.runtime.lastError || !response) {
+                                    if (attempts < maxAttempts) {
+                                        setTimeout(attemptSend, 200);
+                                        return;
+                                    }
+                                    settled = true;
+                                    reject(new Error(api.runtime.lastError
+                                        ? `Offscreen Message Error: ${api.runtime.lastError.message}`
+                                        : 'Offscreen document returned empty response'));
                                     return;
                                 }
                                 settled = true;
-                                if (api.runtime.lastError) {
-                                    reject(new Error(`Offscreen Message Error: ${api.runtime.lastError.message}`));
+                                if (response.correlationId !== correlationId) {
+                                    reject(new Error(`Correlation ID mismatch: expected ${correlationId}, got ${response.correlationId}`));
+                                }
+                                else if (!response.success || !response.sanitized) {
+                                    reject(new Error(response.error || 'Sanitization failed in offscreen document'));
                                 }
                                 else {
-                                    reject(new Error('Offscreen document returned empty response'));
+                                    resolve(response.sanitized);
                                 }
-                                return;
-                            }
-                            settled = true;
-                            if (response.correlationId !== correlationId) {
-                                reject(new Error(`Correlation ID mismatch: expected ${correlationId}, got ${response.correlationId}`));
-                                return;
-                            }
-                            if (!response.success || !response.sanitized) {
-                                reject(new Error(response.error || 'Sanitization failed in offscreen document'));
-                                return;
-                            }
-                            resolve(response.sanitized);
-                        });
-                    };
-                    attemptSend();
-                });
-                return await Promise.race([messagePromise, timeoutPromise]);
+                            });
+                        };
+                        attemptSend();
+                    });
+                    return Promise.race([messagePromise, timeoutPromise]);
+                };
+                try {
+                    return await sendToOffscreen();
+                }
+                catch (firstError) {
+                    console.warn('[PrivaPilot SW] Offscreen host was unresponsive; recreating once before fallback.');
+                    await this.ensureOffscreenDocument(true);
+                    await new Promise((resolve) => setTimeout(resolve, 250));
+                    return await sendToOffscreen();
+                }
             }
             catch (offscreenErr) {
                 console.warn('[PrivaPilot SW] Offscreen host sanitization failed, attempting direct worker fallback:', offscreenErr?.message || offscreenErr);

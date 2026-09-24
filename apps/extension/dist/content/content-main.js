@@ -2581,6 +2581,41 @@
             message: "Expected dialog is not visible"
           };
         }
+        case "panel_visible":
+        case "element_visible":
+        case "search_results_visible":
+        case "content_visible": {
+          const patternText = pc.kind === "panel_visible" || pc.kind === "element_visible" ? pc.namePattern : pc.kind === "search_results_visible" ? pc.queryPattern : pc.textPattern;
+          let pattern;
+          try {
+            pattern = patternText ? new RegExp(patternText, "i") : void 0;
+          } catch (_) {
+            pattern = void 0;
+          }
+          const selectors = pc.kind === "panel_visible" ? '[role="dialog"], [role="region"], aside, .panel, .drawer, [class*="panel"], [class*="drawer"], [class*="layer"]' : pc.kind === "search_results_visible" ? '[role="main"] a, [role="list"] > *, .search-results > *, [class*="result"]' : 'main, article, section, [role="main"], [role="region"], p, li, h1, h2, h3';
+          const direct = pc.kind === "element_visible" && pc.targetLocalId ? doc.getElementById(pc.targetLocalId) : null;
+          const candidates = direct ? [direct] : Array.from(doc.querySelectorAll?.(selectors) || []);
+          const matched = candidates.find((candidate) => {
+            const element = candidate;
+            const text = `${element.getAttribute?.("aria-label") || ""} ${element.textContent || ""}`.trim();
+            return isElementVisible(element) && (!pattern || pattern.test(text));
+          });
+          return matched ? { matched: true, reasonCode: pc.kind === "panel_visible" ? "MODAL_DRAWER_VISIBILITY_VERIFIED" : "LANDMARK_MUTATION_VERIFIED", message: `${pc.kind} verified`, matchedCondition: pc.kind } : { matched: false, reasonCode: "CONDITION_NOT_MET", message: `${pc.kind} was not observed` };
+        }
+        case "element_count_changed": {
+          const delta = Math.abs((doc.querySelectorAll?.("*").length || 0) - preSnapshot.documentElementCount);
+          return delta >= (pc.minimumDelta || 1) ? { matched: true, reasonCode: "LANDMARK_MUTATION_VERIFIED", message: `Element count changed by ${delta}`, matchedCondition: "element_count_changed" } : { matched: false, reasonCode: "CONDITION_NOT_MET", message: "Element count did not change enough" };
+        }
+        case "visual_change": {
+          return { matched: false, reasonCode: "CONDITION_NOT_MET", message: "Visual change requires locally corroborated image evidence" };
+        }
+        case "map_location_changed": {
+          const locationPattern = pc.locationPattern?.toLowerCase();
+          const currentLocation = `${typeof window !== "undefined" ? window.location.href : ""} ${doc.body?.textContent || ""}`.toLowerCase();
+          const pathChanged = (typeof window !== "undefined" ? window.location.pathname + window.location.hash : "") !== preSnapshot.pathFingerprint;
+          const markerPresent = Boolean(doc.querySelector?.('.leaflet-marker-icon, .ol-overlaycontainer-stopevent [class*="marker"], [aria-label*="marker" i], [class*="location"]'));
+          return pathChanged || markerPresent || Boolean(locationPattern && currentLocation.includes(locationPattern)) ? { matched: true, reasonCode: "LANDMARK_MUTATION_VERIFIED", message: "Map location evidence changed", matchedCondition: "map_location_changed" } : { matched: false, reasonCode: "CONDITION_NOT_MET", message: "No map location evidence changed" };
+        }
         case "url_changed": {
           const currentPath = (typeof window !== "undefined" ? window.location.pathname + window.location.hash : "").toLowerCase();
           const prePath = (preSnapshot.pathFingerprint || "").toLowerCase();
@@ -2700,20 +2735,18 @@
           };
         }
         case "scroll_changed": {
-          const currentY = (typeof window !== "undefined" ? window.scrollY : 0) || doc.documentElement?.scrollTop || doc.body?.scrollTop || 0;
-          if (pc.direction === "top") {
-            return {
-              matched: currentY === 0,
-              reasonCode: "PASSIVE_ACTION_VERIFIED",
-              message: "Scroll to top verified",
-              matchedCondition: "scroll_changed"
-            };
-          }
-          return {
+          const currentY = doc.defaultView?.scrollY || doc.documentElement?.scrollTop || doc.body?.scrollTop || 0;
+          const deltaY = currentY - preSnapshot.scrollTop;
+          const movedInDirection = pc.direction === "up" ? deltaY < -2 : pc.direction === "down" ? deltaY > 2 : pc.direction === "bottom" ? currentY > preSnapshot.scrollTop || currentY >= Math.max(0, (doc.documentElement?.scrollHeight || 0) - (doc.defaultView?.innerHeight || 0) - 2) : currentY === 0;
+          return movedInDirection ? {
             matched: true,
             reasonCode: "PASSIVE_ACTION_VERIFIED",
-            message: `Scroll in direction ${pc.direction} verified`,
+            message: `Scroll in direction ${pc.direction} verified (${Math.round(deltaY)}px)`,
             matchedCondition: "scroll_changed"
+          } : {
+            matched: false,
+            reasonCode: "CONDITION_NOT_MET",
+            message: `Scroll did not move in direction ${pc.direction}`
           };
         }
         case "visibility_changed": {
@@ -2801,7 +2834,7 @@
       };
     }
     const dialogEls = doc.querySelectorAll?.(
-      'dialog[open], .modal:not([hidden]):not(.hidden), .drawer:not([hidden]):not(.hidden), [role="dialog"], [aria-modal="true"], .preview-panel:not([hidden]):not(.hidden), #previewDrawer:not(.hidden), #preview-drawer:not(.hidden)'
+      'dialog[open], .modal:not([hidden]):not(.hidden), .drawer:not([hidden]):not(.hidden), .sidebar:not([hidden]):not(.hidden), .side-panel:not([hidden]):not(.hidden), .layers-panel:not([hidden]):not(.hidden), [class*="layer"][class*="panel"]:not([hidden]), [role="dialog"], [aria-modal="true"], .preview-panel:not([hidden]):not(.hidden), #previewDrawer:not(.hidden), #preview-drawer:not(.hidden)'
     ) || [];
     let currentOpenCount = 0;
     let newlyOpenedFound = false;
@@ -2955,15 +2988,17 @@
           openDialogIds: /* @__PURE__ */ new Set(),
           landmarkCounts: {},
           statusRegionCount: 0,
-          documentElementCount: 0
+          documentElementCount: 0,
+          scrollTop: 0
         };
       }
       const rawPath = doc.location?.pathname || "";
       const hash = doc.location?.hash || "";
+      const scrollTop = doc.defaultView?.scrollY || doc.documentElement?.scrollTop || doc.body?.scrollTop || 0;
       const pathFingerprint = `${rawPath}${hash ? `#${hash.replace(/^#/, "")}` : ""}`;
       const openDialogIds = /* @__PURE__ */ new Set();
       const dialogEls = doc.querySelectorAll?.(
-        'dialog[open], .modal:not([hidden]):not(.hidden), .drawer:not([hidden]):not(.hidden), [role="dialog"], [aria-modal="true"], .preview-panel:not([hidden]):not(.hidden), #previewDrawer:not(.hidden), #preview-drawer:not(.hidden)'
+        'dialog[open], .modal:not([hidden]):not(.hidden), .drawer:not([hidden]):not(.hidden), .sidebar:not([hidden]):not(.hidden), .side-panel:not([hidden]):not(.hidden), .layers-panel:not([hidden]):not(.hidden), [class*="layer"][class*="panel"]:not([hidden]), [role="dialog"], [aria-modal="true"], .preview-panel:not([hidden]):not(.hidden), #previewDrawer:not(.hidden), #preview-drawer:not(.hidden)'
       ) || [];
       for (let i = 0; i < dialogEls.length; i++) {
         const el = dialogEls[i];
@@ -3011,7 +3046,8 @@
         statusRegionCount,
         statusRegionTextSummary,
         targetState,
-        documentElementCount
+        documentElementCount,
+        scrollTop
       };
     }
     /**
@@ -3120,7 +3156,7 @@
           }
           if (mutationOccurred) {
             const exp = (proposal.expectedState || "").toLowerCase();
-            const expectsSpecificModalOrValue = exp.includes("drawer") || exp.includes("preview") || exp.includes("modal") || exp.includes("dialog") || proposal.expectedPostcondition?.kind === "dialog_visible" || proposal.expectedPostcondition?.kind === "value_present" || proposal.expectedPostcondition?.kind === "select_changed";
+            const expectsSpecificModalOrValue = exp.includes("drawer") || exp.includes("preview") || exp.includes("modal") || exp.includes("dialog") || proposal.expectedPostcondition?.kind === "dialog_visible" || proposal.expectedPostcondition?.kind === "panel_visible" || proposal.expectedPostcondition?.kind === "element_visible" || proposal.expectedPostcondition?.kind === "search_results_visible" || proposal.expectedPostcondition?.kind === "content_visible" || proposal.expectedPostcondition?.kind === "map_location_changed" || proposal.expectedPostcondition?.kind === "visual_change" || proposal.expectedPostcondition?.kind === "value_present" || proposal.expectedPostcondition?.kind === "select_changed";
             if ((proposal.kind === "click" || proposal.kind === "type" || proposal.kind === "select") && !expectsSpecificModalOrValue) {
               resolve({
                 verified: true,
@@ -4248,9 +4284,22 @@
             await overlay.animateDrag(targetEl, destEl);
           }
         }
+        const preScrollY = window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0;
         const execResult = ActionExecutor.execute(proposal, currentElementMap);
         if (proposal.kind === "scroll") {
-          await new Promise((r) => setTimeout(r, 450));
+          await new Promise((r) => setTimeout(r, 650));
+          const postScrollY = window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0;
+          const reachedBoundary = proposal.scrollDirection === "top" ? postScrollY === 0 : proposal.scrollDirection === "bottom" ? postScrollY >= Math.max(0, document.documentElement.scrollHeight - window.innerHeight - 2) : false;
+          if (Math.abs(postScrollY - preScrollY) <= 2 && !reachedBoundary) {
+            return {
+              success: false,
+              actionId: proposal.actionId,
+              semanticOutcomeVerified: false,
+              staleTarget: false,
+              message: `Scroll did not move the page from ${Math.round(preScrollY)}px`,
+              reasonCode: "CONDITION_NOT_MET"
+            };
+          }
         }
         if (targetEl && execResult.success) {
           if (proposal.kind === "type") {

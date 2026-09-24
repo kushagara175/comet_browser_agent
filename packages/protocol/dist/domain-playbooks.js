@@ -1542,6 +1542,11 @@ export function extractSearchQueryFromGoal(goal) {
     const compoundMatch = q.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?|type)\s+(.+)$/i);
     if (compoundMatch) {
         q = compoundMatch[1].trim();
+        // Strip any trailing ", navigate to the main article" and similar mid-clause navigation directives
+        // that were captured as part of the compound group (e.g. `"Quantum Computing", navigate to the main article,`)
+        q = q.replace(/\s*,\s*(?:navigate\s+to|click\s+(?:on|the)|go\s+to|visit|open|explore|inspect|view|see|check|click)\s+(?:(?:the|a|an)\s+)?(?:main|primary|top|first|article|page|result|link|url|website|entry|item)\b.*$/i, '');
+        // Strip leading/trailing quote characters wrapping the extracted term
+        q = q.replace(/^["'\s]+|["'\s,;.]+$/g, '');
     }
     else {
         q = q.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?)\s+/i, '');

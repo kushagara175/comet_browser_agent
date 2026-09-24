@@ -157,6 +157,8 @@ export declare class RunCoordinator {
     private currentCustomPrompt?;
     private currentExecutionFeedback?;
     private currentTaskSpec?;
+    private objectiveProgress?;
+    private recentActionHistory;
     private previousSnapshot;
     private previousUrl;
     private lastExecutedProposal;
@@ -174,6 +176,7 @@ export declare class RunCoordinator {
     private transition;
     private recordActionHistory;
     private isRepeatedAction;
+    private getSearchQuery;
     private tryResolveLocalSafeAction;
     private verifyTerminalPostcondition;
     private createTelemetry;

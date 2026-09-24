@@ -12,9 +12,41 @@ export interface ExecutionFeedback {
     readonly completedTasks?: ReadonlyArray<string>;
     readonly remainingTasks?: ReadonlyArray<string>;
 }
+export type ObjectiveStatus = 'pending' | 'active' | 'completed' | 'blocked' | 'failed';
+export type ObjectiveIntent = 'navigate' | 'search' | 'select_result' | 'open_section' | 'inspect' | 'extract' | 'compare' | 'summarize' | 'fill' | 'submit' | 'download' | 'verify';
+export type ObjectiveEvidenceKind = 'url' | 'element' | 'text' | 'input_value' | 'dialog' | 'attribute' | 'scroll' | 'visual_change';
+export type RecoveryStrategy = 'reperceive' | 'wait_for_hydration' | 'retry_target' | 'scroll_to_target' | 'navigate_fallback' | 'refresh_once' | 'request_user_input' | 'fail_safe';
+export interface TaskObjective {
+    readonly id: string;
+    readonly sequence: number;
+    readonly intent: ObjectiveIntent;
+    readonly description: string;
+    readonly targetPhrase?: string;
+    readonly extractedValue?: string;
+    readonly expectedEvidence: ReadonlyArray<string>;
+    readonly status: ObjectiveStatus;
+    readonly dependsOn?: ReadonlyArray<string>;
+}
+export interface ObjectiveEvidence {
+    readonly objectiveId: string;
+    readonly kind: ObjectiveEvidenceKind;
+    readonly summary: string;
+    readonly sourceActionId?: string;
+    readonly verified: boolean;
+}
+export interface ObjectiveProgress {
+    readonly currentObjectiveId?: string;
+    readonly completedObjectiveIds: ReadonlyArray<string>;
+    readonly blockedObjectiveIds: ReadonlyArray<string>;
+    readonly attemptCountByObjective: Readonly<Record<string, number>>;
+    readonly evidence: ReadonlyArray<ObjectiveEvidence>;
+}
 export interface TaskSpecification {
     readonly goal: string;
-    readonly tasksToDo: ReadonlyArray<string>;
+    readonly extractedSearchQuery?: string;
+    readonly objectives: ReadonlyArray<TaskObjective>;
+    /** Compatibility projection. Objectives are authoritative. */
+    readonly tasksToDo?: ReadonlyArray<string>;
     readonly tasksNotToDo: ReadonlyArray<string>;
     readonly successCriteria: string;
     readonly requiresSubAgents?: boolean;
@@ -24,9 +56,39 @@ export interface TaskSpecification {
         readonly goal: string;
     }>;
 }
+export declare function createInitialObjectiveProgress(specification: TaskSpecification): ObjectiveProgress;
+export declare function getCurrentObjective(specification: TaskSpecification, progress: ObjectiveProgress): TaskObjective | undefined;
+export declare function recordObjectiveEvidence(progress: ObjectiveProgress, evidence: ObjectiveEvidence): ObjectiveProgress;
+export declare function completeObjectiveWithEvidence(specification: TaskSpecification, progress: ObjectiveProgress, objectiveId: string): ObjectiveProgress;
+export declare function canFinishTask(specification: TaskSpecification, progress: ObjectiveProgress): {
+    readonly satisfied: boolean;
+    readonly reason: string;
+};
 export type ExpectedPostcondition = {
     readonly kind: 'dialog_visible';
     readonly dialogId?: string;
+} | {
+    readonly kind: 'panel_visible';
+    readonly namePattern?: string;
+} | {
+    readonly kind: 'element_visible';
+    readonly targetLocalId?: string;
+    readonly namePattern?: string;
+} | {
+    readonly kind: 'element_count_changed';
+    readonly minimumDelta?: number;
+} | {
+    readonly kind: 'visual_change';
+    readonly minimumChangeRatio?: number;
+} | {
+    readonly kind: 'map_location_changed';
+    readonly locationPattern?: string;
+} | {
+    readonly kind: 'search_results_visible';
+    readonly queryPattern?: string;
+} | {
+    readonly kind: 'content_visible';
+    readonly textPattern?: string;
 } | {
     readonly kind: 'url_changed';
     readonly expectedPathFragment?: string;
@@ -98,6 +160,7 @@ export interface AtomicActionProposal {
 }
 export interface ActionProposal {
     readonly actionId: string;
+    readonly objectiveId?: string;
     readonly kind: ActionKind;
     readonly targetLocalId?: string;
     readonly destinationLocalId?: string;
@@ -106,6 +169,9 @@ export interface ActionProposal {
     readonly rationale: string;
     readonly expectedState?: string;
     readonly expectedPostcondition?: ExpectedPostcondition;
+    readonly semanticMatchReason?: string;
+    readonly fallbackStrategy?: RecoveryStrategy;
+    readonly completionEvidence?: ReadonlyArray<ObjectiveEvidenceKind>;
     readonly textToType?: string;
     readonly fileName?: string;
     readonly fileData?: string;

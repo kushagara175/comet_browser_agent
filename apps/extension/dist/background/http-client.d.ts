@@ -55,6 +55,7 @@ export declare class ReasoningHttpClient {
      * from the reasoning planner.
      */
     requestTaskSpecification(goal: string, contextUrl?: string, customPrompt?: string): Promise<TaskSpecification>;
+    private normalizeTaskSpecification;
     /**
      * Transmits sanitized page-aware context projection to Chat endpoint.
      * Strictly accepts SanitizedContext only (never raw captures or URLs).

@@ -257,10 +257,9 @@ test('MultiStepCoordinator: Scenario 1 - Successful three-step workflow (type ->
 
   // Verify fresh captureId was generated per cycle
   const captureMessages = browser.sentMessages.filter(m => m.message.type === 'EXTRACT_DOM_SNAPSHOT');
-  assert.strictEqual(captureMessages.length, 3);
   const captureIds = captureMessages.map(m => m.message.captureId);
   const uniqueCaptureIds = new Set(captureIds);
-  assert.strictEqual(uniqueCaptureIds.size, 3, 'Each perception cycle must use a fresh ephemeral captureId');
+  assert.strictEqual(uniqueCaptureIds.size, 3, 'Each execution perception cycle must use a fresh ephemeral captureId; bounded hydration polls may reuse it');
 });
 
 test('MultiStepCoordinator: Scenario 2 - Protected submit approval pauses and resumes loop', async () => {

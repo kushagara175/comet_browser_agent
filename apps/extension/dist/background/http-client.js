@@ -172,8 +172,8 @@ export class ReasoningHttpClient {
             }, 'Task specification request', 10000);
             if (response.ok) {
                 const data = await response.json();
-                if (data && Array.isArray(data.tasksToDo)) {
-                    return data;
+                if (data && (Array.isArray(data.objectives) || Array.isArray(data.tasksToDo))) {
+                    return this.normalizeTaskSpecification(data, goal);
                 }
             }
         }
@@ -182,7 +182,7 @@ export class ReasoningHttpClient {
         }
         // Graceful local deterministic task specification
         const isMultiTarget = /\b(?:compare|both|versus|vs\.?|across|each)\b/i.test(goal);
-        return {
+        return this.normalizeTaskSpecification({
             goal,
             tasksToDo: [
                 'Inspect layout and identify interactive landmarks',
@@ -195,6 +195,45 @@ export class ReasoningHttpClient {
             ],
             successCriteria: 'Target content located or verified live DOM state transition observed.',
             requiresSubAgents: isMultiTarget
+        }, goal);
+    }
+    normalizeTaskSpecification(value, goal) {
+        const tasksToDo = Array.isArray(value?.tasksToDo)
+            ? value.tasksToDo.filter((item) => typeof item === 'string').slice(0, 50)
+            : [];
+        const validIntents = new Set(['navigate', 'search', 'select_result', 'open_section', 'inspect', 'extract', 'compare', 'summarize', 'fill', 'submit', 'download', 'verify']);
+        const objectives = Array.isArray(value?.objectives) && value.objectives.length > 0
+            ? value.objectives.slice(0, 50).map((item, index) => ({
+                id: typeof item?.id === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(item.id) ? item.id : `objective_${index + 1}`,
+                sequence: Number.isInteger(item?.sequence) && item.sequence > 0 ? item.sequence : index + 1,
+                intent: validIntents.has(item?.intent) ? item.intent : 'inspect',
+                description: typeof item?.description === 'string' ? item.description.slice(0, 500) : tasksToDo[index] || `Complete objective ${index + 1}`,
+                ...(typeof item?.targetPhrase === 'string' ? { targetPhrase: item.targetPhrase.slice(0, 200) } : {}),
+                ...(typeof item?.extractedValue === 'string' ? { extractedValue: item.extractedValue.slice(0, 1000) } : {}),
+                expectedEvidence: Array.isArray(item?.expectedEvidence) && item.expectedEvidence.length > 0
+                    ? item.expectedEvidence.filter((entry) => typeof entry === 'string').slice(0, 10)
+                    : ['verified semantic outcome'],
+                status: index === 0 ? 'active' : 'pending',
+                ...(Array.isArray(item?.dependsOn) ? { dependsOn: item.dependsOn.filter((entry) => typeof entry === 'string').slice(0, 10) } : {})
+            }))
+            : (tasksToDo.length > 0 ? tasksToDo : ['Inspect page and complete the requested goal']).map((description, index) => ({
+                id: `objective_${index + 1}`,
+                sequence: index + 1,
+                intent: 'inspect',
+                description,
+                expectedEvidence: ['verified semantic outcome'],
+                status: index === 0 ? 'active' : 'pending',
+                ...(index > 0 ? { dependsOn: [`objective_${index}`] } : {})
+            }));
+        return {
+            goal: typeof value?.goal === 'string' ? value.goal : goal,
+            ...(typeof value?.extractedSearchQuery === 'string' ? { extractedSearchQuery: value.extractedSearchQuery } : {}),
+            objectives,
+            tasksToDo: objectives.map((objective) => objective.description),
+            tasksNotToDo: Array.isArray(value?.tasksNotToDo) ? value.tasksNotToDo.filter((item) => typeof item === 'string').slice(0, 50) : [],
+            successCriteria: typeof value?.successCriteria === 'string' ? value.successCriteria : 'All objectives have verified evidence.',
+            ...(typeof value?.requiresSubAgents === 'boolean' ? { requiresSubAgents: value.requiresSubAgents } : {}),
+            ...(Array.isArray(value?.subAgentTasks) ? { subAgentTasks: value.subAgentTasks } : {})
         };
     }
     /**

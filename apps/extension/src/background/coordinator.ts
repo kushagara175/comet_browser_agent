@@ -37,7 +37,14 @@ import {
   stripNavigationPrefixFromGoal,
   isPureNavigationGoal,
   ExecutionFeedback,
-  TaskSpecification
+  TaskSpecification,
+  ObjectiveProgress,
+  ObjectiveEvidenceKind,
+  createInitialObjectiveProgress,
+  getCurrentObjective,
+  recordObjectiveEvidence,
+  completeObjectiveWithEvidence,
+  canFinishTask
 } from '@privapilot/protocol';
 import { BrowserAdapter, WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
@@ -451,6 +458,8 @@ export class RunCoordinator {
   private currentCustomPrompt?: string;
   private currentExecutionFeedback?: ExecutionFeedback;
   private currentTaskSpec?: TaskSpecification;
+  private objectiveProgress?: ObjectiveProgress;
+  private recentActionHistory: Array<{ actionId: string; objectiveId?: string; kind: string; targetLocalId?: string; expectedPostcondition?: ExpectedPostcondition; observedOutcome?: string; meaningfulProgress: boolean }> = [];
   private previousSnapshot: SanitizedContext | null = null;
   private previousUrl: string = '';
   private lastExecutedProposal: ActionProposal | null = null;
@@ -557,8 +566,11 @@ export class RunCoordinator {
     }
   }
 
-  private isRepeatedAction(proposal: ActionProposal): boolean {
+  private isRepeatedAction(proposal: ActionProposal, sanitized?: SanitizedContext): boolean {
     if (proposal.kind === 'finish' || proposal.kind === 'wait' || proposal.kind === 'batch' || proposal.kind === 'request_user_input') return false;
+    if (proposal.kind === 'scroll' && Math.abs((sanitized?.pageState as any)?.stateDelta?.scrollDeltaY || 0) > 2) {
+      return false;
+    }
 
     // Consecutive identical action check (A -> A)
     if (this.actionHistory.length >= 2) {
@@ -596,6 +608,11 @@ export class RunCoordinator {
     }
 
     return false;
+  }
+
+  private getSearchQuery(goal: string): string {
+    const plannedQuery = this.currentTaskSpec?.extractedSearchQuery?.trim();
+    return plannedQuery || extractSearchQueryFromGoal(goal);
   }
 
   private tryResolveLocalSafeAction(
@@ -766,7 +783,7 @@ export class RunCoordinator {
     // If the goal also contains an explicit search directive (e.g. "search X and tell me Y"),
     // let search execution and result drilling (playbook or universal search) run first before answering!
     const effectivePageUrl = currentUrl || sanitized.pageState?.url || '';
-    const hasSearchDirective = Boolean(extractSearchQueryFromGoal(goal));
+    const hasSearchDirective = Boolean(this.getSearchQuery(goal));
     const isOnSearchResultsPage = effectivePageUrl.includes('search') ||
       (sanitized.pageState?.title || '').toLowerCase().includes('search') ||
       (sanitized.pageState?.title || '').toLowerCase().includes('results');
@@ -905,7 +922,7 @@ export class RunCoordinator {
       // 0. If user is already on the requested route (e.g. Map Viewer on Bhuvan or Problem Statements on SIH)
       // Only emit static answer if the user's ONLY directive was route navigation, without any pending search/action goals
       if (resolution.matchedIntent === 'none' && resolution.rationale?.includes('Already on route')) {
-        const hasUnfinishedSearchOrGoal = Boolean(extractSearchQueryFromGoal(goal)) ||
+        const hasUnfinishedSearchOrGoal = Boolean(this.getSearchQuery(goal)) ||
           /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
         if (!hasUnfinishedSearchOrGoal) {
           const reply = `You are already on the active ${playbook.name} route. All interactive navigation controls, map canvas layers, and search tools are loaded and ready.`;
@@ -947,7 +964,7 @@ export class RunCoordinator {
       if (resolution.matchedIntent === 'click_landmark' && resolution.targetPhrase) {
         // If already on Bhuvan NextGen map viewer (/ngmaps), the 2D/3D viewer is already active and loaded
         if ((currentUrl || '').includes('/ngmaps') && resolution.targetPhrase.toLowerCase().includes('2d')) {
-          const hasPendingDownstreamGoal = Boolean(extractSearchQueryFromGoal(goal)) ||
+          const hasPendingDownstreamGoal = Boolean(this.getSearchQuery(goal)) ||
             /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
           if (!hasPendingDownstreamGoal) {
             const reply = 'You are already on the active Bhuvan NextGen 2D/3D Map Viewer. The satellite map canvas and geospatial navigation controls are loaded and ready.';
@@ -1043,7 +1060,7 @@ export class RunCoordinator {
       if (isSearchDirective) {
         const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_playbook_fill_'));
         if (hasAlreadyFilled) {
-          const query = extractSearchQueryFromGoal(goal) || 'query';
+          const query = this.getSearchQuery(goal) || 'query';
           const queryTokens = tokenizeSemanticText(query.toLowerCase());
           const STOPWORDS = new Set([
             'and', 'the', 'for', 'with', 'from', 'that', 'this', 'into', 'about', 'or', 'in',
@@ -1095,6 +1112,33 @@ export class RunCoordinator {
           }
 
           if (isMapDomain && hasAlreadyClickedSuggestion) {
+            const needsLayerInspection = /\b(?:inspect|examine|explore|show|open|available|thematic|satellite|imagery|layers?|overlays?|data\s+services?)\b/i.test(trimmedGoal);
+            const hasOpenedLayers = this.actionHistory.some((a) => a.actionId?.startsWith('act_bhuvan_layers_'));
+            if (needsLayerInspection && !hasOpenedLayers) {
+              const layerControl = sanitized.elements.find((el) => {
+                if (!['button', 'link', 'tab', 'menuitem', 'generic'].includes(el.role)) return false;
+                const semanticText = `${el.sanitizedName || ''} ${el.containerContext || ''} ${el.nearestHeading || ''}`.toLowerCase();
+                return /\b(?:map\s+layers?|layers?|thematic|data\s+services?|overlays?|catalog(?:ue)?)\b/i.test(semanticText) ||
+                  /open\s+drawer/i.test(semanticText);
+              });
+              if (layerControl) {
+                return {
+                  actionId: `act_bhuvan_layers_${step}_${Date.now()}`,
+                  kind: 'click',
+                  targetLocalId: layerControl.localId,
+                  targetName: layerControl.sanitizedName,
+                  confidence: 0.97,
+                  risk: 'safe',
+                  rationale: `Opening Bhuvan layer control "${layerControl.sanitizedName}" after centering ${query}`
+                };
+              }
+              return null;
+            }
+
+            if (needsLayerInspection && hasOpenedLayers) {
+              return null;
+            }
+
             return {
               actionId: `act_local_finish_${step}_${Date.now()}`,
               kind: 'finish',
@@ -1224,7 +1268,7 @@ export class RunCoordinator {
         });
 
         if (matchingEl) {
-          const textToType = extractSearchQueryFromGoal(goal);
+          const textToType = this.getSearchQuery(goal);
           return {
             actionId: `act_playbook_fill_${step}_${Date.now()}`,
             kind: 'type',
@@ -1241,7 +1285,7 @@ export class RunCoordinator {
     }
 
     // 1e. Universal Generic Search for ANY Website (Deterministic fast-path for explicit search directives)
-    const genericSearchQuery = extractSearchQueryFromGoal(goal);
+    const genericSearchQuery = this.getSearchQuery(goal);
     const hasGenericSearchDirective = Boolean(genericSearchQuery) &&
       /\b(?:search(?:\s+for)?|search\s+box|search\s+bar|search\s+input|query\s+for|lookup)\b/i.test(trimmedGoal);
 
@@ -1402,7 +1446,7 @@ export class RunCoordinator {
 
       // Local finish for dropdown suggestion click (only on map portals)
       if (lastAction.actionId && lastAction.actionId.startsWith('act_dropdown_suggestion_click_')) {
-        const query = extractSearchQueryFromGoal(goal) || 'query';
+        const query = this.getSearchQuery(goal) || 'query';
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
           kind: 'finish',
@@ -1420,7 +1464,7 @@ export class RunCoordinator {
           return null;
         }
 
-        const query = extractSearchQueryFromGoal(goal) || 'query';
+        const query = this.getSearchQuery(goal) || 'query';
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
           kind: 'finish',
@@ -1929,6 +1973,8 @@ export class RunCoordinator {
 
     this.currentCustomPrompt = options?.customPrompt;
     this.currentExecutionFeedback = undefined;
+    this.objectiveProgress = undefined;
+    this.recentActionHistory = [];
 
     if (options?.history && Array.isArray(options.history) && options.history.length > 0) {
       this.conversationHistory = options.history.map((h) => ({
@@ -1999,11 +2045,25 @@ export class RunCoordinator {
 
     // Query dynamic LLM task planner for Tasks To Do & Tasks Not To Do
     try {
-      this.currentTaskSpec = await this.httpClient.requestTaskSpecification(
+      const plannedSpec = await this.httpClient.requestTaskSpecification(
         effectiveGoal,
         undefined,
         this.currentCustomPrompt
       );
+      const legacyTasks = plannedSpec.tasksToDo || [];
+      this.currentTaskSpec = plannedSpec.objectives?.length ? plannedSpec : {
+        ...plannedSpec,
+        objectives: (legacyTasks.length ? legacyTasks : ['Complete the requested goal']).map((description, index) => ({
+          id: `objective_${index + 1}`,
+          sequence: index + 1,
+          intent: index === legacyTasks.length - 1 && /verify|confirm/i.test(description) ? 'verify' as const : 'inspect' as const,
+          description,
+          expectedEvidence: ['verified semantic outcome'],
+          status: index === 0 ? 'active' as const : 'pending' as const,
+          ...(index > 0 ? { dependsOn: [`objective_${index}`] } : {})
+        }))
+      };
+      this.objectiveProgress = createInitialObjectiveProgress(this.currentTaskSpec);
     } catch (_) {
       this.currentTaskSpec = undefined;
     }
@@ -2535,28 +2595,30 @@ export class RunCoordinator {
         return this.completeWithResult(res);
       }
 
-      // If the page is in a dynamic loading / hydration state (e.g. Bhuvan NextGen / GIS / WebGL / SPA),
-      // wait briefly and refresh the snapshot so interactive controls are available.
-      if (
-        domResponse &&
-        domResponse.success &&
-        (domResponse.snapshot?.interactiveElements?.length === 0 || (domResponse.snapshot?.interactiveElements?.length || 0) <= 2) &&
-        (
-          /loading/i.test(domResponse.snapshot?.pageTitle || '') ||
-          (domResponse.snapshot?.textNodes || []).some((t: any) => /loading/i.test(t.text || ''))
-        )
-      ) {
-        this.transition('executing', 'Waiting for geospatial application and map canvas to finish loading...');
-        await new Promise((r) => setTimeout(r, 2500));
-        try {
-          const refreshed = await this.browser.sendMessageToTab(activeTab.id, {
-            type: 'EXTRACT_DOM_SNAPSHOT',
-            captureId
-          });
-          if (refreshed && refreshed.success && ((refreshed.snapshot?.interactiveElements?.length || 0) > 0 || !/loading/i.test(refreshed.snapshot?.pageTitle || ''))) {
-            domResponse = refreshed;
-          }
-        } catch (_) {}
+      // Dynamic SPAs can report document complete before their controls hydrate.
+      // Poll only while the snapshot is visibly loading and lacks substantive UI.
+      const snapshotNeedsHydration = (response: any): boolean => {
+        if (!response?.success) return false;
+        const snapshot = response.snapshot || {};
+        const interactiveCount = snapshot.interactiveElements?.length || 0;
+        const textNodes = snapshot.textNodes || [];
+        const visibleText = textNodes.map((node: any) => node.text || '').join(' ').trim();
+        const showsLoading = /\b(?:loading|initializing|please wait)\b/i.test(`${snapshot.pageTitle || ''} ${visibleText}`);
+        return interactiveCount <= 2 && (showsLoading || visibleText.length < 40);
+      };
+      if (snapshotNeedsHydration(domResponse)) {
+        const hydrationDelays = [1000, 2000, 4000];
+        for (let attempt = 0; attempt < hydrationDelays.length && snapshotNeedsHydration(domResponse); attempt++) {
+          this.transition('executing', `Waiting for application controls to load (${attempt + 1}/${hydrationDelays.length})...`);
+          await new Promise((resolve) => setTimeout(resolve, hydrationDelays[attempt]));
+          try {
+            const refreshed = await this.browser.sendMessageToTab(activeTab.id, {
+              type: 'EXTRACT_DOM_SNAPSHOT',
+              captureId
+            });
+            if (refreshed?.success) domResponse = refreshed;
+          } catch (_) {}
+        }
       }
 
       let screenshotDataUrl: string;
@@ -2930,6 +2992,37 @@ export class RunCoordinator {
           if (this.currentExecutionFeedback) {
             (sanitized as any).executionFeedback = this.currentExecutionFeedback;
           }
+          const currentObjective = this.currentTaskSpec && this.objectiveProgress
+            ? getCurrentObjective(this.currentTaskSpec, this.objectiveProgress)
+            : undefined;
+          if (this.currentTaskSpec) (sanitized as any).taskSpecification = this.currentTaskSpec;
+          if (this.objectiveProgress) {
+            const objectiveId = currentObjective?.id;
+            if (objectiveId) {
+              this.objectiveProgress = {
+                ...this.objectiveProgress,
+                attemptCountByObjective: {
+                  ...this.objectiveProgress.attemptCountByObjective,
+                  [objectiveId]: (this.objectiveProgress.attemptCountByObjective[objectiveId] || 0) + 1
+                }
+              };
+            }
+            (sanitized as any).objectiveProgress = this.objectiveProgress;
+          }
+          if (currentObjective) (sanitized as any).currentObjective = currentObjective;
+          if (this.lastExecutedProposal) {
+            (sanitized as any).previousAction = {
+              actionId: this.lastExecutedProposal.actionId,
+              objectiveId: this.lastExecutedProposal.objectiveId,
+              kind: this.lastExecutedProposal.kind,
+              targetLocalId: this.lastExecutedProposal.targetLocalId,
+              targetName: this.lastExecutedProposal.targetName
+            };
+            if (this.lastExecutedProposal.expectedPostcondition) (sanitized as any).expectedPostcondition = this.lastExecutedProposal.expectedPostcondition;
+          }
+          (sanitized as any).observedOutcome = this.lastExecutionResult?.message || sanitized.pageState.stateDelta?.observedOutcome || '';
+          (sanitized as any).meaningfulProgress = Boolean(sanitized.pageState.stateDelta?.verificationPassed || sanitized.pageState.stateDelta?.urlChanged || Math.abs(sanitized.pageState.stateDelta?.scrollDeltaY || 0) > 2);
+          (sanitized as any).recentActionHistory = this.recentActionHistory.slice(-10);
           proposal = await this.httpClient.requestReasoningAction(sanitized);
         } catch (err: any) {
           console.warn('[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:', err?.message || err);
@@ -2968,6 +3061,10 @@ export class RunCoordinator {
         t4_reasoningReceived = Date.now();
       }
 
+      const activeObjective = this.currentTaskSpec && this.objectiveProgress
+        ? getCurrentObjective(this.currentTaskSpec, this.objectiveProgress)
+        : undefined;
+      if (activeObjective && !proposal.objectiveId) proposal = { ...proposal, objectiveId: activeObjective.id };
       this.lastActionProposal = proposal;
 
       // Broadcast proposed action & live model reasoning immediately to sidepanel
@@ -3449,11 +3546,11 @@ export class RunCoordinator {
         currentUrlStr.includes('Special:Search') ||
         /search\s+results/i.test(sanitized.pageState?.title || '')
       );
-      const isArticleReadingGoal = /\b(?:instruments?|payloads?|specifications?|launch\s+vehicles?|launchers?|requirements?|details?|read\s+(?:the\s+)?article|tell\s+me\s+what\s+(?:instruments?|payloads?|details?))\b/i.test(this.currentGoal || '');
+      const isArticleReadingGoal = /\b(?:summari[sz]e|compare|difference|differences|superconducting|trapped[-\s]?ion|qubits?|instruments?|payloads?|specifications?|launch\s+vehicles?|launchers?|requirements?|details?|read\s+(?:the\s+)?article|tell\s+me\s+what\s+(?:instruments?|payloads?|details?))\b/i.test(this.currentGoal || '');
       const hasClickedSearchResult = this.actionHistory.some(a => a.actionId && a.actionId.startsWith('act_search_result_click_'));
 
       if (isOnSearchResultsPage && isArticleReadingGoal && !hasClickedSearchResult && step < maxSteps) {
-        const query = extractSearchQueryFromGoal(this.currentGoal || '') || 'Chandrayaan-3';
+        const query = this.getSearchQuery(this.currentGoal || '') || 'Chandrayaan-3';
         const queryTokens = tokenizeSemanticText(query).filter(t => t.length > 2);
         const resultLink = sanitized.elements.find((el) => {
           if (el.role !== 'link') return false;
@@ -3490,6 +3587,31 @@ export class RunCoordinator {
         }
       }
 
+      // Prefer a relevant article section anchor over repeated viewport scrolling.
+      // Wikipedia and similar long-form pages expose section links in their table of contents.
+      const comparisonGoal = /\b(?:compare|difference|differences|versus|vs\.?)\b/i.test(this.currentGoal || '');
+      const mentionsQubitImplementations = /\b(?:superconducting|trapped[-\s]?ion|qubits?)\b/i.test(this.currentGoal || '');
+      const hasSelectedRelevantSection = this.actionHistory.some(a => a.actionId?.startsWith('act_section_anchor_'));
+      if (!isOnSearchResultsPage && comparisonGoal && mentionsQubitImplementations && !hasSelectedRelevantSection && step < maxSteps) {
+        const sectionLink = sanitized.elements.find(el =>
+          (el.role === 'link' || el.role === 'button') &&
+          /\b(?:physical\s+realizations?|implementations?|qubit\s+implementations?|hardware)\b/i.test(el.sanitizedName || '')
+        );
+        if (sectionLink) {
+          proposal = {
+            actionId: `act_section_anchor_${step}_${Date.now()}`,
+            kind: 'click',
+            targetLocalId: sectionLink.localId,
+            targetName: sectionLink.sanitizedName,
+            confidence: 0.99,
+            risk: 'safe',
+            reasoning: `A relevant section anchor, "${sectionLink.sanitizedName}", is available. Clicking it is faster and more precise than repeated scrolling.`,
+            rationale: `Jumping directly to "${sectionLink.sanitizedName}" to compare the requested qubit implementations.`
+          };
+          riskLevel = 'safe';
+        }
+      }
+
       // Grounded Reading Guard: If the user asked to read or find specific details in an article
       // (e.g. instruments, payloads, specifications, requirements), but the agent just landed at
       // the top of a long article (scrollTop < 250) and has never scrolled, smoothly scroll down
@@ -3502,7 +3624,7 @@ export class RunCoordinator {
           : this.actionHistory.some(a => a.kind === 'scroll');
         const isAtTopOfLongPage = Boolean(sm && sm.scrollableBelow && sm.maxScrollTop > 800 && sm.scrollTop < 250);
 
-        if (isArticleReadingGoal && !hasScrolledAfterLastClick && isAtTopOfLongPage && !isOnSearchResultsPage) {
+        if (!hasSelectedRelevantSection && isArticleReadingGoal && !hasScrolledAfterLastClick && isAtTopOfLongPage && !isOnSearchResultsPage) {
           console.log(`[Coordinator] Grounded reading scroll: Navigated to long article at top; scrolling down smoothly to locate content before finishing.`);
           proposal = {
             actionId: `act_grounded_scroll_${Date.now()}`,
@@ -3565,10 +3687,36 @@ export class RunCoordinator {
           proposal = { ...proposal, reply: proposal.rationale };
         }
 
+        if (terminalCheck.satisfied && this.currentTaskSpec && this.objectiveProgress) {
+          const pendingVerify = this.currentTaskSpec.objectives.find((objective) =>
+            objective.intent === 'verify' && !this.objectiveProgress!.completedObjectiveIds.includes(objective.id)
+          );
+          if (pendingVerify) {
+            this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
+              objectiveId: pendingVerify.id,
+              kind: 'element',
+              summary: (terminalCheck.reason || 'Terminal postcondition verified').slice(0, 1000),
+              sourceActionId: proposal.actionId,
+              verified: true
+            });
+            this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, pendingVerify.id);
+          }
+        }
+        const objectiveCheck = this.currentTaskSpec && this.objectiveProgress
+          ? canFinishTask(this.currentTaskSpec, this.objectiveProgress)
+          : { satisfied: true, reason: 'No structured objectives available' };
+
         const isAnswerGoal = Boolean(this.currentTaskContract?.isAnswerGoal);
         const isAnswerOrConversational = (proposal.kind === 'answer' && hasSubstantiveAnswer) ||
           (isAnswerGoal && hasSubstantiveAnswer) ||
           (this.currentTaskContract?.goalPattern === 'conversational_query');
+
+        if (!objectiveCheck.satisfied && this.currentTaskSpec?.objectives?.length) {
+          const errorMsg = `Task rejected: terminal action proposed before objective completion: ${objectiveCheck.reason}`;
+          this.transition('failed-safe', errorMsg);
+          const res: CoordinatorRunResult = { success: false, state: 'failed-safe', error: errorMsg, sanitized, proposal, stepCount: step, steps: this.stepsTrace };
+          return this.completeWithResult(res);
+        }
 
         if (proposal.kind === 'finish' && isAnswerGoal && !hasSubstantiveAnswer) {
           const errorMsg = `Task rejected: Model proposed "finish" for an information retrieval / summarization task without providing an answer or summary.`;
@@ -3682,7 +3830,7 @@ export class RunCoordinator {
       }
 
       // Check repeated action loop
-      const isDuplicate = this.isRepeatedAction(proposal);
+      const isDuplicate = this.isRepeatedAction(proposal, sanitized);
       if (isDuplicate) {
         const errorMsg = 'Repeated action loop detected: identical action proposed consecutively without progress';
         this.transition('failed-safe', errorMsg);
@@ -4013,15 +4161,79 @@ export class RunCoordinator {
       this.transition('verifying', `Step ${step}/${maxSteps}: Verifying semantic outcome`);
       const t7_stateVerified = Date.now();
 
+      const verified = Boolean(execResponse?.semanticOutcomeVerified ?? execResponse?.success);
+      const objectiveId = proposal.objectiveId || (this.currentTaskSpec && this.objectiveProgress ? getCurrentObjective(this.currentTaskSpec, this.objectiveProgress)?.id : undefined);
+      if (verified && objectiveId && this.currentTaskSpec && this.objectiveProgress) {
+        const evidenceKind: ObjectiveEvidenceKind = proposal.completionEvidence?.[0]
+          || (proposal.kind === 'navigate' ? 'url'
+            : proposal.kind === 'type' ? 'input_value'
+              : proposal.kind === 'scroll' ? 'scroll'
+                : proposal.kind === 'extract' || proposal.kind === 'answer' ? 'text'
+                  : proposal.expectedPostcondition?.kind === 'visual_change' || proposal.expectedPostcondition?.kind === 'map_location_changed' ? 'visual_change'
+                    : proposal.expectedPostcondition?.kind === 'dialog_visible' || proposal.expectedPostcondition?.kind === 'panel_visible' ? 'dialog'
+                      : 'element');
+        this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
+          objectiveId,
+          kind: evidenceKind,
+          summary: (execResponse?.message || `Verified ${proposal.kind} action`).slice(0, 1000),
+          sourceActionId: proposal.actionId,
+          verified: true
+        });
+        this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, objectiveId);
+        const verificationObjective = getCurrentObjective(this.currentTaskSpec, this.objectiveProgress);
+        if (verificationObjective?.intent === 'verify') {
+          this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
+            objectiveId: verificationObjective.id,
+            kind: evidenceKind,
+            summary: `Verified terminal state after ${proposal.kind}: ${(execResponse?.message || 'semantic outcome passed').slice(0, 900)}`,
+            sourceActionId: proposal.actionId,
+            verified: true
+          });
+          this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, verificationObjective.id);
+        }
+        const nextObjective = getCurrentObjective(this.currentTaskSpec, this.objectiveProgress);
+        const actionSatisfiesNext = Boolean(nextObjective && (
+          (nextObjective.intent === 'select_result' && proposal.kind === 'click') ||
+          (nextObjective.intent === 'open_section' && proposal.kind === 'click') ||
+          (nextObjective.intent === 'submit' && (proposal.kind === 'click' || proposal.pressEnter)) ||
+          (nextObjective.intent === 'navigate' && proposal.kind === 'navigate') ||
+          (nextObjective.intent === 'search' && proposal.kind === 'type')
+        ));
+        if (nextObjective && actionSatisfiesNext) {
+          this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
+            objectiveId: nextObjective.id,
+            kind: evidenceKind,
+            summary: `Verified ${proposal.kind} action also satisfied ${nextObjective.description}`.slice(0, 1000),
+            sourceActionId: proposal.actionId,
+            verified: true
+          });
+          this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, nextObjective.id);
+        }
+      }
+      this.recentActionHistory.push({
+        actionId: proposal.actionId,
+        objectiveId,
+        kind: proposal.kind,
+        targetLocalId: proposal.targetLocalId,
+        expectedPostcondition: proposal.expectedPostcondition,
+        observedOutcome: execResponse?.message,
+        meaningfulProgress: verified
+      });
+      this.recentActionHistory = this.recentActionHistory.slice(-10);
+
       this.currentExecutionFeedback = {
         lastActionId: proposal.actionId,
         lastActionKind: proposal.kind,
         targetLocalId: proposal.targetLocalId,
-        verified: Boolean(execResponse?.semanticOutcomeVerified ?? execResponse?.success),
+        verified,
         outcomeCode: execResponse?.reasonCode || (execResponse?.success ? 'ACTION_VERIFIED_SUCCESS' : 'EXECUTION_FAILED'),
         stepIndex: step,
-        completedTasks: this.currentTaskSpec?.tasksToDo ? this.currentTaskSpec.tasksToDo.slice(0, step) : [],
-        remainingTasks: this.currentTaskSpec?.tasksToDo ? this.currentTaskSpec.tasksToDo.slice(step) : []
+        completedTasks: this.currentTaskSpec && this.objectiveProgress
+          ? this.currentTaskSpec.objectives.filter((objective) => this.objectiveProgress!.completedObjectiveIds.includes(objective.id)).map((objective) => objective.description)
+          : [],
+        remainingTasks: this.currentTaskSpec && this.objectiveProgress
+          ? this.currentTaskSpec.objectives.filter((objective) => !this.objectiveProgress!.completedObjectiveIds.includes(objective.id)).map((objective) => objective.description)
+          : []
       };
 
       const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
@@ -4114,12 +4326,18 @@ export class RunCoordinator {
       this.stepsTrace.push(stepTrace);
 
       if (!isSuccess) {
+        // Canvas-based map controls may update overlays outside ordinary semantic DOM
+        // postconditions. Re-perceive after a successfully dispatched layer toggle.
+        const isRecoverableMapControl = Boolean(
+          proposal.actionId?.startsWith('act_bhuvan_layers_') &&
+          execResponse?.success !== false
+        );
         // If the action was safe and we have remaining steps in a multi-step task,
-        // do not abort the entire run! Re-perceive the page state so the reasoning engine can adapt to the updated DOM.
+        // do not abort the entire run. Re-perceive so the next snapshot can expose the panel.
         const canContinuePerception =
           proposal.risk === 'safe' &&
           step < maxSteps &&
-          isMultiStepGoal;
+          (isMultiStepGoal || isRecoverableMapControl);
 
         if (canContinuePerception) {
           console.warn(`[PrivaPilot Coordinator] Step ${step} execution or verification unconfirmed (${execResponse?.message || 'unconfirmed'}); proceeding to next perception cycle...`);

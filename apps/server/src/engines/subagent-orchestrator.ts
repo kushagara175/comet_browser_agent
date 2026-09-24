@@ -17,7 +17,8 @@ import {
   PlatformTaskRequest,
   PlatformTaskResponse,
   ComplianceAuditProof,
-  TaskSpecification
+  TaskSpecification,
+  extractSearchQueryFromGoal
 } from '@privapilot/protocol';
 import { VlmReasoningEngine } from './vlm-engine.js';
 
@@ -175,6 +176,45 @@ export class SubAgentOrchestrator {
 
     return {
       goal: trimmed,
+      extractedSearchQuery: extractSearchQueryFromGoal(trimmed) || undefined,
+      objectives: tasksToDo.map((description, index) => {
+        const lower = description.toLowerCase();
+        const intent = lower.includes('search input') || lower.includes('enter the extracted search')
+          ? 'search'
+          : lower.includes('navigate') || lower.includes('relevant result')
+            ? 'select_result'
+            : lower.includes('extract')
+              ? 'extract'
+              : lower.includes('summary') || lower.includes('synthesize')
+                ? 'summarize'
+                : lower.includes('confirm') || lower.includes('verify')
+                  ? 'verify'
+                  : 'inspect';
+        return {
+          id: `objective_${index + 1}_${intent}`,
+          sequence: index + 1,
+          intent,
+          description,
+          targetPhrase: intent === 'search' ? extractSearchQueryFromGoal(trimmed) || undefined : undefined,
+          expectedEvidence: intent === 'select_result'
+            ? ['verified URL or page identity change']
+            : intent === 'search'
+              ? ['verified search input value or visible search results']
+              : intent === 'extract' || intent === 'summarize'
+                ? ['verified requested content in observed page text']
+                : ['verified target element or relevant page-state change'],
+          status: index === 0 ? 'active' : 'pending',
+          dependsOn: index > 0 ? [`objective_${index}_${(() => {
+            const previous = tasksToDo[index - 1].toLowerCase();
+            if (previous.includes('search input') || previous.includes('enter the extracted search')) return 'search';
+            if (previous.includes('navigate') || previous.includes('relevant result')) return 'select_result';
+            if (previous.includes('extract')) return 'extract';
+            if (previous.includes('summary') || previous.includes('synthesize')) return 'summarize';
+            if (previous.includes('confirm') || previous.includes('verify')) return 'verify';
+            return 'inspect';
+          })()}`] : undefined
+        } as const;
+      }),
       tasksToDo,
       tasksNotToDo,
       successCriteria: subTaskPlan.shouldDecompose

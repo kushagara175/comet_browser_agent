@@ -31,7 +31,15 @@ const ALLOWED_REASONING_ROOT_KEYS = new Set([
   'redactionManifest',
   'history',
   'customPrompt',
-  'executionFeedback'
+  'executionFeedback',
+  'taskSpecification',
+  'objectiveProgress',
+  'currentObjective',
+  'previousAction',
+  'expectedPostcondition',
+  'observedOutcome',
+  'meaningfulProgress',
+  'recentActionHistory'
 ]);
 
 const ALLOWED_CHAT_ROOT_KEYS = new Set([
@@ -180,6 +188,48 @@ const LOCAL_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
 const RUN_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
 const SCREENSHOT_DATA_URL_REGEX = /^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/;
 const MAX_DECODED_SCREENSHOT_BYTES = 4 * 1024 * 1024; // 4MB
+const OBJECTIVE_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
+const VALID_OBJECTIVE_INTENTS = new Set(['navigate', 'search', 'select_result', 'open_section', 'inspect', 'extract', 'compare', 'summarize', 'fill', 'submit', 'download', 'verify']);
+const VALID_OBJECTIVE_STATUSES = new Set(['pending', 'active', 'completed', 'blocked', 'failed']);
+const VALID_EVIDENCE_KINDS = new Set(['url', 'element', 'text', 'input_value', 'dialog', 'attribute', 'scroll', 'visual_change']);
+
+function validateSafeString(value: any, maxLength: number): boolean {
+  return typeof value === 'string' && value.length <= maxLength && !hasProhibitedScriptPattern(value);
+}
+
+function hasOnlyKeys(value: any, allowed: ReadonlySet<string>): boolean {
+  return isPlainObject(value) && Object.getOwnPropertyNames(value).every((key) => !PROHIBITED_PROPERTY_NAMES.has(key) && allowed.has(key));
+}
+
+function validateObjective(objective: any): string | undefined {
+  const keys = new Set(['id', 'sequence', 'intent', 'description', 'targetPhrase', 'extractedValue', 'expectedEvidence', 'status', 'dependsOn']);
+  if (!hasOnlyKeys(objective, keys)) return 'Closed schema violation: Invalid objective property';
+  if (!OBJECTIVE_ID_REGEX.test(objective.id || '')) return 'Objective id is invalid';
+  if (!Number.isInteger(objective.sequence) || objective.sequence < 1 || objective.sequence > 1000) return 'Objective sequence is invalid';
+  if (!VALID_OBJECTIVE_INTENTS.has(objective.intent)) return 'Objective intent is invalid';
+  if (!validateSafeString(objective.description, 500) || objective.description.trim().length === 0) return 'Objective description is invalid';
+  if (objective.targetPhrase !== undefined && !validateSafeString(objective.targetPhrase, 200)) return 'Objective targetPhrase is invalid';
+  if (objective.extractedValue !== undefined && !validateSafeString(objective.extractedValue, 1000)) return 'Objective extractedValue is invalid';
+  if (!Array.isArray(objective.expectedEvidence) || objective.expectedEvidence.length < 1 || objective.expectedEvidence.length > 10 || objective.expectedEvidence.some((item: any) => !validateSafeString(item, 300))) return 'Objective expectedEvidence is invalid';
+  if (!VALID_OBJECTIVE_STATUSES.has(objective.status)) return 'Objective status is invalid';
+  if (objective.dependsOn !== undefined && (!Array.isArray(objective.dependsOn) || objective.dependsOn.length > 10 || objective.dependsOn.some((item: any) => !OBJECTIVE_ID_REGEX.test(item)))) return 'Objective dependsOn is invalid';
+  return undefined;
+}
+
+function validateExpectedPostcondition(postcondition: any): string | undefined {
+  if (!isPlainObject(postcondition) || typeof postcondition.kind !== 'string') return 'Expected postcondition is invalid';
+  const keysByKind: Record<string, ReadonlySet<string>> = {
+    dialog_visible: new Set(['kind', 'dialogId']), panel_visible: new Set(['kind', 'namePattern']), element_visible: new Set(['kind', 'targetLocalId', 'namePattern']),
+    element_count_changed: new Set(['kind', 'minimumDelta']), visual_change: new Set(['kind', 'minimumChangeRatio']), map_location_changed: new Set(['kind', 'locationPattern']),
+    search_results_visible: new Set(['kind', 'queryPattern']), content_visible: new Set(['kind', 'textPattern']), url_changed: new Set(['kind', 'expectedPathFragment']),
+    attribute_changed: new Set(['kind', 'attributeName', 'expectedValue']), value_present: new Set(['kind', 'expectedValueFragment']), select_changed: new Set(['kind', 'expectedOptionValue']),
+    status_changed: new Set(['kind', 'statusId']), scroll_changed: new Set(['kind', 'direction']), visibility_changed: new Set(['kind', 'targetLocalId', 'state']), answer_supported: new Set(['kind', 'queryTopic'])
+  };
+  const allowed = keysByKind[postcondition.kind];
+  if (!allowed || !hasOnlyKeys(postcondition, allowed)) return 'Closed schema violation: Invalid expected postcondition property';
+  for (const value of Object.values(postcondition)) if (typeof value === 'string' && !validateSafeString(value, 500)) return 'Expected postcondition contains unsafe text';
+  return undefined;
+}
 
 /**
  * Checks if a value is a genuine plain JSON object without prototype tampering.
@@ -784,6 +834,72 @@ export function validateSanitizedPayload(body: any): ValidationResult<SanitizedN
     }
     if (hasProhibitedScriptPattern(body.customPrompt)) {
       return { isValid: false, errorMessage: 'Field "customPrompt" contains prohibited script patterns' };
+    }
+  }
+
+  if (body.taskSpecification !== undefined) {
+    const spec = body.taskSpecification;
+    const specKeys = new Set(['goal', 'extractedSearchQuery', 'objectives', 'tasksToDo', 'tasksNotToDo', 'successCriteria', 'requiresSubAgents', 'subAgentTasks']);
+    if (!hasOnlyKeys(spec, specKeys) || !validateSafeString(spec.goal, 2000) || !Array.isArray(spec.objectives) || spec.objectives.length < 1 || spec.objectives.length > 50) {
+      return { isValid: false, errorMessage: 'Field "taskSpecification" is invalid' };
+    }
+    const objectiveIds = new Set<string>();
+    for (const objective of spec.objectives) {
+      const error = validateObjective(objective);
+      if (error) return { isValid: false, errorMessage: error };
+      if (objectiveIds.has(objective.id)) return { isValid: false, errorMessage: 'Duplicate objective id' };
+      objectiveIds.add(objective.id);
+    }
+    for (const objective of spec.objectives) {
+      if ((objective.dependsOn || []).some((id: string) => !objectiveIds.has(id) || id === objective.id)) return { isValid: false, errorMessage: 'Objective dependency is invalid' };
+    }
+    for (const field of ['tasksToDo', 'tasksNotToDo'] as const) {
+      if (spec[field] !== undefined && (!Array.isArray(spec[field]) || spec[field].length > 50 || spec[field].some((item: any) => !validateSafeString(item, 500)))) return { isValid: false, errorMessage: `taskSpecification.${field} is invalid` };
+    }
+    if (!Array.isArray(spec.tasksNotToDo) || !validateSafeString(spec.successCriteria, 1000)) return { isValid: false, errorMessage: 'Task specification guardrails or success criteria are invalid' };
+    if (spec.extractedSearchQuery !== undefined && !validateSafeString(spec.extractedSearchQuery, 500)) return { isValid: false, errorMessage: 'taskSpecification.extractedSearchQuery is invalid' };
+    if (spec.requiresSubAgents !== undefined && typeof spec.requiresSubAgents !== 'boolean') return { isValid: false, errorMessage: 'taskSpecification.requiresSubAgents must be boolean' };
+    if (spec.subAgentTasks !== undefined) {
+      const subKeys = new Set(['subAgentId', 'targetEntityOrUrl', 'goal']);
+      if (!Array.isArray(spec.subAgentTasks) || spec.subAgentTasks.length > 20 || spec.subAgentTasks.some((item: any) => !hasOnlyKeys(item, subKeys) || !validateSafeString(item.subAgentId, 128) || !validateSafeString(item.targetEntityOrUrl, 2048) || !validateSafeString(item.goal, 2000))) return { isValid: false, errorMessage: 'taskSpecification.subAgentTasks is invalid' };
+    }
+  }
+
+  if (body.currentObjective !== undefined) {
+    const error = validateObjective(body.currentObjective);
+    if (error) return { isValid: false, errorMessage: error };
+  }
+
+  if (body.objectiveProgress !== undefined) {
+    const progress = body.objectiveProgress;
+    const progressKeys = new Set(['currentObjectiveId', 'completedObjectiveIds', 'blockedObjectiveIds', 'attemptCountByObjective', 'evidence']);
+    if (!hasOnlyKeys(progress, progressKeys)) return { isValid: false, errorMessage: 'Closed schema violation: Invalid objectiveProgress property' };
+    if (progress.currentObjectiveId !== undefined && !OBJECTIVE_ID_REGEX.test(progress.currentObjectiveId)) return { isValid: false, errorMessage: 'objectiveProgress.currentObjectiveId is invalid' };
+    for (const field of ['completedObjectiveIds', 'blockedObjectiveIds'] as const) {
+      if (!Array.isArray(progress[field]) || progress[field].length > 50 || progress[field].some((item: any) => !OBJECTIVE_ID_REGEX.test(item))) return { isValid: false, errorMessage: `objectiveProgress.${field} is invalid` };
+    }
+    if (!isPlainObject(progress.attemptCountByObjective) || Object.keys(progress.attemptCountByObjective).length > 50 || Object.entries(progress.attemptCountByObjective).some(([id, count]) => !OBJECTIVE_ID_REGEX.test(id) || !Number.isInteger(count) || (count as number) < 0 || (count as number) > 100)) return { isValid: false, errorMessage: 'objectiveProgress.attemptCountByObjective is invalid' };
+    const evidenceKeys = new Set(['objectiveId', 'kind', 'summary', 'sourceActionId', 'verified']);
+    if (!Array.isArray(progress.evidence) || progress.evidence.length > 100 || progress.evidence.some((item: any) => !hasOnlyKeys(item, evidenceKeys) || !OBJECTIVE_ID_REGEX.test(item.objectiveId || '') || !VALID_EVIDENCE_KINDS.has(item.kind) || !validateSafeString(item.summary, 1000) || (item.sourceActionId !== undefined && !validateSafeString(item.sourceActionId, 128)) || typeof item.verified !== 'boolean')) return { isValid: false, errorMessage: 'objectiveProgress.evidence is invalid' };
+  }
+
+  const actionKeys = new Set(['actionId', 'objectiveId', 'kind', 'targetLocalId', 'targetName']);
+  if (body.previousAction !== undefined && (!hasOnlyKeys(body.previousAction, actionKeys) || !validateSafeString(body.previousAction.actionId, 128) || !validateSafeString(body.previousAction.kind, 64))) return { isValid: false, errorMessage: 'previousAction is invalid' };
+  if (body.expectedPostcondition !== undefined) {
+    const error = validateExpectedPostcondition(body.expectedPostcondition);
+    if (error) return { isValid: false, errorMessage: error };
+  }
+  if (body.observedOutcome !== undefined && !validateSafeString(body.observedOutcome, 1000)) return { isValid: false, errorMessage: 'observedOutcome is invalid' };
+  if (body.meaningfulProgress !== undefined && typeof body.meaningfulProgress !== 'boolean') return { isValid: false, errorMessage: 'meaningfulProgress must be boolean' };
+  if (body.recentActionHistory !== undefined) {
+    const historyKeys = new Set(['actionId', 'objectiveId', 'kind', 'targetLocalId', 'expectedPostcondition', 'observedOutcome', 'meaningfulProgress']);
+    if (!Array.isArray(body.recentActionHistory) || body.recentActionHistory.length > 10) return { isValid: false, errorMessage: 'recentActionHistory is invalid' };
+    for (const item of body.recentActionHistory) {
+      if (!hasOnlyKeys(item, historyKeys) || !validateSafeString(item.actionId, 128) || !validateSafeString(item.kind, 64) || typeof item.meaningfulProgress !== 'boolean') return { isValid: false, errorMessage: 'recentActionHistory entry is invalid' };
+      if (item.expectedPostcondition !== undefined) {
+        const error = validateExpectedPostcondition(item.expectedPostcondition);
+        if (error) return { isValid: false, errorMessage: error };
+      }
     }
   }
 

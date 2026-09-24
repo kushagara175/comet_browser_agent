@@ -14045,7 +14045,15 @@ function toSanitizedNetworkPayload(context) {
     ...context.redactionManifest ? { redactionManifest: context.redactionManifest } : {},
     ...context.history ? { history: context.history } : {},
     ...context.customPrompt ? { customPrompt: context.customPrompt } : {},
-    ...context.executionFeedback ? { executionFeedback: context.executionFeedback } : {}
+    ...context.executionFeedback ? { executionFeedback: context.executionFeedback } : {},
+    ...context.taskSpecification ? { taskSpecification: context.taskSpecification } : {},
+    ...context.objectiveProgress ? { objectiveProgress: context.objectiveProgress } : {},
+    ...context.currentObjective ? { currentObjective: context.currentObjective } : {},
+    ...context.previousAction ? { previousAction: context.previousAction } : {},
+    ...context.expectedPostcondition ? { expectedPostcondition: context.expectedPostcondition } : {},
+    ...context.observedOutcome !== void 0 ? { observedOutcome: context.observedOutcome } : {},
+    ...context.meaningfulProgress !== void 0 ? { meaningfulProgress: context.meaningfulProgress } : {},
+    ...context.recentActionHistory ? { recentActionHistory: context.recentActionHistory.slice(-10) } : {}
   };
 }
 
@@ -15779,6 +15787,8 @@ function extractSearchQueryFromGoal(goal) {
   const compoundMatch = q2.match(/(?:and|then|after\s+that|,\s*)\s*(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?|type)\s+(.+)$/i);
   if (compoundMatch) {
     q2 = compoundMatch[1].trim();
+    q2 = q2.replace(/\s*,\s*(?:navigate\s+to|click\s+(?:on|the)|go\s+to|visit|open|explore|inspect|view|see|check|click)\s+(?:(?:the|a|an)\s+)?(?:main|primary|top|first|article|page|result|link|url|website|entry|item)\b.*$/i, "");
+    q2 = q2.replace(/^["'\s]+|["'\s,;.]+$/g, "");
   } else {
     q2 = q2.replace(/^(?:please\s+|kindly\s+|can\s+you\s+)?(?:search(?:\s+(?:for|about|on))?|find|locate|look\s+for|lookup|filter(?:\s+by)?|query|type\s+in\s+search(?:\s+box|\s+bar|\s+input)?)\s+/i, "");
   }
@@ -15950,6 +15960,47 @@ function extractTargetUrlFromGoal(goal) {
 }
 
 // ../../packages/protocol/dist/action.js
+function createInitialObjectiveProgress(specification) {
+  const first = [...specification.objectives].sort((a, b) => a.sequence - b.sequence).find((objective) => !objective.dependsOn?.length);
+  return {
+    currentObjectiveId: first?.id,
+    completedObjectiveIds: [],
+    blockedObjectiveIds: [],
+    attemptCountByObjective: {},
+    evidence: []
+  };
+}
+function getCurrentObjective(specification, progress) {
+  const byId = new Map(specification.objectives.map((objective) => [objective.id, objective]));
+  const current = progress.currentObjectiveId ? byId.get(progress.currentObjectiveId) : void 0;
+  if (current && !progress.completedObjectiveIds.includes(current.id) && !progress.blockedObjectiveIds.includes(current.id)) {
+    return current;
+  }
+  return [...specification.objectives].sort((a, b) => a.sequence - b.sequence).find((objective) => !progress.completedObjectiveIds.includes(objective.id) && !progress.blockedObjectiveIds.includes(objective.id) && (objective.dependsOn || []).every((id2) => progress.completedObjectiveIds.includes(id2)));
+}
+function recordObjectiveEvidence(progress, evidence) {
+  const duplicate = progress.evidence.some((item) => item.objectiveId === evidence.objectiveId && item.kind === evidence.kind && item.summary === evidence.summary && item.sourceActionId === evidence.sourceActionId);
+  return duplicate ? progress : { ...progress, evidence: [...progress.evidence, evidence].slice(-100) };
+}
+function completeObjectiveWithEvidence(specification, progress, objectiveId) {
+  const objective = specification.objectives.find((item) => item.id === objectiveId);
+  if (!objective || !progress.evidence.some((item) => item.objectiveId === objectiveId && item.verified))
+    return progress;
+  const completedObjectiveIds = [.../* @__PURE__ */ new Set([...progress.completedObjectiveIds, objectiveId])];
+  const interim = { ...progress, completedObjectiveIds, currentObjectiveId: void 0 };
+  return { ...interim, currentObjectiveId: getCurrentObjective(specification, interim)?.id };
+}
+function canFinishTask(specification, progress) {
+  const incomplete = specification.objectives.filter((objective) => !progress.completedObjectiveIds.includes(objective.id));
+  if (incomplete.length > 0) {
+    return { satisfied: false, reason: `Incomplete objectives: ${incomplete.map((item) => item.id).join(", ")}` };
+  }
+  const unsupported = specification.objectives.filter((objective) => !progress.evidence.some((item) => item.objectiveId === objective.id && item.verified));
+  if (unsupported.length > 0) {
+    return { satisfied: false, reason: `Missing verified evidence: ${unsupported.map((item) => item.id).join(", ")}` };
+  }
+  return { satisfied: true, reason: "All objectives have verified completion evidence" };
+}
 var GENERIC_CONTEXT_WORDS = /* @__PURE__ */ new Set([
   "pending",
   "request",
@@ -16410,6 +16461,7 @@ function resolveTaskContract(goal) {
 }
 var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "actionId",
+  "objectiveId",
   "kind",
   "targetLocalId",
   "destinationLocalId",
@@ -16418,6 +16470,9 @@ var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "rationale",
   "expectedState",
   "expectedPostcondition",
+  "semanticMatchReason",
+  "fallbackStrategy",
+  "completionEvidence",
   "textToType",
   "fileName",
   "fileData",
@@ -16575,6 +16630,9 @@ function validateActionProposal(proposal, validElements) {
   if (hasProhibitedScriptPattern(proposal.actionId) || hasProhibitedUrlPattern(proposal.actionId)) {
     return { isValid: false, errorMessage: "actionId contains prohibited script or URL patterns" };
   }
+  if (proposal.objectiveId !== void 0 && (typeof proposal.objectiveId !== "string" || !ACTION_ID_REGEX.test(proposal.objectiveId))) {
+    return { isValid: false, errorMessage: 'Invalid "objectiveId"' };
+  }
   if (typeof proposal.kind !== "string" || !VALID_ACTION_KINDS.has(proposal.kind)) {
     return { isValid: false, errorMessage: "Invalid or unsupported action kind" };
   }
@@ -16606,6 +16664,18 @@ function validateActionProposal(proposal, validElements) {
       return { isValid: false, errorMessage: "reply contains prohibited script or URL patterns" };
     }
   }
+  if (proposal.semanticMatchReason !== void 0 && (typeof proposal.semanticMatchReason !== "string" || proposal.semanticMatchReason.length > 1e3 || hasProhibitedScriptPattern(proposal.semanticMatchReason) || hasProhibitedUrlPattern(proposal.semanticMatchReason))) {
+    return { isValid: false, errorMessage: 'Field "semanticMatchReason" must be a safe string up to 1000 characters' };
+  }
+  if (proposal.fallbackStrategy !== void 0 && !(/* @__PURE__ */ new Set(["reperceive", "wait_for_hydration", "retry_target", "scroll_to_target", "navigate_fallback", "refresh_once", "request_user_input", "fail_safe"])).has(proposal.fallbackStrategy)) {
+    return { isValid: false, errorMessage: "Invalid fallbackStrategy" };
+  }
+  if (proposal.completionEvidence !== void 0) {
+    const allowedEvidence = /* @__PURE__ */ new Set(["url", "element", "text", "input_value", "dialog", "attribute", "scroll", "visual_change"]);
+    if (!Array.isArray(proposal.completionEvidence) || proposal.completionEvidence.length > 8 || proposal.completionEvidence.some((item) => typeof item !== "string" || !allowedEvidence.has(item))) {
+      return { isValid: false, errorMessage: "completionEvidence must contain only supported evidence kinds" };
+    }
+  }
   if (proposal.expectedState !== void 0) {
     if (typeof proposal.expectedState !== "string" || proposal.expectedState.length > 500) {
       return { isValid: false, errorMessage: 'Field "expectedState" must be a string up to 500 characters' };
@@ -16621,6 +16691,13 @@ function validateActionProposal(proposal, validElements) {
     const pc2 = proposal.expectedPostcondition;
     const allowedKinds = /* @__PURE__ */ new Set([
       "dialog_visible",
+      "panel_visible",
+      "element_visible",
+      "element_count_changed",
+      "visual_change",
+      "map_location_changed",
+      "search_results_visible",
+      "content_visible",
       "url_changed",
       "attribute_changed",
       "value_present",
@@ -16632,6 +16709,35 @@ function validateActionProposal(proposal, validElements) {
     ]);
     if (!allowedKinds.has(pc2.kind)) {
       return { isValid: false, errorMessage: `Invalid expectedPostcondition kind "${pc2.kind}"` };
+    }
+    const allowedPostconditionKeys = {
+      dialog_visible: /* @__PURE__ */ new Set(["kind", "dialogId"]),
+      panel_visible: /* @__PURE__ */ new Set(["kind", "namePattern"]),
+      element_visible: /* @__PURE__ */ new Set(["kind", "targetLocalId", "namePattern"]),
+      element_count_changed: /* @__PURE__ */ new Set(["kind", "minimumDelta"]),
+      visual_change: /* @__PURE__ */ new Set(["kind", "minimumChangeRatio"]),
+      map_location_changed: /* @__PURE__ */ new Set(["kind", "locationPattern"]),
+      search_results_visible: /* @__PURE__ */ new Set(["kind", "queryPattern"]),
+      content_visible: /* @__PURE__ */ new Set(["kind", "textPattern"]),
+      url_changed: /* @__PURE__ */ new Set(["kind", "expectedPathFragment"]),
+      attribute_changed: /* @__PURE__ */ new Set(["kind", "attributeName", "expectedValue"]),
+      value_present: /* @__PURE__ */ new Set(["kind", "expectedValueFragment"]),
+      select_changed: /* @__PURE__ */ new Set(["kind", "expectedOptionValue"]),
+      status_changed: /* @__PURE__ */ new Set(["kind", "statusId"]),
+      scroll_changed: /* @__PURE__ */ new Set(["kind", "direction"]),
+      visibility_changed: /* @__PURE__ */ new Set(["kind", "targetLocalId", "state"]),
+      answer_supported: /* @__PURE__ */ new Set(["kind", "queryTopic"])
+    };
+    for (const key of Object.getOwnPropertyNames(pc2)) {
+      if (PROHIBITED_PROPERTY_NAMES.has(key) || !allowedPostconditionKeys[pc2.kind]?.has(key)) {
+        return { isValid: false, errorMessage: `Closed schema violation: Unknown expectedPostcondition property "${key}"` };
+      }
+    }
+    if (pc2.minimumDelta !== void 0 && (typeof pc2.minimumDelta !== "number" || !Number.isFinite(pc2.minimumDelta) || pc2.minimumDelta < 1)) {
+      return { isValid: false, errorMessage: "minimumDelta must be a positive finite number" };
+    }
+    if (pc2.minimumChangeRatio !== void 0 && (typeof pc2.minimumChangeRatio !== "number" || !Number.isFinite(pc2.minimumChangeRatio) || pc2.minimumChangeRatio < 0 || pc2.minimumChangeRatio > 1)) {
+      return { isValid: false, errorMessage: "minimumChangeRatio must be between 0 and 1" };
     }
     if (pc2.kind === "attribute_changed") {
       const allowedAttrs = /* @__PURE__ */ new Set(["aria-expanded", "aria-checked", "aria-selected", "disabled", "open", "class"]);
@@ -19733,17 +19839,24 @@ var WebExtensionAdapter = class {
   /**
    * Ensures singleton offscreen document is active in Chrome MV3.
    */
-  async ensureOffscreenDocument() {
+  async ensureOffscreenDocument(forceRecreate = false) {
     const api = this.browserAPI;
     if (!api || !api.offscreen) {
       return;
     }
+    let hasDocument = false;
     if (typeof api.offscreen.hasDocument === "function") {
-      const hasDoc = await api.offscreen.hasDocument();
-      if (hasDoc) return;
+      hasDocument = await api.offscreen.hasDocument();
     } else if (api.runtime && typeof api.runtime.getContexts === "function") {
       const contexts = await api.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] });
-      if (contexts && contexts.length > 0) return;
+      hasDocument = Boolean(contexts && contexts.length > 0);
+    }
+    if (hasDocument && !forceRecreate) return;
+    if (hasDocument && forceRecreate && typeof api.offscreen.closeDocument === "function") {
+      try {
+        await api.offscreen.closeDocument();
+      } catch (_) {
+      }
     }
     if (this.offscreenCreationPromise) {
       await this.offscreenCreationPromise;
@@ -19781,26 +19894,23 @@ var WebExtensionAdapter = class {
           } catch (_) {
           }
         }, 6e4);
-        const correlationId = `san_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => {
-            reject(new Error("Sanitization Host Timeout: Offscreen document did not respond within 15000ms"));
-          }, 15e3);
-        });
-        const messagePromise = new Promise((resolve, reject) => {
-          let attempts = 0;
-          const maxAttempts = 15;
-          let settled = false;
-          const attemptSend = () => {
-            attempts++;
-            api.runtime.sendMessage(
-              {
+        const sendToOffscreen = async () => {
+          const correlationId = `san_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("Sanitization Host Timeout: Offscreen document did not respond within 15000ms")), 15e3);
+          });
+          const messagePromise = new Promise((resolve, reject) => {
+            let attempts = 0;
+            const maxAttempts = 15;
+            let settled = false;
+            const attemptSend = () => {
+              attempts++;
+              api.runtime.sendMessage({
                 target: "privapilot-offscreen",
                 type: "SANITIZE_CAPTURE",
                 correlationId,
                 payload: request
-              },
-              (response) => {
+              }, (response) => {
                 if (settled) return;
                 if (api.runtime.lastError || !response) {
                   if (attempts < maxAttempts) {
@@ -19808,29 +19918,31 @@ var WebExtensionAdapter = class {
                     return;
                   }
                   settled = true;
-                  if (api.runtime.lastError) {
-                    reject(new Error(`Offscreen Message Error: ${api.runtime.lastError.message}`));
-                  } else {
-                    reject(new Error("Offscreen document returned empty response"));
-                  }
+                  reject(new Error(api.runtime.lastError ? `Offscreen Message Error: ${api.runtime.lastError.message}` : "Offscreen document returned empty response"));
                   return;
                 }
                 settled = true;
                 if (response.correlationId !== correlationId) {
                   reject(new Error(`Correlation ID mismatch: expected ${correlationId}, got ${response.correlationId}`));
-                  return;
-                }
-                if (!response.success || !response.sanitized) {
+                } else if (!response.success || !response.sanitized) {
                   reject(new Error(response.error || "Sanitization failed in offscreen document"));
-                  return;
+                } else {
+                  resolve(response.sanitized);
                 }
-                resolve(response.sanitized);
-              }
-            );
-          };
-          attemptSend();
-        });
-        return await Promise.race([messagePromise, timeoutPromise]);
+              });
+            };
+            attemptSend();
+          });
+          return Promise.race([messagePromise, timeoutPromise]);
+        };
+        try {
+          return await sendToOffscreen();
+        } catch (firstError) {
+          console.warn("[PrivaPilot SW] Offscreen host was unresponsive; recreating once before fallback.");
+          await this.ensureOffscreenDocument(true);
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          return await sendToOffscreen();
+        }
       } catch (offscreenErr) {
         console.warn("[PrivaPilot SW] Offscreen host sanitization failed, attempting direct worker fallback:", offscreenErr?.message || offscreenErr);
       }
@@ -20339,14 +20451,14 @@ var ReasoningHttpClient = class {
       );
       if (response.ok) {
         const data = await response.json();
-        if (data && Array.isArray(data.tasksToDo)) {
-          return data;
+        if (data && (Array.isArray(data.objectives) || Array.isArray(data.tasksToDo))) {
+          return this.normalizeTaskSpecification(data, goal);
         }
       }
     } catch (_) {
     }
     const isMultiTarget = /\b(?:compare|both|versus|vs\.?|across|each)\b/i.test(goal);
-    return {
+    return this.normalizeTaskSpecification({
       goal,
       tasksToDo: [
         "Inspect layout and identify interactive landmarks",
@@ -20359,6 +20471,39 @@ var ReasoningHttpClient = class {
       ],
       successCriteria: "Target content located or verified live DOM state transition observed.",
       requiresSubAgents: isMultiTarget
+    }, goal);
+  }
+  normalizeTaskSpecification(value, goal) {
+    const tasksToDo = Array.isArray(value?.tasksToDo) ? value.tasksToDo.filter((item) => typeof item === "string").slice(0, 50) : [];
+    const validIntents = /* @__PURE__ */ new Set(["navigate", "search", "select_result", "open_section", "inspect", "extract", "compare", "summarize", "fill", "submit", "download", "verify"]);
+    const objectives = Array.isArray(value?.objectives) && value.objectives.length > 0 ? value.objectives.slice(0, 50).map((item, index) => ({
+      id: typeof item?.id === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(item.id) ? item.id : `objective_${index + 1}`,
+      sequence: Number.isInteger(item?.sequence) && item.sequence > 0 ? item.sequence : index + 1,
+      intent: validIntents.has(item?.intent) ? item.intent : "inspect",
+      description: typeof item?.description === "string" ? item.description.slice(0, 500) : tasksToDo[index] || `Complete objective ${index + 1}`,
+      ...typeof item?.targetPhrase === "string" ? { targetPhrase: item.targetPhrase.slice(0, 200) } : {},
+      ...typeof item?.extractedValue === "string" ? { extractedValue: item.extractedValue.slice(0, 1e3) } : {},
+      expectedEvidence: Array.isArray(item?.expectedEvidence) && item.expectedEvidence.length > 0 ? item.expectedEvidence.filter((entry) => typeof entry === "string").slice(0, 10) : ["verified semantic outcome"],
+      status: index === 0 ? "active" : "pending",
+      ...Array.isArray(item?.dependsOn) ? { dependsOn: item.dependsOn.filter((entry) => typeof entry === "string").slice(0, 10) } : {}
+    })) : (tasksToDo.length > 0 ? tasksToDo : ["Inspect page and complete the requested goal"]).map((description, index) => ({
+      id: `objective_${index + 1}`,
+      sequence: index + 1,
+      intent: "inspect",
+      description,
+      expectedEvidence: ["verified semantic outcome"],
+      status: index === 0 ? "active" : "pending",
+      ...index > 0 ? { dependsOn: [`objective_${index}`] } : {}
+    }));
+    return {
+      goal: typeof value?.goal === "string" ? value.goal : goal,
+      ...typeof value?.extractedSearchQuery === "string" ? { extractedSearchQuery: value.extractedSearchQuery } : {},
+      objectives,
+      tasksToDo: objectives.map((objective) => objective.description),
+      tasksNotToDo: Array.isArray(value?.tasksNotToDo) ? value.tasksNotToDo.filter((item) => typeof item === "string").slice(0, 50) : [],
+      successCriteria: typeof value?.successCriteria === "string" ? value.successCriteria : "All objectives have verified evidence.",
+      ...typeof value?.requiresSubAgents === "boolean" ? { requiresSubAgents: value.requiresSubAgents } : {},
+      ...Array.isArray(value?.subAgentTasks) ? { subAgentTasks: value.subAgentTasks } : {}
     };
   }
   /**
@@ -21400,6 +21545,8 @@ var RunCoordinator = class {
   currentCustomPrompt;
   currentExecutionFeedback;
   currentTaskSpec;
+  objectiveProgress;
+  recentActionHistory = [];
   previousSnapshot = null;
   previousUrl = "";
   lastExecutedProposal = null;
@@ -21481,8 +21628,11 @@ var RunCoordinator = class {
       this.actionHistory.shift();
     }
   }
-  isRepeatedAction(proposal) {
+  isRepeatedAction(proposal, sanitized) {
     if (proposal.kind === "finish" || proposal.kind === "wait" || proposal.kind === "batch" || proposal.kind === "request_user_input") return false;
+    if (proposal.kind === "scroll" && Math.abs(sanitized?.pageState?.stateDelta?.scrollDeltaY || 0) > 2) {
+      return false;
+    }
     if (this.actionHistory.length >= 2) {
       const last1 = this.actionHistory[this.actionHistory.length - 1];
       const last2 = this.actionHistory[this.actionHistory.length - 2];
@@ -21502,6 +21652,10 @@ var RunCoordinator = class {
       }
     }
     return false;
+  }
+  getSearchQuery(goal) {
+    const plannedQuery = this.currentTaskSpec?.extractedSearchQuery?.trim();
+    return plannedQuery || extractSearchQueryFromGoal(goal);
   }
   tryResolveLocalSafeAction(goal, sanitized, step, currentUrl) {
     const trimmedGoal = (goal || "").trim().toLowerCase();
@@ -21632,7 +21786,7 @@ var RunCoordinator = class {
       };
     }
     const effectivePageUrl = currentUrl || sanitized.pageState?.url || "";
-    const hasSearchDirective = Boolean(extractSearchQueryFromGoal(goal));
+    const hasSearchDirective = Boolean(this.getSearchQuery(goal));
     const isOnSearchResultsPage = effectivePageUrl.includes("search") || (sanitized.pageState?.title || "").toLowerCase().includes("search") || (sanitized.pageState?.title || "").toLowerCase().includes("results");
     const isSearchingActive = hasSearchDirective && (!this.actionHistory.some((a) => a.actionId && (a.actionId.startsWith("act_playbook_fill_") || a.actionId.startsWith("act_generic_search_fill_") || a.kind === "type")) || isOnSearchResultsPage && !this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_")));
     if (this.currentTaskContract?.isAnswerGoal && !isSearchingActive) {
@@ -21715,7 +21869,7 @@ var RunCoordinator = class {
     if (playbook) {
       const resolution = resolvePlaybookIntent(playbook, goal, currentUrl);
       if (resolution.matchedIntent === "none" && resolution.rationale?.includes("Already on route")) {
-        const hasUnfinishedSearchOrGoal = Boolean(extractSearchQueryFromGoal(goal)) || /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
+        const hasUnfinishedSearchOrGoal = Boolean(this.getSearchQuery(goal)) || /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
         if (!hasUnfinishedSearchOrGoal) {
           const reply = `You are already on the active ${playbook.name} route. All interactive navigation controls, map canvas layers, and search tools are loaded and ready.`;
           return {
@@ -21750,7 +21904,7 @@ var RunCoordinator = class {
       }
       if (resolution.matchedIntent === "click_landmark" && resolution.targetPhrase) {
         if ((currentUrl || "").includes("/ngmaps") && resolution.targetPhrase.toLowerCase().includes("2d")) {
-          const hasPendingDownstreamGoal = Boolean(extractSearchQueryFromGoal(goal)) || /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
+          const hasPendingDownstreamGoal = Boolean(this.getSearchQuery(goal)) || /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
           if (!hasPendingDownstreamGoal) {
             const reply = "You are already on the active Bhuvan NextGen 2D/3D Map Viewer. The satellite map canvas and geospatial navigation controls are loaded and ready.";
             return {
@@ -21830,7 +21984,7 @@ var RunCoordinator = class {
       if (isSearchDirective) {
         const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_playbook_fill_"));
         if (hasAlreadyFilled) {
-          const query = extractSearchQueryFromGoal(goal) || "query";
+          const query = this.getSearchQuery(goal) || "query";
           const queryTokens = tokenizeSemanticText(query.toLowerCase());
           const STOPWORDS = /* @__PURE__ */ new Set([
             "and",
@@ -21931,6 +22085,30 @@ var RunCoordinator = class {
             }
           }
           if (isMapDomain && hasAlreadyClickedSuggestion) {
+            const needsLayerInspection = /\b(?:inspect|examine|explore|show|open|available|thematic|satellite|imagery|layers?|overlays?|data\s+services?)\b/i.test(trimmedGoal);
+            const hasOpenedLayers = this.actionHistory.some((a) => a.actionId?.startsWith("act_bhuvan_layers_"));
+            if (needsLayerInspection && !hasOpenedLayers) {
+              const layerControl = sanitized.elements.find((el2) => {
+                if (!["button", "link", "tab", "menuitem", "generic"].includes(el2.role)) return false;
+                const semanticText = `${el2.sanitizedName || ""} ${el2.containerContext || ""} ${el2.nearestHeading || ""}`.toLowerCase();
+                return /\b(?:map\s+layers?|layers?|thematic|data\s+services?|overlays?|catalog(?:ue)?)\b/i.test(semanticText) || /open\s+drawer/i.test(semanticText);
+              });
+              if (layerControl) {
+                return {
+                  actionId: `act_bhuvan_layers_${step}_${Date.now()}`,
+                  kind: "click",
+                  targetLocalId: layerControl.localId,
+                  targetName: layerControl.sanitizedName,
+                  confidence: 0.97,
+                  risk: "safe",
+                  rationale: `Opening Bhuvan layer control "${layerControl.sanitizedName}" after centering ${query}`
+                };
+              }
+              return null;
+            }
+            if (needsLayerInspection && hasOpenedLayers) {
+              return null;
+            }
             return {
               actionId: `act_local_finish_${step}_${Date.now()}`,
               kind: "finish",
@@ -22031,7 +22209,7 @@ var RunCoordinator = class {
           return false;
         });
         if (matchingEl) {
-          const textToType = extractSearchQueryFromGoal(goal);
+          const textToType = this.getSearchQuery(goal);
           return {
             actionId: `act_playbook_fill_${step}_${Date.now()}`,
             kind: "type",
@@ -22046,7 +22224,7 @@ var RunCoordinator = class {
         }
       }
     }
-    const genericSearchQuery = extractSearchQueryFromGoal(goal);
+    const genericSearchQuery = this.getSearchQuery(goal);
     const hasGenericSearchDirective = Boolean(genericSearchQuery) && /\b(?:search(?:\s+for)?|search\s+box|search\s+bar|search\s+input|query\s+for|lookup)\b/i.test(trimmedGoal);
     if (!playbook && hasGenericSearchDirective) {
       const query = genericSearchQuery || "search query";
@@ -22221,7 +22399,7 @@ var RunCoordinator = class {
         };
       }
       if (lastAction.actionId && lastAction.actionId.startsWith("act_dropdown_suggestion_click_")) {
-        const query = extractSearchQueryFromGoal(goal) || "query";
+        const query = this.getSearchQuery(goal) || "query";
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
           kind: "finish",
@@ -22235,7 +22413,7 @@ var RunCoordinator = class {
         if (wantsContentReasoning) {
           return null;
         }
-        const query = extractSearchQueryFromGoal(goal) || "query";
+        const query = this.getSearchQuery(goal) || "query";
         return {
           actionId: `act_local_finish_${step}_${Date.now()}`,
           kind: "finish",
@@ -22627,6 +22805,8 @@ var RunCoordinator = class {
     }
     this.currentCustomPrompt = options?.customPrompt;
     this.currentExecutionFeedback = void 0;
+    this.objectiveProgress = void 0;
+    this.recentActionHistory = [];
     if (options?.history && Array.isArray(options.history) && options.history.length > 0) {
       this.conversationHistory = options.history.map((h) => ({
         role: h.role === "assistant" ? "assistant" : "user",
@@ -22684,11 +22864,25 @@ var RunCoordinator = class {
       });
     }
     try {
-      this.currentTaskSpec = await this.httpClient.requestTaskSpecification(
+      const plannedSpec = await this.httpClient.requestTaskSpecification(
         effectiveGoal,
         void 0,
         this.currentCustomPrompt
       );
+      const legacyTasks = plannedSpec.tasksToDo || [];
+      this.currentTaskSpec = plannedSpec.objectives?.length ? plannedSpec : {
+        ...plannedSpec,
+        objectives: (legacyTasks.length ? legacyTasks : ["Complete the requested goal"]).map((description, index) => ({
+          id: `objective_${index + 1}`,
+          sequence: index + 1,
+          intent: index === legacyTasks.length - 1 && /verify|confirm/i.test(description) ? "verify" : "inspect",
+          description,
+          expectedEvidence: ["verified semantic outcome"],
+          status: index === 0 ? "active" : "pending",
+          ...index > 0 ? { dependsOn: [`objective_${index}`] } : {}
+        }))
+      };
+      this.objectiveProgress = createInitialObjectiveProgress(this.currentTaskSpec);
     } catch (_) {
       this.currentTaskSpec = void 0;
     }
@@ -23158,18 +23352,28 @@ var RunCoordinator = class {
           };
           return this.completeWithResult(res2);
         }
-        if (domResponse && domResponse.success && (domResponse.snapshot?.interactiveElements?.length === 0 || (domResponse.snapshot?.interactiveElements?.length || 0) <= 2) && (/loading/i.test(domResponse.snapshot?.pageTitle || "") || (domResponse.snapshot?.textNodes || []).some((t) => /loading/i.test(t.text || "")))) {
-          this.transition("executing", "Waiting for geospatial application and map canvas to finish loading...");
-          await new Promise((r) => setTimeout(r, 2500));
-          try {
-            const refreshed = await this.browser.sendMessageToTab(activeTab.id, {
-              type: "EXTRACT_DOM_SNAPSHOT",
-              captureId
-            });
-            if (refreshed && refreshed.success && ((refreshed.snapshot?.interactiveElements?.length || 0) > 0 || !/loading/i.test(refreshed.snapshot?.pageTitle || ""))) {
-              domResponse = refreshed;
+        const snapshotNeedsHydration = (response) => {
+          if (!response?.success) return false;
+          const snapshot = response.snapshot || {};
+          const interactiveCount = snapshot.interactiveElements?.length || 0;
+          const textNodes = snapshot.textNodes || [];
+          const visibleText = textNodes.map((node) => node.text || "").join(" ").trim();
+          const showsLoading = /\b(?:loading|initializing|please wait)\b/i.test(`${snapshot.pageTitle || ""} ${visibleText}`);
+          return interactiveCount <= 2 && (showsLoading || visibleText.length < 40);
+        };
+        if (snapshotNeedsHydration(domResponse)) {
+          const hydrationDelays = [1e3, 2e3, 4e3];
+          for (let attempt = 0; attempt < hydrationDelays.length && snapshotNeedsHydration(domResponse); attempt++) {
+            this.transition("executing", `Waiting for application controls to load (${attempt + 1}/${hydrationDelays.length})...`);
+            await new Promise((resolve) => setTimeout(resolve, hydrationDelays[attempt]));
+            try {
+              const refreshed = await this.browser.sendMessageToTab(activeTab.id, {
+                type: "EXTRACT_DOM_SNAPSHOT",
+                captureId
+              });
+              if (refreshed?.success) domResponse = refreshed;
+            } catch (_) {
             }
-          } catch (_) {
           }
         }
         let screenshotDataUrl;
@@ -23499,6 +23703,35 @@ var RunCoordinator = class {
             if (this.currentExecutionFeedback) {
               sanitized.executionFeedback = this.currentExecutionFeedback;
             }
+            const currentObjective = this.currentTaskSpec && this.objectiveProgress ? getCurrentObjective(this.currentTaskSpec, this.objectiveProgress) : void 0;
+            if (this.currentTaskSpec) sanitized.taskSpecification = this.currentTaskSpec;
+            if (this.objectiveProgress) {
+              const objectiveId2 = currentObjective?.id;
+              if (objectiveId2) {
+                this.objectiveProgress = {
+                  ...this.objectiveProgress,
+                  attemptCountByObjective: {
+                    ...this.objectiveProgress.attemptCountByObjective,
+                    [objectiveId2]: (this.objectiveProgress.attemptCountByObjective[objectiveId2] || 0) + 1
+                  }
+                };
+              }
+              sanitized.objectiveProgress = this.objectiveProgress;
+            }
+            if (currentObjective) sanitized.currentObjective = currentObjective;
+            if (this.lastExecutedProposal) {
+              sanitized.previousAction = {
+                actionId: this.lastExecutedProposal.actionId,
+                objectiveId: this.lastExecutedProposal.objectiveId,
+                kind: this.lastExecutedProposal.kind,
+                targetLocalId: this.lastExecutedProposal.targetLocalId,
+                targetName: this.lastExecutedProposal.targetName
+              };
+              if (this.lastExecutedProposal.expectedPostcondition) sanitized.expectedPostcondition = this.lastExecutedProposal.expectedPostcondition;
+            }
+            sanitized.observedOutcome = this.lastExecutionResult?.message || sanitized.pageState.stateDelta?.observedOutcome || "";
+            sanitized.meaningfulProgress = Boolean(sanitized.pageState.stateDelta?.verificationPassed || sanitized.pageState.stateDelta?.urlChanged || Math.abs(sanitized.pageState.stateDelta?.scrollDeltaY || 0) > 2);
+            sanitized.recentActionHistory = this.recentActionHistory.slice(-10);
             proposal = await this.httpClient.requestReasoningAction(sanitized);
           } catch (err) {
             console.warn("[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:", err?.message || err);
@@ -23535,6 +23768,8 @@ var RunCoordinator = class {
           }
           t4_reasoningReceived = Date.now();
         }
+        const activeObjective = this.currentTaskSpec && this.objectiveProgress ? getCurrentObjective(this.currentTaskSpec, this.objectiveProgress) : void 0;
+        if (activeObjective && !proposal.objectiveId) proposal = { ...proposal, objectiveId: activeObjective.id };
         this.lastActionProposal = proposal;
         if (this.listeners.onActionProposed) {
           const matchedEl = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
@@ -23938,10 +24173,10 @@ var RunCoordinator = class {
         const isOnSearchResultsPage = Boolean(
           currentUrlStr.includes("search.html") || currentUrlStr.includes("gsc.q=") || currentUrlStr.includes("/search?") || currentUrlStr.includes("Special:Search") || /search\s+results/i.test(sanitized.pageState?.title || "")
         );
-        const isArticleReadingGoal = /\b(?:instruments?|payloads?|specifications?|launch\s+vehicles?|launchers?|requirements?|details?|read\s+(?:the\s+)?article|tell\s+me\s+what\s+(?:instruments?|payloads?|details?))\b/i.test(this.currentGoal || "");
+        const isArticleReadingGoal = /\b(?:summari[sz]e|compare|difference|differences|superconducting|trapped[-\s]?ion|qubits?|instruments?|payloads?|specifications?|launch\s+vehicles?|launchers?|requirements?|details?|read\s+(?:the\s+)?article|tell\s+me\s+what\s+(?:instruments?|payloads?|details?))\b/i.test(this.currentGoal || "");
         const hasClickedSearchResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_"));
         if (isOnSearchResultsPage && isArticleReadingGoal && !hasClickedSearchResult && step < maxSteps) {
-          const query = extractSearchQueryFromGoal(this.currentGoal || "") || "Chandrayaan-3";
+          const query = this.getSearchQuery(this.currentGoal || "") || "Chandrayaan-3";
           const queryTokens = tokenizeSemanticText(query).filter((t) => t.length > 2);
           const resultLink = sanitized.elements.find((el2) => {
             if (el2.role !== "link") return false;
@@ -23969,12 +24204,33 @@ var RunCoordinator = class {
             riskLevel = "safe";
           }
         }
+        const comparisonGoal = /\b(?:compare|difference|differences|versus|vs\.?)\b/i.test(this.currentGoal || "");
+        const mentionsQubitImplementations = /\b(?:superconducting|trapped[-\s]?ion|qubits?)\b/i.test(this.currentGoal || "");
+        const hasSelectedRelevantSection = this.actionHistory.some((a) => a.actionId?.startsWith("act_section_anchor_"));
+        if (!isOnSearchResultsPage && comparisonGoal && mentionsQubitImplementations && !hasSelectedRelevantSection && step < maxSteps) {
+          const sectionLink = sanitized.elements.find(
+            (el2) => (el2.role === "link" || el2.role === "button") && /\b(?:physical\s+realizations?|implementations?|qubit\s+implementations?|hardware)\b/i.test(el2.sanitizedName || "")
+          );
+          if (sectionLink) {
+            proposal = {
+              actionId: `act_section_anchor_${step}_${Date.now()}`,
+              kind: "click",
+              targetLocalId: sectionLink.localId,
+              targetName: sectionLink.sanitizedName,
+              confidence: 0.99,
+              risk: "safe",
+              reasoning: `A relevant section anchor, "${sectionLink.sanitizedName}", is available. Clicking it is faster and more precise than repeated scrolling.`,
+              rationale: `Jumping directly to "${sectionLink.sanitizedName}" to compare the requested qubit implementations.`
+            };
+            riskLevel = "safe";
+          }
+        }
         if ((proposal.kind === "finish" || proposal.kind === "answer") && step < maxSteps) {
           const sm2 = sanitized.pageState?.scrollMetrics;
           const lastClickIdx = this.actionHistory.map((a) => a.kind).lastIndexOf("click");
           const hasScrolledAfterLastClick = lastClickIdx >= 0 ? this.actionHistory.slice(lastClickIdx).some((a) => a.kind === "scroll") : this.actionHistory.some((a) => a.kind === "scroll");
           const isAtTopOfLongPage = Boolean(sm2 && sm2.scrollableBelow && sm2.maxScrollTop > 800 && sm2.scrollTop < 250);
-          if (isArticleReadingGoal && !hasScrolledAfterLastClick && isAtTopOfLongPage && !isOnSearchResultsPage) {
+          if (!hasSelectedRelevantSection && isArticleReadingGoal && !hasScrolledAfterLastClick && isAtTopOfLongPage && !isOnSearchResultsPage) {
             console.log(`[Coordinator] Grounded reading scroll: Navigated to long article at top; scrolling down smoothly to locate content before finishing.`);
             proposal = {
               actionId: `act_grounded_scroll_${Date.now()}`,
@@ -24022,8 +24278,30 @@ var RunCoordinator = class {
           if (proposal.kind === "finish" && !proposal.reply && proposal.rationale && hasSubstantiveAnswer) {
             proposal = { ...proposal, reply: proposal.rationale };
           }
+          if (terminalCheck.satisfied && this.currentTaskSpec && this.objectiveProgress) {
+            const pendingVerify = this.currentTaskSpec.objectives.find(
+              (objective) => objective.intent === "verify" && !this.objectiveProgress.completedObjectiveIds.includes(objective.id)
+            );
+            if (pendingVerify) {
+              this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
+                objectiveId: pendingVerify.id,
+                kind: "element",
+                summary: (terminalCheck.reason || "Terminal postcondition verified").slice(0, 1e3),
+                sourceActionId: proposal.actionId,
+                verified: true
+              });
+              this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, pendingVerify.id);
+            }
+          }
+          const objectiveCheck = this.currentTaskSpec && this.objectiveProgress ? canFinishTask(this.currentTaskSpec, this.objectiveProgress) : { satisfied: true, reason: "No structured objectives available" };
           const isAnswerGoal = Boolean(this.currentTaskContract?.isAnswerGoal);
           const isAnswerOrConversational = proposal.kind === "answer" && hasSubstantiveAnswer || isAnswerGoal && hasSubstantiveAnswer || this.currentTaskContract?.goalPattern === "conversational_query";
+          if (!objectiveCheck.satisfied && this.currentTaskSpec?.objectives?.length) {
+            const errorMsg2 = `Task rejected: terminal action proposed before objective completion: ${objectiveCheck.reason}`;
+            this.transition("failed-safe", errorMsg2);
+            const res3 = { success: false, state: "failed-safe", error: errorMsg2, sanitized, proposal, stepCount: step, steps: this.stepsTrace };
+            return this.completeWithResult(res3);
+          }
           if (proposal.kind === "finish" && isAnswerGoal && !hasSubstantiveAnswer) {
             const errorMsg2 = `Task rejected: Model proposed "finish" for an information retrieval / summarization task without providing an answer or summary.`;
             this.transition("failed-safe", errorMsg2);
@@ -24131,7 +24409,7 @@ var RunCoordinator = class {
           };
           return this.completeWithResult(res2);
         }
-        const isDuplicate = this.isRepeatedAction(proposal);
+        const isDuplicate = this.isRepeatedAction(proposal, sanitized);
         if (isDuplicate) {
           const errorMsg2 = "Repeated action loop detected: identical action proposed consecutively without progress";
           this.transition("failed-safe", errorMsg2);
@@ -24435,15 +24713,61 @@ var RunCoordinator = class {
         const t6_actionExecuted = Date.now();
         this.transition("verifying", `Step ${step}/${maxSteps}: Verifying semantic outcome`);
         const t7_stateVerified = Date.now();
+        const verified = Boolean(execResponse?.semanticOutcomeVerified ?? execResponse?.success);
+        const objectiveId = proposal.objectiveId || (this.currentTaskSpec && this.objectiveProgress ? getCurrentObjective(this.currentTaskSpec, this.objectiveProgress)?.id : void 0);
+        if (verified && objectiveId && this.currentTaskSpec && this.objectiveProgress) {
+          const evidenceKind = proposal.completionEvidence?.[0] || (proposal.kind === "navigate" ? "url" : proposal.kind === "type" ? "input_value" : proposal.kind === "scroll" ? "scroll" : proposal.kind === "extract" || proposal.kind === "answer" ? "text" : proposal.expectedPostcondition?.kind === "visual_change" || proposal.expectedPostcondition?.kind === "map_location_changed" ? "visual_change" : proposal.expectedPostcondition?.kind === "dialog_visible" || proposal.expectedPostcondition?.kind === "panel_visible" ? "dialog" : "element");
+          this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
+            objectiveId,
+            kind: evidenceKind,
+            summary: (execResponse?.message || `Verified ${proposal.kind} action`).slice(0, 1e3),
+            sourceActionId: proposal.actionId,
+            verified: true
+          });
+          this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, objectiveId);
+          const verificationObjective = getCurrentObjective(this.currentTaskSpec, this.objectiveProgress);
+          if (verificationObjective?.intent === "verify") {
+            this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
+              objectiveId: verificationObjective.id,
+              kind: evidenceKind,
+              summary: `Verified terminal state after ${proposal.kind}: ${(execResponse?.message || "semantic outcome passed").slice(0, 900)}`,
+              sourceActionId: proposal.actionId,
+              verified: true
+            });
+            this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, verificationObjective.id);
+          }
+          const nextObjective = getCurrentObjective(this.currentTaskSpec, this.objectiveProgress);
+          const actionSatisfiesNext = Boolean(nextObjective && (nextObjective.intent === "select_result" && proposal.kind === "click" || nextObjective.intent === "open_section" && proposal.kind === "click" || nextObjective.intent === "submit" && (proposal.kind === "click" || proposal.pressEnter) || nextObjective.intent === "navigate" && proposal.kind === "navigate" || nextObjective.intent === "search" && proposal.kind === "type"));
+          if (nextObjective && actionSatisfiesNext) {
+            this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
+              objectiveId: nextObjective.id,
+              kind: evidenceKind,
+              summary: `Verified ${proposal.kind} action also satisfied ${nextObjective.description}`.slice(0, 1e3),
+              sourceActionId: proposal.actionId,
+              verified: true
+            });
+            this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, nextObjective.id);
+          }
+        }
+        this.recentActionHistory.push({
+          actionId: proposal.actionId,
+          objectiveId,
+          kind: proposal.kind,
+          targetLocalId: proposal.targetLocalId,
+          expectedPostcondition: proposal.expectedPostcondition,
+          observedOutcome: execResponse?.message,
+          meaningfulProgress: verified
+        });
+        this.recentActionHistory = this.recentActionHistory.slice(-10);
         this.currentExecutionFeedback = {
           lastActionId: proposal.actionId,
           lastActionKind: proposal.kind,
           targetLocalId: proposal.targetLocalId,
-          verified: Boolean(execResponse?.semanticOutcomeVerified ?? execResponse?.success),
+          verified,
           outcomeCode: execResponse?.reasonCode || (execResponse?.success ? "ACTION_VERIFIED_SUCCESS" : "EXECUTION_FAILED"),
           stepIndex: step,
-          completedTasks: this.currentTaskSpec?.tasksToDo ? this.currentTaskSpec.tasksToDo.slice(0, step) : [],
-          remainingTasks: this.currentTaskSpec?.tasksToDo ? this.currentTaskSpec.tasksToDo.slice(step) : []
+          completedTasks: this.currentTaskSpec && this.objectiveProgress ? this.currentTaskSpec.objectives.filter((objective) => this.objectiveProgress.completedObjectiveIds.includes(objective.id)).map((objective) => objective.description) : [],
+          remainingTasks: this.currentTaskSpec && this.objectiveProgress ? this.currentTaskSpec.objectives.filter((objective) => !this.objectiveProgress.completedObjectiveIds.includes(objective.id)).map((objective) => objective.description) : []
         };
         const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
         if (this.listeners.onTelemetryUpdated) {
@@ -24527,7 +24851,10 @@ var RunCoordinator = class {
         };
         this.stepsTrace.push(stepTrace);
         if (!isSuccess) {
-          const canContinuePerception = proposal.risk === "safe" && step < maxSteps && isMultiStepGoal;
+          const isRecoverableMapControl = Boolean(
+            proposal.actionId?.startsWith("act_bhuvan_layers_") && execResponse?.success !== false
+          );
+          const canContinuePerception = proposal.risk === "safe" && step < maxSteps && (isMultiStepGoal || isRecoverableMapControl);
           if (canContinuePerception) {
             console.warn(`[PrivaPilot Coordinator] Step ${step} execution or verification unconfirmed (${execResponse?.message || "unconfirmed"}); proceeding to next perception cycle...`);
             this.transition("capturing", `Step ${step}: ${execResponse?.message || "Action unconfirmed"}. Re-perceiving page state (step ${step + 1}/${maxSteps})...`);

@@ -7,7 +7,7 @@
  */
 
 import { ScreenshotPixelBox, ViewportCssPixelBox, ViewportMetadata } from './coordinates.js';
-import type { ExecutionFeedback } from './action.js';
+import type { ActionProposal, ExecutionFeedback, ExpectedPostcondition, ObjectiveProgress, TaskObjective, TaskSpecification } from './action.js';
 
 export type SensitiveCategory =
   | 'password'
@@ -174,6 +174,16 @@ export interface RedactionManifest {
 /**
  * Sanitized context produced by local redaction pipeline. Safe to pass to Network client.
  */
+export interface RecentActionRecord {
+  readonly actionId: string;
+  readonly objectiveId?: string;
+  readonly kind: string;
+  readonly targetLocalId?: string;
+  readonly expectedPostcondition?: ExpectedPostcondition;
+  readonly observedOutcome?: string;
+  readonly meaningfulProgress: boolean;
+}
+
 export interface SanitizedContext {
   readonly _brand: 'SanitizedContext_Verified';
   readonly protocolVersion: '1.0';
@@ -191,6 +201,14 @@ export interface SanitizedContext {
   readonly history?: ReadonlyArray<{ readonly role: 'user' | 'assistant'; readonly content: string }>;
   readonly customPrompt?: string;
   readonly executionFeedback?: ExecutionFeedback;
+  readonly taskSpecification?: TaskSpecification;
+  readonly objectiveProgress?: ObjectiveProgress;
+  readonly currentObjective?: TaskObjective;
+  readonly previousAction?: Pick<ActionProposal, 'actionId' | 'objectiveId' | 'kind' | 'targetLocalId' | 'targetName'>;
+  readonly expectedPostcondition?: ExpectedPostcondition;
+  readonly observedOutcome?: string;
+  readonly meaningfulProgress?: boolean;
+  readonly recentActionHistory?: ReadonlyArray<RecentActionRecord>;
 }
 
 /**
@@ -207,6 +225,14 @@ export interface SanitizedNetworkPayload {
   readonly history?: ReadonlyArray<{ readonly role: 'user' | 'assistant'; readonly content: string }>;
   readonly customPrompt?: string;
   readonly executionFeedback?: ExecutionFeedback;
+  readonly taskSpecification?: TaskSpecification;
+  readonly objectiveProgress?: ObjectiveProgress;
+  readonly currentObjective?: TaskObjective;
+  readonly previousAction?: Pick<ActionProposal, 'actionId' | 'objectiveId' | 'kind' | 'targetLocalId' | 'targetName'>;
+  readonly expectedPostcondition?: ExpectedPostcondition;
+  readonly observedOutcome?: string;
+  readonly meaningfulProgress?: boolean;
+  readonly recentActionHistory?: ReadonlyArray<RecentActionRecord>;
 }
 
 /**
@@ -223,7 +249,15 @@ export function toSanitizedNetworkPayload(context: SanitizedContext): SanitizedN
     ...(context.redactionManifest ? { redactionManifest: context.redactionManifest } : {}),
     ...(context.history ? { history: context.history } : {}),
     ...(context.customPrompt ? { customPrompt: context.customPrompt } : {}),
-    ...(context.executionFeedback ? { executionFeedback: context.executionFeedback } : {})
+    ...(context.executionFeedback ? { executionFeedback: context.executionFeedback } : {}),
+    ...(context.taskSpecification ? { taskSpecification: context.taskSpecification } : {}),
+    ...(context.objectiveProgress ? { objectiveProgress: context.objectiveProgress } : {}),
+    ...(context.currentObjective ? { currentObjective: context.currentObjective } : {}),
+    ...(context.previousAction ? { previousAction: context.previousAction } : {}),
+    ...(context.expectedPostcondition ? { expectedPostcondition: context.expectedPostcondition } : {}),
+    ...(context.observedOutcome !== undefined ? { observedOutcome: context.observedOutcome } : {}),
+    ...(context.meaningfulProgress !== undefined ? { meaningfulProgress: context.meaningfulProgress } : {}),
+    ...(context.recentActionHistory ? { recentActionHistory: context.recentActionHistory.slice(-10) } : {})
   };
 }
 

@@ -507,7 +507,8 @@ test('Domain Playbooks: RunCoordinator auto-navigates from scratch on blank/rest
   const result = await coordinator.startRun('open isro.gov.in and search missions', { maxSteps: 5 });
 
   // Verification
-  assert.ok(result.success, `Run should succeed: ${result.error || result.message}`);
+  assert.equal(result.success, false, 'Search submission alone must not complete the remaining result-selection objective');
+  assert.match(result.error || '', /objective completion/i);
   assert.equal(navigatedUrls.length, 1);
   assert.equal(navigatedUrls[0], 'https://www.isro.gov.in');
   assert.ok(executedProposals.length >= 1);
@@ -649,7 +650,8 @@ test('Domain Playbooks: Coordinator drills into search results when exploring IS
   });
 
   const result = await coordinator.startRun('scour every single corner and explore isro missions', { maxSteps: 3 });
-  assert.ok(result.success, `Run should succeed: ${result.error || result.message}`);
+  assert.equal(result.success, false, 'Opening a result alone must not complete remaining inspection objectives');
+  assert.match(result.error || '', /objective completion/i);
   const clickAction = executedProposals.find(p => p.kind === 'click');
   assert.ok(clickAction, 'Should click on top search result');
   assert.equal(clickAction.targetLocalId, 'el_result_1');
@@ -687,6 +689,10 @@ test('Domain Playbooks: extractSearchQueryFromGoal extracts clean query for "loc
   assert.equal(extractSearchQueryFromGoal('locate Bangalore on map'), 'Bangalore');
   assert.equal(extractSearchQueryFromGoal('locate Bangalore map'), 'Bangalore');
   assert.equal(extractSearchQueryFromGoal('locate Sriharikota in search box'), 'Sriharikota');
+  assert.equal(
+    extractSearchQueryFromGoal('Open bhuvan.nrsc.gov.in, launch the 2D Open Data Archive or map portal, locate Bengaluru, and inspect the available thematic satellite layers'),
+    'Bengaluru'
+  );
   assert.equal(extractSearchQueryFromGoal('search Chandrayaan-3 on isro'), 'Chandrayaan-3');
   assert.equal(extractSearchQueryFromGoal('find Aditya-L1 on isro portal'), 'Aditya-L1');
 });
@@ -731,9 +737,9 @@ test('Domain Playbooks: Coordinator identifies when already on Bhuvan NextGen ma
 
   const coordinator = new RunCoordinator(browser);
   const result = await coordinator.startRun('Explore 2D 3D map viewer on Bhuvan', { maxSteps: 3 });
-  assert.equal(result.success, true);
-  assert.equal(result.state, 'complete');
-  assert.ok(result.message.includes('already on the active'));
+  assert.equal(result.success, false);
+  assert.equal(result.state, 'failed-safe');
+  assert.match(result.error || '', /objective completion/i, 'Being on the map route alone is not evidence that requested exploration is complete');
 });
 
 test('Domain Playbooks: Coordinator searches Bangalore on Bhuvan NextGen and clicks autocomplete suggestion', async () => {
@@ -821,8 +827,9 @@ test('Domain Playbooks: Coordinator searches Bangalore on Bhuvan NextGen and cli
   const coordinator = new RunCoordinator(browser);
   const result = await coordinator.startRun('Locate Bangalore on Bhuvan map', { maxSteps: 5 });
 
-  assert.equal(result.success, true);
-  assert.equal(result.state, 'complete');
+  assert.equal(result.success, false, 'Selecting Bengaluru must not finish until map-location evidence is verified');
+  assert.equal(result.state, 'failed-safe');
+  assert.match(result.error || '', /objective completion/i);
   assert.equal(executedProposals.length, 2);
 
   // Step 1: Types "Bangalore" (clean, NOT "Bangalore map") into search input

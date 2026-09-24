@@ -318,10 +318,27 @@ export async function handleMessage(message: any): Promise<any> {
         }
       }
 
+      const preScrollY = window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0;
       const execResult = ActionExecutor.execute(proposal, currentElementMap);
       if (proposal.kind === 'scroll') {
-        // Allow browser smooth scroll interpolation to glide realistically and settle
-        await new Promise((r) => setTimeout(r, 450));
+        // Allow browser smooth scroll interpolation to settle, then require real movement.
+        await new Promise((r) => setTimeout(r, 650));
+        const postScrollY = window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0;
+        const reachedBoundary = proposal.scrollDirection === 'top'
+          ? postScrollY === 0
+          : proposal.scrollDirection === 'bottom'
+            ? postScrollY >= Math.max(0, document.documentElement.scrollHeight - window.innerHeight - 2)
+            : false;
+        if (Math.abs(postScrollY - preScrollY) <= 2 && !reachedBoundary) {
+          return {
+            success: false,
+            actionId: proposal.actionId,
+            semanticOutcomeVerified: false,
+            staleTarget: false,
+            message: `Scroll did not move the page from ${Math.round(preScrollY)}px`,
+            reasonCode: 'CONDITION_NOT_MET'
+          };
+        }
       }
 
       // Visual feedback: Flash green dispatched ring on target and trigger typing badge

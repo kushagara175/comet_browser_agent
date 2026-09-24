@@ -1086,7 +1086,7 @@ Available Browser Skills Library:
 - Domain Playbooks: Specialized patterns for isro-portal.md (ISRO official portal navigation, missions directory /Missions.html, launchers /Launchers.html, search #txtSearch, specifications tables, PDF brochure/report downloads), bhuvan-geoportal.md (Bhuvan 2D/3D map viewer /bhuvan_geoportal.php, location search, thematic layers, disaster support, open satellite data download), sih-portal.md (SIH Problem Statements portal search, filters, and submission metrics), flight-booking.md (airline flight booking forms, origin/destination inputs, search buttons), x-twitter.md (on X.com / Twitter, Bookmarks is located at /i/bookmarks with the ribbon/bookmark icon; Bookmarks are completely separate from Lists /lists; to view bookmarks on X, click the Bookmarks link or navigate to https://x.com/i/bookmarks; never confuse Lists with Bookmarks), wikipedia.md, github.md, duckduckgo-google.md, youtube.md, reddit.md.
 
 Strict Rules:
-1. Return ONLY schema-valid JSON for one single next action or answer.
+1. Return ONLY schema-valid JSON for exactly one minimal next action or answer. Act only on the current objective and copy its id into objectiveId.
 2. Target elements using "targetLocalId" ONLY for interaction actions ("click", "type", "select", "hover", "drag_and_drop", "upload_file"). NEVER invent CSS selectors, XPath, or JavaScript.
 3. Classify risk as "safe" (read/navigate/preview/filter/hover/drag/upload/finish/answer) or "protected" (submit/delete/pay/sign).
 3b. NAVIGATION & MULTI-TAB DIRECTIVE:
@@ -1125,12 +1125,10 @@ Strict Rules:
 8. FILE UPLOAD DIRECTIVE: When uploading or attaching a file, return kind: "upload_file", set "targetLocalId" to the file input and "fileName" to the file name.
 9. MULTI-STEP REASONING: For compound goals (e.g. "go to X and search Y", "click tab and find Z", "scroll and check count"):
    Execute step 1 (navigation or intermediate click/scroll/hover), observe the updated page state on the next cycle, and continue with the subsequent steps (typing, extracting, or verifying) before proposing "finish". Do NOT propose "finish" prematurely after intermediate navigation clicks.
-10. MODEL REASONING & CHAIN-OF-THOUGHT:
-    Before proposing an action or answer, you MUST provide your authentic, pure thinking in the "reasoning" field (or inside <think>...</think> tags).
-    Keep your thinking concise and fast (2-4 focused sentences, under 150 words) to ensure rapid, sub-3-second agent execution.
-    Explain what you observe on the page, what the user wants to accomplish, and your strategic rationale for selecting this action tool and target element.
-    Provide natural, coherent reasoning paragraphs without fake rigid categories or emojis.
-11. Do not return "finish" merely because you have explained what should happen. Use "finish" only when visible page state proves the user's requested browser operation is already complete.
+10. SAFE ACTION JUSTIFICATION:
+    Do not reveal hidden chain-of-thought or private reasoning. Return only a concise, user-safe rationale and semanticMatchReason.
+    Explain briefly why the selected action and target satisfy the active objective, without internal deliberation.
+11. Do not return "finish" merely because you have explained what should happen. Use "finish" only when every required objective is completed and the evidence ledger contains verified evidence for each objective.
 12. GOAL COMPLETION & PROGRESSION:
    - For QUESTION-ANSWERING & INFORMATION RETRIEVAL GOALS (e.g. "search for X and tell me Y", "find Z and tell me when it was first launched and who organizes it", "how many submissions..."):
      Typing into a search box or clicking a search tab is ONLY an intermediate step! DO NOT conclude that the goal is complete just because text was typed into an input. If the search results or answer are not yet visible on screen (e.g. still on the home page or search input), DO NOT propose kind: "finish"! Instead, propose clicking the search button or submitting the search.
@@ -1247,6 +1245,7 @@ Strict Rules:
 JSON Schema:
 {
   "actionId": "act_1",
+  "objectiveId": "Copy the active objective id",
   "kind": "click" | "type" | "select" | "scroll" | "hover" | "drag_and_drop" | "upload_file" | "wait" | "batch" | "request_user_input" | "finish" | "extract" | "answer",
   "targetLocalId": "el_1 (Required for click/type/select/hover/drag/upload/request_user_input)",
   "destinationLocalId": "Optional el_2 when kind is drag_and_drop",
@@ -1261,8 +1260,11 @@ JSON Schema:
     { "actionId": "act_sub_1", "kind": "type", "targetLocalId": "el_1", "textToType": "..." },
     { "actionId": "act_sub_2", "kind": "click", "targetLocalId": "el_2" }
   ],
-  "reasoning": "Authentic, pure step-by-step thinking explaining page observations and action strategy",
-  "rationale": "Short explanation or summary of action/answer",
+  "targetName": "Human-readable semantic target name",
+  "semanticMatchReason": "Concise explanation of target-to-objective match",
+  "fallbackStrategy": "reperceive" | "wait_for_hydration" | "retry_target" | "scroll_to_target" | "navigate_fallback" | "refresh_once" | "request_user_input" | "fail_safe",
+  "completionEvidence": ["url" | "element" | "text" | "input_value" | "dialog" | "attribute" | "scroll" | "visual_change"],
+  "rationale": "Short user-safe explanation or summary of action/answer",
   "reply": "Optional conversational response text when kind is answer or finish",
   "expectedState": "Expected UI change"
 }
@@ -1353,7 +1355,7 @@ JSON Schema:
 - Verification: Pixel verification passed (${m.pixelVerificationPassed})
 IMPORTANT PRIVACY INSTRUCTION: All redacted values and blackened regions are permanently destroyed on the local client. You MUST NOT attempt to guess, hallucinate, recover, or infer redacted text or images.\n`;
         }
-        const promptSuffix = 'Analyze the layout and return the JSON action proposal. If the goal has already been achieved by the visible page state and landmarks, return kind "finish".';
+        const promptSuffix = 'Return exactly one minimal schema-valid JSON action for the current objective. Never repeat a no-progress action. Use finish only when all required objectives have verified evidence.';
         let historyBlock = '';
         if (Array.isArray(payload.history) && payload.history.length > 0) {
             const recent = payload.history.slice(-4).map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}`).join('\n');
@@ -1377,9 +1379,10 @@ IMPORTANT PRIVACY INSTRUCTION: All redacted values and blackened regions are per
 - Live Verification: ${fb.verified ? 'VERIFIED PASSED' : 'INCOMPLETE / UNVERIFIED'} (Outcome: ${fb.outcomeCode || 'unknown'})${completedStr}${remainingStr}
 - Closed-Loop Directive: Evaluate if the previous step achieved its subtask. Advance to the next task if verified, or issue a corrective action. If all tasks are verified complete, return kind: "finish".\n`;
         }
+        const objectiveBlock = payload.taskSpecification ? `\nStructured Task Specification:\n${JSON.stringify(payload.taskSpecification, null, 2)}\nCurrent Objective:\n${JSON.stringify(payload.currentObjective || null, null, 2)}\nObjective Progress and Verified Evidence Ledger:\n${JSON.stringify(payload.objectiveProgress || null, null, 2)}\nPrevious Action: ${JSON.stringify(payload.previousAction || null)}\nExpected Outcome: ${JSON.stringify(payload.expectedPostcondition || null)}\nObserved Outcome: ${payload.observedOutcome || 'none'}\nMeaningful Progress: ${payload.meaningfulProgress ? 'YES' : 'NO'}\nRemaining retry budget for current objective: ${Math.max(0, 5 - (payload.currentObjective && payload.objectiveProgress ? (payload.objectiveProgress.attemptCountByObjective[payload.currentObjective.id] || 0) : 0))}\nRecent Actions: ${JSON.stringify(payload.recentActionHistory || [])}\n` : '';
         return `Active Web Page: "${pageTitle}"${domainStr}${routeStr}${currentUrlStr}
 User Goal: ${payload.goal || 'Inspect page'}
-${historyBlock}${customPromptBlock}${executionFeedbackBlock}${redactionBlock}${stateDeltaBlock}${landmarksBlock}Active Viewport Elements:
+${objectiveBlock}${historyBlock}${customPromptBlock}${executionFeedbackBlock}${redactionBlock}${stateDeltaBlock}${landmarksBlock}Active Viewport Elements:
 ${JSON.stringify(compactElements, null, 2)}
 
 ${promptSuffix}`;
