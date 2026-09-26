@@ -55,6 +55,13 @@ export interface LocalDomSnapshot {
   readonly domain?: string;
   readonly scrollMetrics?: ScrollMetrics;
   readonly pageZone?: 'private_workspace' | 'hybrid' | 'public_broadcast';
+  readonly focusedRegion?: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly type?: 'dialog' | 'form' | 'cluster' | string;
+  };
 }
 
 export class SanitizerPipeline {
@@ -145,7 +152,8 @@ export class SanitizerPipeline {
         imageCanvas,
         visibleRegions,
         snapshot.interactiveElements,
-        { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight }
+        { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight },
+        snapshot.focusedRegion
       );
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
@@ -182,7 +190,8 @@ export class SanitizerPipeline {
         canvas,
         visibleRegions,
         snapshot.interactiveElements,
-        { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight }
+        { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight },
+        snapshot.focusedRegion
       );
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;

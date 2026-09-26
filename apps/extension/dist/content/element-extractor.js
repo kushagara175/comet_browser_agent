@@ -778,6 +778,46 @@ export class ElementExtractor {
         catch {
             // Bounded fallback in non-standard DOM environments
         }
+        // Extract focused task region (active modal dialog, form card, or prominent drawer)
+        let focusedRegion;
+        try {
+            const winW = doc.defaultView?.innerWidth || 1280;
+            const winH = doc.defaultView?.innerHeight || 720;
+            // 1. Check for open / visible modal dialogs
+            const activeModal = doc.querySelector('dialog[open], [role="dialog"]:not(.hidden), [aria-modal="true"], .modal.show, .modal.active, .modal:not(.hidden)');
+            if (activeModal && isVisibleElement(activeModal)) {
+                const rect = activeModal.getBoundingClientRect();
+                if (rect.width >= 100 && rect.height >= 80 && (rect.width < winW * 0.98 || rect.height < winH * 0.98)) {
+                    focusedRegion = {
+                        x: Math.round(Math.max(0, rect.left)),
+                        y: Math.round(Math.max(0, rect.top)),
+                        width: Math.round(rect.width),
+                        height: Math.round(rect.height),
+                        type: 'dialog'
+                    };
+                }
+            }
+            // 2. If no modal, check for an active isolated form
+            if (!focusedRegion) {
+                const activeForm = doc.querySelector('form:not(.hidden), [role="form"]:not(.hidden)');
+                if (activeForm && isVisibleElement(activeForm)) {
+                    const rect = activeForm.getBoundingClientRect();
+                    // Only isolate if form is a distinct component/card (not full-page wrapper)
+                    if (rect.width >= 120 && rect.height >= 80 && (rect.width < winW * 0.95 || rect.height < winH * 0.95)) {
+                        focusedRegion = {
+                            x: Math.round(Math.max(0, rect.left)),
+                            y: Math.round(Math.max(0, rect.top)),
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height),
+                            type: 'form'
+                        };
+                    }
+                }
+            }
+        }
+        catch {
+            // Bounded fallback in non-standard DOM environments
+        }
         const statusSummaries = [];
         try {
             const statusNodes = doc.querySelectorAll('[role="status"], [role="alert"], .badge');
@@ -954,7 +994,8 @@ export class ElementExtractor {
                 routeFingerprint,
                 domain,
                 scrollMetrics,
-                pageZone
+                pageZone,
+                ...(focusedRegion ? { focusedRegion } : {})
             },
             elementMap: this.elementMap
         };

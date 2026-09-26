@@ -15702,7 +15702,7 @@ as ORT format: ${n}`);
      * 4. 100% opaque deep-slate blackouts for credentials, PII, payment data, and uninspectable surfaces.
      * 5. Per-region forensic audit records.
      */
-    static renderMasks(imageCanvas, regions, interactiveElements, viewport) {
+    static renderMasks(imageCanvas, regions, interactiveElements, viewport, focusedRegion) {
       const ctx = imageCanvas.getContext("2d");
       if (!ctx) {
         throw new Error("Canvas 2D context unavailable for sanitization rendering");
@@ -15918,12 +15918,21 @@ as ORT format: ${n}`);
           viewport?.height || 800
         );
       }
+      let exportCanvas = imageCanvas;
+      let cropApplied = false;
+      let cropBox;
+      if (focusedRegion) {
+        const cropResult = _MaskRenderer.cropCanvasToRegion(imageCanvas, focusedRegion, viewport);
+        exportCanvas = cropResult.targetCanvas;
+        cropApplied = cropResult.cropApplied;
+        cropBox = cropResult.cropBox;
+      }
       let dataUrl;
-      if (typeof imageCanvas.toDataURL === "function") {
-        dataUrl = imageCanvas.toDataURL("image/png");
+      if (typeof exportCanvas.toDataURL === "function") {
+        dataUrl = exportCanvas.toDataURL("image/png");
         if (dataUrl && dataUrl.length > 800 * 1024) {
           try {
-            const jpegUrl = imageCanvas.toDataURL("image/jpeg", 0.85);
+            const jpegUrl = exportCanvas.toDataURL("image/jpeg", 0.85);
             if (jpegUrl && jpegUrl.startsWith("data:image/jpeg;base64,") && jpegUrl.length < dataUrl.length) {
               dataUrl = jpegUrl;
             }
@@ -15932,7 +15941,7 @@ as ORT format: ${n}`);
         }
         if (dataUrl && dataUrl.length > 1.8 * 1024 * 1024) {
           try {
-            const compressedUrl = imageCanvas.toDataURL("image/jpeg", 0.75);
+            const compressedUrl = exportCanvas.toDataURL("image/jpeg", 0.75);
             if (compressedUrl && compressedUrl.startsWith("data:image/jpeg;base64,") && compressedUrl.length < dataUrl.length) {
               dataUrl = compressedUrl;
             }
@@ -15948,8 +15957,68 @@ as ORT format: ${n}`);
       return {
         sanitizedScreenshotDataUrl: dataUrl,
         renderedMaskCount: maskCount,
-        regionRecords
+        regionRecords,
+        cropApplied,
+        ...cropBox ? { cropBox } : {}
       };
+    }
+    /**
+     * Safely crops an image canvas to a focused region of interest (e.g. active modal or form card).
+     * Fallback to the full canvas if anything goes wrong or if the region is degenerate.
+     */
+    static cropCanvasToRegion(imageCanvas, focusedRegion, viewport) {
+      if (!focusedRegion || typeof focusedRegion.width !== "number" || typeof focusedRegion.height !== "number" || focusedRegion.width < 100 || focusedRegion.height < 60) {
+        return { targetCanvas: imageCanvas, cropApplied: false };
+      }
+      const canvasWidth = imageCanvas.width || 1280;
+      const canvasHeight = imageCanvas.height || 720;
+      const vpW = viewport?.width || 1280;
+      const vpH = viewport?.height || 720;
+      const scaleX = canvasWidth / vpW;
+      const scaleY = canvasHeight / vpH;
+      const padX = 24 * scaleX;
+      const padY = 24 * scaleY;
+      const sx = Math.max(0, Math.floor(focusedRegion.x * scaleX - padX));
+      const sy = Math.max(0, Math.floor(focusedRegion.y * scaleY - padY));
+      const sw = Math.max(80, Math.min(canvasWidth - sx, Math.ceil(focusedRegion.width * scaleX + padX * 2)));
+      const sh = Math.max(60, Math.min(canvasHeight - sy, Math.ceil(focusedRegion.height * scaleY + padY * 2)));
+      if (sw >= canvasWidth * 0.96 && sh >= canvasHeight * 0.96) {
+        return { targetCanvas: imageCanvas, cropApplied: false };
+      }
+      try {
+        let subCanvas = null;
+        if (typeof OffscreenCanvas !== "undefined" && imageCanvas instanceof OffscreenCanvas) {
+          subCanvas = new OffscreenCanvas(sw, sh);
+        } else if (typeof document !== "undefined" && typeof document.createElement === "function") {
+          const c = document.createElement("canvas");
+          c.width = sw;
+          c.height = sh;
+          subCanvas = c;
+        } else if (typeof imageCanvas.createSubCanvas === "function") {
+          subCanvas = imageCanvas.createSubCanvas(sw, sh);
+        } else if (typeof imageCanvas.getContext === "function") {
+          subCanvas = {
+            width: sw,
+            height: sh,
+            toDataURL: (type) => imageCanvas.toDataURL(type),
+            getContext: (type) => imageCanvas.getContext(type)
+          };
+        }
+        if (subCanvas) {
+          const subCtx = subCanvas.getContext("2d");
+          if (subCtx && typeof subCtx.drawImage === "function") {
+            subCtx.drawImage(imageCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+            return {
+              targetCanvas: subCanvas,
+              cropApplied: true,
+              cropBox: { x: sx, y: sy, width: sw, height: sh }
+            };
+          }
+        }
+      } catch (err) {
+        console.warn("[MaskRenderer] Focused region crop fallback to full canvas:", err?.message);
+      }
+      return { targetCanvas: imageCanvas, cropApplied: false };
     }
     /**
      * Set-of-Marks (SOM) visual labeling overlay renderer.
@@ -16466,7 +16535,8 @@ as ORT format: ${n}`);
           imageCanvas,
           visibleRegions,
           snapshot.interactiveElements,
-          { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight }
+          { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight },
+          snapshot.focusedRegion
         );
         sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
         renderedCount = renderResult.renderedMaskCount;
@@ -16502,7 +16572,8 @@ as ORT format: ${n}`);
           canvas,
           visibleRegions,
           snapshot.interactiveElements,
-          { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight }
+          { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight },
+          snapshot.focusedRegion
         );
         sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
         renderedCount = renderResult.renderedMaskCount;

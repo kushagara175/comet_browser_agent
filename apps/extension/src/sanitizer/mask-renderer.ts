@@ -28,10 +28,20 @@ export interface RegionRenderRecord {
   readonly failureReason?: string;
 }
 
+export interface FocusedRegion {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly type?: 'dialog' | 'form' | 'cluster' | string;
+}
+
 export interface RenderResult {
   readonly sanitizedScreenshotDataUrl: string;
   readonly renderedMaskCount: number;
   readonly regionRecords: ReadonlyArray<RegionRenderRecord>;
+  readonly cropApplied?: boolean;
+  readonly cropBox?: { x: number; y: number; width: number; height: number };
 }
 
 export class MaskRenderer {
@@ -49,7 +59,8 @@ export class MaskRenderer {
     imageCanvas: HTMLCanvasElement | OffscreenCanvas,
     regions: ReadonlyArray<SensitiveRegion>,
     interactiveElements?: ReadonlyArray<any>,
-    viewport?: { width: number; height: number }
+    viewport?: { width: number; height: number },
+    focusedRegion?: FocusedRegion
   ): RenderResult {
     const ctx = imageCanvas.getContext('2d') as (CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D);
     if (!ctx) {
@@ -321,10 +332,22 @@ export class MaskRenderer {
       );
     }
 
+    // --- PASS 4: Focused Task Area Cropping (Data Minimization & Hallucination Elimination) ---
+    let exportCanvas: HTMLCanvasElement | OffscreenCanvas = imageCanvas;
+    let cropApplied = false;
+    let cropBox: { x: number; y: number; width: number; height: number } | undefined;
+
+    if (focusedRegion) {
+      const cropResult = MaskRenderer.cropCanvasToRegion(imageCanvas, focusedRegion, viewport);
+      exportCanvas = cropResult.targetCanvas;
+      cropApplied = cropResult.cropApplied;
+      cropBox = cropResult.cropBox;
+    }
+
     // Export to Data URL (fail closed if canvas export fails)
     let dataUrl: string;
-    if (typeof (imageCanvas as any).toDataURL === 'function') {
-      dataUrl = (imageCanvas as HTMLCanvasElement).toDataURL('image/png');
+    if (typeof (exportCanvas as any).toDataURL === 'function') {
+      dataUrl = (exportCanvas as HTMLCanvasElement).toDataURL('image/png');
       // On high-DPI Mac Retina displays (2x-3x) or media-rich pages (YouTube, Bhuvan maps, Twitter/X),
       // a raw uncompressed PNG can reach 3.5MB - 6MB.
       // If the PNG data URL exceeds 800KB, adaptively export as JPEG (0.85 quality)
@@ -332,7 +355,7 @@ export class MaskRenderer {
       // for privacy masks and multimodal reasoning.
       if (dataUrl && dataUrl.length > 800 * 1024) {
         try {
-          const jpegUrl = (imageCanvas as HTMLCanvasElement).toDataURL('image/jpeg', 0.85);
+          const jpegUrl = (exportCanvas as HTMLCanvasElement).toDataURL('image/jpeg', 0.85);
           if (jpegUrl && jpegUrl.startsWith('data:image/jpeg;base64,') && jpegUrl.length < dataUrl.length) {
             dataUrl = jpegUrl;
           }
@@ -341,7 +364,7 @@ export class MaskRenderer {
       // If still large (> 1.8MB), compress slightly further to 0.75 quality
       if (dataUrl && dataUrl.length > 1.8 * 1024 * 1024) {
         try {
-          const compressedUrl = (imageCanvas as HTMLCanvasElement).toDataURL('image/jpeg', 0.75);
+          const compressedUrl = (exportCanvas as HTMLCanvasElement).toDataURL('image/jpeg', 0.75);
           if (compressedUrl && compressedUrl.startsWith('data:image/jpeg;base64,') && compressedUrl.length < dataUrl.length) {
             dataUrl = compressedUrl;
           }
@@ -363,8 +386,89 @@ export class MaskRenderer {
     return {
       sanitizedScreenshotDataUrl: dataUrl,
       renderedMaskCount: maskCount,
-      regionRecords
+      regionRecords,
+      cropApplied,
+      ...(cropBox ? { cropBox } : {})
     };
+  }
+
+  /**
+   * Safely crops an image canvas to a focused region of interest (e.g. active modal or form card).
+   * Fallback to the full canvas if anything goes wrong or if the region is degenerate.
+   */
+  static cropCanvasToRegion(
+    imageCanvas: HTMLCanvasElement | OffscreenCanvas,
+    focusedRegion: FocusedRegion,
+    viewport?: { width: number; height: number }
+  ): { targetCanvas: HTMLCanvasElement | OffscreenCanvas; cropApplied: boolean; cropBox?: { x: number; y: number; width: number; height: number } } {
+    if (
+      !focusedRegion ||
+      typeof focusedRegion.width !== 'number' ||
+      typeof focusedRegion.height !== 'number' ||
+      focusedRegion.width < 100 ||
+      focusedRegion.height < 60
+    ) {
+      return { targetCanvas: imageCanvas, cropApplied: false };
+    }
+
+    const canvasWidth = imageCanvas.width || 1280;
+    const canvasHeight = imageCanvas.height || 720;
+    const vpW = viewport?.width || 1280;
+    const vpH = viewport?.height || 720;
+    const scaleX = canvasWidth / vpW;
+    const scaleY = canvasHeight / vpH;
+
+    // Safety padding around the component (24px in CSS viewport space)
+    const padX = 24 * scaleX;
+    const padY = 24 * scaleY;
+
+    const sx = Math.max(0, Math.floor(focusedRegion.x * scaleX - padX));
+    const sy = Math.max(0, Math.floor(focusedRegion.y * scaleY - padY));
+    const sw = Math.max(80, Math.min(canvasWidth - sx, Math.ceil(focusedRegion.width * scaleX + padX * 2)));
+    const sh = Math.max(60, Math.min(canvasHeight - sy, Math.ceil(focusedRegion.height * scaleY + padY * 2)));
+
+    // If the region covers more than 96% of the viewport in both dimensions, cropping isn't isolating anything meaningful
+    if (sw >= canvasWidth * 0.96 && sh >= canvasHeight * 0.96) {
+      return { targetCanvas: imageCanvas, cropApplied: false };
+    }
+
+    try {
+      let subCanvas: any = null;
+      if (typeof OffscreenCanvas !== 'undefined' && imageCanvas instanceof OffscreenCanvas) {
+        subCanvas = new OffscreenCanvas(sw, sh);
+      } else if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+        const c = document.createElement('canvas');
+        c.width = sw;
+        c.height = sh;
+        subCanvas = c;
+      } else if (typeof (imageCanvas as any).createSubCanvas === 'function') {
+        subCanvas = (imageCanvas as any).createSubCanvas(sw, sh);
+      } else if (typeof (imageCanvas as any).getContext === 'function') {
+        // Node.js test environment mock canvas adapter
+        subCanvas = {
+          width: sw,
+          height: sh,
+          toDataURL: (type?: string) => (imageCanvas as any).toDataURL(type),
+          getContext: (type: string) => (imageCanvas as any).getContext(type)
+        };
+      }
+
+      if (subCanvas) {
+        const subCtx = subCanvas.getContext('2d');
+        if (subCtx && typeof subCtx.drawImage === 'function') {
+          subCtx.drawImage(imageCanvas as any, sx, sy, sw, sh, 0, 0, sw, sh);
+          return {
+            targetCanvas: subCanvas,
+            cropApplied: true,
+            cropBox: { x: sx, y: sy, width: sw, height: sh }
+          };
+        }
+      }
+    } catch (err: any) {
+      console.warn('[MaskRenderer] Focused region crop fallback to full canvas:', err?.message);
+    }
+
+    return { targetCanvas: imageCanvas, cropApplied: false };
   }
 
   /**

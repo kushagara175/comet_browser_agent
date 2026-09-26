@@ -46,6 +46,13 @@ export interface LocalDomSnapshot {
     readonly domain?: string;
     readonly scrollMetrics?: ScrollMetrics;
     readonly pageZone?: 'private_workspace' | 'hybrid' | 'public_broadcast';
+    readonly focusedRegion?: {
+        readonly x: number;
+        readonly y: number;
+        readonly width: number;
+        readonly height: number;
+        readonly type?: 'dialog' | 'form' | 'cluster' | string;
+    };
 }
 export declare class SanitizerPipeline {
     /**

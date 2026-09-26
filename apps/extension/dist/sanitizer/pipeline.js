@@ -85,7 +85,7 @@ export class SanitizerPipeline {
                 catch (_) { }
             }
             workingCanvas = imageCanvas;
-            const renderResult = MaskRenderer.renderMasks(imageCanvas, visibleRegions, snapshot.interactiveElements, { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight });
+            const renderResult = MaskRenderer.renderMasks(imageCanvas, visibleRegions, snapshot.interactiveElements, { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight }, snapshot.focusedRegion);
             sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
             renderedCount = renderResult.renderedMaskCount;
             regionRecords = renderResult.regionRecords;
@@ -117,7 +117,7 @@ export class SanitizerPipeline {
             }
             catch (_) { }
             workingCanvas = canvas;
-            const renderResult = MaskRenderer.renderMasks(canvas, visibleRegions, snapshot.interactiveElements, { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight });
+            const renderResult = MaskRenderer.renderMasks(canvas, visibleRegions, snapshot.interactiveElements, { width: rawCapture.metadata.viewportWidth, height: rawCapture.metadata.viewportHeight }, snapshot.focusedRegion);
             sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
             renderedCount = renderResult.renderedMaskCount;
             regionRecords = renderResult.regionRecords;

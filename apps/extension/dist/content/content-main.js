@@ -1441,6 +1441,40 @@
         });
       } catch {
       }
+      let focusedRegion;
+      try {
+        const winW = doc.defaultView?.innerWidth || 1280;
+        const winH = doc.defaultView?.innerHeight || 720;
+        const activeModal = doc.querySelector('dialog[open], [role="dialog"]:not(.hidden), [aria-modal="true"], .modal.show, .modal.active, .modal:not(.hidden)');
+        if (activeModal && isVisibleElement(activeModal)) {
+          const rect = activeModal.getBoundingClientRect();
+          if (rect.width >= 100 && rect.height >= 80 && (rect.width < winW * 0.98 || rect.height < winH * 0.98)) {
+            focusedRegion = {
+              x: Math.round(Math.max(0, rect.left)),
+              y: Math.round(Math.max(0, rect.top)),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height),
+              type: "dialog"
+            };
+          }
+        }
+        if (!focusedRegion) {
+          const activeForm = doc.querySelector('form:not(.hidden), [role="form"]:not(.hidden)');
+          if (activeForm && isVisibleElement(activeForm)) {
+            const rect = activeForm.getBoundingClientRect();
+            if (rect.width >= 120 && rect.height >= 80 && (rect.width < winW * 0.95 || rect.height < winH * 0.95)) {
+              focusedRegion = {
+                x: Math.round(Math.max(0, rect.left)),
+                y: Math.round(Math.max(0, rect.top)),
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+                type: "form"
+              };
+            }
+          }
+        }
+      } catch {
+      }
       const statusSummaries = [];
       try {
         const statusNodes = doc.querySelectorAll('[role="status"], [role="alert"], .badge');
@@ -1586,7 +1620,8 @@
           routeFingerprint,
           domain,
           scrollMetrics,
-          pageZone
+          pageZone,
+          ...focusedRegion ? { focusedRegion } : {}
         },
         elementMap: this.elementMap
       };
