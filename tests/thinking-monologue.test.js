@@ -219,3 +219,23 @@ test('Thinking: streamLiveReasoningLines removes placeholder and appends live li
   }
 });
 
+test('Thinking: renderThinkingAccordion displays custom agent badge when agentName is specified', () => {
+  const reasoning = '👁️ Observation: On NASA page.\n⚡ Action Selection: Extract specs.';
+  const html = renderThinkingAccordion(reasoning, 4, { agentName: 'Space Mission Analyst' });
+  assert.ok(html.includes('class="thought-agent-badge"'), 'Should render thought-agent-badge element');
+  assert.ok(html.includes('Space Mission Analyst'), 'Should render the custom agent name');
+  assert.ok(html.includes('title="Executing under custom agent layer"'));
+});
+
+test('Thinking: renderThinkingAccordion omits agent badge for default Core agent', () => {
+  const reasoning = '👁️ Observation: On search page.\n⚡ Action Selection: Click submit.';
+  const htmlCore1 = renderThinkingAccordion(reasoning, 2, { agentName: 'Comet Core' });
+  const htmlCore2 = renderThinkingAccordion(reasoning, 2, { agentName: 'Core' });
+  const htmlNone = renderThinkingAccordion(reasoning, 2);
+
+  assert.ok(!htmlCore1.includes('thought-agent-badge'), 'Should not render badge for Comet Core');
+  assert.ok(!htmlCore2.includes('thought-agent-badge'), 'Should not render badge for Core');
+  assert.ok(!htmlNone.includes('thought-agent-badge'), 'Should not render badge when agentName is omitted');
+});
+
+

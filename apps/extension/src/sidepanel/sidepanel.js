@@ -658,6 +658,11 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
   const label = options.label || (isExecuting ? `Thinking (${duration}s)` : `Thought for ${duration}s`);
   const isExpanded = Boolean(options.open);
 
+  const customAgentName = options.agentName || (options.agentName === undefined && typeof getActiveCustomAgent === 'function' ? (getActiveCustomAgent()?.id !== 'core' ? (getActiveCustomAgent()?.label || getActiveCustomAgent()?.name) : null) : null);
+  const agentBadgeHtml = (customAgentName && customAgentName !== 'Comet Core' && customAgentName !== 'Core')
+    ? `<span class="thought-agent-badge" title="Executing under custom agent layer">${escapeHtml(customAgentName)}</span>`
+    : '';
+
   return `
     <div class="monologue-block group" data-state="${isExpanded ? 'expanded' : 'collapsed'}">
       <button type="button" class="monologue-toggle-btn" aria-expanded="${isExpanded ? 'true' : 'false'}">
@@ -665,6 +670,7 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
           <polyline points="9 18 15 12 9 6"></polyline>
         </svg>
         <span class="monologue-title ${isExecuting ? 'thinking-shimmer-text' : 'monologue-completed-text'}">${escapeHtml(label)}</span>
+        ${agentBadgeHtml}
       </button>
       <div class="monologue-drawer" style="display: ${isExpanded ? 'block' : 'none'};">
         <div class="monologue-content">${formatReasoningIntoLinesHtml(sanitized)}</div>
@@ -1236,7 +1242,7 @@ if (typeof document !== 'undefined') {
               }
             }
             const thinkingHtml = thoughtContent
-              ? renderThinkingAccordion(thoughtContent, msg.durationSeconds || 2, { open: false })
+              ? renderThinkingAccordion(thoughtContent, msg.durationSeconds || 2, { open: false, agentName: msg.agentName })
               : '';
 
             if (msg.isAction || msg.text?.startsWith('✓ ')) {
@@ -1575,13 +1581,36 @@ if (typeof document !== 'undefined') {
       });
     }
 
+    function appendAgentActivationCard(agent) {
+      if (!chatMessages || !agent) return;
+      const card = document.createElement('div');
+      card.className = 'agent-activated-card';
+      const promptSnippet = agent.prompt?.length > 180 ? agent.prompt.slice(0, 180) + '…' : agent.prompt;
+      card.innerHTML = `
+        <div class="agent-activated-header">
+          <span class="agent-activated-badge">ACTIVE AGENT LAYER</span>
+          <span class="agent-activated-title">${escapeHtml(agent.name || agent.label)}</span>
+        </div>
+        ${agent.description ? `<div class="agent-activated-desc">${escapeHtml(agent.description)}</div>` : ''}
+        <div class="agent-activated-prompt-preview">${escapeHtml(promptSnippet || '')}</div>
+      `;
+      chatMessages.appendChild(card);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
     function selectAgent(id) {
+      const prevId = activeAgentId;
       activeAgentId = id;
       setStorageData(STORAGE_ACTIVE_AGENT_ID_KEY, id);
       updateAgentPillDisplay();
       renderAgentSwitcherMenu();
       closeGlideSelect('instant');
-      addAuditEntry('AGENT_SWITCHED', `Active agent: ${getActiveCustomAgent().name}`, 'info');
+      const activeObj = getActiveCustomAgent();
+      addAuditEntry('AGENT_SWITCHED', `Active agent: ${activeObj.name}`, 'info');
+
+      if (prevId !== id && activeObj && activeObj.id !== 'core') {
+        appendAgentActivationCard(activeObj);
+      }
     }
 
     function loadAgents() {
@@ -1607,16 +1636,16 @@ if (typeof document !== 'undefined') {
         name: agentData.name.trim(),
         label: agentData.name.trim(),
         tag: 'Custom',
-        emoji: agentData.emoji?.trim() || '🤖',
-        description: agentData.description.trim(),
+        description: (agentData.description || '').trim(),
         prompt: agentData.prompt.trim(),
-        domains: agentData.domains ? agentData.domains.split(',').map(d => d.trim()).filter(Boolean) : [],
+        domains: agentData.domains ? (Array.isArray(agentData.domains) ? agentData.domains : agentData.domains.split(',').map(d => d.trim()).filter(Boolean)) : [],
         createdAt: Date.now()
       };
       customAgentsList.push(newAgent);
       setStorageData(STORAGE_CUSTOM_AGENTS_KEY, customAgentsList, () => {
         selectAgent(newAgent.id);
       });
+      return newAgent;
     }
 
     loadAgents();
@@ -1753,6 +1782,17 @@ if (typeof document !== 'undefined') {
     }
 
     function closeCustomAgentModal() {
+      const progressBox = document.getElementById('agentCreationProgress');
+      const progressBar = document.getElementById('agentCreationProgressBar');
+      const saveBtn = document.getElementById('saveCustomAgentBtn');
+      const cancelBtn = document.getElementById('cancelCustomAgentBtn');
+      if (progressBox) progressBox.classList.add('hidden');
+      if (progressBar) progressBar.style.width = '0%';
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Create Agent';
+      }
+      if (cancelBtn) cancelBtn.disabled = false;
       customAgentModal?.classList.add('hidden');
       customAgentForm?.reset();
     }
@@ -1762,17 +1802,44 @@ if (typeof document !== 'undefined') {
     closeCustomAgentModalBtn?.addEventListener('click', closeCustomAgentModal);
     cancelCustomAgentBtn?.addEventListener('click', closeCustomAgentModal);
 
-    customAgentForm?.addEventListener('submit', (e) => {
+    customAgentForm?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const name = document.getElementById('customAgentNameInput')?.value || '';
-      const emoji = document.getElementById('customAgentEmojiInput')?.value || '🤖';
-      const description = document.getElementById('customAgentDescInput')?.value || '';
-      const prompt = document.getElementById('customAgentPromptInput')?.value || '';
-      const domains = document.getElementById('customAgentDomainsInput')?.value || '';
+      const name = document.getElementById('customAgentNameInput')?.value?.trim() || '';
+      const description = document.getElementById('customAgentDescInput')?.value?.trim() || '';
+      const prompt = document.getElementById('customAgentPromptInput')?.value?.trim() || '';
+      const domains = document.getElementById('customAgentDomainsInput')?.value?.trim() || '';
 
-      if (!name.trim() || !prompt.trim()) return;
+      if (!name || !prompt) return;
 
-      saveNewCustomAgent({ name, emoji, description, prompt, domains });
+      const saveBtn = document.getElementById('saveCustomAgentBtn');
+      const cancelBtn = document.getElementById('cancelCustomAgentBtn');
+      const progressBox = document.getElementById('agentCreationProgress');
+      const stepText = document.getElementById('agentCreationStepText');
+      const progressBar = document.getElementById('agentCreationProgressBar');
+
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Compiling...';
+      }
+      if (cancelBtn) cancelBtn.disabled = true;
+      if (progressBox) progressBox.classList.remove('hidden');
+
+      // Stage 1: Compiling system directives & guardrails
+      if (stepText) stepText.textContent = 'Compiling agent directives & guardrails...';
+      if (progressBar) progressBar.style.width = '35%';
+      await new Promise(r => setTimeout(r, 260));
+
+      // Stage 2: Calibrating domain sandbox & reasoning layer
+      if (stepText) stepText.textContent = 'Calibrating domain sandbox & reasoning layer...';
+      if (progressBar) progressBar.style.width = '75%';
+      await new Promise(r => setTimeout(r, 280));
+
+      // Stage 3: Registration complete
+      if (stepText) stepText.textContent = '✓ Agent compiled & active';
+      if (progressBar) progressBar.style.width = '100%';
+      await new Promise(r => setTimeout(r, 200));
+
+      saveNewCustomAgent({ name, description, prompt, domains });
       closeCustomAgentModal();
     });
 
@@ -2903,6 +2970,12 @@ if (typeof document !== 'undefined') {
       if (phase1) phase1.remove();
 
       if (!block) {
+        const activeAgent = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
+        const isCustom = activeAgent && activeAgent.id !== 'core';
+        const agentBadgeHtml = isCustom
+          ? `<span class="thought-agent-badge" title="Executing under custom agent layer">${escapeHtml(activeAgent.label || activeAgent.name)}</span>`
+          : '';
+
         block = document.createElement('div');
         block.className = 'monologue-block group';
         block.setAttribute('data-state', b.__expanded ? 'expanded' : 'collapsed');
@@ -2912,6 +2985,7 @@ if (typeof document !== 'undefined') {
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
             <span class="monologue-title thinking-shimmer-text">Thinking (${elapsed}s)</span>
+            ${agentBadgeHtml}
           </button>
           <div class="monologue-drawer" style="display: ${b.__expanded ? 'block' : 'none'};">
             <div class="monologue-content">${formatReasoningIntoLinesHtml(cleanReasoning)}</div>
@@ -3328,7 +3402,9 @@ if (typeof document !== 'undefined') {
         const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
         const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
                             agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true';
-        const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: wasExpanded });
+        const activeAgentObj = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
+        const activeAgentLabel = activeAgentObj?.id !== 'core' ? (activeAgentObj?.label || activeAgentObj?.name) : null;
+        const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: wasExpanded, agentName: activeAgentLabel });
 
         const activeSession = chatSessions.find(s => s.id === currentSessionId);
         if (activeSession) {
@@ -3338,6 +3414,7 @@ if (typeof document !== 'undefined') {
             text: modelReply,
             reasoning: realReasoning,
             durationSeconds: duration,
+            agentName: activeAgentLabel || undefined,
             steps: res.steps
           });
           activeSession.updatedAt = Date.now();
@@ -3471,7 +3548,9 @@ if (typeof document !== 'undefined') {
         const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
         const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
                             agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true';
-        const thinkingHtml = realReasoning ? renderThinkingAccordion(realReasoning, duration, { open: wasExpanded }) : '';
+        const activeAgentObj = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
+        const activeAgentLabel = activeAgentObj?.id !== 'core' ? (activeAgentObj?.label || activeAgentObj?.name) : null;
+        const thinkingHtml = realReasoning ? renderThinkingAccordion(realReasoning, duration, { open: wasExpanded, agentName: activeAgentLabel }) : '';
 
         agentBubble.innerHTML = `
           ${thinkingHtml}
@@ -3494,7 +3573,9 @@ if (typeof document !== 'undefined') {
       const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
       const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
                           agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true';
-      const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: wasExpanded });
+      const activeAgentObj = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
+      const activeAgentLabel = activeAgentObj?.id !== 'core' ? (activeAgentObj?.label || activeAgentObj?.name) : null;
+      const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: wasExpanded, agentName: activeAgentLabel });
 
       agentBubble.classList.add('msg-action');
       agentBubble.innerHTML = `

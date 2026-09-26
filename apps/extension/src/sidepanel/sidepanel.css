@@ -5875,21 +5875,21 @@ html, body {
 }
 
 .custom-agent-modal-dialog {
-  background: #27272a;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 14px;
+  background: #141416;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
   width: 100%;
   max-width: 420px;
-  padding: 20px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75), 0 2px 8px rgba(0, 0, 0, 0.3);
+  padding: 18px 20px;
+  box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   max-height: 88vh;
   overflow-y: auto;
-  color: #f5f5f5;
+  color: #f1f5f9;
   animation: modalDialogSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes modalDialogSlideUp {
-  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
@@ -5906,39 +5906,42 @@ html, body {
   gap: 8px;
 }
 
-.modal-sparkle-icon {
-  font-size: 15px;
+.modal-agent-svg {
+  color: #38bdf8;
+  flex-shrink: 0;
+  opacity: 0.95;
 }
 
 .modal-title {
   margin: 0;
-  font-size: 14.5px;
+  font-size: 13.5px;
   font-weight: 600;
-  color: #f5f5f5;
+  letter-spacing: -0.01em;
+  color: #f8fafc;
 }
 
 .modal-close-btn {
   background: transparent;
   border: none;
-  color: rgba(245, 245, 245, 0.6);
+  color: #94a3b8;
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
   padding: 3px 6px;
-  border-radius: 6px;
+  border-radius: 4px;
   transition: all 0.12s ease;
 }
 
 .modal-close-btn:hover {
   color: #ffffff;
-  background: #3f3f46;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .modal-subtitle {
-  margin: 0 0 16px 0;
+  margin: 0 0 14px 0;
   font-size: 11.5px;
   line-height: 1.45;
-  color: rgba(245, 245, 245, 0.55);
+  color: #94a3b8;
 }
 
 .custom-agent-form {
@@ -5947,48 +5950,38 @@ html, body {
   gap: 12px;
 }
 
-.form-row-duo {
-  display: flex;
-  gap: 10px;
-}
-
 .form-group {
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
 
-.form-group.flex-1 {
-  flex: 1;
-}
-
-.form-group.emoji-group {
-  width: 60px;
-}
-
 .form-group label {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 500;
-  color: rgba(245, 245, 245, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
 }
 
 .custom-agent-form input[type="text"],
 .custom-agent-form textarea {
-  background: #18181b;
+  background: #0d0d0f;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   padding: 8px 10px;
-  font-size: 12px;
-  color: #f5f5f5;
+  font-size: 11.5px;
+  color: #f1f5f9;
   outline: none;
   font-family: inherit;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
 .custom-agent-form input[type="text"]:focus,
 .custom-agent-form textarea:focus {
-  border-color: rgba(255, 255, 255, 0.25);
-  background: #18181b;
+  border-color: rgba(56, 189, 248, 0.45);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.12);
+  background: #111114;
 }
 
 .custom-agent-form textarea {
@@ -5997,38 +5990,97 @@ html, body {
   line-height: 1.45;
 }
 
+/* Real-time Agent Compilation Feedback */
+.agent-creation-progress {
+  padding: 10px 12px;
+  background: rgba(56, 189, 248, 0.04);
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.agent-creation-progress.hidden {
+  display: none !important;
+}
+
+.progress-step-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(56, 189, 248, 0.25);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: modalSpin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes modalSpin {
+  to { transform: rotate(360deg); }
+}
+
+.step-text {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #7dd3fc;
+  font-weight: 500;
+}
+
+.progress-bar-track {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #818cf8);
+  border-radius: 2px;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .modal-footer-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .modal-cancel-btn {
-  background: #3f3f46;
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #f5f5f5;
+  color: #94a3b8;
   padding: 6px 14px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .modal-cancel-btn:hover {
-  color: #ffffff;
-  background: #52525b;
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .modal-save-btn {
-  background: #f5f5f5;
+  background: #38bdf8;
   border: none;
-  color: #18181b;
+  color: #020617;
   padding: 6px 16px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -6036,9 +6088,92 @@ html, body {
 }
 
 .modal-save-btn:hover {
-  background: #ffffff;
+  background: #7dd3fc;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+}
+
+.modal-save-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Custom Agent Badge in Thinking Monologue */
+.thought-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 1px 6px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: #38bdf8;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+
+/* Active Custom Agent Activation Card in Chat */
+.agent-activated-card {
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: rgba(56, 189, 248, 0.04);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 6px;
+  animation: modalBackdropFadeIn 0.2s ease;
+}
+
+.agent-activated-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 5px;
+}
+
+.agent-activated-badge {
+  font-size: 9.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.agent-activated-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.agent-activated-desc {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.agent-activated-prompt-preview {
+  font-size: 10.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #cbd5e1;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: pre-wrap;
+  line-height: 1.4;
+  max-height: 100px;
+  overflow-y: auto;
 }
 
 /* Prompt Library Styles */
