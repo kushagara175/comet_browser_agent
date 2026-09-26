@@ -17,7 +17,7 @@
  *   is picked up on the next request instead of being stuck on "mock".
  */
 
-import { SanitizedNetworkPayload, ActionProposal, validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS, ALLOWED_ATOMIC_ACTION_KEYS, groundTargetCandidates, tokenizeSemanticText, extractSearchQueryFromGoal } from '@privapilot/protocol';
+import { SanitizedNetworkPayload, ActionProposal, validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS, ALLOWED_ATOMIC_ACTION_KEYS, groundTargetCandidates, tokenizeSemanticText, extractSearchQueryFromGoal, lookupDomainPlaybook } from '@privapilot/protocol';
 import { MockReasoningEngine } from './mock-engine.js';
 
 export interface VlmConfig {
@@ -1563,11 +1563,11 @@ JSON Schema:
     { "actionId": "act_sub_1", "kind": "type", "targetLocalId": "el_1", "textToType": "..." },
     { "actionId": "act_sub_2", "kind": "click", "targetLocalId": "el_2" }
   ],
-  "targetName": "Human-readable semantic target name",
+  "targetName": "Human-readable semantic target name matching the actual visible button or field label (e.g. 'Login', 'Search ISRO', 'Download Cartosat-1 DEM')",
   "semanticMatchReason": "Concise explanation of target-to-objective match",
   "fallbackStrategy": "reperceive" | "wait_for_hydration" | "retry_target" | "scroll_to_target" | "navigate_fallback" | "refresh_once" | "request_user_input" | "fail_safe",
   "completionEvidence": ["url" | "element" | "text" | "input_value" | "dialog" | "attribute" | "scroll" | "visual_change"],
-  "thought": "Internal reasoning monologue: step-by-step thinking analyzing the page layout, Set-of-Marks labels, grounding target elements, and outlining your tactical plan",
+  "thought": "Internal reasoning monologue: step-by-step thinking analyzing the page layout and Set-of-Marks labels, grounding the exact target element to the user goal by referencing its actual visible button or field name (e.g. 'Login' [el_1] or 'Search ISRO' [el_2]), evaluating action confidence against the safe execution threshold (0.85), and stating whether confidence allows autonomous execution or requires user confirmation (e.g. Confidence: 0.94 >= Threshold: 0.85 -> Proceeding with autonomous action; or Confidence: 0.62 < Threshold: 0.85 -> Requires user confirmation). Do not use emojis in thought.",
   "rationale": "Short user-safe explanation or summary of action/answer",
   "reply": "Optional conversational response text when kind is answer or finish",
   "expectedState": "Expected UI change"
@@ -1646,6 +1646,27 @@ JSON Schema:
       ? `\nPage State Landmarks:\n${landmarks.map(l => `- ${l}`).join('\n')}\n`
       : '';
 
+    // Semantic Grounding: Inject verified site topology for ISRO, Bhuvan, and recognized portals
+    const activeUrl = (pageState as any).url || '';
+    const activeDomain = (pageState as any).domain || '';
+    const domainPlaybook = lookupDomainPlaybook(activeUrl || activeDomain || payload.goal || '');
+
+    let domainTopologyBlock = '';
+    if (domainPlaybook) {
+      const routesList = domainPlaybook.routes.map(r => `  - ${r.name}: https://${domainPlaybook.domain}${r.path} (${r.description})`).join('\n');
+      const landmarksList = domainPlaybook.landmarks.map(l => `  - [${l.role || 'element'}] "${l.phrase}" -> Intent: ${l.intentAction} (${l.description})`).join('\n');
+      domainTopologyBlock = `\nVerified Semantic Site Topology for ${domainPlaybook.name} (${domainPlaybook.domain}):
+Canonical Routes:
+${routesList}
+Verified Landmarks & Action Anchors:
+${landmarksList}
+Topological Directives:
+- Use verified canonical routes and landmark identifiers when navigating or acting.
+- For search: Type into verified search landmark (e.g. #txtSearch on ISRO, Search Location on Bhuvan). On Bhuvan, click the autocomplete suggestion to center the map.
+- For downloads: Only target authentic file links (.pdf, .zip, .tif, .shp) or verified download buttons. Never click external ad links or decoy download buttons.
+- In "thought", explicitly calculate action confidence and compare it to the safe threshold (0.85). Do not use emojis in thought.\n`;
+    }
+
     let stateDeltaBlock = '';
     if ((pageState as any).stateDelta) {
       const d = (pageState as any).stateDelta;
@@ -1721,7 +1742,7 @@ INSTRUCTION FOR WEB SEARCH RESULTS:
 
     return `Active Web Page: "${pageTitle}"${domainStr}${routeStr}${currentUrlStr}
 User Goal: ${payload.goal || 'Inspect page'}
-${objectiveBlock}${historyBlock}${customPromptBlock}${executionFeedbackBlock}${searchResultsBlock}${redactionBlock}${stateDeltaBlock}${landmarksBlock}Active Viewport Elements:
+${objectiveBlock}${historyBlock}${customPromptBlock}${executionFeedbackBlock}${searchResultsBlock}${redactionBlock}${stateDeltaBlock}${domainTopologyBlock}${landmarksBlock}Active Viewport Elements:
 ${JSON.stringify(compactElements, null, 2)}
 
 ${promptSuffix}`;

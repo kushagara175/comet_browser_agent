@@ -512,6 +512,8 @@ export function parseReasoningLines(rawText) {
     } else if (/^(?:🧠|Thinking:?|Reasoning:?)/i.test(text)) {
       icon = '🧠';
       category = 'Reasoning';
+    } else if (/^(?:Confidence|Threshold|Evaluation):?/i.test(text)) {
+      category = 'Confidence';
     }
 
     // Thoroughly strip redundant leading category words/emojis from body so category label is NEVER duplicated
@@ -526,9 +528,9 @@ export function parseReasoningLines(rawText) {
 
     if (!body) continue;
 
-    const normalizedBody = body.toLowerCase().slice(0, 60);
+    const normalizedBody = body.toLowerCase().trim();
     if (seenBodies.has(normalizedBody)) {
-      // Skip exact or near-duplicate sentences across multi-step execution
+      // Skip exact duplicate sentences across multi-step execution
       continue;
     }
     seenBodies.add(normalizedBody);
@@ -554,6 +556,33 @@ export function parseReasoningLines(rawText) {
 }
 
 /**
+ * Resolves a technical element ID (e.g. el_1) to its actual visible button or field label.
+ */
+export function resolveFriendlyElementName(elId, elementsList) {
+  if (!elId || typeof elId !== 'string') return '';
+  const cleanId = elId.replace(/[`"']/g, '').trim();
+  const list = Array.isArray(elementsList) ? elementsList : (typeof lastSanitizedContext !== 'undefined' && lastSanitizedContext?.elements ? lastSanitizedContext.elements : []);
+  if (Array.isArray(list) && list.length > 0) {
+    const matched = list.find(e => e.localId === cleanId);
+    if (matched && matched.sanitizedName && matched.sanitizedName.trim() && !/^(?:el_\w+|input_\d+|btn_\d+|elem_\d+)$/i.test(matched.sanitizedName.trim())) {
+      return matched.sanitizedName.trim();
+    }
+  }
+  return '';
+}
+
+function formatTargetCodeChip(id, elementsList, precedingText = '') {
+  const friendly = resolveFriendlyElementName(id, elementsList);
+  if (friendly) {
+    if (precedingText.toLowerCase().includes(friendly.toLowerCase())) {
+      return `<code class="thought-code">${escapeHtml(id)}</code>`;
+    }
+    return `<code class="thought-code" title="${escapeHtml(id)}">"${escapeHtml(friendly)}" (${escapeHtml(id)})</code>`;
+  }
+  return `<code class="thought-code">${escapeHtml(id)}</code>`;
+}
+
+/**
  * Formats parsed reasoning into line-by-line HTML with semantic styling and code chip highlighting.
  */
 export function formatReasoningIntoLinesHtml(rawText) {
@@ -566,18 +595,24 @@ export function formatReasoningIntoLinesHtml(rawText) {
   if (hasAnyCategory) {
     const linesHtml = parsed.map(item => {
       let escapedBody = escapeHtml(item.body)
-        .replace(/(?:`)(el_\w+)(?:`)/g, '<code class="thought-code">$1</code>')
-        .replace(/\b(el_\d+)\b/g, '<code class="thought-code">$1</code>');
+        .replace(/(?:`)(el_\w+)(?:`)/g, (_, id) => formatTargetCodeChip(id, undefined, item.body))
+        .replace(/\b(el_[a-zA-Z0-9_-]+)\b/g, (_, id) => formatTargetCodeChip(id, undefined, item.body));
+
+      const isConfidenceLine = /\b(?:confidence|threshold)\b/i.test(item.body) || item.category === 'Confidence';
 
       const categoryHtml = item.category
-        ? `<strong class="thought-category" style="color: #93c5fd; font-weight: 600; margin-right: 5px;">${escapeHtml(item.category)}:</strong>`
+        ? `<strong class="thought-category" style="color: #94a3b8; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 6px;">${escapeHtml(item.category)}:</strong>`
         : '';
 
       const iconHtml = (item.icon && item.icon !== '▸' && item.icon !== '•')
         ? `<span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">${item.icon}</span>`
         : '';
 
-      return `<div class="thought-line" style="display: flex; align-items: baseline; gap: 7px; font-size: 12px; color: #cbd5e1; line-height: 1.6; padding: 2px 0;">${iconHtml}<span class="thought-body" style="flex: 1; word-break: break-word;">${categoryHtml}${escapedBody}</span></div>`;
+      const contentHtml = isConfidenceLine
+        ? `<span class="thought-confidence-tag" style="background: rgba(255, 255, 255, 0.05); padding: 2px 7px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.08);">${escapedBody}</span>`
+        : `<span class="thought-body" style="flex: 1; word-break: break-word;">${categoryHtml}${escapedBody}</span>`;
+
+      return `<div class="thought-line" style="display: flex; align-items: baseline; gap: 7px; font-size: 12px; color: #cbd5e1; line-height: 1.6; padding: 2px 0;">${iconHtml}${contentHtml}</div>`;
     }).join('');
 
     return `<div class="thought-lines-container" style="display: flex; flex-direction: column; gap: 4px; padding: 2px 0;">${linesHtml}</div>`;
@@ -595,8 +630,13 @@ export function formatReasoningIntoLinesHtml(rawText) {
 
   const formattedParas = (paragraphs.length > 0 ? paragraphs : [clean]).map(p => {
     let escaped = escapeHtml(p)
-      .replace(/(?:`)(el_\w+)(?:`)/g, '<code class="thought-code">$1</code>')
-      .replace(/\b(el_\d+)\b/g, '<code class="thought-code">$1</code>');
+      .replace(/(?:`)(el_\w+)(?:`)/g, (_, id) => formatTargetCodeChip(id, undefined, p))
+      .replace(/\b(el_[a-zA-Z0-9_-]+)\b/g, (_, id) => formatTargetCodeChip(id, undefined, p));
+
+    const isConfidence = /\b(?:confidence|threshold)\b/i.test(p);
+    if (isConfidence) {
+      return `<p class="thought-paragraph" style="margin: 0 0 8px 0; font-size: 12px; line-height: 1.6; word-break: break-word;"><span class="thought-confidence-tag" style="display: inline-block; background: rgba(255, 255, 255, 0.05); padding: 2px 8px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.08);">${escaped}</span></p>`;
+    }
     return `<p class="thought-paragraph" style="margin: 0 0 8px 0; font-size: 12px; color: #cbd5e1; line-height: 1.6; word-break: break-word;">${escaped}</p>`;
   }).join('');
 
@@ -3030,40 +3070,99 @@ if (typeof document !== 'undefined') {
         return;
       }
 
-      // 1. Awaiting User Confirmation (Pending Protected Action)
+      // 1. Awaiting User Confirmation (Pending Protected or Low-Confidence Action)
       if (res && res.state === 'awaiting-user-confirmation') {
         const action = res.proposal || {};
         agentBubble.innerHTML = '';
 
         const card = document.createElement('div');
-        card.className = 'thought-card';
-        card.style.borderLeft = '3px solid #f59e0b';
+        card.className = 'hitl-confirm-card';
 
         const header = document.createElement('div');
-        header.className = 'thought-header';
-        header.innerHTML = `<span>🛡️ Protected Action Requires Confirmation</span><span class="risk-pill risk-protected">PROTECTED</span>`;
-
-        const content = document.createElement('div');
-        content.className = 'thought-content';
-        content.style.marginTop = '4px';
-        content.innerHTML = `
-          Target: <code>${escapeHtml(action.targetLocalId || 'page')}</code><br/>
-          Action: <strong>${escapeHtml((action.kind || 'action').toUpperCase())}</strong><br/>
-          Rationale: ${escapeHtml(action.rationale || res.message || 'Action requires user consent')}
+        header.className = 'hitl-header';
+        header.innerHTML = `
+          <div class="hitl-title-wrap">
+            <span class="hitl-title">Action Confirmation Required</span>
+          </div>
+          <span class="hitl-tag">Review</span>
         `;
 
-        card.appendChild(header);
-        card.appendChild(content);
+        const targetId = action.targetLocalId || 'page';
+        let friendlyTarget = action.targetName || action.sanitizedTargetName || action.elementText || '';
+        if (!friendlyTarget && action.targetLocalId) {
+          friendlyTarget = resolveFriendlyElementName(action.targetLocalId);
+        }
 
-        const promptText = document.createElement('div');
-        promptText.style.marginTop = '6px';
-        promptText.style.fontSize = '10.5px';
-        promptText.style.color = '#d97706';
-        promptText.style.fontWeight = '600';
-        promptText.textContent = '⏳ Awaiting your confirmation in dialog';
+        const cleanFriendly = friendlyTarget && !/^(?:el_\w+|input_\d+|btn_\d+|elem_\d+)$/i.test(friendlyTarget.trim())
+          ? friendlyTarget.trim()
+          : '';
+
+        const displayTarget = cleanFriendly
+          ? `"${escapeHtml(cleanFriendly)}" (${escapeHtml(targetId)})`
+          : escapeHtml(targetId);
+
+        const actionKind = (action.kind || 'action').toUpperCase();
+        const scoreVal = typeof action.confidence === 'number'
+          ? Math.round(action.confidence * 100)
+          : (typeof res.confidence === 'number' ? Math.round(res.confidence * 100) : 62);
+
+        const metaRow = document.createElement('div');
+        metaRow.className = 'hitl-meta-row';
+        metaRow.innerHTML = `
+          <span class="hitl-meta-badge">Button / Target: <strong>${displayTarget}</strong></span>
+          <span class="hitl-meta-badge">Action: ${escapeHtml(actionKind)}</span>
+          <span class="hitl-meta-badge">Confidence: ${scoreVal}% &middot; Safe Threshold: 85%</span>
+        `;
+
+        const rationale = document.createElement('div');
+        rationale.className = 'hitl-rationale';
+        rationale.textContent = action.rationale || res.message || 'Action requires user confirmation before execution.';
+
+        const buttonsRow = document.createElement('div');
+        buttonsRow.className = 'hitl-buttons-row';
+
+        const approveBtn = document.createElement('button');
+        approveBtn.className = 'btn-hitl-approve';
+        approveBtn.textContent = 'Approve & Execute';
+        approveBtn.addEventListener('click', () => {
+          approveBtn.disabled = true;
+          approveBtn.textContent = 'Executing...';
+          actionConfirmModal?.classList.add('hidden');
+          addAuditEntry('AUTH', 'User Approved Action via Inline Card', 'pass');
+          setAgentStatus('executing');
+
+          if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+            chrome.runtime.sendMessage({ type: 'APPROVE_ACTION' }, (postRes) => {
+              renderActionResult(agentBubble, postRes);
+            });
+          }
+        });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn-hitl-deny';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.addEventListener('click', () => {
+          cancelBtn.disabled = true;
+          actionConfirmModal?.classList.add('hidden');
+          addAuditEntry('AUTH', 'User Cancelled Action via Inline Card', 'warn');
+          setAgentStatus('idle');
+
+          if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+            chrome.runtime.sendMessage({ type: 'DENY_ACTION' }, (postRes) => {
+              renderActionResult(agentBubble, postRes);
+            });
+          }
+        });
+
+        buttonsRow.appendChild(approveBtn);
+        buttonsRow.appendChild(cancelBtn);
+
+        card.appendChild(header);
+        card.appendChild(metaRow);
+        card.appendChild(rationale);
+        card.appendChild(buttonsRow);
 
         agentBubble.appendChild(card);
-        agentBubble.appendChild(promptText);
 
         setAgentStatus('awaiting-user-confirmation');
         chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -5076,13 +5175,39 @@ if (typeof document !== 'undefined') {
           if (message.type === 'COORDINATOR_CONFIRMATION_REQUIRED') {
             const action = message.action || {};
             if (confirmActionKind) confirmActionKind.textContent = (action.kind || 'CLICK').toUpperCase();
-            if (confirmTargetId) confirmTargetId.textContent = action.targetLocalId || 'page';
-            if (confirmTargetName) confirmTargetName.textContent = action.sanitizedTargetName || action.targetLocalId || 'Protected Action';
+            let friendlyModalTarget = action.sanitizedTargetName || action.targetName || action.elementText || '';
+            if (!friendlyModalTarget && action.targetLocalId) {
+              friendlyModalTarget = resolveFriendlyElementName(action.targetLocalId);
+            }
+            const cleanModalTarget = friendlyModalTarget && !/^(?:el_\w+|input_\d+|btn_\d+|elem_\d+)$/i.test(friendlyModalTarget.trim())
+              ? friendlyModalTarget.trim()
+              : (action.targetLocalId || 'Protected Action');
+
+            if (confirmTargetName) confirmTargetName.textContent = cleanModalTarget !== action.targetLocalId ? `"${cleanModalTarget}" (${action.targetLocalId})` : cleanModalTarget;
             if (confirmRationale) confirmRationale.textContent = action.rationale || 'Action alters persistent state.';
+
+            const scoreRow = document.getElementById('confirmScoreRow');
+            const scoreValEl = document.getElementById('confirmConfidenceScore');
+            if (scoreRow && scoreValEl) {
+              const conf = typeof action.confidence === 'number' ? Math.round(action.confidence * 100) : 62;
+              scoreValEl.textContent = `${conf}%`;
+              scoreRow.style.display = 'block';
+            }
+
             actionConfirmModal?.setAttribute('data-confirm-run-id', message.runId || currentRunId);
             actionConfirmModal?.classList.remove('hidden');
             setAgentStatus('awaiting-user-confirmation');
             addAuditEntry('AUTH', `Confirmation requested for ${action.kind}`, 'warn');
+
+            let lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
+            if (!lastAgentBubble) {
+              lastAgentBubble = appendMessage('agent', '');
+            }
+            renderActionResult(lastAgentBubble, {
+              state: 'awaiting-user-confirmation',
+              proposal: action,
+              confidence: action.confidence
+            });
           }
 
           if (message.type === 'COORDINATOR_USER_INPUT_REQUIRED') {
