@@ -163,9 +163,12 @@ export declare class RunCoordinator {
     private previousUrl;
     private lastExecutedProposal;
     private lastExecutionResult;
+    private hasTavilyRecovered;
+    private readonly options;
     constructor(browser?: BrowserAdapter, httpClient?: ReasoningHttpClient, auditLogger?: AuditLogger, options?: {
         defaultMaxSteps?: number;
         maxStaleRetries?: number;
+        enableLegacyPlaybooks?: boolean;
     });
     setListeners(listeners: CoordinatorListeners): void;
     getState(): AgentState;

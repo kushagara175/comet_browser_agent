@@ -41,7 +41,8 @@ export async function runFixture(client, url, {
   viewport = { width: 1280, height: 800 },
   groundTruthSelectors = [],
   bundleSource = null,
-  freeze = true
+  freeze = true,
+  beforeExtraction = null
 } = {}) {
   const source = bundleSource || readHarnessBundle();
 
@@ -68,6 +69,7 @@ export async function runFixture(client, url, {
     if (freeze) {
       await page.evaluate('__privapilot.freezeAnimations(), true', { awaitPromise: false });
     }
+    if (beforeExtraction) await beforeExtraction(page);
 
     // 1. Real element extraction against real layout
     const extraction = await page.evaluate('JSON.stringify(__privapilot.extractSnapshot())', { awaitPromise: false });

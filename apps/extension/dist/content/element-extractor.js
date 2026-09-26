@@ -8,6 +8,28 @@ import { scanTextForPII, classifyPageZone, isFunctionalMapCanvas, isPublicMediaS
 const TEXT_NODE_TYPE = typeof Node !== 'undefined' ? Node.TEXT_NODE : 3;
 const ELEMENT_NODE_TYPE = typeof Node !== 'undefined' ? Node.ELEMENT_NODE : 1;
 const SHOW_TEXT_FILTER = typeof NodeFilter !== 'undefined' ? NodeFilter.SHOW_TEXT : 4;
+const MAX_INTERACTIVE_ELEMENTS = 80;
+const INTERACTIVE_SELECTOR = 'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [role="option"], [role="menuitem"], [contenteditable="true"], [role="listbox"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed], .MuiListItemButton-root, [class*="suggestion" i], [class*="autocomplete-item" i], [class*="dropdown-item" i]';
+function isVisibleElement(el) {
+    for (let current = el; current; current = current.parentElement) {
+        if (current.hasAttribute?.('hidden') || current.getAttribute?.('aria-hidden') === 'true')
+            return false;
+        const style = current.ownerDocument?.defaultView?.getComputedStyle?.(current);
+        if (style && (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || Number(style.opacity) === 0))
+            return false;
+    }
+    return true;
+}
+function isRedundantInteractiveWrapper(el) {
+    const tag = el.tagName.toLowerCase();
+    if (!['div', 'span', 'section'].includes(tag) || el.hasAttribute?.('role') || el.isContentEditable || !el.children || !el.childNodes || !el.querySelector)
+        return false;
+    const children = Array.from(el.children).filter(child => child.matches?.(INTERACTIVE_SELECTOR));
+    if (children.length !== 1 || el.children.length !== 1)
+        return false;
+    const ownText = Array.from(el.childNodes).some(node => node.nodeType === TEXT_NODE_TYPE && Boolean(node.nodeValue?.trim()));
+    return !ownText && !el.querySelector('h1, h2, h3, h4, [role="heading"]');
+}
 /**
  * Measures exact client rectangles for a text range, handling text nodes, multi-line wrapping,
  * and nested inline elements (e.g. <span>, <b>, <em>).
@@ -110,7 +132,7 @@ export class ElementExtractor {
         // Helper to recursively process a document or same-origin frame with coordinate offsets
         const processDocumentLevel = (currentDoc, offset = { x: 0, y: 0 }, depth = 0) => {
             // 1. Extract interactive controls & form inputs (including custom dropdowns, comboboxes, suggestions, and tabs)
-            const candidates = currentDoc.querySelectorAll('button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [role="option"], [role="menuitem"], [contenteditable="true"], [role="listbox"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed], .MuiListItemButton-root, [class*="suggestion" i], [class*="autocomplete-item" i], [class*="dropdown-item" i]');
+            const candidates = currentDoc.querySelectorAll(INTERACTIVE_SELECTOR);
             candidates.forEach((node) => {
                 const el = node;
                 // Overlay Safety: Never extract extension overlays, HUD controls, or debug containers
@@ -120,8 +142,12 @@ export class ElementExtractor {
                     return;
                 }
                 const rect = el.getBoundingClientRect();
-                if (rect.width === 0 || rect.height === 0)
-                    return; // Skip hidden elements
+                if (rect.width <= 0.5 || rect.height <= 0.5 || !isVisibleElement(el))
+                    return;
+                if (el.tagName?.toLowerCase() === 'input' && el.getAttribute?.('type')?.toLowerCase() === 'hidden')
+                    return;
+                if (isRedundantInteractiveWrapper(el))
+                    return;
                 this.counter++;
                 const localId = `el_${this.counter}`;
                 this.elementMap.set(localId, el);
@@ -320,19 +346,24 @@ export class ElementExtractor {
                 catch (_) { }
                 // Vertical offset relative to viewport
                 let verticalOffset = 'in_view';
-                if (rect.bottom < 0) {
+                if ((rect.bottom ?? rect.y + rect.height) + offset.y <= 0) {
                     verticalOffset = 'above';
                 }
-                else if (rect.top > viewportHeight) {
+                else if ((rect.top ?? rect.y) + offset.y >= viewportHeight) {
                     verticalOffset = 'below';
                 }
-                const inViewport = verticalOffset === 'in_view' && rect.right > 0 && rect.left < viewportWidth;
+                const inViewport = verticalOffset === 'in_view' && (rect.right ?? rect.x + rect.width) + offset.x > 0 && rect.x + offset.x < viewportWidth;
+                const isPrimaryNavLink = role === 'link' && Boolean(el.closest?.('nav, header, [role="navigation"]'));
                 interactiveElements.push({
+                    isPrimaryNavLink,
                     localId,
                     role,
                     rawName,
                     boundingBox: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height },
-                    state: ['visible', el.disabled ? 'disabled' : 'enabled'],
+                    state: [
+                        'visible',
+                        (el.disabled && !el.querySelector?.('button:not([disabled]), a[href]')) ? 'disabled' : 'enabled'
+                    ],
                     actionCapabilities: caps,
                     containerContext,
                     nearestHeading,
@@ -341,7 +372,7 @@ export class ElementExtractor {
                     inViewport
                 });
                 // Also record descriptor for DOM sensitivity analysis
-                const isEditable = tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable || el.getAttribute('contenteditable') === 'true';
+                const isEditable = (tag === 'input' || tag === 'textarea') && !['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'file', 'hidden'].includes((el.getAttribute('type') || '').toLowerCase());
                 if (isEditable) {
                     const liveVal = el.value !== undefined ? el.value : (el.textContent || undefined);
                     const liveValueStr = typeof liveVal === 'string' ? liveVal : undefined;
@@ -360,25 +391,6 @@ export class ElementExtractor {
                         },
                         boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
                     });
-                    // Zero-Trust Live Input Value Protection:
-                    // If an input or textarea has a live entered value, ensure its visual box is captured for PII masking
-                    if (liveValueStr && liveValueStr.trim().length > 0 && rect.width > 0 && rect.height > 0) {
-                        const inputValTrimmed = liveValueStr.trim();
-                        const valMatches = scanTextForPII(inputValTrimmed);
-                        const boxX = rect.x + offset.x;
-                        const boxY = rect.y + offset.y;
-                        textNodes.push({
-                            id: `input_val_${localId}`,
-                            text: inputValTrimmed,
-                            boundingClientRect: { x: boxX, y: boxY, width: rect.width, height: rect.height },
-                            matchedRanges: [{
-                                    category: valMatches.length > 0 ? valMatches[0].category : 'username',
-                                    startIndex: 0,
-                                    endIndex: inputValTrimmed.length,
-                                    rects: [{ x: boxX, y: boxY, width: rect.width, height: rect.height }]
-                                }]
-                        });
-                    }
                 }
             });
             // 2. Extract Visible Text Nodes & Compute Range Bounding Boxes
@@ -391,9 +403,9 @@ export class ElementExtractor {
                     const content = textNode.nodeValue || '';
                     const trimmed = content.trim();
                     const parent = textNode.parentElement;
-                    if (trimmed.length > 2 && parent && parent.tagName !== 'SCRIPT' && parent.tagName !== 'STYLE' && parent.tagName !== 'NOSCRIPT') {
+                    if (trimmed.length > 2 && parent && !parent.closest('input, textarea, select, button, [contenteditable="true"], script, style, noscript, .privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]') && isVisibleElement(parent)) {
                         const parentRect = parent.getBoundingClientRect();
-                        if (parentRect.width > 0 && parentRect.height > 0) {
+                        if (parentRect.width > 0.5 && parentRect.height > 0.5 && parentRect.right + offset.x > 0 && parentRect.bottom + offset.y > 0 && parentRect.left + offset.x < viewportWidth && parentRect.top + offset.y < viewportHeight) {
                             textIdx++;
                             const nodeId = `txt_${depth}_${textIdx}`;
                             // Check if parent element represents user account identity (e.g. User-Name header on X, user-menu button on Claude/ChatGPT, account header on Flipkart)
@@ -430,24 +442,20 @@ export class ElementExtractor {
                             let matchedRanges = undefined;
                             if (matches.length > 0) {
                                 matchedRanges = matches.map((match) => {
-                                    const rects = measureTextRangeRects(doc, textNode, match.startIndex, match.endIndex, viewportWidth, viewportHeight);
+                                    const rects = measureTextRangeRects(textNode.ownerDocument || doc, textNode, match.startIndex, match.endIndex, viewportWidth, viewportHeight);
                                     // Apply coordinate offset to range rects
                                     const offsetRects = rects.map(r => ({ ...r, x: r.x + offset.x, y: r.y + offset.y }));
                                     return {
                                         category: match.category,
                                         startIndex: match.startIndex,
                                         endIndex: match.endIndex,
-                                        rects: offsetRects,
-                                        ...(parentRect.height <= 60 ? {
-                                            fallbackParentRect: {
-                                                x: Math.max(0, parentRect.x + offset.x),
-                                                y: Math.max(0, parentRect.y + offset.y),
-                                                width: Math.min(parentRect.width, viewportWidth - Math.max(0, parentRect.x + offset.x)),
-                                                height: Math.min(parentRect.height, viewportHeight - Math.max(0, parentRect.y + offset.y))
-                                            }
-                                        } : {})
+                                        rects: offsetRects
                                     };
-                                });
+                                }).filter(match => match.rects.length > 0);
+                            }
+                            if (matches.length > 0 && !matchedRanges?.length) {
+                                textNode = textWalker.nextNode();
+                                continue; // Unmeasurable text cannot be masked by a parent container.
                             }
                             textNodes.push({
                                 id: nodeId,
@@ -470,7 +478,9 @@ export class ElementExtractor {
                                 for (const cm of containerMatches) {
                                     const isCovered = matchedRanges?.some(mr => mr.category === cm.category);
                                     if (!isCovered) {
-                                        const containerRects = measureTextRangeRects(doc, parent, cm.startIndex, cm.endIndex, viewportWidth, viewportHeight);
+                                        const containerRects = measureTextRangeRects(parent.ownerDocument || doc, parent, cm.startIndex, cm.endIndex, viewportWidth, viewportHeight);
+                                        if (!containerRects.length)
+                                            continue;
                                         const offsetContainerRects = containerRects.map(r => ({ ...r, x: r.x + offset.x, y: r.y + offset.y }));
                                         textIdx++;
                                         textNodes.push({
@@ -481,15 +491,7 @@ export class ElementExtractor {
                                                     category: cm.category,
                                                     startIndex: cm.startIndex,
                                                     endIndex: cm.endIndex,
-                                                    rects: offsetContainerRects,
-                                                    ...(parentRect.height <= 40 ? {
-                                                        fallbackParentRect: {
-                                                            x: Math.max(0, parentRect.x + offset.x),
-                                                            y: Math.max(0, parentRect.y + offset.y),
-                                                            width: Math.min(parentRect.width, viewportWidth - Math.max(0, parentRect.x + offset.x)),
-                                                            height: Math.min(parentRect.height, viewportHeight - Math.max(0, parentRect.y + offset.y))
-                                                        }
-                                                    } : {})
+                                                    rects: offsetContainerRects
                                                 }]
                                         });
                                     }
@@ -763,11 +765,7 @@ export class ElementExtractor {
             const dialogCandidates = doc.querySelectorAll('dialog, [role="dialog"], [aria-modal="true"], [id*="drawer"], [class*="drawer"]');
             dialogCandidates.forEach((node) => {
                 const el = node;
-                const isHidden = el.hidden ||
-                    el.getAttribute?.('aria-hidden') === 'true' ||
-                    el.classList?.contains('hidden') ||
-                    (typeof getComputedStyle !== 'undefined' && getComputedStyle(el).display === 'none') ||
-                    (typeof getComputedStyle !== 'undefined' && getComputedStyle(el).visibility === 'hidden');
+                const isHidden = !isVisibleElement(el) || el.classList?.contains('hidden');
                 if (!isHidden && (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0)) {
                     visibleDialogCount++;
                     const title = el.getAttribute('aria-label') || el.querySelector('h1, h2, h3, h4, [class*="title"]')?.textContent?.trim() || '';
@@ -785,7 +783,7 @@ export class ElementExtractor {
             const statusNodes = doc.querySelectorAll('[role="status"], [role="alert"], .badge');
             statusNodes.forEach((node) => {
                 const text = (node.textContent || '').trim().slice(0, 150);
-                if (text) {
+                if (text && isVisibleElement(node)) {
                     statusSummaries.push(text);
                 }
             });
@@ -799,6 +797,8 @@ export class ElementExtractor {
             // Extract statistics cards, counters, and metrics
             const counterNodes = doc.querySelectorAll('.counter, .count, [class*="stat"], [class*="metric"], [class*="badge"], [data-count]');
             counterNodes.forEach((node) => {
+                if (!isVisibleElement(node))
+                    return;
                 const text = (node.textContent || '').trim().replace(/\s+/g, ' ');
                 const numMatch = text.match(/\b\d[\d,.]*\b/);
                 if (numMatch && text.length < 100) {
@@ -810,13 +810,15 @@ export class ElementExtractor {
             const headings = doc.querySelectorAll('h1, h2, h3, h4');
             headings.forEach((h) => {
                 const text = (h.textContent || '').trim().replace(/\s+/g, ' ');
-                if (text && text.length > 2 && text.length < 120) {
+                if (text && text.length > 2 && text.length < 120 && isVisibleElement(h)) {
                     contentSummaries.push(`Heading: ${text}`);
                 }
             });
             // Extract table row counts and key-value specifications (common on ISRO mission & data pages)
             const tables = doc.querySelectorAll('table, [role="table"], [role="grid"]');
             tables.forEach((tbl, idx) => {
+                if (!isVisibleElement(tbl))
+                    return;
                 const rows = tbl.querySelectorAll('tr, [role="row"]');
                 const headers = Array.from(tbl.querySelectorAll('th, [role="columnheader"]'))
                     .map(th => (th.textContent || '').trim())
@@ -838,6 +840,8 @@ export class ElementExtractor {
             // Extract definition lists (<dl>, <dt>, <dd>)
             const dls = doc.querySelectorAll('dl');
             dls.forEach(dl => {
+                if (!isVisibleElement(dl))
+                    return;
                 const dts = dl.querySelectorAll('dt');
                 const dds = dl.querySelectorAll('dd');
                 for (let i = 0; i < Math.min(dts.length, dds.length, 6); i++) {
@@ -851,6 +855,8 @@ export class ElementExtractor {
             // Extract visible downloadable document links
             const docLinks = doc.querySelectorAll('a[href$=".pdf" i], a[href$=".zip" i], a[href$=".csv" i], a[href$=".kmz" i]');
             docLinks.forEach(a => {
+                if (!isVisibleElement(a))
+                    return;
                 const aText = (a.textContent || a.getAttribute('aria-label') || '').trim().replace(/\s+/g, ' ');
                 const aHref = a.getAttribute('href') || '';
                 const fileName = aHref.split('/').pop()?.split('?')[0] || '';
@@ -861,7 +867,7 @@ export class ElementExtractor {
             // Extract visible social & forum comments (e.g. YouTube, Reddit, article comments)
             const commentThreads = doc.querySelectorAll('ytd-comment-thread-renderer, [role="article"].comment, .comment-body, .comment');
             commentThreads.forEach((ct) => {
-                if (contentSummaries.length >= 35)
+                if (contentSummaries.length >= 35 || !isVisibleElement(ct))
                     return;
                 const authorEl = ct.querySelector('#author-text, .author, [class*="author"], [class*="user"]');
                 const contentEl = ct.querySelector('#content-text, .comment-text, [class*="content"], p');
@@ -915,33 +921,22 @@ export class ElementExtractor {
             pixelsBelow,
             pixelsAbove
         };
-        // Bound interactive controls to at most 180 elements (strictly below closed schema 200 limit)
-        let cappedInteractiveElements = interactiveElements;
-        if (cappedInteractiveElements.length > 180) {
-            cappedInteractiveElements = [...cappedInteractiveElements].sort((a, b) => {
-                const aDialog = a.isInsideDialog ? 1 : 0;
-                const bDialog = b.isInsideDialog ? 1 : 0;
-                if (aDialog !== bDialog)
-                    return bDialog - aDialog;
-                const roleScore = (r) => {
-                    if (r === 'input' || r === 'textarea' || r === 'select')
-                        return 4;
-                    if (r === 'button')
-                        return 3;
-                    if (r === 'tab' || r === 'menuitem')
-                        return 2;
-                    return 1;
-                };
-                const aScore = roleScore(a.role);
-                const bScore = roleScore(b.role);
-                if (aScore !== bScore)
-                    return bScore - aScore;
-                const aInView = a.boundingBox && a.boundingBox.y >= 0 && a.boundingBox.y <= viewportHeight ? 1 : 0;
-                const bInView = b.boundingBox && b.boundingBox.y >= 0 && b.boundingBox.y <= viewportHeight ? 1 : 0;
-                if (aInView !== bInView)
-                    return bInView - aInView;
-                return (a.boundingBox?.y || 0) - (b.boundingBox?.y || 0);
-            }).slice(0, 180);
+        // Only the action list is capped; detectors always receive every visible
+        // field, text range, image, and surface so ranking cannot bypass privacy.
+        const cappedInteractiveElements = [...interactiveElements].sort((a, b) => {
+            const score = (el) => {
+                const roleScore = el.role === 'input' || el.role === 'textarea' || el.role === 'select' ? 40
+                    : el.role === 'button' ? 35
+                        : el.isPrimaryNavLink ? 30
+                            : el.role === 'link' || el.role === 'tab' || el.role === 'menuitem' ? 25 : 5;
+                return (el.inViewport ? 100 : 0) + (el.isInsideDialog ? 30 : 0) + roleScore;
+            };
+            return score(b) - score(a) || a.boundingBox.y - b.boundingBox.y || Number(a.localId.slice(3)) - Number(b.localId.slice(3));
+        }).slice(0, MAX_INTERACTIVE_ELEMENTS);
+        const retainedIds = new Set(cappedInteractiveElements.map(el => el.localId));
+        for (const id of this.elementMap.keys()) {
+            if (!retainedIds.has(id))
+                this.elementMap.delete(id);
         }
         return {
             snapshot: {

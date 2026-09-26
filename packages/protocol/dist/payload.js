@@ -27,7 +27,8 @@ export function toSanitizedNetworkPayload(context) {
         ...(context.expectedPostcondition ? { expectedPostcondition: context.expectedPostcondition } : {}),
         ...(context.observedOutcome !== undefined ? { observedOutcome: context.observedOutcome } : {}),
         ...(context.meaningfulProgress !== undefined ? { meaningfulProgress: context.meaningfulProgress } : {}),
-        ...(context.recentActionHistory ? { recentActionHistory: context.recentActionHistory.slice(-10) } : {})
+        ...(context.recentActionHistory ? { recentActionHistory: context.recentActionHistory.slice(-10) } : {}),
+        ...(context.searchResults ? { searchResults: context.searchResults } : {})
     };
 }
 export function calculateBase64ByteLength(dataUrlOrBase64) {

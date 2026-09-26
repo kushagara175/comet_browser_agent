@@ -248,11 +248,12 @@ export class MaskRenderer {
         continue;
       }
 
-      // Clamp strictly to canvas bounds
-      const x = Math.max(0, Math.min(canvasWidth - 1, Math.floor(box.x)));
-      const y = Math.max(0, Math.min(canvasHeight - 1, Math.floor(box.y)));
-      const w = Math.max(1, Math.min(canvasWidth - x, Math.ceil(box.width)));
-      const h = Math.max(1, Math.min(canvasHeight - y, Math.ceil(box.height)));
+      // Bound both edges independently; a fractional left/top edge must not
+      // cause an extra pixel beyond the measured right/bottom edge.
+      const x = Math.max(0, Math.floor(box.x));
+      const y = Math.max(0, Math.floor(box.y));
+      const w = Math.max(1, Math.min(canvasWidth, Math.ceil(box.x + box.width)) - x);
+      const h = Math.max(1, Math.min(canvasHeight, Math.ceil(box.y + box.height)) - y);
 
       const clampedBox = { x, y, width: w, height: h };
 
@@ -261,19 +262,6 @@ export class MaskRenderer {
         // Solid opaque blackout mask (Alpha = 1.0)
         ctx.fillStyle = '#0f172a'; // Deep slate (RGB: 15, 23, 42)
         ctx.fillRect(x, y, w, h);
-
-        // High contrast border
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, y, w, h);
-
-        // Category Tag Pill
-        if (w > 45 && h > 12) {
-          ctx.fillStyle = '#38bdf8';
-          ctx.font = 'bold 9px sans-serif';
-          const label = `[REDACTED: ${region.category.toUpperCase()}]`;
-          ctx.fillText(label, x + 3, y + Math.min(11, h - 2));
-        }
 
         ctx.restore();
 
@@ -337,23 +325,23 @@ export class MaskRenderer {
     let dataUrl: string;
     if (typeof (imageCanvas as any).toDataURL === 'function') {
       dataUrl = (imageCanvas as HTMLCanvasElement).toDataURL('image/png');
-      // On high-DPI Mac Retina displays (2x-3x) or media-rich pages (YouTube, Twitter/X),
+      // On high-DPI Mac Retina displays (2x-3x) or media-rich pages (YouTube, Bhuvan maps, Twitter/X),
       // a raw uncompressed PNG can reach 3.5MB - 6MB.
-      // If the PNG data URL exceeds 2.5MB, adaptively export as JPEG (0.88 quality)
-      // to keep wire payloads lightweight (< 600KB) while preserving crystal-clear pixel fidelity
+      // If the PNG data URL exceeds 800KB, adaptively export as JPEG (0.85 quality)
+      // to keep wire payloads lightweight (< 500KB) while preserving crystal-clear pixel fidelity
       // for privacy masks and multimodal reasoning.
-      if (dataUrl && dataUrl.length > 2.5 * 1024 * 1024) {
+      if (dataUrl && dataUrl.length > 800 * 1024) {
         try {
-          const jpegUrl = (imageCanvas as HTMLCanvasElement).toDataURL('image/jpeg', 0.88);
+          const jpegUrl = (imageCanvas as HTMLCanvasElement).toDataURL('image/jpeg', 0.85);
           if (jpegUrl && jpegUrl.startsWith('data:image/jpeg;base64,') && jpegUrl.length < dataUrl.length) {
             dataUrl = jpegUrl;
           }
         } catch (_) {}
       }
-      // If still large (> 3.5MB), compress slightly further to 0.72 quality
-      if (dataUrl && dataUrl.length > 3.5 * 1024 * 1024) {
+      // If still large (> 1.8MB), compress slightly further to 0.75 quality
+      if (dataUrl && dataUrl.length > 1.8 * 1024 * 1024) {
         try {
-          const compressedUrl = (imageCanvas as HTMLCanvasElement).toDataURL('image/jpeg', 0.72);
+          const compressedUrl = (imageCanvas as HTMLCanvasElement).toDataURL('image/jpeg', 0.75);
           if (compressedUrl && compressedUrl.startsWith('data:image/jpeg;base64,') && compressedUrl.length < dataUrl.length) {
             dataUrl = compressedUrl;
           }

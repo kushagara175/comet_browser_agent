@@ -43,7 +43,7 @@ const ACCOUNT_GREETING_REGEX = /\b(?:Hello|Hi|Welcome),\s+([A-Za-z0-9_]{2,30})\b
 // Standard Street Address (e.g. "123 Main St, Anytown, USA", "456 Park Avenue")
 const STREET_ADDRESS_REGEX = /\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir)\b[^\n\r,;]*/gi;
 
-// Date of Birth / Calendar Dates (e.g. "18 Sep 2026", "14-08-1988", "1998/05/20")
+// Dates are sensitive only with an explicit DOB/birth-date label in the same text.
 const DATE_OF_BIRTH_REGEX = /\b(?:\d{1,2}[\s/-](?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s/-]\d{2,4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b/gi;
 
 // Email: Standard RFC-compliant safe pattern and Obfuscated patterns (e.g. isropr[at]isro[dot]gov[dot]in, contact(at)domain(dot)com)
@@ -403,13 +403,15 @@ export function scanTextForPII(text: string): TextMatch[] {
     }
   }
 
-  // 7d. Dates of Birth / Calendar Dates
+  // 7d. Dates of birth only; public calendar dates are not private.
   for (const match of text.matchAll(DATE_OF_BIRTH_REGEX)) {
     if (match.index !== undefined) {
       const start = match.index;
       const end = match.index + match[0].length;
       const alreadyCovered = matches.some(m => m.startIndex <= start && m.endIndex >= end);
-      if (!alreadyCovered) {
+      const prefix = text.slice(Math.max(0, start - 40), start);
+      const hasBirthLabel = /(?:^|[\s([{,;])(?:dob|date\s+of\s+birth|birth\s+date|birthday|bday)\s*[:=\-]?\s*$/i.test(prefix);
+      if (!alreadyCovered && hasBirthLabel) {
         matches.push({
           category: 'date_of_birth',
           startIndex: start,

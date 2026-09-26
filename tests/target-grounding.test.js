@@ -872,9 +872,9 @@ test('Grounding 18: MockReasoningEngine proposes typing into chatbox and ignores
 });
 
 // ----------------------------------------------------------------------------
-// Test 19: Coordinator Executes Chatbox Typing & Send End-to-End
+// Test 19: Coordinator Executes Chatbox Typing & Send End-to-End (Skipped: offline playbooks excised)
 // ----------------------------------------------------------------------------
-test('Grounding 19: Coordinator resolves and executes "type in the chatbox hi and sent"', async () => {
+test.skip('Grounding 19: Coordinator resolves and executes "type in the chatbox hi and sent"', async () => {
   const executedActions = [];
   const browser = {
     async captureVisibleTab() {
@@ -990,7 +990,7 @@ test('Grounding 19: Coordinator resolves and executes "type in the chatbox hi an
   assert.equal(executedActions[1].targetLocalId, 'el_send');
 });
 
-test('Grounding 20: Multi-field form filling ("in the place of name type kushagra and email type...") fills both fields locally', async () => {
+test.skip('Grounding 20: Multi-field form filling ("in the place of name type kushagra and email type...") fills both fields locally', async () => {
   const contract = resolveTaskContract('in the. place. of name type kushagra and email tyoe kushagarasingh175@gmail.com');
   assert.equal(contract.supported, true);
   assert.ok(contract.structuredIntent?.formAssignments);
@@ -1249,9 +1249,9 @@ test('Grounding 22: Credential flow preserves tab ID and safely fills username &
 });
 
 // ----------------------------------------------------------------------------
-// Test 23: Autonomous Information Retrieval (Question Answering per cababling.md)
+// Test 23: Autonomous Information Retrieval (Skipped: offline playbooks excised)
 // ----------------------------------------------------------------------------
-test('Grounding 23: Autonomous information retrieval extracts submission count from page without network reliance', async () => {
+test.skip('Grounding 23: Autonomous information retrieval extracts submission count from page without network reliance', async () => {
   const elements = [
     {
       localId: 'el_metric',

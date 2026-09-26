@@ -188,8 +188,8 @@ export class SanitizerPipeline {
                 coarseBounds,
                 state: el.state,
                 actionCapabilities,
-                containerContext: el.containerContext,
-                nearestHeading: el.nearestHeading,
+                ...(el.containerContext ? { containerContext: sanitizeElementName(el.containerContext) } : {}),
+                ...(el.nearestHeading ? { nearestHeading: sanitizeElementName(el.nearestHeading) } : {}),
                 isInsideDialog: el.isInsideDialog,
                 ...(el.verticalOffset ? { verticalOffset: el.verticalOffset } : {}),
                 ...(el.inViewport !== undefined ? { inViewport: el.inViewport } : {})

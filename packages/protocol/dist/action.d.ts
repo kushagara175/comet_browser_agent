@@ -1,6 +1,6 @@
 import { SanitizedElement } from './payload.js';
 import { StructuredTaskIntent, FormFieldAssignment } from './grounding.js';
-export type ActionKind = 'observe' | 'navigate' | 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'extract' | 'answer' | 'request_user_confirmation' | 'request_user_input' | 'batch' | 'spawn_subagents' | 'finish' | 'blocked';
+export type ActionKind = 'observe' | 'navigate' | 'click' | 'hover' | 'type' | 'select' | 'drag_and_drop' | 'upload_file' | 'scroll' | 'wait' | 'extract' | 'answer' | 'request_user_confirmation' | 'request_user_input' | 'batch' | 'spawn_subagents' | 'web_search' | 'finish' | 'blocked';
 export type RiskLevel = 'safe' | 'protected' | 'blocked';
 export interface ExecutionFeedback {
     readonly lastActionId?: string;
@@ -196,6 +196,8 @@ export interface ActionProposal {
     readonly createNewTab?: boolean;
     readonly targetName?: string;
     readonly elementText?: string;
+    readonly searchQuery?: string;
+    readonly searchResults?: ReadonlyArray<any>;
 }
 export interface ActionExecutionResult {
     readonly actionId: string;

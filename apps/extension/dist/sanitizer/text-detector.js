@@ -4,8 +4,8 @@
  * Implements precise text-range redaction:
  * - Uses exact Range getClientRects() for matched substrings
  * - Supports multi-line wrapped text matches
- * - Adds small documented safety padding (2px CSS)
- * - Conservatively masks parent element on geometry failure
+ * - Masks only measured glyph bounds, without padding adjacent controls
+ * - Uses an explicitly supplied fallback rect only when range geometry is unavailable
  * - Merges overlapping output regions with mergeBoundingBoxes
  */
 import { mergeBoundingBoxes } from '@privapilot/protocol';
@@ -32,8 +32,9 @@ export function detectTextSensitiveRegions(textNodes, transformer) {
                             width: rect.width,
                             height: rect.height
                         };
-                        // Small documented safety padding: 2px CSS padding for font ascenders/descenders/anti-aliasing
-                        const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
+                        // Range geometry already includes the glyph bounds; do not spill
+                        // into neighboring labels or controls.
+                        const screenshotBox = transformer.toScreenshotBox(viewportBox, 0);
                         if (screenshotBox.width <= 1 || screenshotBox.height <= 1)
                             continue;
                         unmergedRegions.push({
@@ -48,8 +49,11 @@ export function detectTextSensitiveRegions(textNodes, transformer) {
                     }
                 }
                 else {
-                    // Exact geometry failed -> conservatively mask parent element bounding box
-                    const fallbackRect = rangeMatch.fallbackParentRect || node.boundingClientRect;
+                    // Only an explicitly measured match rect is safe to mask. A parent
+                    // box could cover unrelated navigation or adjacent controls.
+                    if (!rangeMatch.fallbackParentRect)
+                        continue;
+                    const fallbackRect = rangeMatch.fallbackParentRect;
                     const viewportBox = {
                         space: 'viewportCssPixel',
                         x: fallbackRect.x,
@@ -85,7 +89,7 @@ export function detectTextSensitiveRegions(textNodes, transformer) {
                         width: node.boundingClientRect.width,
                         height: node.boundingClientRect.height
                     };
-                    const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
+                    const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
                     if (screenshotBox.width > 1 && screenshotBox.height > 1) {
                         unmergedRegions.push({
                             id: `text_pii_${node.id}_${i}`,

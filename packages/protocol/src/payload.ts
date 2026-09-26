@@ -209,6 +209,7 @@ export interface SanitizedContext {
   readonly observedOutcome?: string;
   readonly meaningfulProgress?: boolean;
   readonly recentActionHistory?: ReadonlyArray<RecentActionRecord>;
+  readonly searchResults?: ReadonlyArray<{ readonly title: string; readonly url: string; readonly content: string; readonly score?: number }>;
 }
 
 /**
@@ -233,6 +234,7 @@ export interface SanitizedNetworkPayload {
   readonly observedOutcome?: string;
   readonly meaningfulProgress?: boolean;
   readonly recentActionHistory?: ReadonlyArray<RecentActionRecord>;
+  readonly searchResults?: ReadonlyArray<{ readonly title: string; readonly url: string; readonly content: string; readonly score?: number }>;
 }
 
 /**
@@ -257,7 +259,8 @@ export function toSanitizedNetworkPayload(context: SanitizedContext): SanitizedN
     ...(context.expectedPostcondition ? { expectedPostcondition: context.expectedPostcondition } : {}),
     ...(context.observedOutcome !== undefined ? { observedOutcome: context.observedOutcome } : {}),
     ...(context.meaningfulProgress !== undefined ? { meaningfulProgress: context.meaningfulProgress } : {}),
-    ...(context.recentActionHistory ? { recentActionHistory: context.recentActionHistory.slice(-10) } : {})
+    ...(context.recentActionHistory ? { recentActionHistory: context.recentActionHistory.slice(-10) } : {}),
+    ...(context.searchResults ? { searchResults: context.searchResults } : {})
   };
 }
 

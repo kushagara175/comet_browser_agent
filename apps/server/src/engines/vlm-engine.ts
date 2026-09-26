@@ -783,10 +783,13 @@ export class VlmReasoningEngine {
     ];
 
     if (payload.screenshot && payload.screenshot.startsWith('data:image')) {
-      contentArray.push({
-        type: 'image_url',
-        image_url: { url: payload.screenshot }
-      });
+      // Avoid attaching oversized image payloads (> 2.5MB) that choke cloud API sockets
+      if (payload.screenshot.length < 2.5 * 1024 * 1024) {
+        contentArray.push({
+          type: 'image_url',
+          image_url: { url: payload.screenshot }
+        });
+      }
     }
 
     const messages: any[] = [
@@ -834,7 +837,9 @@ export class VlmReasoningEngine {
       );
     };
 
+    const t0 = Date.now();
     const response = await post(messages, 0.1);
+    console.log(`[PrivaPilot:VLM] LLM response received in ${Date.now() - t0}ms (status: ${response.status}) via ${modelName}`);
 
     if (!response.ok) {
       throw new Error(`Endpoint returned status ${response.status}: ${await this.safeErrorText(response)}`);
@@ -1003,6 +1008,12 @@ export class VlmReasoningEngine {
         if (!parsed.url && parsed.link) parsed.url = parsed.link;
       }
 
+      // If kind is web_search or has search query
+      if (parsed.kind === 'web_search' || parsed.action === 'web_search' || (!parsed.kind && (parsed.searchQuery || (parsed.query && !parsed.targetLocalId)))) {
+        parsed.kind = 'web_search';
+        if (!parsed.searchQuery) parsed.searchQuery = String(parsed.query || payload.goal || '').slice(0, 500);
+      }
+
       // If kind is missing, infer kind from fields
       if (!parsed.kind) {
         if (parsed.status === 'completed' || parsed.status === 'finished' || parsed.action === 'finish') {
@@ -1021,6 +1032,24 @@ export class VlmReasoningEngine {
 
       if (parsed.kind === 'answer' && !parsed.rationale) {
         parsed.rationale = String(parsed.reply || parsed.answerText || 'Answer formulated').slice(0, 990);
+      }
+
+      if (!parsed.reasoning) {
+        parsed.reasoning = extractedThinking || parsed.thought || parsed.rationale;
+      }
+      if (!parsed.reasoning && parsed.kind) {
+        const targetDesc = parsed.targetName || parsed.targetLocalId || 'page element';
+        if (parsed.kind === 'type') {
+          parsed.reasoning = `1. Analyzing interactive inputs on screen for objective "${payload.goal}".\n2. Grounded target input "${targetDesc}" (${parsed.targetLocalId || 'el_1'}).\n3. Entering "${parsed.textToType || ''}" to execute query.`;
+        } else if (parsed.kind === 'click') {
+          parsed.reasoning = `1. Evaluating candidate controls to satisfy "${payload.goal}".\n2. Selecting target "${targetDesc}" (${parsed.targetLocalId || 'el_1'}).\n3. Proposing click interaction.`;
+        } else if (parsed.kind === 'scroll') {
+          parsed.reasoning = `1. Reading active viewport: requested details extend further down the document.\n2. Proposing ${parsed.scrollDirection || 'down'} scroll to bring content into view.`;
+        } else if (parsed.kind === 'navigate') {
+          parsed.reasoning = `1. Goal requires navigating to destination portal.\n2. Dispatching navigation to ${parsed.url || 'target'}.`;
+        } else if (parsed.kind === 'finish') {
+          parsed.reasoning = `1. Cross-referencing visual screen state with user goal "${payload.goal}".\n2. Target state confirmed. Concluding execution.`;
+        }
       }
 
       if (!parsed.targetLocalId && (parsed.target || parsed.elementId || parsed.id || parsed.targetId || parsed.element || parsed.elementName)) {
@@ -1098,6 +1127,31 @@ export class VlmReasoningEngine {
 
         if (found) {
           parsed.targetLocalId = found.localId;
+        }
+      }
+
+      // 4. Semantic target reconciliation guard:
+      // If the model selected a targetLocalId whose element name contradicts the intended targetName or rationale,
+      // reconcile it to the element that actually matches the intended name (e.g. 'PROBLEM STATEMENTS' vs 'KNOW YOUR SPOC').
+      if (parsed.targetLocalId && payload.elements && payload.elements.length > 0) {
+        const currentTargetEl = payload.elements.find((e) => e.localId === parsed.targetLocalId);
+        const intendedName = (parsed.targetName || '').trim();
+        const rationaleMatch = (parsed.rationale || parsed.reasoning || '').match(/['"]([A-Z0-9\s_-]{3,40})['"]\s*(?:link|button|tab|input|field|menu|nav)/i);
+        const candidateIntended = intendedName || (rationaleMatch ? rationaleMatch[1].trim() : '');
+
+        if (currentTargetEl && candidateIntended && candidateIntended.length >= 3) {
+          const currentNameNorm = (currentTargetEl.sanitizedName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const intendedNorm = candidateIntended.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (currentNameNorm && intendedNorm && !currentNameNorm.includes(intendedNorm) && !intendedNorm.includes(currentNameNorm)) {
+            const betterEl = payload.elements.find((e) => {
+              const elNorm = (e.sanitizedName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+              return elNorm === intendedNorm || elNorm.includes(intendedNorm) || intendedNorm.includes(elNorm);
+            });
+            if (betterEl) {
+              console.log(`[VLM Engine] Target reconciled from ${parsed.targetLocalId} ("${currentTargetEl.sanitizedName}") to ${betterEl.localId} ("${betterEl.sanitizedName}") based on intended target "${candidateIntended}"`);
+              parsed.targetLocalId = betterEl.localId;
+            }
+          }
         }
       }
 
@@ -1227,6 +1281,41 @@ export class VlmReasoningEngine {
         }
       }
     }
+    // Defensive: sanitize completionEvidence (filter to allowed kinds or drop)
+    const ALLOWED_COMPLETION_EVIDENCE = new Set(['url', 'element', 'text', 'input_value', 'dialog', 'attribute', 'scroll', 'visual_change']);
+    if (parsed && typeof parsed === 'object' && parsed.completionEvidence !== undefined) {
+      if (Array.isArray(parsed.completionEvidence)) {
+        parsed.completionEvidence = parsed.completionEvidence
+          .map((item: any) => typeof item === 'string' ? item.trim().toLowerCase() : '')
+          .filter((item: string) => ALLOWED_COMPLETION_EVIDENCE.has(item));
+        if (parsed.completionEvidence.length === 0) {
+          delete parsed.completionEvidence;
+        }
+      } else if (typeof parsed.completionEvidence === 'string' && ALLOWED_COMPLETION_EVIDENCE.has(parsed.completionEvidence.trim().toLowerCase())) {
+        parsed.completionEvidence = [parsed.completionEvidence.trim().toLowerCase()];
+      } else {
+        delete parsed.completionEvidence;
+      }
+    }
+
+    // Defensive: sanitize fallbackStrategy
+    const ALLOWED_FALLBACK_STRATEGIES = new Set(['reperceive', 'wait_for_hydration', 'retry_target', 'scroll_to_target', 'navigate_fallback', 'refresh_once', 'request_user_input', 'fail_safe']);
+    if (parsed && typeof parsed === 'object' && parsed.fallbackStrategy !== undefined) {
+      if (typeof parsed.fallbackStrategy !== 'string' || !ALLOWED_FALLBACK_STRATEGIES.has(parsed.fallbackStrategy)) {
+        delete parsed.fallbackStrategy;
+      }
+    }
+
+    // Defensive: sanitize confidence
+    if (parsed && typeof parsed === 'object' && typeof parsed.confidence === 'number') {
+      if (parsed.confidence > 1 && parsed.confidence <= 100) {
+        parsed.confidence = parsed.confidence / 100;
+      } else if (parsed.confidence > 1) {
+        parsed.confidence = 1.0;
+      } else if (parsed.confidence < 0) {
+        parsed.confidence = 0.0;
+      }
+    }
 
     // 3. Strict Closed Validation against current context elements
     const validation = validateActionProposal(parsed, payload.elements);
@@ -1250,8 +1339,9 @@ You MUST adopt this specialized persona, prioritize its domain guidelines, and r
 You are PrivaPilot's Centralized Reasoning Agent for browser automation and conversational assistance.
 You receive a sanitized screenshot (with all sensitive PII intentionally blacked out or blurred) and a compact list of interactive elements with local IDs (e.g. "el_1", "el_2").
 
-Available Browser Action Tools (14 tools):
+Available Browser Action Tools (15 tools):
 - "navigate": Navigate the browser tab to a website URL (requires url or targetUrl; optional createNewTab: boolean).
+- "web_search": Search the public web via Tavily to locate external documents, PDFs, brochures, research, portals, or information when the target is not present on the current page (requires searchQuery: string).
 - "click": Click buttons, links, tabs, checkboxes, radio buttons, or cards (requires targetLocalId).
 - "type": Enter text into input fields, search bars, or textareas (requires targetLocalId, textToType; optional pressEnter).
 - "select": Select an option from standard or custom dropdowns (requires targetLocalId, selectOptionValue).
@@ -1278,7 +1368,7 @@ Available Browser Skills Library:
 Strict Rules:
 1. Return ONLY schema-valid JSON for exactly one minimal next action or answer. Act only on the current objective and paste its exact id value (e.g. "objective_1") into the objectiveId field. The objectiveId MUST be a plain alphanumeric/underscore/dash string with no spaces, only letters, digits, underscores, or dashes.
 2. Target elements using "targetLocalId" ONLY for interaction actions ("click", "type", "select", "hover", "drag_and_drop", "upload_file"). NEVER invent CSS selectors, XPath, or JavaScript.
-3. Classify risk as "safe" (read/navigate/preview/filter/hover/drag/upload/finish/answer) or "protected" (submit/delete/pay/sign).
+3. Classify risk as "safe" (read/navigate/preview/filter/hover/drag/upload/finish/answer/web_search) or "protected" (submit/delete/pay/sign).
 3b. NAVIGATION & MULTI-TAB DIRECTIVE:
     - You have direct access to the "navigate" tool:
       { "actionId": "act_nav_1", "kind": "navigate", "url": "https://www.flipkart.com/search?q=iPhone+16", "rationale": "Navigate to Flipkart to inspect product listings", "createNewTab": true }
@@ -1290,6 +1380,14 @@ Strict Rules:
       THIS IS A DIRECT INSTRUCTION TO EXECUTE THAT ACTION IMMEDIATELY!
       Propose kind: "navigate" with the target URL (e.g. "https://www.flipkart.com/search?q=iPhone+16", createNewTab: true) or the confirmed interaction.
       DO NOT treat affirmative replies as isolated greetings or repeat what is visible on the current tab.
+3d. AUTONOMOUS WEB SEARCH & DEEP DOCUMENT RETRIEVAL DIRECTIVE (TAVILY):
+    - You have direct access to the "web_search" tool:
+      { "actionId": "act_search_1", "kind": "web_search", "searchQuery": "ISRO Chandrayaan-3 brochure PDF", "rationale": "Search web via Tavily to locate direct brochure download link" }
+    - When the user asks to find, download, or access a document, PDF, brochure, paper, or circular (e.g. "download Chandrayaan-3 brochure", "find ISRO geospatial report"), and the link is NOT directly accessible in the current page DOM or navigation menus:
+      YOU MUST PROPOSE kind: "web_search"! The system will execute an autonomous Tavily web search and navigate directly to the top grounded resource.
+    - When on an unrelated website (e.g. YouTube, blank tab) and the user's goal refers to an external topic, website, or entity:
+      YOU MUST PROPOSE kind: "web_search" or kind: "navigate" to the target website! NEVER click unrelated buttons (like video likes or comments) or endlessly scroll an unrelated page!
+    - If you are scrolling or searching without finding the target link on the page, DO NOT repeatedly scroll indefinitely. Propose kind: "web_search" to find the exact target URL.
 4. SEARCH / FILTER / INPUT DIRECTIVE: When the user's goal asks to search, filter, type, fill, enter, write, or set text in a search box or text input (role: "input" or "textarea"), you MUST return kind: "type", target that input's local ID, and set "textToType" to ONLY the exact search query or entity (e.g. "iPhone 16", "171", "Chandrayaan-3"). DO NOT include conversational wrapper phrases like "in the search bar" or "and analyze the price" in "textToType". When searching on web portals, Wikipedia, or search engines, set "pressEnter": true so the search is executed immediately. Do NOT propose "click", "observe", "wait", or a prose plan when the intention is to enter text or filter.
 4b. FLIGHT & TRAVEL BOOKING DIRECTIVE:
     - When on an airline or flight booking portal (such as Air India, IndiGo, SpiceJet, MakeMyTrip, Google Flights) with origin ("FROM", "Origin") and destination ("TO", "Destination") inputs and a "SEARCH FLIGHTS" button:
@@ -1309,6 +1407,15 @@ Strict Rules:
       }
       If executing step-by-step: type the origin into the From input first, then destination into the To input, then click Search Flights.
       DO NOT return kind: "finish" or kind: "answer" claiming flights are found before the search results have actually loaded on screen!
+4c. GEOSPATIAL MAPS & FULL-SCREEN CANVASES DIRECTIVE (BHUVAN, GOOGLE MAPS, LEAFLET):
+    - On full-screen map interfaces (such as Bhuvan NextGen /ngmaps, Google Maps, OpenStreetMap, Leaflet):
+      The satellite map canvas occupies 100% of the viewport and window scrolling is disabled (maxScroll: 0px).
+      NEVER propose kind: "scroll" on map interfaces! Window scrolling does not work on maps.
+    - To inspect or view map layers, thematic services, or legends:
+      Propose kind: "click" on the layer stack button, sidebar drawer toggle, legend icon, or "Thematic Services / Layers" button (e.g. el_thematic, el_layers, el_sidebar, or the layer control icon).
+      DO NOT assume controls require scrolling down. If a layer control element is present in the elements list (even if listed with inViewport: false), CLICK it directly to expand the layers panel!
+    - When searching a city or place on Bhuvan or map portals:
+      Type the place name (e.g. "Bengaluru") with pressEnter: true, or click the search button adjacent to the input. Once the map centers on the location, proceed directly to clicking the layers or services buttons.
 5. SELECT DIRECTIVE: When selecting an option from a dropdown (role: "select"), you MUST return kind: "select", target that select's local ID, and provide "selectOptionValue" with the desired option value.
 6. HOVER DIRECTIVE: When hovering or inspecting flyouts/dropdown menus, return kind: "hover", and target that element's local ID.
 7. DRAG AND DROP DIRECTIVE: When moving or dragging an item, return kind: "drag_and_drop", set "targetLocalId" to the source element and "destinationLocalId" to the target drop container.
@@ -1424,9 +1531,11 @@ Strict Rules:
       * To display GIS datasets or satellite layers, click the corresponding layer links or checkboxes.
 23. DOCUMENT & DATA DOWNLOAD DIRECTIVE:
     - When the user asks to download or export a document, brochure, report, or satellite dataset (e.g. "download Chandrayaan-3 brochure", "download annual report", "download satellite data"):
-      * Identify the anchor link or button pointing to the file (role: "link" or "button" matching "Download", "PDF", "Brochure", "Report", or href ending in .pdf, .zip, .csv, .kmz).
-      * Propose kind: "click" on that target element.
-      * Once clicked, confirm in "reply" that the download was initiated and propose kind: "finish".
+      * If an anchor link or button pointing to the file (role: "link" or "button" matching "Download", "PDF", "Brochure", "Report", or href ending in .pdf, .zip, .csv, .kmz) is present on the page:
+        Propose kind: "click" on that target element.
+      * If the document, brochure, or download link is NOT present on the active page (or if on an unrelated page like YouTube):
+        YOU MUST PROPOSE kind: "web_search" with searchQuery set to locate the document (e.g. "isro chandrayaan 3 brochure pdf")!
+      * Once the download link is clicked, confirm in "reply" that the download was initiated and propose kind: "finish".
 24. ANTI-HALLUCINATION & RIGOROUS TARGET VERIFICATION (ALL WEBSITES):
     - Every click or DOM interaction MUST be carefully verified against the user's specific prompt before execution.
     - NEVER click arbitrary, random, or unrelated elements (e.g. 'Random article', 'Donate', header logos, site-wide navigation links, footer disclaimers, or generic sidebar items).
@@ -1439,7 +1548,7 @@ JSON Schema:
 {
   "actionId": "act_1",
   "objectiveId": "objective_1",
-  "kind": "click" | "type" | "select" | "scroll" | "hover" | "drag_and_drop" | "upload_file" | "wait" | "batch" | "request_user_input" | "finish" | "extract" | "answer",
+  "kind": "click" | "type" | "select" | "scroll" | "hover" | "drag_and_drop" | "upload_file" | "wait" | "batch" | "request_user_input" | "finish" | "extract" | "answer" | "web_search",
   "targetLocalId": "el_1 (Required for click/type/select/hover/drag/upload/request_user_input)",
   "destinationLocalId": "Optional el_2 when kind is drag_and_drop",
   "confidence": 0.95,
@@ -1448,6 +1557,7 @@ JSON Schema:
   "fileName": "Optional filename when kind is upload_file",
   "selectOptionValue": "Required option value string when kind is select (e.g. 'pending')",
   "scrollDirection": "down" | "up",
+  "searchQuery": "Required search query string when kind is web_search (e.g. 'ISRO Chandrayaan-3 brochure PDF')",
   "userInputPrompt": "Optional prompt text when kind is request_user_input asking user for missing information",
   "batchActions": [
     { "actionId": "act_sub_1", "kind": "type", "targetLocalId": "el_1", "textToType": "..." },
@@ -1457,6 +1567,7 @@ JSON Schema:
   "semanticMatchReason": "Concise explanation of target-to-objective match",
   "fallbackStrategy": "reperceive" | "wait_for_hydration" | "retry_target" | "scroll_to_target" | "navigate_fallback" | "refresh_once" | "request_user_input" | "fail_safe",
   "completionEvidence": ["url" | "element" | "text" | "input_value" | "dialog" | "attribute" | "scroll" | "visual_change"],
+  "thought": "Internal reasoning monologue: step-by-step thinking analyzing the page layout, Set-of-Marks labels, grounding target elements, and outlining your tactical plan",
   "rationale": "Short user-safe explanation or summary of action/answer",
   "reply": "Optional conversational response text when kind is answer or finish",
   "expectedState": "Expected UI change"
@@ -1465,7 +1576,20 @@ JSON Schema:
   }
 
   private buildUserPrompt(payload: SanitizedNetworkPayload): string {
-    const compactElements = payload.elements.map(e => ({
+    // Prioritize and cap elements to keep prompt token footprint bounded (< 6,000 tokens)
+    // Ensures cloud LLMs (Azure AI Foundry, Mistral-Large, Qwen-VL) respond in 2-3s instead of stalling.
+    let selectedElements = payload.elements || [];
+    if (selectedElements.length > 75) {
+      const highPriorityRoles = new Set(['input', 'textarea', 'searchbox', 'combobox', 'button', 'select']);
+      const inputsAndButtons = selectedElements.filter(e => highPriorityRoles.has((e.role || '').toLowerCase()));
+      const inViewport = selectedElements.filter(e => e.inViewport !== false && !highPriorityRoles.has((e.role || '').toLowerCase()));
+      const others = selectedElements.filter(e => e.inViewport === false && !highPriorityRoles.has((e.role || '').toLowerCase()));
+
+      const combined = [...inputsAndButtons, ...inViewport, ...others];
+      selectedElements = combined.slice(0, 75);
+    }
+
+    const compactElements = selectedElements.map(e => ({
       id: e.localId,
       role: e.role,
       name: e.sanitizedName,
@@ -1582,11 +1706,22 @@ IMPORTANT PRIVACY INSTRUCTION: All redacted values and blackened regions are per
 - Closed-Loop Directive: Evaluate if the previous step achieved its subtask. Advance to the next task if verified, or issue a corrective action. If all tasks are verified complete, return kind: "finish".\n`;
     }
 
+    let searchResultsBlock = '';
+    if (Array.isArray(payload.searchResults) && payload.searchResults.length > 0) {
+      const results = payload.searchResults;
+      searchResultsBlock = `\nTavily Web Search Grounded Results:
+${results.map((r: any, idx: number) => `[Result ${idx + 1}] Title: "${r.title}"\nURL: ${r.url}\nSummary: ${r.content}`).join('\n\n')}
+INSTRUCTION FOR WEB SEARCH RESULTS:
+- You have live grounded search results from Tavily above.
+- If looking for a document, brochure, PDF, or website to navigate to, choose the most relevant URL and return kind: "navigate" with "url": "<url>".
+- If answering a question, synthesize the facts from the search results above and return kind: "finish" or kind: "answer" with your reply.\n`;
+    }
+
     const objectiveBlock = payload.taskSpecification ? `\nStructured Task Specification:\n${JSON.stringify(payload.taskSpecification, null, 2)}\nCurrent Objective:\n${JSON.stringify(payload.currentObjective || null, null, 2)}\nObjective Progress and Verified Evidence Ledger:\n${JSON.stringify(payload.objectiveProgress || null, null, 2)}\nPrevious Action: ${JSON.stringify(payload.previousAction || null)}\nExpected Outcome: ${JSON.stringify(payload.expectedPostcondition || null)}\nObserved Outcome: ${payload.observedOutcome || 'none'}\nMeaningful Progress: ${payload.meaningfulProgress ? 'YES' : 'NO'}\nRemaining retry budget for current objective: ${Math.max(0, 5 - (payload.currentObjective && payload.objectiveProgress ? (payload.objectiveProgress.attemptCountByObjective[payload.currentObjective.id] || 0) : 0))}\nRecent Actions: ${JSON.stringify(payload.recentActionHistory || [])}\n` : '';
 
     return `Active Web Page: "${pageTitle}"${domainStr}${routeStr}${currentUrlStr}
 User Goal: ${payload.goal || 'Inspect page'}
-${objectiveBlock}${historyBlock}${customPromptBlock}${executionFeedbackBlock}${redactionBlock}${stateDeltaBlock}${landmarksBlock}Active Viewport Elements:
+${objectiveBlock}${historyBlock}${customPromptBlock}${executionFeedbackBlock}${searchResultsBlock}${redactionBlock}${stateDeltaBlock}${landmarksBlock}Active Viewport Elements:
 ${JSON.stringify(compactElements, null, 2)}
 
 ${promptSuffix}`;

@@ -173,6 +173,12 @@ export interface SanitizedContext {
     readonly observedOutcome?: string;
     readonly meaningfulProgress?: boolean;
     readonly recentActionHistory?: ReadonlyArray<RecentActionRecord>;
+    readonly searchResults?: ReadonlyArray<{
+        readonly title: string;
+        readonly url: string;
+        readonly content: string;
+        readonly score?: number;
+    }>;
 }
 /**
  * Closed Network Payload schema sent over the wire to Centralized Reasoning Server.
@@ -199,6 +205,12 @@ export interface SanitizedNetworkPayload {
     readonly observedOutcome?: string;
     readonly meaningfulProgress?: boolean;
     readonly recentActionHistory?: ReadonlyArray<RecentActionRecord>;
+    readonly searchResults?: ReadonlyArray<{
+        readonly title: string;
+        readonly url: string;
+        readonly content: string;
+        readonly score?: number;
+    }>;
 }
 /**
  * Converts verified SanitizedContext into canonical wire-ready SanitizedNetworkPayload.

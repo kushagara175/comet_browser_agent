@@ -24,7 +24,8 @@ const ALLOWED_REASONING_ROOT_KEYS = new Set([
     'expectedPostcondition',
     'observedOutcome',
     'meaningfulProgress',
-    'recentActionHistory'
+    'recentActionHistory',
+    'searchResults'
 ]);
 const ALLOWED_CHAT_ROOT_KEYS = new Set([
     'protocolVersion',
@@ -842,6 +843,21 @@ export function validateSanitizedPayload(body) {
                 const error = validateExpectedPostcondition(item.expectedPostcondition);
                 if (error)
                     return { isValid: false, errorMessage: error };
+            }
+        }
+    }
+    if (body.searchResults !== undefined) {
+        if (!Array.isArray(body.searchResults) || body.searchResults.length > 20)
+            return { isValid: false, errorMessage: 'searchResults is invalid' };
+        const searchKeys = new Set(['title', 'url', 'content', 'score']);
+        for (const item of body.searchResults) {
+            if (!isPlainObject(item) || !hasOnlyKeys(item, searchKeys))
+                return { isValid: false, errorMessage: 'searchResults entry is invalid' };
+            if (!validateSafeString(item.title, 500) || !validateSafeString(item.url, 2000) || !validateSafeString(item.content, 5000)) {
+                return { isValid: false, errorMessage: 'searchResults entry strings are invalid' };
+            }
+            if (item.score !== undefined && (typeof item.score !== 'number' || Number.isNaN(item.score))) {
+                return { isValid: false, errorMessage: 'searchResults score is invalid' };
             }
         }
     }

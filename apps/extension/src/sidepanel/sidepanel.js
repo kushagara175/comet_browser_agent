@@ -390,6 +390,15 @@ export function sanitizeReasoningText(raw) {
     .replace(/```(?:json)?\s*[\s\S]*?```/gi, '')
     .replace(/\{[\s\S]*?"(?:actionId|kind|targetLocalId|batchActions)"[\s\S]*?\}/gi, '')
     .replace(/\b(?:\{\s*"actionId"[\s\S]*)$/i, '')
+    // Strip API keys, tokens, and secrets (Allel parity)
+    .replace(/\b(?:sk|rk|pk|tvly|phc|phx|whsec)_[a-zA-Z0-9_\-]{8,}\b/gi, '[REDACTED_KEY]')
+    .replace(/\bBearer\s+[a-zA-Z0-9_\-\.]{16,}\b/gi, 'Bearer [REDACTED]')
+    .replace(/ghp_[a-zA-Z0-9]{36}/g, '[REDACTED_TOKEN]')
+    .replace(/ey[a-zA-Z0-9_-]{10,}\.ey[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}/g, '[REDACTED_JWT]')
+    .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, '[DATABASE_URI]')
+    // Strip raw JSON blobs or credential fields
+    .replace(/\{[^{}]*(?:domain|workspaceId|apiKey|secret|userId|personaId|client_secret|password)[^{}]*\}/gi, '')
+    .replace(/\b(?:workspace_id|user_id|persona_id|api_key|token|auth_token|client_secret|database_url)[\w\s:=]+(?:\n|$)/gi, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
@@ -471,6 +480,20 @@ export function parseReasoningLines(rawText) {
     let text = line.replace(/^[\*\-\•]\s+/, '').replace(/^\d+\.\s+/, '').trim();
     if (!text) continue;
 
+    // Filter out internal grounding debug traces and synthetic verification shortcuts
+    text = text.replace(/\[semantically grounded\]/gi, '').trim();
+    if (/^Playbook verified: Found 0/i.test(text)) continue;
+
+    if (/^Nearest heading matches target\s*\("([^"]+)"\)/i.test(text)) {
+      const match = text.match(/\("([^"]+)"\)/);
+      text = `Identified relevant section matching "${match ? match[1] : 'target'}"`;
+    } else if (/^Container context matches target\s*\("([^"]+)"\)/i.test(text)) {
+      const match = text.match(/\("([^"]+)"\)/);
+      text = `Located target within container context "${match ? match[1] : 'container'}"`;
+    } else if (/^Role matches hint/i.test(text)) {
+      continue;
+    }
+
     let icon = '';
     let category = '';
 
@@ -534,10 +557,11 @@ export function parseReasoningLines(rawText) {
  * Formats parsed reasoning into line-by-line HTML with semantic styling and code chip highlighting.
  */
 export function formatReasoningIntoLinesHtml(rawText) {
-  const parsed = parseReasoningLines(rawText);
-  if (!parsed || parsed.length === 0) return '';
+  const clean = sanitizeReasoningText(rawText);
+  if (!clean) return '';
 
-  const hasAnyCategory = parsed.some(item => Boolean(item.category || item.icon));
+  const parsed = parseReasoningLines(clean);
+  const hasAnyCategory = parsed && parsed.length > 0 && parsed.some(item => Boolean(item.category || (item.icon && item.icon !== '▸' && item.icon !== '•')));
 
   if (hasAnyCategory) {
     const linesHtml = parsed.map(item => {
@@ -560,12 +584,20 @@ export function formatReasoningIntoLinesHtml(rawText) {
   }
 
   // Pure natural thought stream (Perplexity / Claude style)
-  const paragraphs = rawText.split(/\r?\n\s*\r?\n/).map(p => p.trim()).filter(Boolean);
-  const formattedParas = (paragraphs.length > 0 ? paragraphs : [rawText]).map(p => {
+  const paragraphs = clean
+    .split(/\r?\n\s*\r?\n/)
+    .map(p => p
+      .replace(/^(?:👁️|🎯|⚡|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking)[\s:—–\-]*/gi, '')
+      .replace(/\[semantically grounded\]/gi, '')
+      .trim()
+    )
+    .filter(Boolean);
+
+  const formattedParas = (paragraphs.length > 0 ? paragraphs : [clean]).map(p => {
     let escaped = escapeHtml(p)
       .replace(/(?:`)(el_\w+)(?:`)/g, '<code class="thought-code">$1</code>')
       .replace(/\b(el_\d+)\b/g, '<code class="thought-code">$1</code>');
-    return `<p style="margin: 0 0 6px 0; font-size: 12px; color: #cbd5e1; line-height: 1.6;">${escaped}</p>`;
+    return `<p class="thought-paragraph" style="margin: 0 0 8px 0; font-size: 12px; color: #cbd5e1; line-height: 1.6; word-break: break-word;">${escaped}</p>`;
   }).join('');
 
   return `<div class="thought-lines-container thought-monologue-natural" style="display: flex; flex-direction: column; gap: 4px; padding: 2px 0;">${formattedParas}</div>`;
@@ -582,7 +614,8 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
   const words = sanitized.split(/\s+/).filter(Boolean).length;
   const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
   const duration = durationSeconds && durationSeconds > 0 ? durationSeconds : computedFallback;
-  const label = options.label || `Thought for ${duration}s`;
+  const isExecuting = Boolean(options.isExecuting);
+  const label = options.label || (isExecuting ? `Thinking (${duration}s)` : `Thought for ${duration}s`);
   const isExpanded = Boolean(options.open);
 
   return `
@@ -591,7 +624,7 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
         <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"></polyline>
         </svg>
-        <span class="monologue-title monologue-completed-text">${escapeHtml(label)}</span>
+        <span class="monologue-title ${isExecuting ? 'thinking-shimmer-text' : 'monologue-completed-text'}">${escapeHtml(label)}</span>
       </button>
       <div class="monologue-drawer" style="display: ${isExpanded ? 'block' : 'none'};">
         <div class="monologue-content">${formatReasoningIntoLinesHtml(sanitized)}</div>
@@ -605,16 +638,18 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
  */
 export function streamLiveReasoningLines(liveStream, liveReasoning) {
   if (!liveStream || !liveReasoning) return;
-  const placeholder = liveStream.querySelector('.monologue-initial-placeholder');
-  if (placeholder) placeholder.remove();
+  const placeholder = liveStream.querySelector ? liveStream.querySelector('.monologue-initial-placeholder') : null;
+  if (placeholder && typeof placeholder.remove === 'function') placeholder.remove();
   const lines = parseReasoningLines(liveReasoning);
   if (lines.length === 0) return;
 
-  const existingTexts = new Set(Array.from(liveStream.children).map(c => c.textContent?.trim()));
+  const existingTexts = new Set(Array.from(liveStream.children || []).map(c => c.textContent?.trim()));
+  let cumulativeDelay = 0;
 
-  lines.forEach((item, index) => {
+  lines.forEach((item) => {
     const fullText = `${item.category ? item.category + ': ' : ''}${item.body}`;
     if (existingTexts.has(fullText)) return;
+    existingTexts.add(fullText);
 
     const lineEl = document.createElement('div');
     lineEl.className = 'thought-line live-streamed-line';
@@ -629,27 +664,55 @@ export function streamLiveReasoningLines(liveStream, liveReasoning) {
     lineEl.style.transform = 'translateY(3px)';
     lineEl.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
 
-    let escapedBody = escapeHtml(item.body)
-      .replace(/(?:`)(el_\w+)(?:`)/g, '<code class="thought-code">$1</code>')
-      .replace(/\b(el_\d+)\b/g, '<code class="thought-code">$1</code>');
-
     const categoryHtml = item.category
       ? `<strong class="thought-category" style="color: #93c5fd; font-weight: 600; margin-right: 5px;">${escapeHtml(item.category)}:</strong>`
       : '';
 
+    const iconHtml = (item.icon && item.icon !== '▸' && item.icon !== '•')
+      ? `<span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">${item.icon}</span>`
+      : '';
+
     lineEl.innerHTML = `
-      <span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">${item.icon}</span>
-      <span class="thought-body" style="flex: 1; word-break: break-word;">${categoryHtml}${escapedBody}</span>
+      ${iconHtml}
+      <span class="thought-body" style="flex: 1; word-break: break-word;">${categoryHtml}<span class="typewriter-words"></span></span>
     `;
 
     liveStream.appendChild(lineEl);
 
+    // Fade in the line row
     setTimeout(() => {
       lineEl.style.opacity = '1';
       lineEl.style.transform = 'translateY(0)';
-      const drawer = liveStream.closest('.monologue-drawer');
+      const drawer = typeof liveStream.closest === 'function' ? liveStream.closest('.monologue-drawer') : null;
       if (drawer) drawer.scrollTop = drawer.scrollHeight;
-    }, (index + 1) * 90);
+    }, cumulativeDelay);
+
+    // Stream word-by-word into typewriter-words
+    const wordTarget = typeof lineEl.querySelector === 'function' ? lineEl.querySelector('.typewriter-words') : null;
+    const words = item.body.split(/\s+/).filter(Boolean);
+    const wordDelay = Math.max(8, Math.min(18, Math.floor(250 / (words.length || 1))));
+
+    if (!wordTarget) {
+      lineEl.innerHTML = `
+        ${iconHtml}
+        <span class="thought-body" style="flex: 1; word-break: break-word;">${categoryHtml}${escapeHtml(item.body)}</span>
+      `;
+      lineEl.textContent = `${item.category ? item.category + ': ' : ''}${item.body}`;
+    } else {
+      words.forEach((w, wIdx) => {
+        setTimeout(() => {
+          if (!wordTarget) return;
+          let escapedW = escapeHtml(w)
+            .replace(/(?:`)(el_\w+)(?:`)/g, '<code class="thought-code">$1</code>')
+            .replace(/\b(el_\d+)\b/g, '<code class="thought-code">$1</code>');
+          wordTarget.innerHTML += (wIdx > 0 ? ' ' : '') + escapedW;
+          const drawer = typeof liveStream.closest === 'function' ? liveStream.closest('.monologue-drawer') : null;
+          if (drawer) drawer.scrollTop = drawer.scrollHeight;
+        }, cumulativeDelay + (wIdx * wordDelay));
+      });
+    }
+
+    cumulativeDelay += Math.max(30, words.length * wordDelay + 25);
   });
 }
 
@@ -744,8 +807,8 @@ if (typeof document !== 'undefined') {
       window.initWavesShader(shaderCanvas);
     }
 
-    // COMET Welcome Page Presentation (Paced smoothly for 4.5s on extension open)
-    const SPLASH_DURATION_MS = 4500; // 4.5 seconds for a well-paced welcome sequence
+    // COMET Welcome Page Presentation with SpecularButton (Auto-paces or click to continue immediately)
+    const SPLASH_DURATION_MS = 5000;
     if (loadingView && aiWorkerView) {
       loadingView.classList.remove('hidden');
       loadingView.style.display = 'flex';
@@ -753,16 +816,55 @@ if (typeof document !== 'undefined') {
       aiWorkerView.style.opacity = '0';
       aiWorkerView.style.transition = 'opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1)';
 
-      setTimeout(() => {
+      const skipSplashBtn = document.getElementById('skipSplashBtn');
+      let specularEngine = null;
+
+      if (skipSplashBtn && typeof window.initSpecularButton === 'function') {
+        specularEngine = window.initSpecularButton(skipSplashBtn, {
+          size: 'sm',
+          radius: 18,
+          lineColor: '#ffffff',
+          baseColor: '#525252',
+          intensity: 1.0,
+          shineSize: 10,
+          shineFade: 40,
+          thickness: 1.2,
+          speed: 0.35,
+          followMouse: true,
+          proximity: 250,
+          autoAnimate: true
+        });
+      }
+
+      let splashTimer = null;
+      let dismissed = false;
+
+      function dismissSplash() {
+        if (dismissed) return;
+        dismissed = true;
+        if (splashTimer) {
+          clearTimeout(splashTimer);
+          splashTimer = null;
+        }
+
         loadingView.classList.add('fade-out');
         aiWorkerView.style.opacity = '1';
 
         setTimeout(() => {
           loadingView.classList.add('hidden');
           loadingView.style.display = 'none';
+          specularEngine?.destroy?.();
           chatInput?.focus();
-        }, 700);
-      }, SPLASH_DURATION_MS);
+        }, 600);
+      }
+
+      splashTimer = setTimeout(dismissSplash, SPLASH_DURATION_MS);
+
+      skipSplashBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dismissSplash();
+      });
     }
 
     // Top-left logo button: starts fresh new chat session cleanly without loading screen flicker
@@ -858,11 +960,14 @@ if (typeof document !== 'undefined') {
     const reloadExtensionBtn = document.getElementById('reloadExtensionBtn');
     const triggerReload = () => {
       reloadExtensionBtn?.classList.add('spinning');
-      if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.reload === 'function') {
-        chrome.runtime.reload();
-        return;
-      }
-      window.location.reload();
+      try {
+        if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.reload === 'function') {
+          chrome.runtime.reload();
+        }
+      } catch (_) {}
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
     };
     reloadExtensionBtn?.addEventListener('click', triggerReload);
 
@@ -1216,41 +1321,18 @@ if (typeof document !== 'undefined') {
     // =========================================================================
     // CUSTOM AGENTS & AGENT SWITCHER SYSTEM
     // =========================================================================
+    // =========================================================================
+    // GLIDE SELECT AGENT SWITCHER SYSTEM (react-bits / Micro-JS-CSS)
+    // =========================================================================
     const BUILTIN_AGENTS = [
       {
         id: 'core',
+        value: 'core',
         name: 'Comet Core',
-        emoji: '⚡',
+        label: 'Comet Core',
+        tag: 'Lossless',
         description: 'Autonomous general web navigation & precision actions',
         prompt: ''
-      },
-      {
-        id: 'research',
-        name: 'Deep Research',
-        emoji: '🔍',
-        description: 'Deep milestone extraction, citations & structured synthesis',
-        prompt: 'You are an exhaustive research specialist. Extract authentic facts, metrics, chronological milestones, and source citations. Synthesize findings into structured, readable sections with zero fluff.'
-      },
-      {
-        id: 'flight_swarm',
-        name: 'Flight & Travel Swarm',
-        emoji: '✈️',
-        description: 'Parallel multi-airline search, ticket comparison & fare matrices',
-        prompt: 'You are a flight intelligence agent. Prioritize non-stop itineraries, lowest base fares, baggage policies, and departure windows across airline portals.'
-      },
-      {
-        id: 'shopper',
-        name: 'Smart Shopper',
-        emoji: '🛍️',
-        description: 'Cross-store e-commerce price extraction and deal analysis',
-        prompt: 'You are a precision e-commerce comparison agent. Extract exact product models, prices, bank discounts, delivery timelines, and highlight the optimal purchase value.'
-      },
-      {
-        id: 'auditor',
-        name: 'Form & Security Auditor',
-        emoji: '🛡️',
-        description: 'Safe credential & form filling with strict privacy boundaries',
-        prompt: 'You are a privacy-first form auditor. Never expose sensitive fields. Verify field labels against the secure local vault before typing, and confirm submissions.'
       }
     ];
 
@@ -1259,6 +1341,15 @@ if (typeof document !== 'undefined') {
 
     let customAgentsList = [];
     let activeAgentId = 'core';
+
+    let scrubState = null;
+    let activeHoverIndex = null;
+    let glideCloseTimer = null;
+    let isGlideOpen = false;
+
+    function getAllAgents() {
+      return [...BUILTIN_AGENTS, ...customAgentsList];
+    }
 
     function getStorageData(key, defaultVal, callback) {
       if (typeof chrome !== 'undefined' && chrome.storage?.local) {
@@ -1298,61 +1389,150 @@ if (typeof document !== 'undefined') {
     function updateAgentPillDisplay() {
       const active = getActiveCustomAgent();
       const labelEl = document.getElementById('beamEffectLabel');
-      const emojiEl = document.getElementById('beamEffectEmoji');
-      if (labelEl) labelEl.textContent = active.name;
-      if (emojiEl) emojiEl.textContent = active.emoji || '⚡';
+      if (labelEl) labelEl.textContent = active.label || active.name;
+    }
+
+    function positionGlideMenu() {
+      const trigger = document.getElementById('beamRotatePill');
+      const menu = document.getElementById('agentSwitcherDropdown');
+      const aiFooter = document.querySelector('.ai-footer');
+      if (!trigger || !menu || !aiFooter) return;
+      const triggerRect = trigger.getBoundingClientRect();
+      const footerRect = aiFooter.getBoundingClientRect();
+      menu.style.bottom = `${Math.round(footerRect.bottom - triggerRect.top + 6)}px`;
+      menu.style.right = `${Math.max(12, Math.round(footerRect.right - triggerRect.right))}px`;
+    }
+
+    function openGlideSelect(viaKey = false) {
+      const trigger = document.getElementById('beamRotatePill');
+      const menu = document.getElementById('agentSwitcherDropdown');
+      const pill = document.getElementById('glideSelectPill');
+      if (!trigger || !menu || isGlideOpen) return;
+
+      clearTimeout(glideCloseTimer);
+      isGlideOpen = true;
+      positionGlideMenu();
+      menu.classList.remove('hidden');
+      menu.dataset.state = 'open';
+      menu.dataset.side = 'top';
+      menu.dataset.align = 'right';
+      trigger.setAttribute('aria-expanded', 'true');
+
+      const all = getAllAgents();
+      const selectedIdx = Math.max(0, all.findIndex(a => a.id === activeAgentId));
+      activeHoverIndex = selectedIdx >= 0 ? selectedIdx : (viaKey ? 0 : null);
+
+      if (pill) {
+        pill.style.transition = 'none';
+        pill.style.transform = `translateY(${Math.max(0, selectedIdx) * 31}px)`;
+        pill.style.opacity = '0';
+        void pill.offsetHeight;
+        pill.style.transition = '';
+        if (activeHoverIndex !== null) {
+          pill.style.opacity = '1';
+        }
+      }
+    }
+
+    function closeGlideSelect(mode = 'pop') {
+      const trigger = document.getElementById('beamRotatePill');
+      const menu = document.getElementById('agentSwitcherDropdown');
+      if (!menu || !isGlideOpen) return;
+
+      isGlideOpen = false;
+      activeHoverIndex = null;
+      trigger?.setAttribute('aria-expanded', 'false');
+      clearTimeout(glideCloseTimer);
+
+      if (mode === 'instant') {
+        menu.dataset.state = 'closed';
+        menu.classList.add('hidden');
+        return;
+      }
+
+      menu.dataset.state = 'closed';
+      glideCloseTimer = setTimeout(() => {
+        if (!isGlideOpen) {
+          menu.classList.add('hidden');
+        }
+      }, 140);
+    }
+
+    function pickAgentByIndex(idx, viaKey = false) {
+      const all = getAllAgents();
+      const agent = all[idx];
+      if (!agent) {
+        closeGlideSelect('instant');
+        return;
+      }
+      if (agent.id !== activeAgentId) {
+        selectAgent(agent.id);
+        const label = document.getElementById('beamEffectLabel');
+        if (label) {
+          label.removeAttribute('data-swap');
+          void label.offsetHeight;
+          label.setAttribute('data-swap', '');
+        }
+      }
+      closeGlideSelect('instant');
+      const trigger = document.getElementById('beamRotatePill');
+      trigger?.focus({ preventScroll: true });
+    }
+
+    function movePillToIndex(idx, instant = false) {
+      const pill = document.getElementById('glideSelectPill');
+      const list = document.getElementById('glideSelectList');
+      if (!pill) return;
+
+      if (idx === null || idx < 0) {
+        pill.style.opacity = '0';
+        list?.removeAttribute('data-live');
+        activeHoverIndex = null;
+        return;
+      }
+
+      list?.setAttribute('data-live', '');
+      if (instant) {
+        pill.style.transitionDuration = '0ms, 150ms';
+      } else {
+        pill.style.transitionDuration = '';
+      }
+      pill.style.transform = `translateY(${idx * 31}px)`;
+      pill.style.opacity = '1';
+      activeHoverIndex = idx;
     }
 
     function renderAgentSwitcherMenu() {
-      const builtinContainer = document.getElementById('builtinAgentsList');
-      const customContainer = document.getElementById('customAgentsList');
-      if (!builtinContainer || !customContainer) return;
+      const listEl = document.getElementById('glideSelectList');
+      if (!listEl) return;
 
-      builtinContainer.innerHTML = '';
-      BUILTIN_AGENTS.forEach(agent => {
-        const isActive = agent.id === activeAgentId;
-        const item = document.createElement('div');
-        item.className = `agent-option-item${isActive ? ' active' : ''}`;
-        item.dataset.agentId = agent.id;
-        item.innerHTML = `
-          <span class="agent-option-emoji">${agent.emoji}</span>
-          <div class="agent-option-meta">
-            <span class="agent-option-name">${escapeHtml(agent.name)}</span>
-            <span class="agent-option-desc">${escapeHtml(agent.description)}</span>
-          </div>
-          ${isActive ? '<span class="agent-option-check">✓</span>' : ''}
+      const allAgents = getAllAgents();
+      listEl.innerHTML = '<span id="glideSelectPill" class="glide-select__pill" aria-hidden="true"></span>';
+
+      allAgents.forEach((agent, i) => {
+        const isSelected = agent.id === activeAgentId;
+        const opt = document.createElement('div');
+        opt.id = `glide-opt-${i}`;
+        opt.role = 'option';
+        opt.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+        opt.dataset.index = i;
+        opt.dataset.agentId = agent.id;
+        opt.className = 'glide-select__option';
+        opt.innerHTML = `
+          <span class="glide-select__name">${escapeHtml(agent.label || agent.name)}</span>
+          ${agent.tag ? `<span class="glide-select__tag">${escapeHtml(agent.tag)}</span>` : ''}
+          <span class="glide-select__check" ${isSelected ? 'data-on=""' : ''} aria-hidden="true">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </span>
         `;
-        item.addEventListener('click', (e) => {
+        opt.addEventListener('click', (e) => {
           e.stopPropagation();
-          selectAgent(agent.id);
+          pickAgentByIndex(i, false);
         });
-        builtinContainer.appendChild(item);
+        listEl.appendChild(opt);
       });
-
-      customContainer.innerHTML = '';
-      if (customAgentsList.length === 0) {
-        customContainer.innerHTML = `<div style="padding: 6px 8px; font-size: 10px; color: #64748b; font-style: italic;">No custom agents created yet. Click below to add one!</div>`;
-      } else {
-        customAgentsList.forEach(agent => {
-          const isActive = agent.id === activeAgentId;
-          const item = document.createElement('div');
-          item.className = `agent-option-item${isActive ? ' active' : ''}`;
-          item.dataset.agentId = agent.id;
-          item.innerHTML = `
-            <span class="agent-option-emoji">${agent.emoji || '🤖'}</span>
-            <div class="agent-option-meta">
-              <span class="agent-option-name">${escapeHtml(agent.name)}</span>
-              <span class="agent-option-desc">${escapeHtml(agent.description || 'Specialized User Story')}</span>
-            </div>
-            ${isActive ? '<span class="agent-option-check">✓</span>' : ''}
-          `;
-          item.addEventListener('click', (e) => {
-            e.stopPropagation();
-            selectAgent(agent.id);
-          });
-          customContainer.appendChild(item);
-        });
-      }
     }
 
     function selectAgent(id) {
@@ -1360,8 +1540,7 @@ if (typeof document !== 'undefined') {
       setStorageData(STORAGE_ACTIVE_AGENT_ID_KEY, id);
       updateAgentPillDisplay();
       renderAgentSwitcherMenu();
-      const dropdown = document.getElementById('agentSwitcherDropdown');
-      dropdown?.classList.add('hidden');
+      closeGlideSelect('instant');
       addAuditEntry('AGENT_SWITCHED', `Active agent: ${getActiveCustomAgent().name}`, 'info');
     }
 
@@ -1369,7 +1548,13 @@ if (typeof document !== 'undefined') {
       getStorageData(STORAGE_CUSTOM_AGENTS_KEY, [], (savedList) => {
         customAgentsList = Array.isArray(savedList) ? savedList : [];
         getStorageData(STORAGE_ACTIVE_AGENT_ID_KEY, 'core', (savedActiveId) => {
-          activeAgentId = savedActiveId;
+          const all = getAllAgents();
+          if (all.some(a => a.id === savedActiveId)) {
+            activeAgentId = savedActiveId;
+          } else {
+            activeAgentId = 'core';
+            setStorageData(STORAGE_ACTIVE_AGENT_ID_KEY, 'core');
+          }
           updateAgentPillDisplay();
           renderAgentSwitcherMenu();
         });
@@ -1380,7 +1565,9 @@ if (typeof document !== 'undefined') {
       const newAgent = {
         id: 'custom_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
         name: agentData.name.trim(),
-        emoji: agentData.emoji.trim() || '🤖',
+        label: agentData.name.trim(),
+        tag: 'Custom',
+        emoji: agentData.emoji?.trim() || '🤖',
         description: agentData.description.trim(),
         prompt: agentData.prompt.trim(),
         domains: agentData.domains ? agentData.domains.split(',').map(d => d.trim()).filter(Boolean) : [],
@@ -1394,29 +1581,120 @@ if (typeof document !== 'undefined') {
 
     loadAgents();
 
-    // Wire up Agent Switcher Dropdown toggle
+    // Wire up GlideSelect events
     const beamRotatePill = document.getElementById('beamRotatePill');
     const agentSwitcherDropdown = document.getElementById('agentSwitcherDropdown');
-    const closeAgentSwitcherBtn = document.getElementById('closeAgentSwitcherBtn');
+    const glideSelectList = document.getElementById('glideSelectList');
 
-    beamRotatePill?.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      agentSwitcherDropdown?.classList.toggle('hidden');
-    });
-
-    closeAgentSwitcherBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      agentSwitcherDropdown?.classList.add('hidden');
-    });
-
-    document.addEventListener('click', (e) => {
-      if (agentSwitcherDropdown && !agentSwitcherDropdown.classList.contains('hidden')) {
-        if (!agentSwitcherDropdown.contains(e.target) && !beamRotatePill?.contains(e.target)) {
-          agentSwitcherDropdown.classList.add('hidden');
-        }
+    beamRotatePill?.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      beamRotatePill.focus({ preventScroll: true });
+      if (isGlideOpen) {
+        closeGlideSelect('pop');
+      } else {
+        openGlideSelect(false);
       }
     });
+
+    beamRotatePill?.addEventListener('keydown', (e) => {
+      const k = e.key;
+      const all = getAllAgents();
+      const count = all.length;
+      const curSelected = Math.max(0, all.findIndex(a => a.id === activeAgentId));
+      const cur = activeHoverIndex ?? curSelected;
+
+      if (!isGlideOpen) {
+        if (k === 'Enter' || k === ' ' || k === 'ArrowDown' || k === 'ArrowUp') {
+          e.preventDefault();
+          openGlideSelect(true);
+        }
+        return;
+      }
+
+      if (k === 'ArrowDown') {
+        e.preventDefault();
+        const next = (cur + 1) % count;
+        movePillToIndex(next, true);
+      } else if (k === 'ArrowUp') {
+        e.preventDefault();
+        const prev = (cur - 1 + count) % count;
+        movePillToIndex(prev, true);
+      } else if (k === 'Home') {
+        e.preventDefault();
+        movePillToIndex(0, true);
+      } else if (k === 'End') {
+        e.preventDefault();
+        movePillToIndex(count - 1, true);
+      } else if (k === 'Enter' || k === ' ') {
+        e.preventDefault();
+        pickAgentByIndex(cur, true);
+      } else if (k === 'Escape' || k === 'Tab') {
+        if (k === 'Escape') e.preventDefault();
+        closeGlideSelect('instant');
+      }
+    });
+
+    document.addEventListener('pointerdown', (e) => {
+      if (isGlideOpen && agentSwitcherDropdown) {
+        if (!agentSwitcherDropdown.contains(e.target) && !beamRotatePill?.contains(e.target)) {
+          closeGlideSelect('pop');
+        }
+      }
+    }, true);
+
+    function rowAtY(clientY) {
+      if (!scrubState) return null;
+      const idx = Math.floor((clientY - scrubState.top - 4) / 31);
+      const count = getAllAgents().length;
+      return idx >= 0 && idx < count ? idx : null;
+    }
+
+    glideSelectList?.addEventListener('pointerover', (e) => {
+      if (e.pointerType === 'touch' || scrubState) return;
+      const row = e.target.closest('[data-index]');
+      if (!row) return;
+      const idx = Number(row.dataset.index);
+      if (!isNaN(idx) && idx !== activeHoverIndex) {
+        movePillToIndex(idx);
+      }
+    });
+
+    glideSelectList?.addEventListener('pointerleave', () => {
+      if (!scrubState) {
+        movePillToIndex(null);
+      }
+    });
+
+    glideSelectList?.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      try { glideSelectList.setPointerCapture(e.pointerId); } catch {}
+      scrubState = { id: e.pointerId, top: glideSelectList.getBoundingClientRect().top };
+      const idx = rowAtY(e.clientY);
+      movePillToIndex(idx, true);
+    });
+
+    glideSelectList?.addEventListener('pointermove', (e) => {
+      if (!scrubState || scrubState.id !== e.pointerId) return;
+      const idx = rowAtY(e.clientY);
+      if (idx !== null && idx !== activeHoverIndex) {
+        movePillToIndex(idx);
+      }
+    });
+
+    const onPointerUp = (e) => {
+      if (!scrubState || scrubState.id !== e.pointerId) return;
+      const idx = e.type === 'pointerup' ? rowAtY(e.clientY) : null;
+      scrubState = null;
+      if (idx !== null) {
+        pickAgentByIndex(idx, false);
+      } else {
+        movePillToIndex(null);
+      }
+    };
+
+    glideSelectList?.addEventListener('pointerup', onPointerUp);
+    glideSelectList?.addEventListener('pointercancel', onPointerUp);
+    glideSelectList?.addEventListener('lostpointercapture', onPointerUp);
 
     // Wire up Custom Agent Modal
     const customAgentModal = document.getElementById('customAgentModal');
@@ -1963,6 +2241,24 @@ if (typeof document !== 'undefined') {
     const vaultCredentialsSection = document.getElementById('vaultCredentialsSection');
     const vaultBackupSection = document.getElementById('vaultBackupSection');
 
+    function updateVaultNavPill(activeBtn) {
+      const container = document.getElementById('vaultNavContainer');
+      const pill = document.getElementById('vaultNavPill');
+      const target = activeBtn || container?.querySelector('.vault-nav-btn.active');
+      if (!container || !pill || !target) return;
+      const containerRect = container.getBoundingClientRect();
+      const btnRect = target.getBoundingClientRect();
+      if (containerRect.width === 0 || btnRect.width === 0) {
+        requestAnimationFrame(() => updateVaultNavPill(target));
+        return;
+      }
+      const left = btnRect.left - containerRect.left;
+      const width = btnRect.width;
+      pill.style.transform = `translateX(${left}px)`;
+      pill.style.width = `${width}px`;
+      pill.style.opacity = '1';
+    }
+
     vaultNavProfileBtn?.addEventListener('click', () => {
       vaultNavProfileBtn.classList.add('active');
       vaultNavCredentialsBtn?.classList.remove('active');
@@ -1970,6 +2266,7 @@ if (typeof document !== 'undefined') {
       vaultProfileSection?.classList.remove('hidden');
       vaultCredentialsSection?.classList.add('hidden');
       vaultBackupSection?.classList.add('hidden');
+      updateVaultNavPill(vaultNavProfileBtn);
     });
 
     vaultNavCredentialsBtn?.addEventListener('click', () => {
@@ -1979,6 +2276,7 @@ if (typeof document !== 'undefined') {
       vaultCredentialsSection?.classList.remove('hidden');
       vaultProfileSection?.classList.add('hidden');
       vaultBackupSection?.classList.add('hidden');
+      updateVaultNavPill(vaultNavCredentialsBtn);
     });
 
     vaultNavBackupBtn?.addEventListener('click', () => {
@@ -1988,7 +2286,10 @@ if (typeof document !== 'undefined') {
       vaultBackupSection?.classList.remove('hidden');
       vaultProfileSection?.classList.add('hidden');
       vaultCredentialsSection?.classList.add('hidden');
+      updateVaultNavPill(vaultNavBackupBtn);
     });
+
+    window.addEventListener('resize', () => updateVaultNavPill());
 
     const vaultFullName = document.getElementById('vaultFullName');
     const vaultEmail = document.getElementById('vaultEmail');
@@ -2024,8 +2325,11 @@ if (typeof document !== 'undefined') {
             if (vaultGithub) vaultGithub.value = p.githubUrl || '';
 
             renderCredentialsList(res.vault.credentials || res.vault.siteCredentials || []);
+            updateVaultNavPill();
           }
         });
+      } else {
+        updateVaultNavPill();
       }
     }
 
@@ -2357,7 +2661,7 @@ if (typeof document !== 'undefined') {
           beamChatCard.setAttribute('data-beam', 'privapilot_rotate_large');
           beamChatCard.style.setProperty('--beam-strength', '1.0');
         }
-        if (beamEffectLabel) beamEffectLabel.textContent = 'Pulse 1';
+        updateAgentPillDisplay();
       } else {
         if (stopBtn) {
           stopBtn.classList.add('hidden');
@@ -2376,7 +2680,7 @@ if (typeof document !== 'undefined') {
           beamChatCard.setAttribute('data-beam', hasText ? 'privapilot_rotate' : 'privapilot_line');
           beamChatCard.style.setProperty('--beam-strength', hasText ? '0.85' : '0.7');
         }
-        if (beamEffectLabel) beamEffectLabel.textContent = 'Agent';
+        updateAgentPillDisplay();
         if (typeof updateSendBtn === 'function') {
           updateSendBtn();
         }
@@ -2498,8 +2802,119 @@ if (typeof document !== 'undefined') {
       }
     });
 
+    // =========================================================================
+    // Allel Live Thinking & Monologue Disclosure Manager
+    // =========================================================================
+    let activeThinkingBubble = null;
+    let activeThinkingTimer = null;
+
+    function initLiveThinking(bubble, isSubAgent = false) {
+      stopLiveThinking();
+      if (!bubble) return;
+      activeThinkingBubble = bubble;
+      bubble.__turnStartTime = Date.now();
+      bubble.__isSubAgent = isSubAgent;
+      bubble.__accumulatedReasoning = '';
+      bubble.__expanded = false;
+
+      // Phase 1: Clean non-expandable shimmering Thinking... text (Allel parity)
+      bubble.innerHTML = `
+        <div class="thinking-phase-1 select-none py-0.5">
+          <span class="text-[13px] font-medium tracking-normal thinking-shimmer-text">
+            ${isSubAgent ? 'Sub-Agent Swarm...' : 'Thinking...'}
+          </span>
+        </div>
+      `;
+
+      // Live timer interval updating every 500ms
+      activeThinkingTimer = setInterval(() => {
+        updateLiveThinkingDisclosure();
+      }, 500);
+    }
+
+    function updateLiveThinkingDisclosure() {
+      if (!activeThinkingBubble) return;
+      const b = activeThinkingBubble;
+      const elapsed = Math.max(1, Math.round((Date.now() - (b.__turnStartTime || Date.now())) / 1000));
+      const cleanReasoning = sanitizeReasoningText(b.__accumulatedReasoning);
+      const hasText = Boolean(cleanReasoning && cleanReasoning.trim());
+
+      // Phase 1 (Allel parity): If no reasoning tokens/text have arrived yet, stay in shimmering Thinking... phase
+      if (!hasText) {
+        let phase1 = b.querySelector('.thinking-phase-1');
+        if (!phase1) {
+          const block = b.querySelector('.monologue-block');
+          if (block) block.remove();
+          phase1 = document.createElement('div');
+          phase1.className = 'thinking-phase-1 select-none py-0.5';
+          phase1.innerHTML = `
+            <span class="text-[13px] font-medium tracking-normal thinking-shimmer-text">
+              ${b.__isSubAgent ? 'Sub-Agent Swarm...' : 'Thinking...'}
+            </span>
+          `;
+          b.insertBefore(phase1, b.firstChild);
+        }
+        return;
+      }
+
+      // Phase 2 (Allel parity): Real reasoning text arrived. Render expandable Monologue disclosure
+      let block = b.querySelector('.monologue-block');
+      const phase1 = b.querySelector('.thinking-phase-1');
+      if (phase1) phase1.remove();
+
+      if (!block) {
+        block = document.createElement('div');
+        block.className = 'monologue-block group';
+        block.setAttribute('data-state', b.__expanded ? 'expanded' : 'collapsed');
+        block.innerHTML = `
+          <button type="button" class="monologue-toggle-btn" aria-expanded="${b.__expanded ? 'true' : 'false'}">
+            <svg class="monologue-chevron ${b.__expanded ? 'rotate-90' : ''}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+            <span class="monologue-title thinking-shimmer-text">Thinking (${elapsed}s)</span>
+          </button>
+          <div class="monologue-drawer" style="display: ${b.__expanded ? 'block' : 'none'};">
+            <div class="monologue-content">${formatReasoningIntoLinesHtml(cleanReasoning)}</div>
+          </div>
+        `;
+        b.insertBefore(block, b.firstChild);
+      } else {
+        const title = block.querySelector('.monologue-title');
+        if (title && (title.classList.contains('thinking-shimmer-text') || title.textContent.startsWith('Thinking'))) {
+          title.textContent = `Thinking (${elapsed}s)`;
+        }
+        const content = block.querySelector('.monologue-content');
+        if (content) {
+          content.innerHTML = formatReasoningIntoLinesHtml(cleanReasoning);
+          if (b.__expanded) {
+            content.scrollTop = content.scrollHeight;
+          }
+        }
+      }
+    }
+
+    function appendLiveReasoningText(text) {
+      if (!activeThinkingBubble || !text) return;
+      const b = activeThinkingBubble;
+      const clean = sanitizeReasoningText(text);
+      if (!clean) return;
+      if (!b.__accumulatedReasoning.includes(clean)) {
+        b.__accumulatedReasoning = (b.__accumulatedReasoning ? b.__accumulatedReasoning + '\n\n' : '') + clean;
+      }
+      updateLiveThinkingDisclosure();
+    }
+
+    function stopLiveThinking() {
+      if (activeThinkingTimer) {
+        clearInterval(activeThinkingTimer);
+        activeThinkingTimer = null;
+      }
+      activeThinkingBubble = null;
+    }
+
     // Render Action Execution Outcome in Chat
     function renderActionResult(agentBubble, res, durationSeconds) {
+      stopLiveThinking();
       if (typeof window !== 'undefined') {
         window.__lastAgentResult = res;
       }
@@ -2807,8 +3222,8 @@ if (typeof document !== 'undefined') {
           conversationHistory = conversationHistory.slice(-20);
         }
 
-        const realReasoning = collectAllStepReasoning(res);
-        const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || 0;
+        const realReasoning = collectAllStepReasoning(res) || agentBubble.__accumulatedReasoning || '';
+        const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || (agentBubble.__turnStartTime ? Date.now() - agentBubble.__turnStartTime : 0);
         const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
         const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
         const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
@@ -2950,8 +3365,8 @@ if (typeof document !== 'undefined') {
           displayHtml = `⚠️ <strong>Verification Failed:</strong> ${escapeHtml(errorMsg)}`;
         }
 
-        const realReasoning = collectAllStepReasoning(res);
-        const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || 0;
+        const realReasoning = collectAllStepReasoning(res) || agentBubble.__accumulatedReasoning || '';
+        const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || (agentBubble.__turnStartTime ? Date.now() - agentBubble.__turnStartTime : 0);
         const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
         const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
         const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
@@ -2973,8 +3388,8 @@ if (typeof document !== 'undefined') {
       const sanitized = res.sanitized || lastSanitizedContext;
 
       const actionLabel = getCleanActionLabel(action, sanitized?.elements);
-      const realReasoning = collectAllStepReasoning(res);
-      const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || 0;
+      const realReasoning = collectAllStepReasoning(res) || agentBubble.__accumulatedReasoning || '';
+      const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || (agentBubble.__turnStartTime ? Date.now() - agentBubble.__turnStartTime : 0);
       const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
       const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
       const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
@@ -3122,34 +3537,8 @@ if (typeof document !== 'undefined') {
       const agentBubble = document.createElement('div');
       agentBubble.className = 'chat-msg agent';
 
-      let initialActionText = 'Perceiving page elements...';
       const isSubAgentGoal = isSubAgentIntentText(goalText, conversationHistory.slice(0, -1));
-
-      const navMatch = goalText.match(/\b(?:open|go\s+to|visit|launch)\s+([a-zA-Z0-9.-]+\.[a-z]{2,}|amazon|flipkart|google|github|wikipedia)/i);
-      if (isSubAgentGoal) {
-        initialActionText = 'Deploying parallel browser sub-agents across tabs...';
-      } else if (navMatch) {
-        initialActionText = `Navigating to ${navMatch[1]}...`;
-      }
-
-      agentBubble.innerHTML = `
-        <div class="monologue-block group" data-state="collapsed">
-          <button type="button" class="monologue-toggle-btn" aria-expanded="false">
-            <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-            <span class="monologue-title thinking-shimmer-text">${isSubAgentGoal ? 'Sub-Agent Swarm...' : 'Thinking...'}</span>
-          </button>
-          <div class="monologue-drawer" style="display: none;">
-            <div class="monologue-content">
-              <div class="monologue-initial-placeholder" style="color: #64748b; font-size: 11.5px; font-style: italic; padding: 4px 0;">Reasoning in progress...</div>
-            </div>
-          </div>
-        </div>
-        <div class="action-status-line is-executing" style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
-          <span class="thinking-shimmer-text" style="font-weight: 500; font-size: 12px;">${escapeHtml(initialActionText)}</span>
-        </div>
-      `;
+      initLiveThinking(agentBubble, isSubAgentGoal);
       chatMessages.appendChild(agentBubble);
       chatMessages.scrollTop = chatMessages.scrollHeight;
 
@@ -3229,12 +3618,13 @@ if (typeof document !== 'undefined') {
         const timeout = setTimeout(() => {
           if (settled) return;
           settled = true;
+          stopLiveThinking();
           if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
             chrome.tabs.sendMessage(currentActiveTabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
           }
-          agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">⚠️ Reasoning request timed out after 120 seconds.</div>`;
+          agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">⚠️ Reasoning request timed out after 45 seconds. Target page or reasoning service took too long to complete.</div>`;
           setAgentStatus('failed-safe');
-        }, 120000);
+        }, 45000);
 
         const activeAgentObj = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
         chrome.runtime.sendMessage({
@@ -3764,23 +4154,7 @@ if (typeof document !== 'undefined') {
 
       const agentBubble = document.createElement('div');
       agentBubble.className = 'chat-msg agent';
-      agentBubble.innerHTML = `
-        <div class="monologue-block group" data-state="expanded">
-          <button type="button" class="monologue-toggle-btn" aria-expanded="true">
-            <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-            <span class="monologue-title thinking-shimmer-text">Thinking...</span>
-          </button>
-          <div class="monologue-drawer" style="display: block;">
-            <div class="monologue-content">
-              <div class="thought-line live-thought-line" style="padding: 2px 0;">
-                <span class="thought-body thinking-shimmer-text">Thinking...</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
+      initLiveThinking(agentBubble, false);
       chatMessages.appendChild(agentBubble);
       chatMessages.scrollTop = chatMessages.scrollHeight;
 
@@ -4432,25 +4806,20 @@ if (typeof document !== 'undefined') {
           voiceBeamEngine?.triggerTypingPulse(0.9);
           beamChatCard.setAttribute('data-beam', 'privapilot_rotate_large');
           beamChatCard.style.setProperty('--beam-strength', '1.0');
-          if (beamEffectLabel) beamEffectLabel.textContent = 'Rotate Large';
         } else if (hasText) {
           if (userSelectedEffect === 'pulse') {
             beamChatCard.setAttribute('data-beam', 'privapilot_rotate_large');
             beamChatCard.style.setProperty('--beam-strength', '0.95');
-            if (beamEffectLabel) beamEffectLabel.textContent = 'Pulse 1';
           } else if (userSelectedEffect === 'line') {
             beamChatCard.setAttribute('data-beam', 'privapilot_line');
             beamChatCard.style.setProperty('--beam-strength', '0.85');
-            if (beamEffectLabel) beamEffectLabel.textContent = 'Agent';
           } else {
             beamChatCard.setAttribute('data-beam', 'privapilot_rotate');
             beamChatCard.style.setProperty('--beam-strength', '0.85');
-            if (beamEffectLabel) beamEffectLabel.textContent = 'Agent';
           }
         } else {
           beamChatCard.setAttribute('data-beam', 'privapilot_line');
           beamChatCard.style.setProperty('--beam-strength', '0.7');
-          if (beamEffectLabel) beamEffectLabel.textContent = 'Agent';
         }
 
         if (sendBtn) {
@@ -4614,25 +4983,8 @@ if (typeof document !== 'undefined') {
             if (message.message) {
               addAuditEntry('AGENT', message.message, 'info');
             }
-            const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
-            const shimmerTitle = lastAgentBubble?.querySelector('.monologue-title.thinking-shimmer-text') || lastAgentBubble?.querySelector('.thinking-shimmer-text');
-            const liveBody = lastAgentBubble?.querySelector('.live-thought-line .thought-body');
-            let stateLabel = 'Thinking...';
-            let actionStatusText = message.message || 'Perceiving page layout...';
             if (message.state === 'awaiting-reasoning') {
-              stateLabel = (message.message && /sub-?agent|parallel|swarm/i.test(message.message)) ? 'Sub-Agent Swarm...' : 'Reasoning...';
-              actionStatusText = message.message || 'Planning optimal action...';
-            } else if (message.state === 'capturing') {
-              stateLabel = 'Perceiving...';
-              actionStatusText = message.message || 'Perceiving page elements...';
-            } else if (message.state === 'executing') {
-              stateLabel = (message.message && /sub-?agent|parallel|swarm/i.test(message.message)) ? 'Sub-Agent Swarm...' : 'Thinking...';
-              actionStatusText = message.message || 'Executing action...';
-            }
-            if (shimmerTitle) shimmerTitle.textContent = stateLabel;
-            const liveActionSpan = lastAgentBubble?.querySelector('.action-status-line.is-executing .thinking-shimmer-text');
-            if (liveActionSpan && actionStatusText) {
-              liveActionSpan.textContent = actionStatusText;
+              updateLiveThinkingDisclosure();
             }
           }
 
@@ -4640,8 +4992,6 @@ if (typeof document !== 'undefined') {
             if (message.message) {
               addAuditEntry(`STEP ${message.step}/${message.maxSteps}`, message.message, 'info');
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
-              const liveBody = lastAgentBubble?.querySelector('.live-thought-line .thought-body');
-              if (liveBody) liveBody.textContent = message.message;
               const liveActionSpan = lastAgentBubble?.querySelector('.action-status-line.is-executing .thinking-shimmer-text');
               if (liveActionSpan) liveActionSpan.textContent = message.message;
             }
@@ -4656,21 +5006,9 @@ if (typeof document !== 'undefined') {
               addAuditEntry('PLAN', `${cleanLabel}: ${act.rationale || 'Executing action'}`, 'pass');
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
               if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
-                // Stream live model reasoning directly into the monologue drawer!
-                const monologueContent = lastAgentBubble.querySelector('.monologue-content');
                 const liveReasoning = act.reasoning || act.thought || act.rationale;
-                if (monologueContent && liveReasoning) {
-                  streamLiveReasoningLines(monologueContent, liveReasoning);
-                }
-
-                const monologueTitle = lastAgentBubble.querySelector('.monologue-title');
-                if (monologueTitle) {
-                  monologueTitle.textContent = 'Reasoning...';
-                }
-
-                const liveBody = lastAgentBubble.querySelector('.live-thought-line .thought-body');
-                if (liveBody) {
-                  liveBody.textContent = executingLabel;
+                if (liveReasoning) {
+                  appendLiveReasoningText(liveReasoning);
                 }
 
                 // If a previous executing line exists, convert it to completed (done)

@@ -171,8 +171,12 @@ export function createServer(): http.Server {
             return;
           }
 
+          console.log(`[PrivaPilot:Server] POST /api/v1/reason received for goal: "${validation.payload.goal}" (${validation.payload.elements?.length || 0} elements)`);
+          const tReasonStart = Date.now();
+
           // C. Reasoning Decision
           const action = await engine.decideNextAction(validation.payload);
+          console.log(`[PrivaPilot:Server] Action decided: ${action.kind} (took ${Date.now() - tReasonStart}ms)`);
 
           const safeAction: any = { ...action };
           if (typeof safeAction === 'object' && safeAction !== null) {
@@ -276,6 +280,68 @@ export function createServer(): http.Server {
           console.error('[PrivaPilot] Chat request handling failed:', err?.message || err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Chat service temporarily unavailable' }));
+        }
+      });
+      return;
+    }
+
+    // 3b. POST /api/v1/search - Autonomous Tavily Web Search
+    if (req.method === 'POST' && url === '/api/v1/search') {
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(bodyStr || '{}');
+          const query = String(body.query || '').trim();
+          if (!query) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Query parameter is required' }));
+            return;
+          }
+
+          const apiKey = process.env.TAVILY_API_KEY;
+          if (!apiKey) {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'TAVILY_API_KEY not configured in environment' }));
+            return;
+          }
+
+          const tavilyRes = await fetch('https://api.tavily.com/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              api_key: apiKey,
+              query,
+              search_depth: body.searchDepth || 'basic',
+              include_answer: true,
+              max_results: body.maxResults || 5
+            })
+          });
+
+          if (!tavilyRes.ok) {
+            const errText = await tavilyRes.text();
+            res.writeHead(tavilyRes.status, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: `Tavily API returned ${tavilyRes.status}: ${errText}` }));
+            return;
+          }
+
+          const searchData: any = await tavilyRes.json();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            query: searchData.query || query,
+            answer: searchData.answer || null,
+            results: (searchData.results || []).map((r: any) => ({
+              title: r.title,
+              url: r.url,
+              content: r.content,
+              score: r.score
+            }))
+          }));
+        } catch (err: any) {
+          console.error('[PrivaPilot] Search request failed:', err?.message || err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err?.message || 'Search failed' }));
         }
       });
       return;

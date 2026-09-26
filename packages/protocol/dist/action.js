@@ -631,7 +631,9 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
     'createNewTab',
     'description',
     'targetName',
-    'elementText'
+    'elementText',
+    'searchQuery',
+    'searchResults'
 ]);
 export const ALLOWED_ATOMIC_ACTION_KEYS = new Set([
     'actionId',
@@ -658,7 +660,8 @@ export const ALLOWED_ATOMIC_ACTION_KEYS = new Set([
     'url',
     'targetUrl',
     'createNewTab',
-    'description'
+    'description',
+    'searchQuery'
 ]);
 const VALID_ACTION_KINDS = new Set([
     'observe',
@@ -677,6 +680,7 @@ const VALID_ACTION_KINDS = new Set([
     'request_user_input',
     'batch',
     'spawn_subagents',
+    'web_search',
     'finish',
     'blocked'
 ]);
@@ -815,13 +819,27 @@ export function validateActionProposal(proposal, validElements) {
     if (proposal.semanticMatchReason !== undefined && (typeof proposal.semanticMatchReason !== 'string' || proposal.semanticMatchReason.length > 1000 || hasProhibitedScriptPattern(proposal.semanticMatchReason) || hasProhibitedUrlPattern(proposal.semanticMatchReason))) {
         return { isValid: false, errorMessage: 'Field "semanticMatchReason" must be a safe string up to 1000 characters' };
     }
-    if (proposal.fallbackStrategy !== undefined && !new Set(['reperceive', 'wait_for_hydration', 'retry_target', 'scroll_to_target', 'navigate_fallback', 'refresh_once', 'request_user_input', 'fail_safe']).has(proposal.fallbackStrategy)) {
-        return { isValid: false, errorMessage: 'Invalid fallbackStrategy' };
+    if (proposal.fallbackStrategy !== undefined) {
+        const allowedFallbacks = new Set(['reperceive', 'wait_for_hydration', 'retry_target', 'scroll_to_target', 'navigate_fallback', 'refresh_once', 'request_user_input', 'fail_safe']);
+        if (typeof proposal.fallbackStrategy !== 'string' || !allowedFallbacks.has(proposal.fallbackStrategy)) {
+            delete proposal.fallbackStrategy;
+        }
     }
     if (proposal.completionEvidence !== undefined) {
         const allowedEvidence = new Set(['url', 'element', 'text', 'input_value', 'dialog', 'attribute', 'scroll', 'visual_change']);
-        if (!Array.isArray(proposal.completionEvidence) || proposal.completionEvidence.length > 8 || proposal.completionEvidence.some((item) => typeof item !== 'string' || !allowedEvidence.has(item))) {
-            return { isValid: false, errorMessage: 'completionEvidence must contain only supported evidence kinds' };
+        if (Array.isArray(proposal.completionEvidence)) {
+            proposal.completionEvidence = proposal.completionEvidence
+                .map((item) => typeof item === 'string' ? item.trim().toLowerCase() : '')
+                .filter((item) => allowedEvidence.has(item));
+            if (proposal.completionEvidence.length === 0) {
+                delete proposal.completionEvidence;
+            }
+        }
+        else if (typeof proposal.completionEvidence === 'string' && allowedEvidence.has(proposal.completionEvidence.trim().toLowerCase())) {
+            proposal.completionEvidence = [proposal.completionEvidence.trim().toLowerCase()];
+        }
+        else {
+            delete proposal.completionEvidence;
         }
     }
     // 7. expectedState
@@ -1041,6 +1059,24 @@ export function validateActionProposal(proposal, validElements) {
     }
     if (proposal.createNewTab !== undefined && typeof proposal.createNewTab !== 'boolean') {
         return { isValid: false, errorMessage: 'Field "createNewTab" must be a boolean' };
+    }
+    // 9a-search. web_search action validation
+    if (kind === 'web_search') {
+        const query = proposal.searchQuery;
+        if (typeof query !== 'string' || query.length === 0 || query.length > 500) {
+            return { isValid: false, errorMessage: 'Action kind "web_search" requires a valid "searchQuery" string (1-500 chars)' };
+        }
+        if (hasProhibitedScriptPattern(query)) {
+            return { isValid: false, errorMessage: 'searchQuery contains prohibited script patterns' };
+        }
+    }
+    else if (proposal.searchQuery !== undefined) {
+        if (typeof proposal.searchQuery !== 'string' || proposal.searchQuery.length > 500 || hasProhibitedScriptPattern(proposal.searchQuery)) {
+            return { isValid: false, errorMessage: 'Field "searchQuery" must be a string up to 500 characters' };
+        }
+    }
+    if (proposal.searchResults !== undefined && !Array.isArray(proposal.searchResults)) {
+        return { isValid: false, errorMessage: 'Field "searchResults" must be an array' };
     }
     // 9b. userApproved & pressEnter validation
     if (proposal.userApproved !== undefined && typeof proposal.userApproved !== 'boolean') {

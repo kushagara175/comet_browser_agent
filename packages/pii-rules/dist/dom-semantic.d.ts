@@ -1,8 +1,8 @@
 /**
  * @privapilot/pii-rules - DOM Semantic Analyzer
  *
- * Inspects DOM element descriptors (input type, autocomplete, inputmode, id, name, aria-label, placeholder, labels)
- * to detect sensitive form fields deterministically.
+ * Only editable fields can be classified by their form semantics. Navigation and
+ * ordinary search controls stay actionable; validated PII in live values still wins.
  */
 import { SensitiveCategory } from '@privapilot/protocol';
 export interface DomElementDescriptor {
@@ -23,8 +23,6 @@ export interface DomSensitivityDecision {
     readonly reason?: string;
     readonly confidence: number;
 }
-/**
- * Evaluates whether a DOM element is sensitive based on semantic attributes.
- */
+/** Evaluates the semantics of an editable field without classifying navigation labels. */
 export declare function analyzeDomElementSensitivity(desc: DomElementDescriptor): DomSensitivityDecision;
 //# sourceMappingURL=dom-semantic.d.ts.map

@@ -62,6 +62,58 @@ import {
   DEMO_USER_PROFILE
 } from '../vault/index.js';
 
+function selectBestTavilyResult(
+  results: Array<{ title: string; url: string; content?: string }>,
+  query: string,
+  goal: string,
+  currentUrl: string = ''
+): { title: string; url: string; content?: string } | undefined {
+  if (!results || results.length === 0) return undefined;
+
+  const combined = `${query} ${goal}`.toLowerCase();
+
+  // 1. If searching for Bhuvan or ISRO maps, strictly prioritize official Bhuvan domains
+  if (combined.includes('bhuvan')) {
+    const bhuvanMatch = results.find(r => r.url && /bhuvan(?:\.nrsc)?\.gov\.in/i.test(r.url));
+    if (bhuvanMatch) return bhuvanMatch;
+  }
+  // 2. If searching for SIH / Smart India Hackathon, prioritize official SIH domain
+  if (combined.includes('sih') || combined.includes('hackathon')) {
+    const sihMatch = results.find(r => r.url && /sih\.gov\.in/i.test(r.url));
+    if (sihMatch) return sihMatch;
+  }
+  // 3. If searching for ISRO, prioritize official ISRO domain
+  if (combined.includes('isro')) {
+    const isroMatch = results.find(r => r.url && /isro\.gov\.in/i.test(r.url));
+    if (isroMatch) return isroMatch;
+  }
+  // 4. If searching for Wikipedia, prioritize Wikipedia domain
+  if (combined.includes('wikipedia')) {
+    const wikiMatch = results.find(r => r.url && /wikipedia\.org/i.test(r.url));
+    if (wikiMatch) return wikiMatch;
+  }
+  // 5. If searching for GitHub, prioritize GitHub domain
+  if (combined.includes('github')) {
+    const ghMatch = results.find(r => r.url && /github\.com/i.test(r.url));
+    if (ghMatch) return ghMatch;
+  }
+
+  // 6. Filter out secondary third-party articles / blog posts / news commentary
+  const nonArticle = results.find(r =>
+    r.url &&
+    r.url !== currentUrl &&
+    !currentUrl.startsWith(r.url) &&
+    !r.url.includes('/article/') &&
+    !r.url.includes('/news/') &&
+    !r.url.includes('/blog/') &&
+    !r.url.includes('/post/') &&
+    !r.url.includes('medium.com')
+  );
+  if (nonArticle) return nonArticle;
+
+  return results.find(r => r.url && r.url !== currentUrl && !currentUrl.startsWith(r.url)) || results[0];
+}
+
 export interface ChatOutcome {
   readonly success: boolean;
   readonly reply: string;
@@ -464,16 +516,19 @@ export class RunCoordinator {
   private previousUrl: string = '';
   private lastExecutedProposal: ActionProposal | null = null;
   private lastExecutionResult: any = null;
+  private hasTavilyRecovered: boolean = false;
+  private readonly options: { defaultMaxSteps?: number; maxStaleRetries?: number; enableLegacyPlaybooks?: boolean };
 
   constructor(
     browser: BrowserAdapter = new WebExtensionAdapter(),
     httpClient: ReasoningHttpClient = new ReasoningHttpClient(),
     auditLogger: AuditLogger = new AuditLogger(),
-    options: { defaultMaxSteps?: number; maxStaleRetries?: number } = {}
+    options: { defaultMaxSteps?: number; maxStaleRetries?: number; enableLegacyPlaybooks?: boolean } = {}
   ) {
     this.browser = browser;
     this.httpClient = httpClient;
     this.auditLogger = auditLogger;
+    this.options = options;
     this.defaultMaxSteps = Math.max(1, Math.min(options.defaultMaxSteps ?? 10, 20));
     this.defaultMaxStaleRetries = options.maxStaleRetries ?? 2;
   }
@@ -656,1117 +711,8 @@ export class RunCoordinator {
       };
     }
 
-    // 1c. Document & File Download Directives
-    const isDownloadIntent = /\b(?:download|down;oad|downlaod|domwload|domwloadn|doenmlao|save|export|fetch|get\s+file)\b/i.test(trimmedGoal);
-    const activeUrl = currentUrl || sanitized.pageState?.url || '';
-    const isCurrentUrlFile = /\.(?:pdf|zip|csv|kmz|kml|tif|tiff|docx?|xlsx?)(?:\?.*)?$/i.test(activeUrl);
-
-    // Case 1: Tab is already on a file (e.g. PDF viewer) and user asks to download/save it
-    if (isCurrentUrlFile && isDownloadIntent) {
-      const filename = activeUrl.split('/').pop()?.split('?')[0] || 'document.pdf';
-      try {
-        if (typeof chrome !== 'undefined' && chrome.downloads?.download) {
-          chrome.downloads.download({
-            url: activeUrl,
-            filename,
-            saveAs: false
-          });
-        }
-      } catch (_) {}
-      return {
-        actionId: `act_download_active_${step}_${Date.now()}`,
-        kind: 'finish',
-        confidence: 1.0,
-        risk: 'safe',
-        rationale: `Downloaded "${filename}" directly to your device.`,
-        reply: `✓ The file "${filename}" has been downloaded and saved to your device.`
-      };
-    }
-
-    // Case 2: User is on a webpage and asks to download a brochure/report/document
-    if (isDownloadIntent) {
-      const downloadTarget = sanitized.elements.find(el => {
-        if (el.role !== 'link' && el.role !== 'button') return false;
-        const nameNorm = (el.sanitizedName || '').toLowerCase();
-        if (nameNorm.includes('brochure') || nameNorm.includes('pdf') || nameNorm.includes('download') || nameNorm.includes('annual report') || nameNorm.includes('report')) {
-          return true;
-        }
-        return false;
-      });
-
-      if (downloadTarget) {
-        const hasAlreadyClickedDownload = this.actionHistory.some(a =>
-          a.actionId && (a.actionId.includes('download') || a.actionId.includes('brochure'))
-        );
-        if (hasAlreadyClickedDownload) {
-          return {
-            actionId: `act_download_complete_${step}_${Date.now()}`,
-            kind: 'finish',
-            confidence: 1.0,
-            risk: 'safe',
-            rationale: `File download has already been triggered for "${downloadTarget.sanitizedName}".`,
-            reply: `✓ The download for "${downloadTarget.sanitizedName}" has been initiated and saved to your device.`
-          };
-        }
-
-        return {
-          actionId: `act_download_click_${step}_${Date.now()}`,
-          kind: 'click',
-          targetLocalId: downloadTarget.localId,
-          confidence: 0.98,
-          risk: 'safe',
-          rationale: `Clicking "${downloadTarget.sanitizedName}" to trigger file download to your device.`
-        };
-      }
-    }
-
-    // 1d. Direct on-page navigation / link search directive (e.g. "see for the startup program here", "open start-ups", "find careers", "show tender")
-    const isNavigationIntent = /\b(?:see|se|look|find|check|show|open|navigate|go\s+to|explore)\b/i.test(trimmedGoal) &&
-      !/\b(?:download|down;oad|scroll|type|search\s+bar|input|how\s+many|count|submissions?)\b/i.test(trimmedGoal);
-
-    if (isNavigationIntent && step === 1) {
-      const targetKeywords = trimmedGoal
-        .replace(/^(?:see|se|look|find|check|show|open|navigate|go\s+to|explore)\s+(?:for\s+)?(?:the\s+)?/i, '')
-        .replace(/\b(?:program|here|now|page|section|tab|link|menu)\b/gi, '')
-        .trim()
-        .toLowerCase();
-
-      if (targetKeywords.length >= 3) {
-        const cleanKw = targetKeywords.replace(/[^a-z0-9]/g, '');
-        // Do not use this fast-path if there are contextual qualifiers ("for ...", "row ...") or multiple matching elements
-        const hasContextualQualifier = /\b(?:for|in|from|at|under|row|column)\s+[a-z0-9]+/i.test(trimmedGoal);
-        if (!hasContextualQualifier) {
-          const matchingLinks = sanitized.elements.filter(el => {
-            if (el.role !== 'link' && el.role !== 'button' && el.role !== 'tab' && el.role !== 'menuitem') return false;
-            const name = (el.sanitizedName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            return name.length >= 3 && (name === cleanKw || name.includes(cleanKw) || (cleanKw.length >= 4 && cleanKw.includes(name)));
-          });
-
-          if (matchingLinks.length === 1) {
-            const matchingLink = matchingLinks[0];
-            return {
-              actionId: `act_local_link_nav_${step}_${Date.now()}`,
-              kind: 'click',
-              targetLocalId: matchingLink.localId,
-              confidence: 0.98,
-              risk: 'safe',
-              rationale: `Clicking "${matchingLink.sanitizedName}" to open ${targetKeywords}.`
-            };
-          }
-        }
-      }
-    }
-
-    // 1b. Browser resource operations: Bookmarks inspection & management (only when not targeting an external website like x.com)
-    const hasWebTarget = /\b(?:https?:\/\/|[a-zA-Z0-9-]+\.(?:com|in|org|net|co|io|gov)|twitter|reddit|github)\b/i.test(trimmedGoal) ||
-      Boolean(currentUrl && !currentUrl.startsWith('chrome://') && !currentUrl.startsWith('chrome-extension://') && !currentUrl.startsWith('about:'));
-    if (!hasWebTarget && (trimmedGoal.includes('bookmark') || trimmedGoal.includes('book mark')) && !/\b(?:click|clcik|clik|cilck|tap|press)\b/i.test(trimmedGoal)) {
-      if (trimmedGoal.includes('open') || trimmedGoal.includes('go to') || trimmedGoal.includes('manager') || trimmedGoal.includes('launch')) {
-        this.browser.openBookmarksManager?.();
-        return {
-          actionId: `act_bookmarks_open_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 1.0,
-          risk: 'safe',
-          rationale: 'Opened Chrome Bookmarks Manager in a new tab.'
-        };
-      }
-
-      // Checking or auditing bookmarks
-      return {
-        actionId: `act_bookmarks_audit_${step}_${Date.now()}`,
-        kind: 'finish',
-        confidence: 0.98,
-        risk: 'safe',
-        rationale: 'Bookmarks audit verified: Inspected active bookmarks bar and folders. You can manage them directly or ask me to navigate to any bookmarked site.'
-      };
-    }
-
-    // 1c. Information retrieval & question-answering goals (e.g. "how many submissions are done")
-    // If the goal also contains an explicit search directive (e.g. "search X and tell me Y"),
-    // let search execution and result drilling (playbook or universal search) run first before answering!
-    const effectivePageUrl = currentUrl || sanitized.pageState?.url || '';
-    const hasSearchDirective = Boolean(this.getSearchQuery(goal));
-    const isOnSearchResultsPage = effectivePageUrl.includes('search') ||
-      (sanitized.pageState?.title || '').toLowerCase().includes('search') ||
-      (sanitized.pageState?.title || '').toLowerCase().includes('results');
-    const isSearchingActive = hasSearchDirective &&
-      (!this.actionHistory.some(a => a.actionId && (a.actionId.startsWith('act_playbook_fill_') || a.actionId.startsWith('act_generic_search_fill_') || a.kind === 'type')) ||
-       (isOnSearchResultsPage && !this.actionHistory.some(a => a.actionId && a.actionId.startsWith('act_search_result_click_'))));
-
-    if (this.currentTaskContract?.isAnswerGoal && !isSearchingActive) {
-      const topic = (this.currentTaskContract.queryTopic || 'submission').toLowerCase();
-      const pageCounters = sanitized.pageState?.counters || [];
-      const pageSummaries = sanitized.pageState?.contentSummaries || [];
-      const statusSummaries = sanitized.pageState?.statusSummaries || [];
-
-      // Check counters first
-      const matchingCounter = pageCounters.find(c => {
-        const l = c.label.toLowerCase();
-        return (
-          l.includes(topic) ||
-          l.includes('submi') ||
-          l.includes('completed') ||
-          l.includes('total') ||
-          l.includes('count') ||
-          topic.split(/\s+/).some(t => l.includes(t))
-        );
-      });
-
-      if (matchingCounter) {
-        return {
-          actionId: `act_local_answer_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 0.98,
-          risk: 'safe',
-          rationale: `Answer verified: Found ${matchingCounter.value} ${matchingCounter.label} on current page.`
-        };
-      }
-
-      // Check content summaries & table summaries
-      const matchingSummary = pageSummaries.find(s => {
-        const l = s.toLowerCase();
-        return (
-          l.includes(topic) ||
-          l.includes('submi') ||
-          l.includes('completed') ||
-          topic.split(/\s+/).some(t => l.includes(t))
-        );
-      });
-
-      if (matchingSummary) {
-        return {
-          actionId: `act_local_answer_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 0.96,
-          risk: 'safe',
-          rationale: `Answer verified from page context: ${matchingSummary}`
-        };
-      }
-
-      // Check elements for numbers and matching keywords (e.g. "1,420 Completed Submissions")
-      const matchingEl = sanitized.elements.find(e => {
-        const name = e.sanitizedName.toLowerCase();
-        return (
-          /\b\d[\d,.]*\b/.test(name) &&
-          (name.includes('submi') || name.includes('complete') || name.includes('problem') || name.includes('total'))
-        );
-      });
-
-      if (matchingEl) {
-        return {
-          actionId: `act_local_answer_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 0.95,
-          risk: 'safe',
-          rationale: `Answer verified from page element: "${matchingEl.sanitizedName}"`
-        };
-      }
-
-      // Check status summaries
-      const matchingStatus = statusSummaries.find(s => {
-        const l = s.toLowerCase();
-        return (
-          l.includes(topic) ||
-          l.includes('submi') ||
-          l.includes('completed') ||
-          topic.split(/\s+/).some(t => l.includes(t))
-        );
-      });
-
-      if (matchingStatus) {
-        return {
-          actionId: `act_local_answer_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 0.95,
-          risk: 'safe',
-          rationale: `Answer verified from page status: ${matchingStatus}`
-        };
-      }
-
-      // If not yet found on page, check for relevant navigation tab/link to open
-      const navCandidate = (step === 1 || this.actionHistory.length === 0)
-        ? sanitized.elements.find(e => {
-            if (e.role !== 'tab' && e.role !== 'link' && e.role !== 'button') return false;
-            const name = e.sanitizedName.toLowerCase();
-            return (
-              name.includes('submission') ||
-              name.includes('problem') ||
-              name.includes('statement') ||
-              name.includes('dashboard') ||
-              name.includes('overview')
-            );
-          })
-        : null;
-
-      if (navCandidate) {
-        return {
-          actionId: `act_local_nav_${step}_${Date.now()}`,
-          kind: 'click',
-          targetLocalId: navCandidate.localId,
-          confidence: 0.95,
-          risk: 'safe',
-          rationale: `Navigating to "${navCandidate.sanitizedName}" to find ${topic} metrics`,
-          expectedPostcondition: { kind: 'status_changed' }
-        };
-      }
-
-      // If no exact match on current page, return null so central model reasoning executes
-      return null;
-    }
-
-    // 1c. Domain Playbook Intelligence (Site-specific navigation, target grounding, metrics)
-    const urlForPlaybook = currentUrl || (sanitized.pageState?.routeFingerprint ? `https://sih.gov.in${sanitized.pageState.routeFingerprint}` : '');
-    const playbook = lookupDomainPlaybook(urlForPlaybook) || (trimmedGoal.includes('sih') ? lookupDomainPlaybook('sih.gov.in') : undefined);
-
-    if (playbook) {
-      const resolution = resolvePlaybookIntent(playbook, goal, currentUrl);
-
-      // 0. If user is already on the requested route (e.g. Map Viewer on Bhuvan or Problem Statements on SIH)
-      // Only emit static answer if the user's ONLY directive was route navigation, without any pending search/action goals
-      if (resolution.matchedIntent === 'none' && resolution.rationale?.includes('Already on route')) {
-        const hasUnfinishedSearchOrGoal = Boolean(this.getSearchQuery(goal)) ||
-          /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
-        if (!hasUnfinishedSearchOrGoal) {
-          const reply = `You are already on the active ${playbook.name} route. All interactive navigation controls, map canvas layers, and search tools are loaded and ready.`;
-          return {
-            actionId: `act_local_answer_${step}_${Date.now()}`,
-            kind: 'answer',
-            confidence: 0.98,
-            risk: 'safe',
-            rationale: reply,
-            reply
-          };
-        }
-      }
-
-      // A. Metric Extraction from page context
-      if (resolution.matchedIntent === 'extract_metric' && resolution.metricRule) {
-        const allText = [
-          ...(sanitized.pageState?.counters || []).map(c => `${c.label}: ${c.value}`),
-          ...(sanitized.pageState?.contentSummaries || []),
-          ...(sanitized.pageState?.statusSummaries || []),
-          sanitized.pageState?.title || ''
-        ].join(' ');
-
-        const metricFound = extractMetricsWithPlaybook(allText, resolution.metricRule);
-        if (metricFound) {
-          const reply = `Playbook verified: Found ${metricFound.value} ${resolution.metricRule.labelKeywords[0]} on ${playbook.name}`;
-          return {
-            actionId: `act_playbook_metric_${step}_${Date.now()}`,
-            kind: 'answer',
-            confidence: resolution.confidence,
-            risk: 'safe',
-            rationale: reply,
-            reply
-          };
-        }
-      }
-
-      // B. Click Landmark (e.g. "Know Your SPOC", "SIH Login", "Problem Statements")
-      if (resolution.matchedIntent === 'click_landmark' && resolution.targetPhrase) {
-        // If already on Bhuvan NextGen map viewer (/ngmaps), the 2D/3D viewer is already active and loaded
-        if ((currentUrl || '').includes('/ngmaps') && resolution.targetPhrase.toLowerCase().includes('2d')) {
-          const hasPendingDownstreamGoal = Boolean(this.getSearchQuery(goal)) ||
-            /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
-          if (!hasPendingDownstreamGoal) {
-            const reply = 'You are already on the active Bhuvan NextGen 2D/3D Map Viewer. The satellite map canvas and geospatial navigation controls are loaded and ready.';
-            return {
-              actionId: `act_local_answer_${step}_${Date.now()}`,
-              kind: 'answer',
-              confidence: 0.98,
-              risk: 'safe',
-              rationale: reply,
-              reply
-            };
-          }
-        }
-
-        const hasAlreadyClickedLandmark = this.actionHistory.some(
-          (a) => a.actionId && a.actionId.startsWith('act_playbook_click_')
-        );
-
-        if (hasAlreadyClickedLandmark) {
-          return {
-            actionId: `act_local_finish_${step}_${Date.now()}`,
-            kind: 'finish',
-            confidence: 0.98,
-            risk: 'safe',
-            rationale: `Playbook landmark "${resolution.targetPhrase}" clicked and navigation verified`
-          };
-        }
-
-        const targetTokens = tokenizeSemanticText(resolution.targetPhrase);
-        const matchingEl = sanitized.elements.find((el) => {
-          const nameNorm = el.sanitizedName.toLowerCase();
-          const phraseNorm = resolution.targetPhrase!.toLowerCase();
-          if (nameNorm === phraseNorm || nameNorm.includes(phraseNorm) || phraseNorm.includes(nameNorm)) return true;
-          return targetTokens.length > 0 && targetTokens.every(t => nameNorm.includes(t));
-        });
-
-        if (matchingEl) {
-          return {
-            actionId: `act_playbook_click_${step}_${Date.now()}`,
-            kind: 'click',
-            targetLocalId: matchingEl.localId,
-            confidence: resolution.confidence,
-            risk: 'safe',
-            rationale: `Playbook landmark grounded: ${resolution.rationale}`,
-            expectedPostcondition: { kind: 'status_changed' }
-          };
-        }
-      }
-
-      // C. Navigation to route via link on page
-      if (resolution.matchedIntent === 'navigate' && resolution.targetUrl) {
-        const hasAlreadyNavigated = this.actionHistory.some(
-          (a) => a.actionId && a.actionId.startsWith('act_playbook_nav_')
-        );
-
-        if (!hasAlreadyNavigated) {
-          const targetPhraseNorm = (resolution.targetPhrase || '').toLowerCase();
-          const phraseTokens = tokenizeSemanticText(targetPhraseNorm);
-          const routeKeywordTokens = tokenizeSemanticText(goal);
-
-          const navLink = sanitized.elements.find((el) => {
-            if (el.role !== 'link' && el.role !== 'button' && el.role !== 'tab') return false;
-            const nameNorm = el.sanitizedName.toLowerCase();
-            if (targetPhraseNorm && (nameNorm === targetPhraseNorm || nameNorm.includes(targetPhraseNorm) || targetPhraseNorm.includes(nameNorm))) {
-              return true;
-            }
-            if (phraseTokens.length > 0 && phraseTokens.every((t) => nameNorm.includes(t))) {
-              return true;
-            }
-            return routeKeywordTokens.some((t) => t.length > 3 && nameNorm.includes(t));
-          });
-
-          if (navLink) {
-            return {
-              actionId: `act_playbook_nav_${step}_${Date.now()}`,
-              kind: 'click',
-              targetLocalId: navLink.localId,
-              confidence: resolution.confidence,
-              risk: 'safe',
-              rationale: `Playbook navigation grounded to link "${navLink.sanitizedName}"`,
-              expectedPostcondition: { kind: 'status_changed' }
-            };
-          }
-        }
-      }
-
-      // D. Fill Field (e.g. search input on page)
-      const isSearchDirective =
-        resolution.matchedIntent === 'fill_field' ||
-        (this.actionHistory.some((a) => a.actionId && (a.actionId.startsWith('act_playbook_nav_') || a.actionId.startsWith('act_init_nav_'))) &&
-          /(?:(?:search(?:\s+for)?|find|filter(?:\s+by)?)\s+)/i.test(trimmedGoal));
-
-      if (isSearchDirective) {
-        const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_playbook_fill_'));
-        if (hasAlreadyFilled) {
-          const query = this.getSearchQuery(goal) || 'query';
-          const queryTokens = tokenizeSemanticText(query.toLowerCase());
-          const STOPWORDS = new Set([
-            'and', 'the', 'for', 'with', 'from', 'that', 'this', 'into', 'about', 'or', 'in',
-            'on', 'at', 'by', 'to', 'a', 'an', 'of', 'is', 'it', 'as', 'be', 'are', 'was',
-            'all', 'any', 'can', 'her', 'one', 'our', 'out', 'day', 'get', 'has', 'him',
-            'his', 'how', 'man', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy',
-            'did', 'its', 'let', 'put', 'say', 'she', 'too', 'use', 'what', 'where', 'when',
-            'why', 'then', 'summarize', 'summarise', 'analyze', 'analyse', 'milestone', 'milestones'
-          ]);
-          const meaningfulTokens = queryTokens.filter(t => t.length >= 3 && !STOPWORDS.has(t));
-          const hasAlreadyClickedSuggestion = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_dropdown_suggestion_click_'));
-
-          const isMapDomain = (playbook.domain || '').includes('bhuvan') ||
-            (currentUrl || '').includes('bhuvan') ||
-            (currentUrl || '').includes('/ngmaps') ||
-            (playbook.name || '').toLowerCase().includes('bhuvan');
-
-          // Check if an autocomplete dropdown suggestion item is available in DOM (ONLY on Map / Bhuvan portals)
-          if (isMapDomain && !hasAlreadyClickedSuggestion) {
-            const suggestionItem = sanitized.elements.find((el) => {
-              const nameNorm = el.sanitizedName.toLowerCase();
-              const isSuggestionRole = el.role === 'menuitem' || el.role === 'button' || el.role === 'link' || (el as any).role === 'option';
-              if (!isSuggestionRole) return false;
-              if (nameNorm.includes('about') || nameNorm.includes('random') || nameNorm.includes('upload') || nameNorm.includes('help') || nameNorm.includes('terms') || nameNorm.includes('privacy')) {
-                return false;
-              }
-
-              const matchesMeaningful = meaningfulTokens.some((t) => {
-                const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
-                return re.test(nameNorm);
-              });
-              const matchesGeo = nameNorm.includes('bengaluru') || nameNorm.includes('bangalore') || nameNorm.includes('karnataka') || nameNorm.includes('india') || nameNorm.includes('district');
-
-              return (matchesMeaningful || matchesGeo);
-            });
-
-            if (suggestionItem) {
-              return {
-                actionId: `act_dropdown_suggestion_click_${step}_${Date.now()}`,
-                kind: 'click',
-                targetLocalId: suggestionItem.localId,
-                targetName: suggestionItem.sanitizedName,
-                confidence: 0.96,
-                risk: 'safe',
-                rationale: `Selecting location suggestion "${suggestionItem.sanitizedName}" for query "${query}"`,
-                expectedPostcondition: { kind: 'status_changed' }
-              };
-            }
-          }
-
-          if (isMapDomain && hasAlreadyClickedSuggestion) {
-            const needsLayerInspection = /\b(?:inspect|examine|explore|show|open|available|thematic|satellite|imagery|layers?|overlays?|data\s+services?)\b/i.test(trimmedGoal);
-            const hasOpenedLayers = this.actionHistory.some((a) => a.actionId?.startsWith('act_bhuvan_layers_'));
-            if (needsLayerInspection && !hasOpenedLayers) {
-              const layerControl = sanitized.elements.find((el) => {
-                if (!['button', 'link', 'tab', 'menuitem', 'generic'].includes(el.role)) return false;
-                const semanticText = `${el.sanitizedName || ''} ${el.containerContext || ''} ${el.nearestHeading || ''}`.toLowerCase();
-                return /\b(?:map\s+layers?|layers?|thematic|data\s+services?|overlays?|catalog(?:ue)?)\b/i.test(semanticText) ||
-                  /open\s+drawer/i.test(semanticText);
-              });
-              if (layerControl) {
-                return {
-                  actionId: `act_bhuvan_layers_${step}_${Date.now()}`,
-                  kind: 'click',
-                  targetLocalId: layerControl.localId,
-                  targetName: layerControl.sanitizedName,
-                  confidence: 0.97,
-                  risk: 'safe',
-                  rationale: `Opening Bhuvan layer control "${layerControl.sanitizedName}" after centering ${query}`
-                };
-              }
-              return null;
-            }
-
-            if (needsLayerInspection && hasOpenedLayers) {
-              return null;
-            }
-
-            return {
-              actionId: `act_local_finish_${step}_${Date.now()}`,
-              kind: 'finish',
-              confidence: 0.98,
-              risk: 'safe',
-              rationale: `Location "${query}" selected from suggestions and centered on map`
-            };
-          }
-
-          const isOnSearchResults = (currentUrl || '').includes('search.html') ||
-            (currentUrl || '').includes('gsc.q=') ||
-            (currentUrl || '').includes('Special:Search') ||
-            (currentUrl || '').includes('/search?') ||
-            (currentUrl || '').includes('search=') ||
-            (currentUrl || '').includes('?q=');
-
-          const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith('act_search_result_click_'));
-
-          if (isOnSearchResults && !hasAlreadyClickedResult) {
-            const isChromeLink = (n: string) => {
-              return n === 'search' || n === 'search wikipedia' || n === 'random article' || n === 'upload file' ||
-                n === 'main page' || n === 'contents' || n === 'current events' || n === 'recent changes' ||
-                n.includes('privacy policy') || n.includes('terms of use') || n.includes('disclaimer') ||
-                n.includes('developers') || n.includes('statistics') || n.includes('cookie') || n.includes('mobile view');
-            };
-
-            const resultLink = sanitized.elements.find((el) => {
-              if (el.role !== 'link' && el.role !== 'button') return false;
-              const nameNorm = el.sanitizedName.toLowerCase().trim();
-              if (isChromeLink(nameNorm) || nameNorm.length < 3) return false;
-
-              const matchCount = meaningfulTokens.filter((t) => {
-                const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
-                return re.test(nameNorm);
-              }).length;
-
-              return matchCount >= Math.min(2, meaningfulTokens.length);
-            });
-
-            if (resultLink) {
-              return {
-                actionId: `act_search_result_click_${step}_${Date.now()}`,
-                kind: 'click',
-                targetLocalId: resultLink.localId,
-                targetName: resultLink.sanitizedName,
-                confidence: 0.96,
-                risk: 'safe',
-                rationale: `Drilling into search result "${resultLink.sanitizedName}" on search page`,
-                expectedPostcondition: { kind: 'status_changed' }
-              };
-            }
-          }
-
-          // Search button submit fallback if still on initial search form without enter navigation
-          const hasClickedSearchBtn = this.actionHistory.some(a => a.actionId && a.actionId.startsWith('act_search_btn_click_'));
-          if (!isOnSearchResults && !hasClickedSearchBtn) {
-            const searchBtn = sanitized.elements.find((el) => {
-              if (el.role !== 'button') return false;
-              const nameNorm = el.sanitizedName.toLowerCase().trim();
-              return nameNorm === 'search' || nameNorm === 'search wikipedia' || nameNorm === 'go';
-            });
-            if (searchBtn) {
-              return {
-                actionId: `act_search_btn_click_${step}_${Date.now()}`,
-                kind: 'click',
-                targetLocalId: searchBtn.localId,
-                targetName: searchBtn.sanitizedName || 'Search Button',
-                confidence: 0.95,
-                risk: 'safe',
-                rationale: `Clicking search button "${searchBtn.sanitizedName}" to submit query "${query}"`,
-                expectedPostcondition: { kind: 'status_changed' }
-              };
-            }
-          }
-
-          // If the goal requires summarization, milestone extraction, explanation, or QA:
-          // Hand off to the centralized multimodal reasoning engine (Mistral-Large-3 on port 4501)
-          const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
-
-          if (wantsContentReasoning) {
-            return null;
-          }
-
-          const wantsEcomAnalysis = /(?:analyze|analysis|price|prices|cost|how\s+much|compare)/i.test(trimmedGoal) &&
-            sanitized.elements.some((el) => /(?:iphone|apple|phone|₹|\$|rs\.?)/i.test(el.sanitizedName || ''));
-
-          if (wantsEcomAnalysis) {
-            const productElements = sanitized.elements.filter((el) => {
-              const text = el.sanitizedName || '';
-              return /(?:iphone|apple|phone|₹|\$|rs\.?|gb|off|deal|price|model)/i.test(text) && text.length > 3;
-            });
-            const topProducts = Array.from(new Set(productElements.map((el) => el.sanitizedName.trim()))).slice(0, 6);
-            let analysisRationale = `Searched for "${query}" on ${currentUrl || 'portal'}.\n\n` +
-              (topProducts.length > 0
-                ? `**Extracted Listings & Pricing from Page:**\n` + topProducts.map((p) => `• ${p}`).join('\n')
-                : `**Live Search Completed:** Results for "${query}" loaded and verified on the page.`);
-
-            return {
-              actionId: `act_local_answer_${step}_${Date.now()}`,
-              kind: 'answer',
-              confidence: 0.98,
-              risk: 'safe',
-              rationale: analysisRationale
-            };
-          }
-
-          return {
-            actionId: `act_local_finish_${step}_${Date.now()}`,
-            kind: 'finish',
-            confidence: 0.98,
-            risk: 'safe',
-            rationale: `Playbook search query "${query}" executed and verified on ${playbook.name}`
-          };
-        }
-
-        const phraseToMatch = (resolution.targetPhrase || 'search').toLowerCase();
-        const targetTokens = tokenizeSemanticText(phraseToMatch);
-        const searchKeywords = ['search', 'filter', 'query', 'find', 'keyword'];
-
-        const matchingEl = sanitized.elements.find((el) => {
-          if (el.role !== 'input' && el.role !== 'textarea') return false;
-          const nameNorm = el.sanitizedName.toLowerCase();
-          if (nameNorm === phraseToMatch || nameNorm.includes(phraseToMatch) || phraseToMatch.includes(nameNorm)) return true;
-          if (targetTokens.some((t) => nameNorm.includes(t))) return true;
-          if (searchKeywords.some((kw) => nameNorm.includes(kw))) return true;
-          return false;
-        });
-
-        if (matchingEl) {
-          const textToType = this.getSearchQuery(goal);
-          return {
-            actionId: `act_playbook_fill_${step}_${Date.now()}`,
-            kind: 'type',
-            targetLocalId: matchingEl.localId,
-            targetName: matchingEl.sanitizedName || `${playbook.name} Search`,
-            textToType,
-            pressEnter: true,
-            confidence: resolution.confidence || 0.92,
-            risk: 'safe',
-            rationale: `Search query "${textToType}" grounded into input "${matchingEl.sanitizedName}"`
-          };
-        }
-      }
-    }
-
-    // 1e. Universal Generic Search for ANY Website (Deterministic fast-path for explicit search directives)
-    const genericSearchQuery = this.getSearchQuery(goal);
-    const hasGenericSearchDirective = Boolean(genericSearchQuery) &&
-      /\b(?:search(?:\s+for)?|search\s+box|search\s+bar|search\s+input|query\s+for|lookup)\b/i.test(trimmedGoal);
-
-    if (!playbook && hasGenericSearchDirective) {
-      const query = genericSearchQuery || 'search query';
-      const hasAlreadyFilled = this.actionHistory.some(a =>
-        a.actionId && (a.actionId.startsWith('act_generic_search_fill_') || a.actionId.startsWith('act_playbook_fill_') || a.kind === 'type')
-      );
-
-      if (!hasAlreadyFilled) {
-        // Locate search input on page
-        const searchInputCandidates = sanitized.elements.filter(el => {
-          if (el.role !== 'input' && el.role !== 'textarea') return false;
-          if (el.state.includes('disabled')) return false;
-          return true;
-        });
-
-        // Best match: input matching search keywords in sanitizedName, placeholder, or role
-        const searchInput = searchInputCandidates.find(el => {
-          const nameNorm = (el.sanitizedName || '').toLowerCase();
-          return (
-            nameNorm.includes('search') ||
-            nameNorm.includes('find') ||
-            nameNorm.includes('query') ||
-            nameNorm.includes('filter') ||
-            nameNorm.includes('keyword') ||
-            nameNorm === 'q' ||
-            nameNorm === 'kwd' ||
-            nameNorm === 'searchbox' ||
-            nameNorm === 'searchinput'
-          );
-        }) || (searchInputCandidates.length === 1 ? searchInputCandidates[0] : null);
-
-        if (searchInput) {
-          return {
-            actionId: `act_generic_search_fill_${step}_${Date.now()}`,
-            kind: 'type',
-            targetLocalId: searchInput.localId,
-            targetName: searchInput.sanitizedName || 'Search Input',
-            textToType: query,
-            pressEnter: true,
-            confidence: 0.95,
-            risk: 'safe',
-            rationale: `Universal search: Entering query "${query}" into "${searchInput.sanitizedName || 'search bar'}" and pressing Enter`
-          };
-        }
-      } else {
-        // Already typed search query on non-playbook website
-        const queryTokens = tokenizeSemanticText(query.toLowerCase());
-        const STOPWORDS = new Set([
-          'and', 'the', 'for', 'with', 'from', 'that', 'this', 'into', 'about', 'or', 'in',
-          'on', 'at', 'by', 'to', 'a', 'an', 'of', 'is', 'it', 'as', 'be', 'are', 'was',
-          'all', 'any', 'can', 'her', 'one', 'our', 'out', 'day', 'get', 'has', 'him',
-          'his', 'how', 'man', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy',
-          'did', 'its', 'let', 'put', 'say', 'she', 'too', 'use', 'what', 'where', 'when',
-          'why', 'then', 'summarize', 'summarise', 'analyze', 'analyse', 'milestone', 'milestones'
-        ]);
-        const meaningfulTokens = queryTokens.filter(t => t.length >= 3 && !STOPWORDS.has(t));
-        const activeUrl = currentUrl || sanitized.pageState?.url || '';
-        const isOnSearchResults = (activeUrl || '').includes('search') ||
-          (activeUrl || '').includes('?q=') ||
-          (activeUrl || '').includes('&q=') ||
-          (activeUrl || '').includes('query=') ||
-          (sanitized.pageState?.title || '').toLowerCase().includes('search') ||
-          (sanitized.pageState?.title || '').toLowerCase().includes('results');
-
-        const hasAlreadyClickedResult = this.actionHistory.some(a => a.actionId && a.actionId.startsWith('act_search_result_click_'));
-
-        if (isOnSearchResults && !hasAlreadyClickedResult) {
-          const isChromeLink = (n: string) => {
-            return n === 'search' || n === 'random article' || n === 'upload file' ||
-              n === 'main page' || n === 'contents' || n === 'current events' || n === 'recent changes' ||
-              n.includes('privacy policy') || n.includes('terms of use') || n.includes('disclaimer') ||
-              n.includes('developers') || n.includes('statistics') || n.includes('cookie') || n.includes('sign in');
-          };
-
-          const resultLink = sanitized.elements.find(el => {
-            if (el.role !== 'link' && el.role !== 'button') return false;
-            const nameNorm = el.sanitizedName.toLowerCase().trim();
-            if (isChromeLink(nameNorm) || nameNorm.length < 3) return false;
-
-            const matchCount = meaningfulTokens.filter(t => {
-              const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
-              return re.test(nameNorm);
-            }).length;
-
-            return matchCount >= Math.min(2, meaningfulTokens.length);
-          });
-
-          if (resultLink) {
-            return {
-              actionId: `act_search_result_click_${step}_${Date.now()}`,
-              kind: 'click',
-              targetLocalId: resultLink.localId,
-              targetName: resultLink.sanitizedName,
-              confidence: 0.96,
-              risk: 'safe',
-              rationale: `Drilling into search result "${resultLink.sanitizedName}" on search results page`,
-              expectedPostcondition: { kind: 'status_changed' }
-            };
-          }
-        }
-
-        // Check if user requested summarization, milestones, QA, or explanation
-        const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
-        if (wantsContentReasoning) {
-          // Hand off to multimodal reasoning server to inspect page and synthesize answer
-          return null;
-        }
-
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 0.98,
-          risk: 'safe',
-          rationale: `Universal search query "${query}" executed and verified on current page`
-        };
-      }
-    }
-
-    // 2. Local terminal finish if preview/dialog was opened in previous step and is now visible with matching contract
-    if (step > 1 && this.actionHistory.length > 0 && this.currentTaskContract) {
-      const lastAction = this.actionHistory[this.actionHistory.length - 1];
-      const isDialogGoal = this.currentTaskContract.expectedTerminal.kind === 'dialog_visible';
-      const reqFragment = (this.currentTaskContract.expectedTargetNameSubstring || 'preview').toLowerCase();
-      const dialogTitles = (sanitized.pageState?.dialogTitles || []).map(t => t.toLowerCase());
-      const dialogElements = sanitized.elements.filter(e => e.role === 'dialog');
-      const elementNames = dialogElements.map(e => e.sanitizedName.toLowerCase());
-      const dialogVisible = dialogTitles.some(t => t.includes(reqFragment)) ||
-        elementNames.some(n => n.includes(reqFragment));
-
-      if (isDialogGoal && lastAction.kind === 'click' && dialogVisible) {
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 1.0,
-          risk: 'safe',
-          rationale: `Safe ${reqFragment} drawer is visible and verified; task completed locally`
-        };
-      }
-
-      // Local finish for search result drill-down click
-      if (lastAction.actionId && lastAction.actionId.startsWith('act_search_result_click_')) {
-        const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
-        if (wantsContentReasoning) {
-          // Navigated to the details/article page! Delegate to Mistral-Large-3 reasoning model to synthesize the answer
-          return null;
-        }
-        const pageTitle = sanitized.pageState?.title || 'Details Page';
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 0.98,
-          risk: 'safe',
-          rationale: `Navigated from search results to verified details page: "${pageTitle}"`
-        };
-      }
-
-      // Local finish for dropdown suggestion click (only on map portals)
-      if (lastAction.actionId && lastAction.actionId.startsWith('act_dropdown_suggestion_click_')) {
-        const query = this.getSearchQuery(goal) || 'query';
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 0.98,
-          risk: 'safe',
-          rationale: `Location "${query}" selected from suggestions and centered on map`
-        };
-      }
-
-      // Local finish for search/fill execution (playbook or generic search):
-      if (lastAction.actionId && (lastAction.actionId.startsWith('act_playbook_fill_') || lastAction.actionId.startsWith('act_generic_search_fill_'))) {
-        const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
-        if (wantsContentReasoning) {
-          // If the goal requires summarization/reasoning, delegate to central reasoning server
-          return null;
-        }
-
-        const query = this.getSearchQuery(goal) || 'query';
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 0.98,
-          risk: 'safe',
-          rationale: `Search query "${query}" executed and verified on page`
-        };
-      }
-
-      // Local finish for status mutation when targeted button was clicked
-      const isStatusGoal = this.currentTaskContract.expectedTerminal.kind === 'status_changed';
-      const targetSub = (this.currentTaskContract.expectedTargetNameSubstring || '').toLowerCase();
-      const statusSummaries = (sanitized.pageState?.statusSummaries || []).map(s => s.toLowerCase());
-      const postSummary = (sanitized.pageState?.postconditionSummary || '').toLowerCase();
-      const isSynchronized = statusSummaries.some(s => s.includes('synchronized')) || postSummary.includes('synchronized');
-
-      if (isStatusGoal && lastAction.kind === 'click' && (targetSub.includes('sync') || targetSub.includes('refresh')) && isSynchronized) {
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 1.0,
-          risk: 'safe',
-          rationale: `Status mutation for ${targetSub} verified: final status Synchronized; task completed locally`
-        };
-      }
-
-      // Local finish for search/filter when page status indicates filtered
-      const isFilterGoal = this.currentTaskContract.goalPattern === 'search_filter';
-      const isFilteredOnPage = (sanitized.pageState?.statusSummaries || []).some(s => s.toLowerCase().includes('filtered'));
-      if (isFilterGoal && lastAction.kind === 'type' && isFilteredOnPage) {
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 1.0,
-          risk: 'safe',
-          rationale: `Table filter is active and verified; task completed locally`
-        };
-      }
-
-      // Local finish for select option when select was executed
-      const isSelectGoal = this.currentTaskContract.goalPattern === 'select_option' || this.currentTaskContract.expectedTerminal.kind === 'select_changed';
-      if (isSelectGoal && lastAction.kind === 'select') {
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 1.0,
-          risk: 'safe',
-          rationale: `Select option was executed and verified; task completed locally`
-        };
-      }
-    }
-
-    // 3. Local cookie banner / modal dismissal if explicitly requested
-    if (/^(dismiss|accept|close)\s+(cookie|banner|notice|modal|dialog)/i.test(trimmedGoal)) {
-      const candidates = sanitized.elements.filter(e => {
-        const name = (e.sanitizedName || '').toLowerCase();
-        return (
-          e.role === 'button' &&
-          (name.includes('accept') || name.includes('dismiss') || name.includes('close') || name.includes('got it') || name.includes('agree'))
-        );
-      });
-      if (candidates.length === 1) {
-        const candidate = candidates[0];
-        return {
-          actionId: `act_local_dismiss_${step}_${Date.now()}`,
-          kind: 'click',
-          targetLocalId: candidate.localId,
-          confidence: 0.95,
-          risk: 'safe',
-          rationale: `Locally resolved dismissal of banner via button "${candidate.sanitizedName}"`,
-          expectedPostcondition: { kind: 'visibility_changed', targetLocalId: candidate.localId, state: 'hidden' }
-        };
-      }
-    }
-
-    // 4. Local resolution for direct typing/chatbox/form directives (e.g. "type in the chatbox hi and sent", form filling)
-    const isExplicitTypeGoal =
-      /^(?:(?:please|kindly)\s+)?(?:type|enter|write|fill)\s+/i.test(trimmedGoal) ||
-      Boolean(this.currentTaskContract?.structuredIntent?.submitAfter) ||
-      Boolean(this.currentTaskContract?.structuredIntent?.formAssignments) ||
-      this.currentTaskContract?.structuredIntent?.targetPhrase === 'chatbox';
-
-    const formAssignments = this.currentTaskContract?.structuredIntent?.formAssignments;
-    if (isExplicitTypeGoal && formAssignments && formAssignments.length > 0) {
-      const assignmentIdx = step - 1;
-      if (assignmentIdx < formAssignments.length) {
-        const assignment = formAssignments[assignmentIdx];
-        const subIntent = {
-          intent: 'type' as const,
-          targetPhrase: assignment.target,
-          targetTokens: tokenizeSemanticText(assignment.target),
-          requestedValue: assignment.value
-        };
-        const grounding = groundTargetCandidates(sanitized.elements, subIntent);
-        const target = (grounding.bestCandidate && (grounding.status === 'unambiguous_match' || grounding.bestCandidate.score >= 40))
-          ? grounding.bestCandidate.element
-          : sanitized.elements.filter(el => el.actionCapabilities.includes('type') && !el.state.includes('disabled'))[assignmentIdx];
-
-        if (target) {
-          return {
-            actionId: `act_local_form_${step}_${Date.now()}`,
-            kind: 'type',
-            targetLocalId: target.localId,
-            textToType: assignment.value,
-            confidence: 0.95,
-            risk: 'safe',
-            rationale: `Form filling: entered "${assignment.value}" into "${target.sanitizedName || assignment.target}"`
-          };
-        }
-      } else {
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 1.0,
-          risk: 'safe',
-          rationale: 'All requested form fields filled successfully'
-        };
-      }
-    }
-
-    if (
-      isExplicitTypeGoal &&
-      step === 1 &&
-      this.currentTaskContract?.structuredIntent?.intent === 'type' &&
-      this.currentTaskContract.structuredIntent.requestedValue
-    ) {
-      const intent = this.currentTaskContract.structuredIntent;
-      const grounding = groundTargetCandidates(sanitized.elements, intent);
-      const target = (grounding.bestCandidate && (grounding.status === 'unambiguous_match' || grounding.bestCandidate.score >= 50))
-        ? grounding.bestCandidate.element
-        : sanitized.elements.find(el => el.actionCapabilities.includes('type') && !el.state.includes('disabled'));
-
-      if (target) {
-        return {
-          actionId: `act_local_type_${step}_${Date.now()}`,
-          kind: 'type',
-          targetLocalId: target.localId,
-          textToType: intent.requestedValue,
-          confidence: 0.95,
-          risk: 'safe',
-          rationale: `Locally resolved typing "${intent.requestedValue}" into "${target.sanitizedName}"`,
-          pressEnter: Boolean(intent.pressEnter)
-        };
-      }
-    }
-
-    // 5. Follow-up for explicit typing goals
-    if (
-      isExplicitTypeGoal &&
-      step === 2 &&
-      this.actionHistory.length > 0 &&
-      this.actionHistory[0].kind === 'type' &&
-      this.currentTaskContract?.structuredIntent?.intent === 'type'
-    ) {
-      const intent = this.currentTaskContract.structuredIntent;
-      if (intent.submitAfter) {
-        const sendBtn = sanitized.elements.find(e => {
-          if (e.role !== 'button' || e.state.includes('disabled')) return false;
-          const name = (e.sanitizedName || '').toLowerCase().trim();
-          if (name.startsWith('sending') || name.includes('draft') || name.includes('accordion')) return false;
-          return /\b(?:send|submit|post)\b/i.test(name) || name === '↑' || name.includes('arrow');
-        });
-        if (sendBtn) {
-          return {
-            actionId: `act_local_send_${step}_${Date.now()}`,
-            kind: 'click',
-            targetLocalId: sendBtn.localId,
-            confidence: 0.95,
-            risk: 'safe',
-            userApproved: true,
-            rationale: `Clicking send/submit button "${sendBtn.sanitizedName}" following message entry`
-          };
-        }
-      }
-      return {
-        actionId: `act_local_finish_${step}_${Date.now()}`,
-        kind: 'finish',
-        confidence: 1.0,
-        risk: 'safe',
-        rationale: `Typed "${intent.requestedValue || ''}" into target field; directive completed`
-      };
-    }
-
-    if (
-      isExplicitTypeGoal &&
-      step > 2 &&
-      this.actionHistory.length > 0 &&
-      this.currentTaskContract?.structuredIntent?.intent === 'type'
-    ) {
-      return {
-        actionId: `act_local_finish_${step}_${Date.now()}`,
-        kind: 'finish',
-        confidence: 1.0,
-        risk: 'safe',
-        rationale: `Directive completed`
-      };
-    }
-
-    // 6. Flight Search Form Assistance in single-agent execution mode
-    const isFlightGoal = /\b(?:flight|flights|airline|airlines|ticket|tickets|fare|fares)\b/i.test(trimmedGoal);
-    if (isFlightGoal) {
-      const originMatch = trimmedGoal.match(/(?:from\s+([a-zA-Z\s]+?)\s+to\s+([a-zA-Z\s]+?))(?:\s+on|\s+for|\s+with|\s+in|\s+using|\s+and|\s*$)/i) ||
-                          trimmedGoal.match(/\b([a-zA-Z\s]+?)\s+to\s+([a-zA-Z\s]+?)\s+flights?\b/i) ||
-                          trimmedGoal.match(/\bflights?\s+(?:from\s+)?([a-zA-Z\s]+?)\s+(?:to\s+)?([a-zA-Z\s]+?)\b/i);
-      const originCity = originMatch ? originMatch[1].trim() : 'Delhi';
-      const destCity = originMatch ? originMatch[2].trim() : 'Mumbai';
-      const originCode = AIRPORT_CODES[originCity.toLowerCase()] || originCity.slice(0, 3).toUpperCase();
-      const destCode = AIRPORT_CODES[destCity.toLowerCase()] || destCity.slice(0, 3).toUpperCase();
-
-      // Check if flight search results (prices, flight codes) are already rendered on screen
-      const elementsTexts = sanitized.elements.map(e => e.sanitizedName || (e as any).text || '');
-      const hasPrices = elementsTexts.some(t => /(?:₹|Rs\.?|INR)\s*[\d,]+/i.test(t));
-      const hasFlightCodes = elementsTexts.some(t => /\b(?:6E|AI|UK|SG|QP|G8)[-\s]?\d{3,4}\b/i.test(t));
-
-      if (hasPrices || hasFlightCodes) {
-        const topPrices = elementsTexts.filter(t => /(?:₹|Rs\.?|INR)\s*[\d,]+/i.test(t)).slice(0, 5);
-        const topCodes = elementsTexts.filter(t => /\b(?:6E|AI|UK|SG|QP|G8)[-\s]?\d{3,4}\b/i.test(t)).slice(0, 5);
-        return {
-          actionId: `act_local_flight_finish_${step}_${Date.now()}`,
-          kind: 'finish',
-          confidence: 0.98,
-          risk: 'safe',
-          rationale: `Flight search listings verified on page: Fares: ${topPrices.join(', ') || 'Available'}${topCodes.length > 0 ? ` | Flights: ${topCodes.join(', ')}` : ''}`
-        };
-      }
-
-      // Check if we just typed origin and an airport suggestion is visible
-      const hasTypedOrigin = this.actionHistory.some(a => a.kind === 'type' && (a.textToType?.toLowerCase().includes(originCity.toLowerCase()) || a.textToType?.toLowerCase().includes(originCode.toLowerCase())));
-      const hasTypedDest = this.actionHistory.some(a => a.kind === 'type' && (a.textToType?.toLowerCase().includes(destCity.toLowerCase()) || a.textToType?.toLowerCase().includes(destCode.toLowerCase())));
-
-      if (hasTypedOrigin && !hasTypedDest) {
-        const suggestion = findAirportSuggestion(sanitized.elements, originCity, originCode);
-        if (suggestion) {
-          return {
-            actionId: `act_local_flight_orig_sel_${step}_${Date.now()}`,
-            kind: 'click',
-            targetLocalId: suggestion.localId,
-            confidence: 0.96,
-            risk: 'safe',
-            rationale: `Selecting airport option "${suggestion.sanitizedName}" for origin`
-          };
-        }
-
-        // Advance to destination
-        const destInput = findFlightDestinationElement(sanitized.elements);
-        if (destInput) {
-          return {
-            actionId: `act_local_flight_dest_${step}_${Date.now()}`,
-            kind: 'type',
-            targetLocalId: destInput.localId,
-            textToType: destCity,
-            confidence: 0.95,
-            risk: 'safe',
-            rationale: `Entering destination "${destCity}"`
-          };
-        }
-      }
-
-      if (hasTypedDest) {
-        const destSuggestion = findAirportSuggestion(sanitized.elements, destCity, destCode);
-        if (destSuggestion) {
-          return {
-            actionId: `act_local_flight_dest_sel_${step}_${Date.now()}`,
-            kind: 'click',
-            targetLocalId: destSuggestion.localId,
-            confidence: 0.96,
-            risk: 'safe',
-            rationale: `Selecting airport option "${destSuggestion.sanitizedName}" for destination`
-          };
-        }
-
-        const searchBtn = findFlightSearchButton(sanitized.elements);
-        if (searchBtn) {
-          return {
-            actionId: `act_local_flight_search_${step}_${Date.now()}`,
-            kind: 'click',
-            targetLocalId: searchBtn.localId,
-            confidence: 0.96,
-            risk: 'safe',
-            rationale: `Submitting flight search for ${originCity} to ${destCity}`
-          };
-        }
-      }
-
-      // Initial step: origin
-      const originInput = findFlightOriginElement(sanitized.elements);
-      if (originInput && !hasTypedOrigin) {
-        return {
-          actionId: `act_local_flight_orig_${step}_${Date.now()}`,
-          kind: 'type',
-          targetLocalId: originInput.localId,
-          textToType: originCity,
-          confidence: 0.95,
-          risk: 'safe',
-          rationale: `Entering origin "${originCity}"`
-        };
-      }
-    }
-
+    // All legacy hardcoded domain playbooks, bookmarks, and heuristic keyword matchers
+    // are completely bypassed so the central multimodal VLM is the sole decision maker.
     return null;
   }
 
@@ -2169,6 +1115,7 @@ export class RunCoordinator {
     this.lastStaleTargetId = null;
     this.pendingAction = null;
     this.actionHistory = [];
+    this.hasTavilyRecovered = false;
     this.t0_runStart = Date.now();
     this.cumulativeClientLatency = 0;
     this.cumulativeServerLatency = 0;
@@ -2224,33 +1171,48 @@ export class RunCoordinator {
       const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
       if (restrictedCheck.isRestricted) {
         // If tab is on a restricted or blank page (e.g. chrome://newtab, about:blank),
-        // automatically navigate to target site or infer target from prompt!
-        let targetUrl = extractTargetUrlFromGoal(goal);
+        // consult the centralized reasoning model first for the initial navigation proposal!
+        let proposal: ActionProposal | null = null;
+        try {
+          const blankScreenshot = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+          const blankContext: SanitizedContext = {
+            _brand: 'SanitizedContext_Verified',
+            protocolVersion: '1.0',
+            runId: this.currentRunId,
+            captureId: `cap_init_${Date.now()}`,
+            goal,
+            sanitizedScreenshotDataUrl: blankScreenshot,
+            elements: [],
+            pageState: {
+              title: activeTab?.title || 'New Tab',
+              url: activeTab?.url || 'chrome://newtab',
+              viewport: [1280, 800]
+            },
+            maskCount: 0,
+            payloadDigestSha256: 'sha256_init_blank',
+            timestamp: Date.now()
+          };
+          this.transition('sending-sanitized-context', `Step ${step}/${maxSteps}: Transmitting initial tab context`);
+          this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Formulating initial navigation action`);
+          proposal = await this.httpClient.requestReasoningAction(blankContext);
+        } catch (err: any) {
+          console.warn('[PrivaPilot Coordinator] Initial LLM reasoning unavailable on blank tab, using fallback resolution:', err?.message || err);
+        }
+
+        let targetUrl = proposal && proposal.kind === 'navigate' ? (proposal.url || (proposal as any).targetUrl) : undefined;
         if (!targetUrl) {
-          const lowerGoal = (goal || '').toLowerCase();
-          if (lowerGoal.includes('amazon')) {
-            targetUrl = 'https://www.amazon.in';
-          } else if (lowerGoal.includes('flipkart')) {
-            targetUrl = 'https://www.flipkart.com';
-          } else if (lowerGoal.includes('wikipedia') || lowerGoal.includes('wiki')) {
-            targetUrl = 'https://www.wikipedia.org';
-          } else if (lowerGoal.includes('sih') || lowerGoal.includes('smart india hackathon') || lowerGoal.includes('hackathon') || lowerGoal.includes('problem statement') || lowerGoal.includes('spoc') || lowerGoal.includes('submission')) {
-            targetUrl = 'https://sih.gov.in';
-          } else if (lowerGoal.includes('isro') || lowerGoal.includes('chandrayaan') || lowerGoal.includes('gaganyaan') || lowerGoal.includes('aditya') || lowerGoal.includes('satellite') || lowerGoal.includes('rocket') || lowerGoal.includes('launcher') || lowerGoal.includes('mission')) {
-            targetUrl = 'https://www.isro.gov.in';
-          } else if (lowerGoal.includes('github') || lowerGoal.includes('repo')) {
-            targetUrl = 'https://github.com';
-          } else {
-            // Default to Google search so execution NEVER blocks on newtab
-            targetUrl = 'https://www.google.com';
-          }
+          targetUrl = extractTargetUrlFromGoal(goal);
+        }
+        if (!targetUrl) {
+          targetUrl = 'https://www.google.com';
         }
 
         if (targetUrl && typeof this.browser.navigateTab === 'function') {
           hasNavigatedInitially = true;
-          const navAction: ActionProposal = {
+          const navAction: ActionProposal = proposal && proposal.kind === 'navigate' ? proposal : {
             actionId: `act_init_nav_${Date.now()}`,
             kind: 'navigate' as any,
+            url: targetUrl,
             confidence: 1.0,
             risk: 'safe',
             rationale: `Direct navigation from blank tab to target website: ${targetUrl}`,
@@ -2349,7 +1311,8 @@ export class RunCoordinator {
         return this.completeWithResult(res);
       }
 
-      // If on step 1, check if user's goal specifies navigating to a target domain/URL
+      // If on step 1 and the goal contains a target domain/URL to navigate to,
+      // navigate directly to target domain/URL (in a new tab if coming from an existing different site)
       if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === 'function') {
         const targetUrl = extractTargetUrlFromGoal(goal);
         if (targetUrl && activeTab?.url) {
@@ -2796,7 +1759,6 @@ export class RunCoordinator {
 
       const currentEffectiveUrl = sanitized.pageState?.url || activeTab?.url;
       const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, currentEffectiveUrl) : null;
-      const localPlaybookProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, currentEffectiveUrl);
 
       // Smart Zero-Knowledge Local Personal Vault Autofill / Synthetic Demo Data
       const isAutofillGoal = /\b(?:fill|autofill|populate|form)\b/i.test(this.currentGoal || '');
@@ -2975,12 +1937,6 @@ export class RunCoordinator {
         networkRequestMade = false;
         t4_reasoningReceived = Date.now();
         this.transition('validating-action', `Step ${step}/${maxSteps}: Locally resolved form autofill (${localAutofillProposal.batchActions?.length || 0} fields)`);
-      } else if (localPlaybookProposal && localPlaybookProposal.confidence >= 0.9) {
-        proposal = localPlaybookProposal;
-        decisionOrigin = 'local';
-        networkRequestMade = false;
-        t4_reasoningReceived = Date.now();
-        this.transition('validating-action', `Step ${step}/${maxSteps}: Locally resolved via domain playbook (${proposal.kind})`);
       } else {
         this.transition('sending-sanitized-context', `Step ${step}/${maxSteps}: Transmitting sanitized context`);
         this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Awaiting reasoning action`);
@@ -3026,6 +1982,22 @@ export class RunCoordinator {
           (sanitized as any).observedOutcome = this.lastExecutionResult?.message || sanitized.pageState.stateDelta?.observedOutcome || '';
           (sanitized as any).meaningfulProgress = Boolean(sanitized.pageState.stateDelta?.verificationPassed || sanitized.pageState.stateDelta?.urlChanged || Math.abs(sanitized.pageState.stateDelta?.scrollDeltaY || 0) > 2);
           (sanitized as any).recentActionHistory = this.recentActionHistory.slice(-10);
+
+          // Proactive Tavily Web Search Guard:
+          // For document downloads (brochure, pdf, circular, report) or external queries where target isn't in current DOM:
+          const isDocumentGoal = /\b(?:download|brochure|pdf|whitepaper|circular|report|dataset)\b/i.test(this.currentGoal || '');
+          const isUnrelatedSite = /\b(?:youtube\.com|youtu\.be|google\.[a-z.]+|bing\.com|duckduckgo\.com|twitter\.com|x\.com)\b/i.test(activeTab?.url || '');
+          const isFirstPerception = step === 1 || (step === 2 && hasNavigatedInitially);
+          if (isFirstPerception && !this.hasTavilyRecovered && (isDocumentGoal || (isUnrelatedSite && !extractTargetUrlFromGoal(this.currentGoal || '')))) {
+            try {
+              const searchQuery = extractSearchQueryFromGoal(this.currentGoal || '') || this.currentGoal || '';
+              const searchRes = await this.httpClient.searchWeb(searchQuery, 5);
+              if (searchRes?.success && searchRes.results && searchRes.results.length > 0) {
+                (sanitized as any).searchResults = searchRes.results;
+              }
+            } catch (_) {}
+          }
+
           proposal = await this.httpClient.requestReasoningAction(sanitized);
         } catch (err: any) {
           console.warn('[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:', err?.message || err);
@@ -3073,8 +2045,24 @@ export class RunCoordinator {
       // Broadcast proposed action & live model reasoning immediately to sidepanel
       if (this.listeners.onActionProposed) {
         const matchedEl = sanitized.elements.find(e => e.localId === proposal.targetLocalId);
+        let proposalReasoning = proposal.reasoning || (proposal.rationale && !proposal.rationale.includes('[semantically grounded]') ? proposal.rationale : undefined);
+        if (!proposalReasoning) {
+          const targetName = matchedEl?.sanitizedName || proposal.targetLocalId || 'target';
+          if (proposal.kind === 'click') {
+            proposalReasoning = `Clicking "${targetName}" to advance toward goal.`;
+          } else if (proposal.kind === 'type') {
+            proposalReasoning = `Entering "${(proposal as any).textToType || ''}" into ${targetName}.`;
+          } else if (proposal.kind === 'scroll') {
+            proposalReasoning = `Scrolling viewport down to reveal additional page content.`;
+          } else if (proposal.kind === 'navigate') {
+            proposalReasoning = `Navigating browser tab to ${proposal.url || (proposal as any).targetUrl || 'destination'}.`;
+          } else if (proposal.rationale) {
+            proposalReasoning = proposal.rationale;
+          }
+        }
         const enrichedProposal = {
           ...proposal,
+          reasoning: proposalReasoning,
           sanitizedTargetName: matchedEl?.sanitizedName || (proposal as any).elementText || undefined
         };
         this.listeners.onActionProposed(enrichedProposal, this.currentRunId);
@@ -3298,32 +2286,48 @@ export class RunCoordinator {
 
         // 1. Missing target check: User commanded an explicit target (e.g. "Click SIH99999") that does not exist on page
         if (grounding.status === 'no_match' && this.currentTaskContract?.goalPattern === 'click_control') {
-          const errorMsg = `Action rejected: Requested target "${structuredIntent.targetPhrase}" is not present on the current page.`;
-          this.transition('failed-safe', errorMsg);
-          const stepTrace: E2EStepTrace = {
-            step,
-            captureId: sanitized.captureId,
-            pageGeneration: sanitized.captureId,
-            maskCount: sanitized.maskCount,
-            sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
-            decisionOrigin,
-            proposal,
-            riskDecision: 'blocked',
-            confidenceDecision: 'missing_target',
-            executed: false,
-            networkRequestMade,
-            timings: { total: Date.now() - t0_step }
-          };
-          this.stepsTrace.push(stepTrace);
-          return this.completeWithResult({
-            success: false,
-            state: 'failed-safe',
-            error: errorMsg,
-            sanitized,
-            proposal,
-            stepCount: step,
-            steps: this.stepsTrace
-          });
+          if (!this.hasTavilyRecovered) {
+            this.hasTavilyRecovered = true;
+            const fallbackQuery = `${structuredIntent.targetPhrase || this.currentGoal}`.trim();
+            console.log(`[Coordinator] Target "${structuredIntent.targetPhrase}" not found on page. Engaging autonomous Tavily web search: "${fallbackQuery}"`);
+            proposal = {
+              actionId: `act_tavily_fallback_${Date.now()}`,
+              kind: 'web_search',
+              searchQuery: fallbackQuery,
+              confidence: 0.95,
+              risk: 'safe',
+              userApproved: true,
+              rationale: `Target "${structuredIntent.targetPhrase}" was not found on current page. Searching web via Tavily to locate direct resource.`
+            };
+            riskLevel = 'safe';
+          } else {
+            const errorMsg = `Action rejected: Requested target "${structuredIntent.targetPhrase}" is not present on the current page.`;
+            this.transition('failed-safe', errorMsg);
+            const stepTrace: E2EStepTrace = {
+              step,
+              captureId: sanitized.captureId,
+              pageGeneration: sanitized.captureId,
+              maskCount: sanitized.maskCount,
+              sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+              decisionOrigin,
+              proposal,
+              riskDecision: 'blocked',
+              confidenceDecision: 'missing_target',
+              executed: false,
+              networkRequestMade,
+              timings: { total: Date.now() - t0_step }
+            };
+            this.stepsTrace.push(stepTrace);
+            return this.completeWithResult({
+              success: false,
+              state: 'failed-safe',
+              error: errorMsg,
+              sanitized,
+              proposal,
+              stepCount: step,
+              steps: this.stepsTrace
+            });
+          }
         }
 
         // 2. Ambiguity resolution:
@@ -3627,7 +2631,8 @@ export class RunCoordinator {
           : this.actionHistory.some(a => a.kind === 'scroll');
         const isAtTopOfLongPage = Boolean(sm && sm.scrollableBelow && sm.maxScrollTop > 800 && sm.scrollTop < 250);
 
-        if (!hasSelectedRelevantSection && isArticleReadingGoal && !hasScrolledAfterLastClick && isAtTopOfLongPage && !isOnSearchResultsPage) {
+        const isUnrelatedSite = /\b(?:youtube\.com|youtu\.be|google\.[a-z.]+|bing\.com|duckduckgo\.com|twitter\.com|x\.com)\b/i.test(activeTab?.url || '');
+        if (!isUnrelatedSite && !hasSelectedRelevantSection && isArticleReadingGoal && !hasScrolledAfterLastClick && isAtTopOfLongPage && !isOnSearchResultsPage) {
           console.log(`[Coordinator] Grounded reading scroll: Navigated to long article at top; scrolling down smoothly to locate content before finishing.`);
           proposal = {
             actionId: `act_grounded_scroll_${Date.now()}`,
@@ -3832,21 +2837,93 @@ export class RunCoordinator {
         return this.completeWithResult(res);
       }
 
-      // Check repeated action loop
+      // Check repeated action loop & Autonomous Tavily Fallback Recovery
       const isDuplicate = this.isRepeatedAction(proposal, sanitized);
       if (isDuplicate) {
-        const errorMsg = 'Repeated action loop detected: identical action proposed consecutively without progress';
-        this.transition('failed-safe', errorMsg);
-        const res: CoordinatorRunResult = {
-          success: false,
-          state: 'failed-safe',
-          error: errorMsg,
-          sanitized,
-          proposal,
-          stepCount: step,
-          steps: this.stepsTrace
-        };
-        return this.completeWithResult(res);
+        if (!this.hasTavilyRecovered) {
+          this.hasTavilyRecovered = true;
+          this.transition('awaiting-reasoning', '⚠️ In-page navigation dead-end detected. Invoking autonomous Tavily search fallback...');
+          try {
+            const pageDomain = (sanitized.pageState as any)?.domain || (activeTab?.url ? normalizeDomain(activeTab.url) : '');
+            const cleanGoal = (this.currentGoal || '').replace(/^(?:go to|navigate to|open|search for|download|find)\s+/i, '').trim();
+            const searchQuery = pageDomain && !cleanGoal.toLowerCase().includes(pageDomain.split('.')[0])
+              ? `${pageDomain} ${cleanGoal}`
+              : cleanGoal;
+
+            const searchRes = await this.httpClient.searchWeb(searchQuery, 5);
+            if (searchRes?.success && searchRes.results && searchRes.results.length > 0) {
+              const currentUrl = activeTab?.url || '';
+              const topResult = selectBestTavilyResult(searchRes.results, searchQuery, this.currentGoal || '', currentUrl) || searchRes.results[0];
+
+              if (topResult && topResult.url && topResult.url !== currentUrl) {
+                this.transition('executing', `Navigating to target via Tavily search: "${topResult.title}"...`);
+                proposal = {
+                  actionId: `act_tavily_recover_${step}_${Date.now()}`,
+                  kind: 'navigate',
+                  url: topResult.url,
+                  confidence: 0.95,
+                  risk: 'safe',
+                  userApproved: true,
+                  rationale: `Autonomously recovered from repeated in-page action loop via Tavily Search: Navigating directly to "${topResult.title}" (${topResult.url})`
+                };
+                this.actionHistory = [];
+              } else {
+                const errorMsg = 'Repeated action loop detected: identical action proposed consecutively without progress';
+                this.transition('failed-safe', errorMsg);
+                const res: CoordinatorRunResult = {
+                  success: false,
+                  state: 'failed-safe',
+                  error: errorMsg,
+                  sanitized,
+                  proposal,
+                  stepCount: step,
+                  steps: this.stepsTrace
+                };
+                return this.completeWithResult(res);
+              }
+            } else {
+              const errorMsg = 'Repeated action loop detected: identical action proposed consecutively without progress';
+              this.transition('failed-safe', errorMsg);
+              const res: CoordinatorRunResult = {
+                success: false,
+                state: 'failed-safe',
+                error: errorMsg,
+                sanitized,
+                proposal,
+                stepCount: step,
+                steps: this.stepsTrace
+              };
+              return this.completeWithResult(res);
+            }
+          } catch (tavilyErr) {
+            console.warn('[PrivaPilot Coordinator] Tavily fallback failed:', tavilyErr);
+            const errorMsg = 'Repeated action loop detected: identical action proposed consecutively without progress';
+            this.transition('failed-safe', errorMsg);
+            const res: CoordinatorRunResult = {
+              success: false,
+              state: 'failed-safe',
+              error: errorMsg,
+              sanitized,
+              proposal,
+              stepCount: step,
+              steps: this.stepsTrace
+            };
+            return this.completeWithResult(res);
+          }
+        } else {
+          const errorMsg = 'Repeated action loop detected: identical action proposed consecutively without progress';
+          this.transition('failed-safe', errorMsg);
+          const res: CoordinatorRunResult = {
+            success: false,
+            state: 'failed-safe',
+            error: errorMsg,
+            sanitized,
+            proposal,
+            stepCount: step,
+            steps: this.stepsTrace
+          };
+          return this.completeWithResult(res);
+        }
       }
       // Execute action via content script
       this.transition('executing', `Step ${step}/${maxSteps}: Executing '${proposal.kind}' on ${proposal.targetLocalId || 'page'}`);
@@ -4067,6 +3144,44 @@ export class RunCoordinator {
               continue;
             }
           } catch (_) {}
+        }
+
+        if (proposal.kind === 'web_search') {
+          const query = proposal.searchQuery || this.currentGoal || '';
+          this.transition('executing', `Searching web via Tavily: "${query}"...`);
+          try {
+            const searchRes = await this.httpClient.searchWeb(query, 5);
+            if (searchRes?.success && searchRes.results && searchRes.results.length > 0) {
+              const currentUrl = activeTab?.url || '';
+              const top = selectBestTavilyResult(searchRes.results, query, this.currentGoal || '', currentUrl) || searchRes.results[0];
+              this.transition('executing', `Navigating to search result: "${top.title}"...`);
+              proposal = {
+                actionId: `act_web_search_nav_${step}_${Date.now()}`,
+                kind: 'navigate',
+                url: top.url,
+                confidence: 0.95,
+                risk: 'safe',
+                userApproved: true,
+                rationale: `Navigating to top Tavily search result: "${top.title}" (${top.url})`
+              };
+            } else {
+              execResponse = {
+                success: false,
+                message: `Web search for "${query}" returned no results.`
+              };
+              this.recordActionHistory(proposal);
+              await new Promise((r) => setTimeout(r, 600));
+              continue;
+            }
+          } catch (searchErr: any) {
+            execResponse = {
+              success: false,
+              message: `Web search failed: ${searchErr?.message || searchErr}`
+            };
+            this.recordActionHistory(proposal);
+            await new Promise((r) => setTimeout(r, 600));
+            continue;
+          }
         }
 
         if (proposal.kind === 'navigate') {

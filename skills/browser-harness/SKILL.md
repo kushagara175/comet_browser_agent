@@ -24,6 +24,8 @@ skills/
 │   ├── SKILL.md                          # Master guide & architectural index
 │   └── best-agent-skills.md              # Architectural open-source benchmark & analysis
 ├── interaction-skills/
+│   ├── universal-tools-spec.md           # Master specification of all callable agent tools
+│   ├── geospatial-maps.md                # WebGL & 2D canvas map interaction (Bhuvan, Leaflet, OpenLayers)
 │   ├── agent-cursor.md                   # Animated AI Ghost Cursor with Bézier glide
 │   ├── execution-shield.md               # In-page user interaction lock & safety barrier
 │   ├── structured-extraction.md          # Schema-based table & list extractor with pagination
@@ -46,10 +48,11 @@ skills/
 │   ├── tabs.md                           # Multi-tab orchestration & switching
 │   └── uploads-and-downloads.md          # Synthetic file upload via DataTransfer
 └── domain-skills/
+    ├── bhuvan-isro-geoportal.md          # ISRO Bhuvan NextGen maps, pinpointing, layers
+    ├── sih-portal.md                     # SIH 2026 Problem Statements, SPOCs, metrics
     ├── duckduckgo-google.md              # Search engine query & result extraction
     ├── github.md                         # Code search, PRs, issues, repository metrics
     ├── reddit.md                         # Posts, communities, comments, upvotes
-    ├── sih-portal.md                     # SIH 2026 Problem Statements, SPOCs, metrics
     ├── wikipedia.md                      # Encyclopedia lookups & references
     └── youtube.md                        # Video search, playback, metrics
 ```

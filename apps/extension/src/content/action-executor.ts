@@ -305,13 +305,33 @@ export class ActionExecutor {
       };
     }
 
-    // 6. Disabled target validation
-    const isDisabled =
-      (targetEl as any).disabled === true ||
-      targetEl.hasAttribute?.('disabled') ||
-      targetEl.getAttribute?.('aria-disabled') === 'true';
+    // 6. Actionable target resolution & self-healing (containers, WebComponents, child buttons)
+    if (proposal.kind === 'click' || proposal.kind === 'hover') {
+      // Prioritize active clickable child if target is a web component or button container (e.g. YouTube, Material UI, Lit)
+      const actionableChild = (targetEl.querySelector?.(
+        'button:not([disabled]):not([aria-disabled="true"]), a[href], [role="button"]:not([aria-disabled="true"]), button, a, [role="button"]'
+      ) as HTMLElement) || null;
+      if (actionableChild && actionableChild !== targetEl) {
+        targetEl = actionableChild;
+      } else {
+        // If target is an icon, span, svg or wrapper inside a button/link, resolve to parent actionable element
+        const parentBtn = targetEl.closest?.('button, a, [role="button"]') as HTMLElement | null;
+        if (parentBtn && parentBtn !== targetEl) {
+          targetEl = parentBtn;
+        }
+      }
+    }
 
-    if (isDisabled) {
+    // 7. Disabled target validation
+    // In modern Web applications (YouTube, GitHub, Material UI, Twitter), elements like like/subscribe/upvote buttons,
+    // custom cards, or form buttons may have aria-disabled="true" for visual styling or to prompt login/validation.
+    // aria-disabled does NOT stop DOM click dispatch, and should NEVER block user/agent clicks.
+    // For type / select actions, native disabled state prevents user input and is enforced.
+    const isStrictlyDisabled =
+      (targetEl as any).disabled === true ||
+      targetEl.hasAttribute?.('disabled');
+
+    if (isStrictlyDisabled && (proposal.kind === 'type' || proposal.kind === 'select')) {
       return {
         actionId: proposal.actionId,
         success: false,
@@ -397,14 +417,42 @@ export class ActionExecutor {
           }
         }
 
+        const PointerEventCtor = win?.PointerEvent || (typeof PointerEvent !== 'undefined' ? PointerEvent : null);
+        if (PointerEventCtor) {
+          try {
+            targetEl.dispatchEvent(new PointerEventCtor('pointerdown', { ...mouseInit, pointerId: 1, pointerType: 'mouse' }));
+            targetEl.dispatchEvent(new PointerEventCtor('pointerup', { ...mouseInit, pointerId: 1, pointerType: 'mouse' }));
+          } catch (_) {}
+        }
+
         if (MouseEventCtor) {
           targetEl.dispatchEvent(new MouseEventCtor('mousedown', mouseInit));
           targetEl.dispatchEvent(new MouseEventCtor('mouseup', mouseInit));
         }
+
+        // If target has a native disabled attribute during click, temporarily unlock so native .click() dispatches
+        const hadDisabled = targetEl.hasAttribute?.('disabled');
+        if (hadDisabled) {
+          try { targetEl.removeAttribute('disabled'); } catch (_) {}
+        }
+
         if (typeof targetEl.click === 'function') {
           targetEl.click();
         } else if (EventCtor) {
           targetEl.dispatchEvent(new (MouseEventCtor || EventCtor)('click', mouseInit));
+        }
+
+        // Also dispatch to parent if target is nested inside custom element
+        if (targetEl.parentElement && targetEl.parentElement !== targetEl.ownerDocument?.body) {
+          try {
+            if (MouseEventCtor) {
+              targetEl.parentElement.dispatchEvent(new MouseEventCtor('click', mouseInit));
+            }
+          } catch (_) {}
+        }
+
+        if (hadDisabled) {
+          try { targetEl.setAttribute('disabled', ''); } catch (_) {}
         }
 
         return {

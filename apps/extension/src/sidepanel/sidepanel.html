@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Playfair+Display:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="sidepanel.css?v=2.3.7" />
+  <link rel="stylesheet" href="sidepanel.css?v=2.4.2" />
 </head>
 <body>
   <div class="app-container">
@@ -18,6 +18,20 @@
     <!-- VIEW 0: COMET Fullscreen Welcome Screen (First screen on extension open) -->
     <div id="loadingView" class="loading-wrapper comet-splash-wrapper">
       <img src="../../assets/final2.png" alt="COMET" class="comet-splash-img" />
+      <div class="comet-splash-action-container">
+        <button
+          type="button"
+          id="skipSplashBtn"
+          class="specular-button specular-button--sm"
+          style="--sb-radius: 18px; --sb-tint: #ffffff; --sb-tint-opacity: 0.06; --sb-blur: 10px; --sb-text-color: #f5f5f5;"
+          title="Continue to Dashboard"
+        >
+          <span class="specular-button__fx" aria-hidden="true"></span>
+          <span class="specular-button__label">
+            Continue &rarr;
+          </span>
+        </button>
+      </div>
     </div>
 
     <!-- VIEW 1: AI Mission Control HUD (Instant Ready) -->
@@ -70,10 +84,8 @@
             <circle cx="19" cy="12" r="1.5"></circle>
             <circle cx="5" cy="12" r="1.5"></circle>
           </svg>
-          <span>More</span>
-          <svg class="item-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 18 15 12 9 6"></polyline>
-          </svg>
+          <span>More Chats</span>
+          <span class="menu-item-tag">History</span>
         </button>
         <div class="menu-divider"></div>
         <button type="button" id="menuOpenNewTabBtn" class="menu-action-item">
@@ -82,59 +94,62 @@
             <polyline points="15 3 21 3 21 9"></polyline>
             <line x1="10" y1="14" x2="21" y2="3"></line>
           </svg>
-          <span>Continue Chat in New Tab</span>
+          <span>Continue in Tab</span>
+          <span class="menu-item-tag">Window</span>
         </button>
-        <button type="button" id="menuCreateCustomAgentBtn" class="menu-action-item" style="color: #c084fc;">
+        <button type="button" id="menuCreateCustomAgentBtn" class="menu-action-item">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"></path>
             <path d="M12 8v8M8 12h8"></path>
           </svg>
-          <span>Create your custom agent</span>
-          <span class="vault-menu-badge" style="background: rgba(168, 85, 247, 0.2); color: #e9d5ff;">+ NEW</span>
+          <span>Create Custom Agent</span>
+          <span class="menu-item-tag">New</span>
         </button>
-        <button type="button" id="menuPromptLibraryBtn" class="menu-action-item" style="color: #38bdf8;">
+        <button type="button" id="menuPromptLibraryBtn" class="menu-action-item">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7z"></path>
           </svg>
-          <span>Website Prompts &amp; Workflows</span>
-          <span class="vault-menu-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">IDEAS</span>
+          <span>Prompts &amp; Workflows</span>
+          <span class="menu-item-tag">Ideas</span>
         </button>
         <button type="button" id="menuVaultBtn" class="menu-action-item">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
           </svg>
-          <span>Personal Vault &amp; Passwords</span>
-          <span class="vault-menu-badge">🔒 PIN</span>
+          <span>Personal Vault</span>
+          <span class="menu-item-tag">Vault</span>
         </button>
         <button type="button" id="menuPayloadBtn" class="menu-action-item">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="16 18 22 12 16 6"></polyline>
             <polyline points="8 6 2 12 8 18"></polyline>
           </svg>
-          <span>Wire Payload (JSON)</span>
+          <span>Wire Payload</span>
+          <span class="menu-item-tag">JSON</span>
         </button>
         <button type="button" id="menuAuditBtn" class="menu-action-item">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
           </svg>
           <span>Telemetry &amp; Audit Log</span>
+          <span class="menu-item-tag">Audit</span>
         </button>
         <button type="button" id="menuApiPlatformBtn" class="menu-action-item">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
           </svg>
           <span>Developer API &amp; Keys</span>
-          <span class="vault-menu-badge">API</span>
+          <span class="menu-item-tag">API</span>
         </button>
-        <button type="button" id="menuReloadExtensionBtn" class="menu-action-item" style="color: #38bdf8;">
+        <button type="button" id="menuReloadExtensionBtn" class="menu-action-item">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="23 4 23 10 17 10"></polyline>
             <polyline points="1 20 1 14 7 14"></polyline>
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
           </svg>
-          <span>Restart Extension (Hot Reload)</span>
-          <span class="vault-menu-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">RELOAD</span>
+          <span>Restart Extension</span>
+          <span class="menu-item-tag">Reload</span>
         </button>
         <button type="button" id="menuDevToolsBtn" class="menu-action-item">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -142,9 +157,7 @@
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
           </svg>
           <span>Settings &amp; Help</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: auto;">
-            <polyline points="9 18 15 12 9 6"></polyline>
-          </svg>
+          <span class="menu-item-tag">Inspect</span>
         </button>
       </div>
 
@@ -229,33 +242,24 @@
 
                   <!-- Right Action Buttons: Agent pill, Mic/Send button, Close/Stop button -->
                   <div class="chat-bar-right-actions">
-                    <div class="agent-pill-wrapper">
-                      <button type="button" id="beamRotatePill" class="chat-pill-btn beam-pill-btn" title="Select or Switch Agent">
-                        <span id="beamEffectEmoji" class="agent-pill-emoji">⚡</span>
-                        <span id="beamEffectLabel">Comet Core</span>
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                          <polyline points="6 9 12 15 18 9"></polyline>
-                        </svg>
-                      </button>
-                      <!-- Agent Switcher Popover Dropdown -->
-                      <div id="agentSwitcherDropdown" class="agent-switcher-menu hidden">
-                        <div class="agent-menu-header">
-                          <span class="agent-menu-heading">Active Agent</span>
-                          <button type="button" id="closeAgentSwitcherBtn" class="agent-menu-close" title="Close">&times;</button>
-                        </div>
-                        <div class="agent-menu-section-title">Built-In Agents</div>
-                        <div id="builtinAgentsList" class="agent-options-list"></div>
-                        <div class="agent-menu-section-title">Custom Agents</div>
-                        <div id="customAgentsList" class="agent-options-list"></div>
-                        <div class="agent-menu-divider"></div>
-                        <button type="button" id="quickCreateAgentBtn" class="agent-menu-action-btn">
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                            <line x1="12" y1="5" x2="12" y2="19"></line>
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <div class="agent-pill-wrapper glide-select">
+                      <button
+                        type="button"
+                        id="beamRotatePill"
+                        class="glide-select__trigger"
+                        role="combobox"
+                        aria-haspopup="listbox"
+                        aria-expanded="false"
+                        aria-label="Select Agent"
+                        title="Select Agent"
+                      >
+                        <span class="glide-select__label" id="beamEffectLabel">Comet Core</span>
+                        <span class="glide-select__chevron" aria-hidden="true">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
                           </svg>
-                          <span>Create Custom Agent</span>
-                        </button>
-                      </div>
+                        </span>
+                      </button>
                     </div>
                     <button type="button" id="sendBtn" class="send-btn chat-circle-btn beam-send-btn mode-mic" title="Voice Input" aria-label="Voice Input">
                       <svg class="icon-send" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -282,6 +286,24 @@
             <!-- border-beam bloom element -->
             <div data-beam-bloom="true"></div>
           </div>
+
+          <!-- GlideSelect Dropdown Menu (react-bits / Micro-JS-CSS) -->
+          <div
+            id="agentSwitcherDropdown"
+            class="glide-select__menu hidden"
+            data-state="closed"
+            data-side="top"
+            data-align="right"
+          >
+            <div
+              id="glideSelectList"
+              role="listbox"
+              aria-label="Select Agent"
+              class="glide-select__list"
+            >
+              <span id="glideSelectPill" class="glide-select__pill" aria-hidden="true"></span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -302,22 +324,22 @@
             <!-- Left: Raw Local Viewport -->
             <div class="viewport-box raw-box">
               <div class="viewport-header header-raw">
-                <span class="lock-icon">🔒</span>
-                <span class="viewport-title">Local Only — Never Transmitted</span>
+                <span class="viewport-title">Local Raw Capture</span>
+                <span class="menu-item-tag">Local Only</span>
               </div>
               <div class="screen-preview-container">
-                <img id="inspectorRawImage" class="inspector-img" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='100'><rect width='100%' height='100%' fill='%231e293b'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23ef4444' font-family='sans-serif' font-size='9'>Local Raw Capture</text></svg>" alt="Local Raw Screenshot" />
+                <img id="inspectorRawImage" class="inspector-img" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='125' viewBox='0 0 200 125'><rect width='100%' height='100%' fill='%23141416'/><text x='100' y='65' dominant-baseline='middle' text-anchor='middle' fill='%2371717a' font-family='sans-serif' font-size='10' font-weight='500'>Awaiting Page Capture</text></svg>" alt="Local Raw Screenshot" />
               </div>
             </div>
 
             <!-- Right: Sanitized Wire Viewport -->
             <div class="viewport-box sanitized-box">
               <div class="viewport-header header-sanitized">
-                <span class="shield-icon">🛡️</span>
-                <span class="viewport-title">Outgoing Wire Payload</span>
+                <span class="viewport-title">Sanitized Wire View</span>
+                <span class="menu-item-tag">Outgoing</span>
               </div>
               <div class="screen-preview-container">
-                <img id="inspectorSanitizedImage" class="inspector-img" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='100'><rect width='100%' height='100%' fill='%230f172a'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%2338bdf8' font-family='sans-serif' font-size='9'>Sanitized Wire View</text></svg>" alt="Sanitized Wire Screenshot" />
+                <img id="inspectorSanitizedImage" class="inspector-img" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='125' viewBox='0 0 200 125'><rect width='100%' height='100%' fill='%23141416'/><text x='100' y='65' dominant-baseline='middle' text-anchor='middle' fill='%2371717a' font-family='sans-serif' font-size='10' font-weight='500'>Sanitized Wire View</text></svg>" alt="Sanitized Wire Screenshot" />
               </div>
             </div>
           </div>
@@ -325,7 +347,7 @@
           <!-- Summary Metric Cards -->
           <div class="inspector-stats-row">
             <div class="stat-box">
-              <span class="stat-label">DOM Elements</span>
+              <span class="stat-label">Elements</span>
               <span id="statElementsCount" class="stat-value">0</span>
             </div>
             <div class="stat-box">
@@ -333,27 +355,30 @@
               <span id="statMasksCount" class="stat-value">0</span>
             </div>
             <div class="stat-box">
-              <span class="stat-label">Canary Check</span>
-              <span id="statCanaryStatus" class="stat-value text-green">Verified Clean</span>
+              <span class="stat-label">Canary</span>
+              <span id="statCanaryStatus" class="stat-value">Clean</span>
             </div>
             <div class="stat-box">
-              <span class="stat-label">Security Zone</span>
-              <span id="statZoneStatus" class="stat-value text-blue" style="font-size: 9px; text-transform: uppercase;">Public</span>
+              <span class="stat-label">Zone</span>
+              <span id="statZoneStatus" class="stat-value">Public</span>
             </div>
           </div>
 
-          <!-- Mask Category Breakdown (Counts Only, Zero Raw PII Values) -->
+          <!-- Mask Category Breakdown -->
           <div class="mask-breakdown-card">
-            <div class="breakdown-header">Mask Category Distribution (No Sensitive Values)</div>
+            <div class="breakdown-header">
+              <span>Mask Category Distribution</span>
+              <span class="menu-item-tag">Zero Raw PII</span>
+            </div>
             <div id="maskBreakdownList" class="breakdown-chips">
               <span class="empty-breakdown-hint">No masks applied yet. Run an action to inspect redaction.</span>
             </div>
           </div>
 
           <!-- Latency & CPU Performance Telemetry Gauge -->
-          <div class="perf-telemetry-row" style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 10.5px; color: #94a3b8; padding: 6px 10px; background: rgba(15, 23, 42, 0.6); border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.06);">
-            <span>⚡ Local Perception: <strong id="statLatencyValue" style="color: #38bdf8;">~185ms</strong></span>
-            <span>🖥️ CPU Usage: <strong id="statCpuValue" style="color: #4ade80;">&lt; 15% (Optimized)</strong></span>
+          <div class="perf-telemetry-row">
+            <span class="perf-metric">Local Perception: <strong id="statLatencyValue">~185ms</strong></span>
+            <span class="perf-metric">CPU Usage: <strong id="statCpuValue">&lt; 15% (Optimized)</strong></span>
           </div>
         </div>
       </div>
@@ -454,7 +479,7 @@
                 </button>
               </form>
               <div class="vault-lock-hint">
-                <span>💡 Default PIN: <code>1234</code> · Stored 100% on-device</span>
+                <span>Default PIN: <code>1234</code> · Stored 100% on-device</span>
               </div>
             </div>
           </div>
@@ -471,13 +496,29 @@
                     </svg>
                     <span>Back</span>
                   </button>
-                  <span class="vault-icon">🔐</span>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="vault-header-svg">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
                   <span>Personal Vault &amp; Passwords</span>
                 </div>
                 <div class="vault-header-badges">
-                  <span class="vault-security-badge" title="All vault data is stored on-device and never transmitted to LLM servers">🛡️ 100% Local</span>
-                  <button type="button" id="vaultChangePinBtn" class="btn-vault-header-action" title="Change Master PIN">🔑 Change PIN</button>
-                  <button type="button" id="vaultLockBtn" class="btn-vault-header-action btn-lock" title="Lock Personal Vault immediately">🔒 Lock</button>
+                  <span class="vault-security-badge" title="All vault data is stored on-device and never transmitted to LLM servers">100% Local</span>
+                  <button type="button" id="vaultChangePinBtn" class="btn-vault-header-action" title="Change Master PIN">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="7.5" cy="15.5" r="5.5"></circle>
+                      <path d="M12 11l9-9"></path>
+                      <path d="M17 6l2 2"></path>
+                    </svg>
+                    <span>Change PIN</span>
+                  </button>
+                  <button type="button" id="vaultLockBtn" class="btn-vault-header-action btn-lock" title="Lock Personal Vault immediately">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    <span>Lock</span>
+                  </button>
                 </div>
               </div>
               <p class="vault-desc">Universal profile slots and domain-scoped credentials for form filling. All data stays strictly on your local device.</p>
@@ -486,7 +527,7 @@
             <!-- Change PIN Panel -->
             <div id="vaultChangePinModal" class="vault-change-pin-card hidden">
               <div class="change-pin-header">
-                <span class="change-pin-title">🔑 Change Master PIN</span>
+                <span class="change-pin-title">Change Master PIN</span>
                 <button type="button" id="closeChangePinBtn" class="change-pin-close" title="Cancel">✕</button>
               </div>
               <div class="change-pin-form">
@@ -510,8 +551,9 @@
               </div>
             </div>
 
-            <!-- Vault Sub-nav -->
-            <div class="vault-nav">
+            <!-- Vault Sub-nav with Sliding Selection Pill -->
+            <div class="vault-nav" id="vaultNavContainer">
+              <span class="vault-nav-pill" id="vaultNavPill"></span>
               <button type="button" id="vaultNavProfileBtn" class="vault-nav-btn active">Identity Profile</button>
               <button type="button" id="vaultNavCredentialsBtn" class="vault-nav-btn">Site Passwords</button>
               <button type="button" id="vaultNavBackupBtn" class="vault-nav-btn">Backup &amp; Restore</button>
@@ -572,7 +614,12 @@
                   <input type="text" id="vaultNewUsername" placeholder="Username / Email" />
                   <div class="password-input-wrap">
                     <input type="password" id="vaultNewPassword" placeholder="Password" />
-                    <button type="button" class="pwd-toggle-btn" data-target="vaultNewPassword" title="Show/Hide Password">👁️</button>
+                    <button type="button" class="pwd-toggle-btn" data-target="vaultNewPassword" title="Show/Hide Password">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    </button>
                   </div>
                   <button type="button" id="vaultAddCredBtn" class="btn-secondary">+ Add Login</button>
                 </div>
@@ -588,7 +635,13 @@
             <div id="vaultBackupSection" class="vault-section hidden">
               <div class="backup-card">
                 <div class="backup-card-header">
-                  <div class="backup-icon">💾</div>
+                  <div class="backup-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                      <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                      <polyline points="7 3 7 8 15 8"></polyline>
+                    </svg>
+                  </div>
                   <div>
                     <h3 class="backup-title">Export Vault to Device</h3>
                     <p class="backup-desc">Safely download an encrypted backup of your Identity Profile and saved credentials as a <code>.json</code> file to your local computer.</p>
@@ -606,7 +659,13 @@
 
               <div class="backup-card">
                 <div class="backup-card-header">
-                  <div class="backup-icon">📥</div>
+                  <div class="backup-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="17 8 12 3 7 8"></polyline>
+                      <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                  </div>
                   <div>
                     <h3 class="backup-title">Restore Vault from Device</h3>
                     <p class="backup-desc">Restore your Identity Profile and credentials from a previously exported PrivaPilot <code>.json</code> backup file.</p>
@@ -1000,7 +1059,8 @@ You are an aerospace mission researcher. When inspecting space agency portals or
   </div>
 
   <script src="waves-shader.js"></script>
-  <script type="module" src="sidepanel.js?v=2.4.0"></script>
+  <script src="specular-button.js"></script>
+  <script type="module" src="sidepanel.js?v=2.4.2"></script>
 </body>
 </html>
 

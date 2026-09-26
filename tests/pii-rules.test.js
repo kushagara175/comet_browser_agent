@@ -119,6 +119,49 @@ test('DOM Semantic Analyzer - Catches Form Elements and Autocomplete Tokens', ()
   assert.strictEqual(safeDecision.isSensitive, false);
 });
 
+test('DOM sensitivity distinguishes public controls from sensitive fields and pasted IDs', () => {
+  const safe = [
+    { tagName: 'input', type: 'search', name: 'username', placeholder: 'Search by Institute Name', value: 'IIT Delhi' },
+    { tagName: 'input', type: 'text', name: 'college_filter', placeholder: 'Find college', value: 'Delhi' },
+    { tagName: 'input', type: 'text', name: 'city', value: 'Mumbai' },
+    { tagName: 'a', ariaLabel: 'CONTACT US', name: 'phone_number' },
+    { tagName: 'button', ariaLabel: 'Search', name: 'password' },
+    { tagName: 'select', name: 'phone_number', value: 'Select State' },
+    { tagName: 'textarea', placeholder: 'Know Your SPOC', value: 'ISRO' }
+  ];
+  for (const descriptor of safe) {
+    assert.equal(analyzeDomElementSensitivity(descriptor).isSensitive, false, JSON.stringify(descriptor));
+  }
+
+  for (const [descriptor, category] of [
+    [{ tagName: 'input', type: 'password' }, 'password'],
+    [{ tagName: 'input', type: 'email' }, 'email'],
+    [{ tagName: 'input', type: 'tel' }, 'phone'],
+    [{ tagName: 'input', autocomplete: 'section-checkout cc-number' }, 'credit_card'],
+    [{ tagName: 'input', autocomplete: 'cc-csc' }, 'cvv'],
+    [{ tagName: 'input', autocomplete: 'bday' }, 'date_of_birth'],
+    [{ tagName: 'input', autocomplete: 'one-time-code' }, 'auth_code'],
+    [{ tagName: 'input', autocomplete: 'current-password' }, 'password'],
+    [{ tagName: 'input', name: 'cardNumber' }, 'credit_card'],
+    [{ tagName: 'input', id: 'bankAccountNumber' }, 'bank_account'],
+    [{ tagName: 'input', placeholder: 'Enter Aadhaar Number' }, 'national_id'],
+    [{ tagName: 'textarea', name: 'patient_diagnosis' }, 'uninspectable'],
+    [{ tagName: 'input', type: 'search', value: '4532 0150 1234 5671' }, 'credit_card'],
+    [{ tagName: 'input', type: 'search', value: '4532 8901 2342' }, 'national_id']
+  ]) {
+    assert.equal(analyzeDomElementSensitivity(descriptor).category, category, JSON.stringify(descriptor));
+  }
+  assert.equal(analyzeDomElementSensitivity({ tagName: 'input', type: 'search', value: '4532 8901 2345' }).isSensitive, false);
+  assert.equal(analyzeDomElementSensitivity({ tagName: 'input', type: 'search', value: '4532 0150 1234 5679' }).isSensitive, false);
+});
+
+test('DOB labels redact dates but public launch dates stay visible', () => {
+  assert.equal(scanTextForPII('Launched on 14 July 2023').some(m => m.category === 'date_of_birth'), false);
+  assert.equal(scanTextForPII('SIH 2026').some(m => m.category === 'date_of_birth'), false);
+  assert.equal(scanTextForPII('DOB: 14 July 2003').some(m => m.category === 'date_of_birth'), true);
+  assert.equal(scanTextForPII('Birth Date: 14-07-2003').some(m => m.category === 'date_of_birth'), true);
+});
+
 test('Text Scrubber - Replaces Sensitive Data with Clean Token Masks', () => {
   const input = 'Send report to alex@enterprise.local or call +91 9876543210';
   const scrubbed = scrubText(input);

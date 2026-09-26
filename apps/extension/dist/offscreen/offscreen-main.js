@@ -14079,32 +14079,26 @@ as ORT format: ${n}`);
     "diagnosis",
     "prescription",
     "patient",
+    "patient_notes",
     "health",
     "doctor_note",
     "clinical",
     // Phone & Mobile
     "phone",
     "mobile",
-    "contact",
     "tel",
     "cell",
     "phonenumber",
     "phone_number",
-    "usernumber",
-    "user_number",
     "mobile_number",
     "contact_number",
     "cellphone",
     // Address & Location
     "address",
-    "street",
-    "city",
-    "state",
-    "zip",
+    "street_address",
     "zipcode",
     "pincode",
     "pin_code",
-    "postal",
     "postal_code",
     "currentaddress",
     "permanentaddress",
@@ -14112,28 +14106,20 @@ as ORT format: ${n}`);
     "permanent_address",
     // Date of Birth
     "dob",
-    "birth",
+    "birth_date",
     "birthday",
     "bday",
     "dateofbirth",
     "date_of_birth",
     // Name & Identity
-    "firstname",
-    "lastname",
-    "fullname",
-    "name",
-    "fname",
-    "lname",
-    "first_name",
-    "last_name",
-    "user_name",
-    "applicant_name",
-    // Account Handles
+    // Account login identifiers, not generic public name/user controls
     "username",
+    "user_name",
+    "login_id",
+    "login_name",
     "user_id",
     "userid",
-    "user_handle",
-    "user_profile"
+    "user_handle"
   ];
   var SENSITIVE_AUTOCOMPLETE_VALUES = [
     "current-password",
@@ -14475,7 +14461,9 @@ as ORT format: ${n}`);
         const start = match.index;
         const end = match.index + match[0].length;
         const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
-        if (!alreadyCovered) {
+        const prefix = text.slice(Math.max(0, start - 40), start);
+        const hasBirthLabel = /(?:^|[\s([{,;])(?:dob|date\s+of\s+birth|birth\s+date|birthday|bday)\s*[:=\-]?\s*$/i.test(prefix);
+        if (!alreadyCovered && hasBirthLabel) {
           matches.push({
             category: "date_of_birth",
             startIndex: start,
@@ -14524,133 +14512,102 @@ as ORT format: ${n}`);
   }
 
   // ../../packages/pii-rules/dist/dom-semantic.js
+  var SAFE = { isSensitive: false, confidence: 1 };
+  var SEARCH_TERMS = /(?:^|[^a-z0-9])(?:search|filter|find|query|institute|college|topic|keyword)(?:$|[^a-z0-9])/i;
+  var COMPACT_IDENTIFIERS = [
+    [/^(?:cardnumber|creditcardnumber|debitcardnumber|ccnumber|ccnum)\d*$/i, "credit_card"],
+    [/^(?:accountnumber|bankaccountnumber|bankaccount)\d*$/i, "bank_account"],
+    [/^(?:phonenumber|mobilenumber|contactnumber)\d*$/i, "phone"],
+    [/^(?:dateofbirth|birthdate|dob)\d*$/i, "date_of_birth"],
+    [/^(?:username|loginid|userid)\d*$/i, "username"],
+    [/^(?:apikey|authkey|accesskey|accesstoken|secretkey)\d*$/i, "token"],
+    [/^(?:ssn|aadhaar(?:number)?|aadhar(?:number)?|pannumber|socialsecuritynumber)\d*$/i, "national_id"]
+  ];
+  var SENSITIVE_LABELS = [
+    [/\b(?:password|passcode|passwd|pwd|current password|new password)\b/i, "password"],
+    [/\b(?:one time (?:code|password)|otp|2fa|mfa|verification code|auth(?:entication)? code)\b/i, "auth_code"],
+    [/\b(?:cvv|cvc|card security code|security code)\b/i, "cvv"],
+    [/\b(?:credit card|debit card|card number|card no|cc num|payment card)\b/i, "credit_card"],
+    [/\b(?:aadhaar|aadhar|ssn|social security(?: number)?|pan (?:number|no)|permanent account number|national id)\b/i, "national_id"],
+    [/\b(?:bank account|account number|account no|iban|ifsc|routing number)\b/i, "bank_account"],
+    [/\b(?:diagnosis|prescription|patient (?:notes?|record)|medical (?:notes?|history|record)|health (?:diagnosis|record)|clinical (?:notes?|diagnosis)|doctor (?:notes?|diagnosis))\b/i, "uninspectable"],
+    [/\b(?:date of birth|birth date|birthday|dob|bday)\b/i, "date_of_birth"],
+    [/\b(?:email|e mail|email address)\b/i, "email"],
+    [/\b(?:phone (?:number|no)|mobile (?:number|no)|telephone number|contact number|cellphone)\b/i, "phone"],
+    [/\b(?:street address|postal address|home address|permanent address|current address|pin code|pincode|postal code|zipcode)\b/i, "address"],
+    [/\b(?:username|user name|user id|login id|login name|user handle)\b/i, "username"],
+    [/\b(?:api key|auth key|access token|secret key|secret canary|canary)\b/i, "token"]
+  ];
+  function decision(category, reason) {
+    return { isSensitive: true, category, reason, confidence: 0.95 };
+  }
   function analyzeDomElementSensitivity(desc) {
-    const type = (desc.type || "").toLowerCase();
-    const autocomplete = (desc.autocomplete || "").toLowerCase();
-    const name2 = (desc.name || "").toLowerCase();
-    const id2 = (desc.id || "").toLowerCase();
-    const placeholder = (desc.placeholder || "").toLowerCase();
-    const ariaLabel = (desc.ariaLabel || "").toLowerCase();
-    const labelText = (desc.associatedLabelText || "").toLowerCase();
-    if (type === "password") {
-      return {
-        isSensitive: true,
-        category: "password",
-        reason: 'input[type="password"]',
-        confidence: 1
-      };
+    const tag = desc.tagName?.toLowerCase();
+    if (tag !== "input" && tag !== "textarea")
+      return SAFE;
+    const type = (desc.type || "").trim().toLowerCase();
+    if (tag === "input" && ["button", "submit", "reset", "image", "checkbox", "radio", "file", "hidden"].includes(type))
+      return SAFE;
+    if (type === "password")
+      return decision("password", 'input[type="password"]');
+    if (type === "email")
+      return decision("email", 'input[type="email"]');
+    if (type === "tel")
+      return decision("phone", 'input[type="tel"]');
+    const autocompleteTokens = (desc.autocomplete || "").toLowerCase().split(/\s+/);
+    for (const token of autocompleteTokens) {
+      if (!SENSITIVE_AUTOCOMPLETE_VALUES.includes(token))
+        continue;
+      let category = "password";
+      if (token === "cc-csc")
+        category = "cvv";
+      else if (token.startsWith("cc-"))
+        category = "credit_card";
+      else if (token.startsWith("bday"))
+        category = "date_of_birth";
+      else if (token === "one-time-code")
+        category = "auth_code";
+      else if (token.startsWith("tel"))
+        category = "phone";
+      else if (token === "email")
+        category = "email";
+      else if (token.includes("address") || token === "postal-code")
+        category = "address";
+      else if (token.includes("name") || token === "username")
+        category = "username";
+      return decision(category, `autocomplete="${token}"`);
     }
-    for (const autoVal of SENSITIVE_AUTOCOMPLETE_VALUES) {
-      if (autocomplete.includes(autoVal)) {
-        let cat = "password";
-        if (autoVal === "cc-csc")
-          cat = "cvv";
-        else if (autoVal.startsWith("cc-"))
-          cat = "credit_card";
-        else if (autoVal.startsWith("bday"))
-          cat = "date_of_birth";
-        else if (autoVal === "one-time-code")
-          cat = "auth_code";
-        else if (autoVal.startsWith("tel"))
-          cat = "phone";
-        else if (autoVal.includes("address") || autoVal.includes("postal-code"))
-          cat = "address";
-        else if (autoVal.includes("name") || autoVal === "username")
-          cat = "username";
-        else if (autoVal === "email")
-          cat = "email";
-        return {
-          isSensitive: true,
-          category: cat,
-          reason: `autocomplete="${autoVal}"`,
-          confidence: 1
-        };
+    const value = typeof desc.value === "string" ? desc.value.trim() : "";
+    if (value) {
+      const match = scanTextForPII(value)[0];
+      if (match)
+        return decision(match.category, `live value matches PII (${match.category})`);
+    }
+    const searchHints = [desc.name, desc.id, desc.placeholder, desc.ariaLabel].map((s) => (s || "").replace(/([a-z\d])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " "));
+    if (type === "search" || searchHints.some((hint) => SEARCH_TERMS.test(hint)))
+      return SAFE;
+    for (const [attribute, raw] of Object.entries({ name: desc.name, id: desc.id, placeholder: desc.placeholder, label: desc.associatedLabelText, aria: desc.ariaLabel })) {
+      const normalized = (raw || "").replace(/([a-z\d])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
+      for (const [pattern, category] of SENSITIVE_LABELS) {
+        if (pattern.test(normalized))
+          return decision(category, `sensitive ${attribute} field`);
       }
-    }
-    if (type === "email" || autocomplete === "email") {
-      return {
-        isSensitive: true,
-        category: "email",
-        reason: "type/autocomplete email",
-        confidence: 0.95
-      };
-    }
-    if (type === "tel" || autocomplete === "tel") {
-      return {
-        isSensitive: true,
-        category: "phone",
-        reason: "type/autocomplete tel",
-        confidence: 0.95
-      };
-    }
-    const combinedTokens = `${name2} ${id2} ${placeholder} ${ariaLabel} ${labelText}`.replace(/([a-z\d])([A-Z])/g, "$1 $2").toLowerCase();
-    for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
-      const regex = new RegExp(`\\b${keyword}\\b|_${keyword}|${keyword}_`, "i");
-      if (regex.test(combinedTokens) || combinedTokens.includes("secret_canary") || combinedTokens.includes("canary")) {
-        let cat = "token";
-        if (keyword.includes("password") || keyword.includes("passcode") || keyword.includes("pwd"))
-          cat = "password";
-        else if (keyword.includes("card") || keyword.includes("cc_"))
-          cat = "credit_card";
-        else if (keyword.includes("cvv") || keyword.includes("cvc"))
-          cat = "cvv";
-        else if (keyword.includes("email") || keyword.includes("mail"))
-          cat = "email";
-        else if (keyword.includes("phone") || keyword.includes("mobile") || keyword.includes("contact") || keyword.includes("tel") || keyword.includes("cell") || keyword.includes("usernumber"))
-          cat = "phone";
-        else if (keyword.includes("pan"))
-          cat = "national_id";
-        else if (keyword.includes("aadhaar") || keyword.includes("aadhar"))
-          cat = "national_id";
-        else if (keyword.includes("ssn") || keyword.includes("social_security"))
-          cat = "national_id";
-        else if (keyword.includes("bank") || keyword.includes("ifsc") || keyword.includes("iban"))
-          cat = "bank_account";
-        else if (keyword.includes("otp") || keyword.includes("2fa") || keyword.includes("mfa"))
-          cat = "auth_code";
-        else if (keyword.includes("medical") || keyword.includes("diagnosis") || keyword.includes("prescription") || keyword.includes("patient") || keyword.includes("health") || keyword.includes("doctor_note") || keyword.includes("clinical"))
-          cat = "uninspectable";
-        else if (keyword.includes("address") || keyword.includes("street") || keyword.includes("city") || keyword.includes("state") || keyword.includes("zip") || keyword.includes("postal") || keyword.includes("pincode"))
-          cat = "address";
-        else if (keyword.includes("dob") || keyword.includes("birth") || keyword.includes("bday"))
-          cat = "date_of_birth";
-        else if (keyword.includes("name") || keyword.includes("fname") || keyword.includes("lname") || keyword.includes("user") || keyword.includes("applicant"))
-          cat = "username";
-        return {
-          isSensitive: true,
-          category: cat,
-          reason: `token match: "${keyword}"`,
-          confidence: 0.95
-        };
-      }
-    }
-    if (desc.value && typeof desc.value === "string") {
-      const trimmedVal = desc.value.trim();
-      if (trimmedVal.length > 0) {
-        const piiMatches = scanTextForPII(trimmedVal);
-        if (piiMatches.length > 0) {
-          return {
-            isSensitive: true,
-            category: piiMatches[0].category,
-            reason: `live value matches PII (${piiMatches[0].category})`,
-            confidence: 0.95
-          };
+      if (attribute === "name" || attribute === "id") {
+        for (const [pattern, category] of COMPACT_IDENTIFIERS) {
+          if (pattern.test((raw || "").trim()))
+            return decision(category, `sensitive ${attribute} field`);
         }
-        const isSearchBox = combinedTokens.includes("search") || combinedTokens.includes("filter") || combinedTokens.includes("find") || type === "search";
-        if (!isSearchBox && (desc.tagName === "textarea" || desc.tagName === "input" && type !== "submit" && type !== "button" && type !== "checkbox" && type !== "radio")) {
-          return {
-            isSensitive: true,
-            category: "username",
-            reason: `live input value in form field: "${desc.name || desc.id || desc.placeholder || "input"}"`,
-            confidence: 0.85
-          };
+        for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
+          const words = keyword.replace(/_/g, " ");
+          if (new RegExp(`(?:^|[^a-z0-9])${words}(?:$|[^a-z0-9])`, "i").test(normalized)) {
+            const category = SENSITIVE_LABELS.find(([pattern]) => pattern.test(words))?.[1];
+            if (category)
+              return decision(category, `sensitive ${attribute} field`);
+          }
         }
       }
     }
-    return {
-      isSensitive: false,
-      confidence: 1
-    };
+    return SAFE;
   }
 
   // ../../packages/pii-rules/dist/scrubber.js
@@ -14755,6 +14712,523 @@ as ORT format: ${n}`);
     return merged;
   }
 
+  // ../../packages/protocol/dist/web-directory.js
+  var INDIAN_GOVERNMENT_PORTALS = [
+    // 1. Space, Geosciences & Deep Tech
+    {
+      id: "isro",
+      name: "ISRO - Indian Space Research Organisation",
+      url: "https://www.isro.gov.in",
+      category: "space_and_science",
+      keywords: ["isro", "space", "chandrayaan", "gaganyaan", "aditya", "rocket", "satellite", "pslv", "gslv", "lvm3"],
+      description: "Official portal of ISRO with space missions, launchers, and scientific archives.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "bhuvan",
+      name: "Bhuvan - Indian Geoportal of ISRO",
+      url: "https://bhuvan.nrsc.gov.in",
+      category: "space_and_science",
+      keywords: ["bhuvan", "geoportal", "isro map", "bhuvan maps", "satellite imagery", "thematic layers", "gis india", "2d 3d map"],
+      description: "National satellite mapping, 2D/3D visualization, disaster monitoring and GIS services.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "bhuvan_ngmaps",
+      name: "Bhuvan NextGen 2D/3D Interactive Map Viewer",
+      url: "https://bhuvan.nrsc.gov.in/ngmaps",
+      category: "space_and_science",
+      keywords: ["bhuvan ngmaps", "ngmaps", "bhuvan nextgen", "bhuvan viewer", "satellite map viewer"],
+      description: "High-resolution interactive satellite map viewer with geospatial location search.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "mosdac",
+      name: "MOSDAC - Meteorological & Oceanographic Satellite Data Archival Centre",
+      url: "https://mosdac.gov.in",
+      category: "space_and_science",
+      keywords: ["mosdac", "weather satellite", "cyclone tracking", "oceanography", "isro weather"],
+      description: "Real-time weather satellite feeds, cyclone alerts, and climate data.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "vedas",
+      name: "VEDAS - Visualisation of Earth Observation Data and Archival System",
+      url: "https://vedas.sac.gov.in",
+      category: "space_and_science",
+      keywords: ["vedas", "sac", "earth observation", "environmental monitoring", "vegetation index"],
+      description: "Space Applications Centre portal for geo-spatial analytics and environmental research.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "bhoonidhi",
+      name: "Bhoonidhi - Open Earth Observation Data Hub",
+      url: "https://bhoonidhi.nrsc.gov.in",
+      category: "space_and_science",
+      keywords: ["bhoonidhi", "nrsc data", "satellite download", "remote sensing data", "irs data"],
+      description: "National Remote Sensing Centre portal for ordering and downloading free satellite products.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "drdo",
+      name: "DRDO - Defence Research and Development Organisation",
+      url: "https://www.drdo.gov.in",
+      category: "space_and_science",
+      keywords: ["drdo", "defence research", "missiles", "drdo recruitment", "rac drdo"],
+      description: "Premier defense R&D agency portal for technology, laboratories, and recruitment.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "dst",
+      name: "DST - Department of Science and Technology",
+      url: "https://dst.gov.in",
+      category: "space_and_science",
+      keywords: ["dst", "science and technology", "research grants", "inspire fellowship", "serb"],
+      description: "National research funding, scientific fellowships, and technology incubation.",
+      isGovernmentIndia: true
+    },
+    // 2. Education, Hackathons & Youth Innovation
+    {
+      id: "sih",
+      name: "Smart India Hackathon (SIH)",
+      url: "https://sih.gov.in",
+      category: "education_and_hackathons",
+      keywords: ["sih", "smart india hackathon", "problem statements", "know your spoc", "sih 2026", "sih registration"],
+      description: "World's biggest open innovation hackathon by MoE and AICTE.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "aicte",
+      name: "AICTE - All India Council for Technical Education",
+      url: "https://www.aicte-india.org",
+      category: "education_and_hackathons",
+      keywords: ["aicte", "technical education", "engineering colleges", "approval process", "aicte scholarships"],
+      description: "National council governing technical education and university accreditations.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "ugc",
+      name: "UGC - University Grants Commission",
+      url: "https://www.ugc.gov.in",
+      category: "education_and_hackathons",
+      keywords: ["ugc", "university grants", "net exam", "higher education", "college recognition"],
+      description: "Higher education regulator and funding authority in India.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "swayam",
+      name: "SWAYAM - Free Online Education by Government of India",
+      url: "https://swayam.gov.in",
+      category: "education_and_hackathons",
+      keywords: ["swayam", "free online courses", "nptel swayam", "mooc india", "swayam certification"],
+      description: "National online education platform offering free university and school courses.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "nptel",
+      name: "NPTEL - National Programme on Technology Enhanced Learning",
+      url: "https://nptel.ac.in",
+      category: "education_and_hackathons",
+      keywords: ["nptel", "iit courses", "engineering online", "nptel certificate", "iit madras online"],
+      description: "IIT and IISc joint initiative offering accredited engineering courses.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "nsp",
+      name: "National Scholarship Portal (NSP)",
+      url: "https://scholarships.gov.in",
+      category: "education_and_hackathons",
+      keywords: ["nsp", "scholarships", "national scholarship", "post matric scholarship", "pre matric"],
+      description: "One-stop portal for Central and State government student scholarship schemes.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "diksha",
+      name: "DIKSHA - National Digital Platform for Teachers and Students",
+      url: "https://diksha.gov.in",
+      category: "education_and_hackathons",
+      keywords: ["diksha", "ncert digital", "school textbooks", "teacher training", "cbse material"],
+      description: "Digital infrastructure for school education with QR-coded textbooks and lessons.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "samarth",
+      name: "Samarth eGov - Higher Education Enterprise Portal",
+      url: "https://samarth.edu.in",
+      category: "education_and_hackathons",
+      keywords: ["samarth", "samarth edu", "university admission", "cuet admission", "higher education governance"],
+      description: "Unified information management system for central and state universities.",
+      isGovernmentIndia: true
+    },
+    // 3. Citizen Services, Identity & Digital Public Infrastructure
+    {
+      id: "india_gov",
+      name: "National Portal of India",
+      url: "https://www.india.gov.in",
+      category: "citizen_services_and_identity",
+      keywords: ["india gov", "national portal", "government services", "forms", "citizen services"],
+      description: "Single-entry portal for all Government of India services, schemes, and directories.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "mygov",
+      name: "MyGov India - Citizen Engagement Platform",
+      url: "https://www.mygov.in",
+      category: "citizen_services_and_identity",
+      keywords: ["mygov", "citizen engagement", "quizzes", "polls", "volunteer", "pm talk"],
+      description: "Platform for citizen participation in government policymaking and national initiatives.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "digilocker",
+      name: "DigiLocker - National Digital Document Wallet",
+      url: "https://www.digilocker.gov.in",
+      category: "citizen_services_and_identity",
+      keywords: ["digilocker", "digital locker", "aadhaar download", "marksheet", "driving license download", "rc download"],
+      description: "Cloud storage wallet for accessing verified digital driving licenses, marksheets, and identity cards.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "uidai",
+      name: "UIDAI - Unique Identification Authority of India (Aadhaar)",
+      url: "https://uidai.gov.in",
+      category: "citizen_services_and_identity",
+      keywords: ["uidai", "aadhaar", "download aadhaar", "update aadhaar", "myaadhaar", "aadhaar status"],
+      description: "Official portal for 12-digit Aadhaar card generation, updates, and biometric authentication.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "umang",
+      name: "UMANG - Unified Mobile Application for New-age Governance",
+      url: "https://web.umang.gov.in",
+      category: "citizen_services_and_identity",
+      keywords: ["umang", "umang portal", "pan card status", "epfo umang", "gas booking umang"],
+      description: "Unified interface offering 1,200+ Central and State government services on a single dashboard.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "apisetu",
+      name: "API Setu - Open API Exchange for Digital Governance",
+      url: "https://apisetu.gov.in",
+      category: "citizen_services_and_identity",
+      keywords: ["api setu", "government api", "developer portal", "open data api", "consent api"],
+      description: "National API platform enabling secure data exchange between government bodies and startups.",
+      isGovernmentIndia: true
+    },
+    // 4. Taxes, Finance, Corporate Affairs & Banking
+    {
+      id: "incometax",
+      name: "Income Tax e-Filing Portal",
+      url: "https://www.incometax.gov.in",
+      category: "finance_tax_and_corporate",
+      keywords: ["income tax", "itr", "file itr", "tax refund", "form 16", "pan aadhaar link", "e-filing"],
+      description: "Official portal for filing annual income tax returns, checking refunds, and verifying PAN.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "gst",
+      name: "GST - Goods and Services Tax Portal",
+      url: "https://www.gst.gov.in",
+      category: "finance_tax_and_corporate",
+      keywords: ["gst", "goods and services tax", "gst return", "gstr 1", "gstr 3b", "gst registration", "e-way bill"],
+      description: "Unified indirect tax portal for taxpayer registration, returns filing, and tax payments.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "mca",
+      name: "MCA21 - Ministry of Corporate Affairs",
+      url: "https://www.mca.gov.in",
+      category: "finance_tax_and_corporate",
+      keywords: ["mca", "mca21", "company registration", "cin lookup", "din lookup", "roc filing", "annual return"],
+      description: "Official portal for registering private/public companies, LLP filings, and director details.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "gem",
+      name: "GeM - Government e-Marketplace",
+      url: "https://gem.gov.in",
+      category: "finance_tax_and_corporate",
+      keywords: ["gem", "government emarketplace", "tenders", "government procurement", "gem portal vendor"],
+      description: "National public procurement portal for government ministries, departments, and PSUs.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "epfindia",
+      name: "EPFO - Employees Provident Fund Organisation",
+      url: "https://www.epfindia.gov.in",
+      category: "finance_tax_and_corporate",
+      keywords: ["epfo", "pf balance", "uan portal", "provident fund", "epfo claim", "passbook download"],
+      description: "Provident fund management, universal account number (UAN) passbooks, and retirement claims.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "esic",
+      name: "ESIC - Employees State Insurance Corporation",
+      url: "https://www.esic.gov.in",
+      category: "finance_tax_and_corporate",
+      keywords: ["esic", "esi portal", "medical benefits", "esic pehchan", "employee insurance"],
+      description: "Social security and healthcare organization for Indian workers and their families.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "rbi",
+      name: "Reserve Bank of India (RBI)",
+      url: "https://www.rbi.org.in",
+      category: "finance_tax_and_corporate",
+      keywords: ["rbi", "central bank", "repo rate", "banking ombudsman", "currency", "monetary policy"],
+      description: "India's central bank governing monetary policy, currency issuance, and banking regulations.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "sebi",
+      name: "Securities and Exchange Board of India (SEBI)",
+      url: "https://www.sebi.gov.in",
+      category: "finance_tax_and_corporate",
+      keywords: ["sebi", "stock market regulator", "ipo approval", "mutual fund rules", "scores complaints"],
+      description: "Regulatory body governing capital markets, stock exchanges, and mutual funds.",
+      isGovernmentIndia: true
+    },
+    // 5. Transport, Railways, Highways & Aviation
+    {
+      id: "irctc",
+      name: "IRCTC - Next Generation eTicketing System",
+      url: "https://www.irctc.co.in",
+      category: "transport_and_railways",
+      keywords: ["irctc", "train ticket", "book train", "railway booking", "tatkal ticket", "pnr status"],
+      description: "Official Indian Railways portal for booking train tickets, checking PNR status, and catering.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "parivahan",
+      name: "Parivahan Sewa - Ministry of Road Transport and Highways",
+      url: "https://parivahan.gov.in",
+      category: "transport_and_railways",
+      keywords: ["parivahan", "driving licence", "dl status", "rc status", "sarathi", "vahan", "echallan"],
+      description: "National portal for driving license tests, vehicle registration (RC), and traffic e-challan payments.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "digiyatra",
+      name: "DigiYatra - Facial Recognition Seamless Air Travel",
+      url: "https://www.digiyatra.com",
+      category: "transport_and_railways",
+      keywords: ["digiyatra", "digi yatra", "airport checkin", "paperless boarding", "facial biometric airport"],
+      description: "Biometric, contactless paperless boarding process for domestic air passengers in India.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "nhai",
+      name: "NHAI - National Highways Authority of India",
+      url: "https://nhai.gov.in",
+      category: "transport_and_railways",
+      keywords: ["nhai", "national highways", "fastag recharge", "toll plazas", "expressways"],
+      description: "National agency responsible for building, operating, and tolling expressways across India.",
+      isGovernmentIndia: true
+    },
+    // 6. Passports, Visas & Consular Services
+    {
+      id: "passport",
+      name: "Passport Seva - Ministry of External Affairs",
+      url: "https://www.passportindia.gov.in",
+      category: "passports_and_external_affairs",
+      keywords: ["passport", "passport seva", "apply passport", "passport appointment", "tatkal passport", "police verification"],
+      description: "Official portal for applying for fresh passports, renewals, and police clearance certificates.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "evisa",
+      name: "Indian e-Visa Official Portal",
+      url: "https://indianvisaonline.gov.in",
+      category: "passports_and_external_affairs",
+      keywords: ["evisa", "indian visa", "visa on arrival", "tourist visa india", "business visa"],
+      description: "Official government portal for foreign nationals applying for electronic tourist and business visas.",
+      isGovernmentIndia: true
+    },
+    // 7. Health, Telemedicine & Social Welfare
+    {
+      id: "pmjay",
+      name: "Ayushman Bharat - PM-JAY (National Health Authority)",
+      url: "https://pmjay.gov.in",
+      category: "health_and_welfare",
+      keywords: ["ayushman bharat", "pmjay", "health card", "5 lakh insurance", "ayushman hospital list"],
+      description: "World\u2019s largest health insurance scheme providing \u20B95 lakh cashless annual hospital cover.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "abha",
+      name: "ABHA - Ayushman Bharat Digital Mission (Health ID)",
+      url: "https://abha.abdm.gov.in",
+      category: "health_and_welfare",
+      keywords: ["abha", "health id", "abdm", "digital health record", "ayushman bharat account"],
+      description: "14-digit digital health ID linking medical history, lab reports, and doctor prescriptions.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "esanjeevani",
+      name: "eSanjeevani - National Teleconsultation Service",
+      url: "https://esanjeevani.mohfw.gov.in",
+      category: "health_and_welfare",
+      keywords: ["esanjeevani", "teleconsultation", "free doctor consultation", "online opd", "telemedicine"],
+      description: "Free telemedicine OPD connecting citizens with certified doctors and medical specialists.",
+      isGovernmentIndia: true
+    },
+    // 8. Law, Judiciary & Public Grievances
+    {
+      id: "ecourts",
+      name: "e-Courts Services - Integrated Judicial System",
+      url: "https://ecourts.gov.in",
+      category: "law_justice_and_consumer",
+      keywords: ["ecourts", "case status", "court orders", "district court case", "cnr number lookup"],
+      description: "National judicial case tracking portal for District, Sessions, and High Courts across India.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "sci",
+      name: "Supreme Court of India Official Portal",
+      url: "https://www.sci.gov.in",
+      category: "law_justice_and_consumer",
+      keywords: ["supreme court", "sci", "judgments", "daily orders", "cause list", "supreme court status"],
+      description: "Apex court of India with case listings, full bench judgments, and live constitutional proceedings.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "rtionline",
+      name: "RTI Online - Right to Information Portal",
+      url: "https://rtionline.gov.in",
+      category: "law_justice_and_consumer",
+      keywords: ["rti", "rti online", "file rti", "right to information", "first appeal", "rti status"],
+      description: "Official portal to file electronic RTI requests and appeals to all Central Government ministries.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "cybercrime",
+      name: "National Cyber Crime Reporting Portal",
+      url: "https://cybercrime.gov.in",
+      category: "law_justice_and_consumer",
+      keywords: ["cyber crime", "report cyber crime", "online fraud complaint", "1930 helpline", "cyber fraud"],
+      description: "Official national portal for citizens to lodge complaints about financial frauds and cyber crimes.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "nch",
+      name: "National Consumer Helpline (NCH)",
+      url: "https://consumerhelpline.gov.in",
+      category: "law_justice_and_consumer",
+      keywords: ["consumer forum", "consumer helpline", "complaint against company", "e-daakhil", "consumer protection"],
+      description: "Dispute grievance redressal portal for consumer complaints against corporations and brands.",
+      isGovernmentIndia: true
+    },
+    // 9. Agriculture & Rural Empowerment
+    {
+      id: "pmkisan",
+      name: "PM-Kisan Samman Nidhi",
+      url: "https://pmkisan.gov.in",
+      category: "agriculture_and_rural",
+      keywords: ["pm kisan", "kisan samman nidhi", "farmer installment", "beneficiary status", "ekyc farmer"],
+      description: "Income support scheme transferring \u20B96,000 annually into farmer bank accounts.",
+      isGovernmentIndia: true
+    },
+    {
+      id: "enam",
+      name: "e-NAM - National Agriculture Market",
+      url: "https://enam.gov.in",
+      category: "agriculture_and_rural",
+      keywords: ["enam", "e nam", "mandi rates", "crop trading", "apmc online", "farmer market price"],
+      description: "Pan-India electronic trading portal uniting APMC mandis for competitive crop prices.",
+      isGovernmentIndia: true
+    }
+  ];
+  var GLOBAL_REFERENCE_PORTALS = [
+    // Knowledge & Research
+    {
+      id: "wikipedia",
+      name: "Wikipedia - The Free Encyclopedia",
+      url: "https://www.wikipedia.org",
+      category: "knowledge_and_research",
+      keywords: ["wikipedia", "wiki", "encyclopedia", "lookup", "article", "summary", "reference"],
+      description: "Free multilingual open-collaborative online encyclopedia."
+    },
+    {
+      id: "arxiv",
+      name: "arXiv - Open Access Scientific Papers",
+      url: "https://arxiv.org",
+      category: "knowledge_and_research",
+      keywords: ["arxiv", "research papers", "ai papers", "physics papers", "computer science preprints"],
+      description: "Preprint server for physics, mathematics, computer science, and AI."
+    },
+    {
+      id: "archive_org",
+      name: "Internet Archive & Wayback Machine",
+      url: "https://archive.org",
+      category: "knowledge_and_research",
+      keywords: ["wayback machine", "internet archive", "historical website", "cached page", "digital library"],
+      description: "Digital library of Internet sites, historical snapshots, and public domain media."
+    },
+    // Developer & Open Source
+    {
+      id: "github",
+      name: "GitHub - Code Hosting & Developer Collaboration",
+      url: "https://github.com",
+      category: "developer_and_tech",
+      keywords: ["github", "git", "repo", "repository", "pull request", "issue", "open source", "code"],
+      description: "Leading platform for software development, version control, and collaboration."
+    },
+    {
+      id: "huggingface",
+      name: "Hugging Face - The AI Community",
+      url: "https://huggingface.co",
+      category: "developer_and_tech",
+      keywords: ["hugging face", "hf", "models", "datasets", "spaces", "transformers", "llm open source"],
+      description: "Open-source platform for machine learning models, datasets, and AI demo spaces."
+    },
+    {
+      id: "stackoverflow",
+      name: "Stack Overflow - Developer Questions and Answers",
+      url: "https://stackoverflow.com",
+      category: "developer_and_tech",
+      keywords: ["stack overflow", "programming error", "coding help", "debug exception", "stackoverflow"],
+      description: "Largest question-and-answer community for programmers and software engineers."
+    },
+    // E-Commerce & Shopping (India & Global)
+    {
+      id: "amazon_in",
+      name: "Amazon India",
+      url: "https://www.amazon.in",
+      category: "ecommerce_and_retail",
+      keywords: ["amazon", "amazon india", "online shopping", "buy electronics", "prime"],
+      description: "E-commerce marketplace for electronics, books, apparel, and daily essentials."
+    },
+    {
+      id: "flipkart",
+      name: "Flipkart - Online Shopping Marketplace",
+      url: "https://www.flipkart.com",
+      category: "ecommerce_and_retail",
+      keywords: ["flipkart", "buy phone", "buy laptop", "big billion days", "online store"],
+      description: "One of India's leading e-commerce platforms for electronics and appliances."
+    },
+    // Travel & Hospitality
+    {
+      id: "makemytrip",
+      name: "MakeMyTrip - Flights, Hotels & Holiday Packages",
+      url: "https://www.makemytrip.com",
+      category: "travel_and_hospitality",
+      keywords: ["makemytrip", "mmt", "book flight", "book hotel", "holiday package", "cheapest flights"],
+      description: "Online travel agency for domestic and international flights, trains, and hotels."
+    },
+    {
+      id: "google_flights",
+      name: "Google Flights - Compare Airfares",
+      url: "https://www.google.com/travel/flights",
+      category: "travel_and_hospitality",
+      keywords: ["google flights", "compare airfare", "flight tracker", "cheapest tickets"],
+      description: "Airfare search engine comparing flight prices across airlines and routes."
+    }
+  ];
+  var MASTER_WEB_DIRECTORY = [
+    ...INDIAN_GOVERNMENT_PORTALS,
+    ...GLOBAL_REFERENCE_PORTALS
+  ];
+
   // src/sanitizer/coordinate-transformer.ts
   var CoordinateTransformer = class {
     metadata;
@@ -14776,8 +15250,8 @@ as ORT format: ${n}`);
   function detectDomSensitiveRegions(elements, transformer) {
     const regions = [];
     for (const el2 of elements) {
-      const decision = analyzeDomElementSensitivity(el2.descriptor);
-      if (decision.isSensitive && decision.category) {
+      const decision2 = analyzeDomElementSensitivity(el2.descriptor);
+      if (decision2.isSensitive && decision2.category) {
         const viewportBox = {
           space: "viewportCssPixel",
           x: el2.boundingClientRect.x,
@@ -14785,16 +15259,16 @@ as ORT format: ${n}`);
           width: el2.boundingClientRect.width,
           height: el2.boundingClientRect.height
         };
-        const screenshotBox = transformer.toScreenshotBox(viewportBox, 6);
+        const screenshotBox = transformer.toScreenshotBox(viewportBox, 0);
         if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
         regions.push({
           id: `dom_sens_${el2.id}`,
-          category: decision.category,
+          category: decision2.category,
           viewportBox,
           screenshotBox,
           detectorSource: "dom_semantic",
           method: "opaque_mask",
-          label: decision.reason
+          label: decision2.reason
         });
       }
     }
@@ -14818,7 +15292,7 @@ as ORT format: ${n}`);
                 width: rect.width,
                 height: rect.height
               };
-              const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
+              const screenshotBox = transformer.toScreenshotBox(viewportBox, 0);
               if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
               unmergedRegions.push({
                 id: `text_pii_${node.id}_${i}_${rIdx}`,
@@ -14831,7 +15305,8 @@ as ORT format: ${n}`);
               });
             }
           } else {
-            const fallbackRect = rangeMatch.fallbackParentRect || node.boundingClientRect;
+            if (!rangeMatch.fallbackParentRect) continue;
+            const fallbackRect = rangeMatch.fallbackParentRect;
             const viewportBox = {
               space: "viewportCssPixel",
               x: fallbackRect.x,
@@ -14865,7 +15340,7 @@ as ORT format: ${n}`);
               width: node.boundingClientRect.width,
               height: node.boundingClientRect.height
             };
-            const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
+            const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
             if (screenshotBox.width > 1 && screenshotBox.height > 1) {
               unmergedRegions.push({
                 id: `text_pii_${node.id}_${i}`,
@@ -15386,24 +15861,15 @@ as ORT format: ${n}`);
           });
           continue;
         }
-        const x = Math.max(0, Math.min(canvasWidth - 1, Math.floor(box.x)));
-        const y = Math.max(0, Math.min(canvasHeight - 1, Math.floor(box.y)));
-        const w = Math.max(1, Math.min(canvasWidth - x, Math.ceil(box.width)));
-        const h = Math.max(1, Math.min(canvasHeight - y, Math.ceil(box.height)));
+        const x = Math.max(0, Math.floor(box.x));
+        const y = Math.max(0, Math.floor(box.y));
+        const w = Math.max(1, Math.min(canvasWidth, Math.ceil(box.x + box.width)) - x);
+        const h = Math.max(1, Math.min(canvasHeight, Math.ceil(box.y + box.height)) - y);
         const clampedBox = { x, y, width: w, height: h };
         try {
           ctx.save();
           ctx.fillStyle = "#0f172a";
           ctx.fillRect(x, y, w, h);
-          ctx.strokeStyle = "#38bdf8";
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x, y, w, h);
-          if (w > 45 && h > 12) {
-            ctx.fillStyle = "#38bdf8";
-            ctx.font = "bold 9px sans-serif";
-            const label = `[REDACTED: ${region.category.toUpperCase()}]`;
-            ctx.fillText(label, x + 3, y + Math.min(11, h - 2));
-          }
           ctx.restore();
           let success = true;
           let failureReason;
@@ -15455,18 +15921,18 @@ as ORT format: ${n}`);
       let dataUrl;
       if (typeof imageCanvas.toDataURL === "function") {
         dataUrl = imageCanvas.toDataURL("image/png");
-        if (dataUrl && dataUrl.length > 2.5 * 1024 * 1024) {
+        if (dataUrl && dataUrl.length > 800 * 1024) {
           try {
-            const jpegUrl = imageCanvas.toDataURL("image/jpeg", 0.88);
+            const jpegUrl = imageCanvas.toDataURL("image/jpeg", 0.85);
             if (jpegUrl && jpegUrl.startsWith("data:image/jpeg;base64,") && jpegUrl.length < dataUrl.length) {
               dataUrl = jpegUrl;
             }
           } catch (_) {
           }
         }
-        if (dataUrl && dataUrl.length > 3.5 * 1024 * 1024) {
+        if (dataUrl && dataUrl.length > 1.8 * 1024 * 1024) {
           try {
-            const compressedUrl = imageCanvas.toDataURL("image/jpeg", 0.72);
+            const compressedUrl = imageCanvas.toDataURL("image/jpeg", 0.75);
             if (compressedUrl && compressedUrl.startsWith("data:image/jpeg;base64,") && compressedUrl.length < dataUrl.length) {
               dataUrl = compressedUrl;
             }
@@ -16101,8 +16567,8 @@ as ORT format: ${n}`);
           coarseBounds,
           state: el2.state,
           actionCapabilities,
-          containerContext: el2.containerContext,
-          nearestHeading: el2.nearestHeading,
+          ...el2.containerContext ? { containerContext: sanitizeElementName(el2.containerContext) } : {},
+          ...el2.nearestHeading ? { nearestHeading: sanitizeElementName(el2.nearestHeading) } : {},
           isInsideDialog: el2.isInsideDialog,
           ...el2.verticalOffset ? { verticalOffset: el2.verticalOffset } : {},
           ...el2.inViewport !== void 0 ? { inViewport: el2.inViewport } : {}

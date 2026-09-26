@@ -14,7 +14,7 @@ export function detectDomSensitiveRegions(elements, transformer) {
                 width: el.boundingClientRect.width,
                 height: el.boundingClientRect.height
             };
-            const screenshotBox = transformer.toScreenshotBox(viewportBox, 6);
+            const screenshotBox = transformer.toScreenshotBox(viewportBox, 0);
             if (screenshotBox.width <= 1 || screenshotBox.height <= 1)
                 continue;
             regions.push({

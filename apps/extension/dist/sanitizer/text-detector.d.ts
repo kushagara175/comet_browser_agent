@@ -4,8 +4,8 @@
  * Implements precise text-range redaction:
  * - Uses exact Range getClientRects() for matched substrings
  * - Supports multi-line wrapped text matches
- * - Adds small documented safety padding (2px CSS)
- * - Conservatively masks parent element on geometry failure
+ * - Masks only measured glyph bounds, without padding adjacent controls
+ * - Uses an explicitly supplied fallback rect only when range geometry is unavailable
  * - Merges overlapping output regions with mergeBoundingBoxes
  */
 import { SensitiveRegion, SensitiveCategory } from '@privapilot/protocol';

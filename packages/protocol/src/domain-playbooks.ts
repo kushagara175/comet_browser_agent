@@ -7,6 +7,7 @@
  */
 
 import { normalizeSemanticText, tokenizeSemanticText, isFuzzyTokenMatch } from './grounding.js';
+import { resolvePortalFromQuery } from './web-directory.js';
 
 export interface PlaybookRoute {
   readonly name: string;
@@ -1365,9 +1366,9 @@ export function resolvePlaybookIntent(
   }
 
   // 1. Check for metric extraction intent (e.g. "how many submissions are done", "count of submissions")
-  const isMetricQuery = queryTokens.some((t) =>
-    ['how', 'many', 'count', 'total', 'number', 'status', 'check', 'show'].includes(t)
-  );
+  const hasExplicitCountDirective = /\b(?:how\s+many|count\s+(?:the\s+)?|total\s+(?:number\s+of\s+)?|number\s+of)\b/i.test(userQuery);
+  const hasSpecificSearchDirective = /\b(?:search(?:\s+for)?|find|locate|lookup|filter(?:\s+by)?|query|type|bhuvan|geoportal|map|statement\s+for|theme|details)\b/i.test(userQuery);
+  const isMetricQuery = hasExplicitCountDirective && !hasSpecificSearchDirective;
 
   if (isMetricQuery) {
     for (const rule of playbook.metricsRules) {
@@ -1747,7 +1748,13 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
     return `https://${domain}${path}`;
   }
 
-  // 4. Contextual target phrasing: "in/on/open/visit/go to [the] <name> (website|portal|site|page|org)"
+  // 4. Master Web Directory & Indian Government Portals Registry lookup
+  const directoryMatch = resolvePortalFromQuery(g);
+  if (directoryMatch) {
+    return directoryMatch;
+  }
+
+  // 5. Contextual target phrasing: "in/on/open/visit/go to [the] <name> (website|portal|site|page|org)"
   const contextMatch = g.match(/\b(?:in|on|at|open|load|visit|go\s+to|navigate\s+to)\s+(?:the\s+)?([a-zA-Z0-9_\s.-]+?)\s+(?:website|portal|site|page|org|organisation)\b/i);
   if (contextMatch) {
     const siteKeyword = contextMatch[1].trim().toLowerCase();
@@ -1806,30 +1813,34 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
   }
 
   // 5. Explicit navigation verb at start of goal: "open/go to/visit <target>"
-  const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:in\s+)?([a-zA-Z0-9_.-]+)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*|$)/i);
+  const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:in\s+)?([a-zA-Z0-9_.\s-]+?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*|$)/i);
   if (navDirective) {
     const target = navDirective[1].trim().toLowerCase();
+    if (target.includes('bhuvan')) {
+      return target.includes('map') || target.includes('ngmap')
+        ? 'https://bhuvan.nrsc.gov.in/ngmaps'
+        : 'https://bhuvan.nrsc.gov.in';
+    }
+    if (target.includes('mosdac')) return 'https://mosdac.gov.in';
+    if (target.includes('vedas')) return 'https://vedas.sac.gov.in';
+    if (target.includes('bhoonidhi')) return 'https://bhoonidhi.nrsc.gov.in';
+    if (target === 'sih' || target.includes('sih') || target.includes('hackathon')) return 'https://sih.gov.in';
+    if (target === 'isro' || target.includes('isro')) return 'https://www.isro.gov.in';
+    if (target === 'amazon' || target.includes('amazon')) return 'https://www.amazon.in';
+    if (target === 'flipkart' || target.includes('flipkart')) return 'https://www.flipkart.com';
+    if (target === 'gmail' || target.includes('gmail')) return 'https://mail.google.com/mail';
+    if (target === 'github' || target.includes('github')) return 'https://github.com';
+    if (target === 'wikipedia' || target.includes('wikipedia') || target.includes('wiki')) return 'https://www.wikipedia.org';
+    if (target === 'youtube' || target.includes('youtube')) return 'https://www.youtube.com';
+    if (target === 'reddit' || target.includes('reddit')) return 'https://www.reddit.com';
+    if (target === 'duckduckgo' || target.includes('duckduckgo')) return 'https://duckduckgo.com';
+    if (target === 'google' || target.includes('google')) return 'https://www.google.com';
+    if (target.includes('demo') || target.includes('portal') || target.includes('mock')) return 'http://localhost:4500';
     if (target.includes('.')) {
       if (target === 'wikipedia.org' || target.endsWith('.wikipedia.org')) return 'https://www.wikipedia.org';
       if (target === 'isro.gov.in') return 'https://www.isro.gov.in';
       return `https://${target}`;
     }
-    if (target === 'amazon' || target.includes('amazon')) return 'https://www.amazon.in';
-    if (target === 'flipkart' || target.includes('flipkart')) return 'https://www.flipkart.com';
-    if (target === 'isro' || target.includes('isro')) return 'https://www.isro.gov.in';
-    if (target === 'gmail' || target.includes('gmail')) return 'https://mail.google.com/mail';
-    if (target.includes('bhuvan')) return 'https://bhuvan.nrsc.gov.in';
-    if (target.includes('mosdac')) return 'https://mosdac.gov.in';
-    if (target.includes('vedas')) return 'https://vedas.sac.gov.in';
-    if (target.includes('bhoonidhi')) return 'https://bhoonidhi.nrsc.gov.in';
-    if (target === 'sih' || target.includes('sih')) return 'https://sih.gov.in';
-    if (target === 'github' || target.includes('github')) return 'https://github.com';
-    if (target === 'wikipedia' || target.includes('wikipedia')) return 'https://www.wikipedia.org';
-    if (target === 'youtube' || target.includes('youtube')) return 'https://www.youtube.com';
-    if (target === 'reddit' || target.includes('reddit')) return 'https://www.reddit.com';
-    if (target === 'duckduckgo' || target.includes('duckduckgo')) return 'https://duckduckgo.com';
-    if (target === 'google' || target.includes('google')) return 'https://www.google.com';
-    if (target.includes('demo') || target.includes('portal')) return 'http://localhost:4500';
   }
 
   // 6. Registered Playbook matches against registered domains and distinct aliases

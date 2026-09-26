@@ -136,14 +136,11 @@ test('Text Range: HiDPI (devicePixelRatio = 2) scales CSS coordinates accurately
   assert.strictEqual(regions.length, 1);
 
   const reg = regions[0];
-  // 150 CSS px * 2 = 300 - 2 (safety padding) = 298
-  assert.strictEqual(reg.screenshotBox.x, 298);
-  // 55 CSS px * 2 = 110 - 2 = 108
-  assert.strictEqual(reg.screenshotBox.y, 108);
-  // 140 CSS px * 2 = 280 + 4 = 284
-  assert.strictEqual(reg.screenshotBox.width, 284);
-  // 16 CSS px * 2 = 32 + 4 = 36
-  assert.strictEqual(reg.screenshotBox.height, 36);
+  // Only measured glyph bounds are masked, including on HiDPI screens.
+  assert.strictEqual(reg.screenshotBox.x, 300);
+  assert.strictEqual(reg.screenshotBox.y, 110);
+  assert.strictEqual(reg.screenshotBox.width, 280);
+  assert.strictEqual(reg.screenshotBox.height, 32);
 });
 
 // ============================================================================
@@ -178,12 +175,9 @@ test('Text Range: Zoomed viewport (2.5x scaling) converts accurately using typed
   assert.strictEqual(regions.length, 1);
 
   const reg = regions[0];
-  // 80 * 2.5 = 200 - 2 = 198
-  assert.strictEqual(reg.screenshotBox.x, 198);
-  // 22 * 2.5 = 55 - 2 = 53
-  assert.strictEqual(reg.screenshotBox.y, 53);
-  // 100 * 2.5 = 250 + 4 = 254
-  assert.strictEqual(reg.screenshotBox.width, 254);
+  assert.strictEqual(reg.screenshotBox.x, 200);
+  assert.strictEqual(reg.screenshotBox.y, 55);
+  assert.strictEqual(reg.screenshotBox.width, 250);
 });
 
 // ============================================================================

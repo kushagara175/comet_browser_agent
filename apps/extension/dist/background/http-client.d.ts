@@ -73,5 +73,19 @@ export declare class ReasoningHttpClient {
         maxParallel?: number;
         contextUrl?: string;
     }, apiKey?: string): Promise<any>;
+    /**
+     * Performs an autonomous web search via Tavily through the reasoning server gateway.
+     */
+    searchWeb(query: string, maxResults?: number): Promise<{
+        success: boolean;
+        query: string;
+        answer?: string | null;
+        results: Array<{
+            title: string;
+            url: string;
+            content: string;
+            score: number;
+        }>;
+    }>;
 }
 //# sourceMappingURL=http-client.d.ts.map

@@ -30,8 +30,8 @@ export const DEFAULT_SERVER_BASE_URL = 'http://localhost:4501';
  * mid-inference and looks identical to "the model is not connected", so the
  * reasoning budget is generous and the gateway is given the shorter one.
  */
-const REASONING_TIMEOUT_MS = 120000;
-const CHAT_TIMEOUT_MS = 120000;
+const REASONING_TIMEOUT_MS = 40000;
+const CHAT_TIMEOUT_MS = 40000;
 const HEALTH_TIMEOUT_MS = 3000;
 
 export interface ModelStatus {
@@ -502,6 +502,42 @@ export class ReasoningHttpClient {
       } catch {}
     }
     return null;
+  }
+
+  /**
+   * Performs an autonomous web search via Tavily through the reasoning server gateway.
+   */
+  async searchWeb(
+    query: string,
+    maxResults: number = 5
+  ): Promise<{
+    success: boolean;
+    query: string;
+    answer?: string | null;
+    results: Array<{ title: string; url: string; content: string; score: number }>;
+  }> {
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.serverBaseUrl}/api/v1/search`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-PrivaPilot-Version': '1.0'
+          },
+          body: JSON.stringify({ query, maxResults })
+        },
+        'Tavily Web Search',
+        10000
+      );
+
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (err: any) {
+      console.warn('[PrivaPilot HttpClient] Tavily search failed:', err?.message || err);
+    }
+    return { success: false, query, results: [] };
   }
 }
 

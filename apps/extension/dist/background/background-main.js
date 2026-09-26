@@ -14053,7 +14053,8 @@ function toSanitizedNetworkPayload(context) {
     ...context.expectedPostcondition ? { expectedPostcondition: context.expectedPostcondition } : {},
     ...context.observedOutcome !== void 0 ? { observedOutcome: context.observedOutcome } : {},
     ...context.meaningfulProgress !== void 0 ? { meaningfulProgress: context.meaningfulProgress } : {},
-    ...context.recentActionHistory ? { recentActionHistory: context.recentActionHistory.slice(-10) } : {}
+    ...context.recentActionHistory ? { recentActionHistory: context.recentActionHistory.slice(-10) } : {},
+    ...context.searchResults ? { searchResults: context.searchResults } : {}
   };
 }
 
@@ -14347,6 +14348,564 @@ function groundTargetCandidates(elements, intent, activeDialogVisible = false) {
     bestCandidate: best,
     candidates: scoredList
   };
+}
+
+// ../../packages/protocol/dist/web-directory.js
+var INDIAN_GOVERNMENT_PORTALS = [
+  // 1. Space, Geosciences & Deep Tech
+  {
+    id: "isro",
+    name: "ISRO - Indian Space Research Organisation",
+    url: "https://www.isro.gov.in",
+    category: "space_and_science",
+    keywords: ["isro", "space", "chandrayaan", "gaganyaan", "aditya", "rocket", "satellite", "pslv", "gslv", "lvm3"],
+    description: "Official portal of ISRO with space missions, launchers, and scientific archives.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "bhuvan",
+    name: "Bhuvan - Indian Geoportal of ISRO",
+    url: "https://bhuvan.nrsc.gov.in",
+    category: "space_and_science",
+    keywords: ["bhuvan", "geoportal", "isro map", "bhuvan maps", "satellite imagery", "thematic layers", "gis india", "2d 3d map"],
+    description: "National satellite mapping, 2D/3D visualization, disaster monitoring and GIS services.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "bhuvan_ngmaps",
+    name: "Bhuvan NextGen 2D/3D Interactive Map Viewer",
+    url: "https://bhuvan.nrsc.gov.in/ngmaps",
+    category: "space_and_science",
+    keywords: ["bhuvan ngmaps", "ngmaps", "bhuvan nextgen", "bhuvan viewer", "satellite map viewer"],
+    description: "High-resolution interactive satellite map viewer with geospatial location search.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "mosdac",
+    name: "MOSDAC - Meteorological & Oceanographic Satellite Data Archival Centre",
+    url: "https://mosdac.gov.in",
+    category: "space_and_science",
+    keywords: ["mosdac", "weather satellite", "cyclone tracking", "oceanography", "isro weather"],
+    description: "Real-time weather satellite feeds, cyclone alerts, and climate data.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "vedas",
+    name: "VEDAS - Visualisation of Earth Observation Data and Archival System",
+    url: "https://vedas.sac.gov.in",
+    category: "space_and_science",
+    keywords: ["vedas", "sac", "earth observation", "environmental monitoring", "vegetation index"],
+    description: "Space Applications Centre portal for geo-spatial analytics and environmental research.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "bhoonidhi",
+    name: "Bhoonidhi - Open Earth Observation Data Hub",
+    url: "https://bhoonidhi.nrsc.gov.in",
+    category: "space_and_science",
+    keywords: ["bhoonidhi", "nrsc data", "satellite download", "remote sensing data", "irs data"],
+    description: "National Remote Sensing Centre portal for ordering and downloading free satellite products.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "drdo",
+    name: "DRDO - Defence Research and Development Organisation",
+    url: "https://www.drdo.gov.in",
+    category: "space_and_science",
+    keywords: ["drdo", "defence research", "missiles", "drdo recruitment", "rac drdo"],
+    description: "Premier defense R&D agency portal for technology, laboratories, and recruitment.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "dst",
+    name: "DST - Department of Science and Technology",
+    url: "https://dst.gov.in",
+    category: "space_and_science",
+    keywords: ["dst", "science and technology", "research grants", "inspire fellowship", "serb"],
+    description: "National research funding, scientific fellowships, and technology incubation.",
+    isGovernmentIndia: true
+  },
+  // 2. Education, Hackathons & Youth Innovation
+  {
+    id: "sih",
+    name: "Smart India Hackathon (SIH)",
+    url: "https://sih.gov.in",
+    category: "education_and_hackathons",
+    keywords: ["sih", "smart india hackathon", "problem statements", "know your spoc", "sih 2026", "sih registration"],
+    description: "World's biggest open innovation hackathon by MoE and AICTE.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "aicte",
+    name: "AICTE - All India Council for Technical Education",
+    url: "https://www.aicte-india.org",
+    category: "education_and_hackathons",
+    keywords: ["aicte", "technical education", "engineering colleges", "approval process", "aicte scholarships"],
+    description: "National council governing technical education and university accreditations.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "ugc",
+    name: "UGC - University Grants Commission",
+    url: "https://www.ugc.gov.in",
+    category: "education_and_hackathons",
+    keywords: ["ugc", "university grants", "net exam", "higher education", "college recognition"],
+    description: "Higher education regulator and funding authority in India.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "swayam",
+    name: "SWAYAM - Free Online Education by Government of India",
+    url: "https://swayam.gov.in",
+    category: "education_and_hackathons",
+    keywords: ["swayam", "free online courses", "nptel swayam", "mooc india", "swayam certification"],
+    description: "National online education platform offering free university and school courses.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "nptel",
+    name: "NPTEL - National Programme on Technology Enhanced Learning",
+    url: "https://nptel.ac.in",
+    category: "education_and_hackathons",
+    keywords: ["nptel", "iit courses", "engineering online", "nptel certificate", "iit madras online"],
+    description: "IIT and IISc joint initiative offering accredited engineering courses.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "nsp",
+    name: "National Scholarship Portal (NSP)",
+    url: "https://scholarships.gov.in",
+    category: "education_and_hackathons",
+    keywords: ["nsp", "scholarships", "national scholarship", "post matric scholarship", "pre matric"],
+    description: "One-stop portal for Central and State government student scholarship schemes.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "diksha",
+    name: "DIKSHA - National Digital Platform for Teachers and Students",
+    url: "https://diksha.gov.in",
+    category: "education_and_hackathons",
+    keywords: ["diksha", "ncert digital", "school textbooks", "teacher training", "cbse material"],
+    description: "Digital infrastructure for school education with QR-coded textbooks and lessons.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "samarth",
+    name: "Samarth eGov - Higher Education Enterprise Portal",
+    url: "https://samarth.edu.in",
+    category: "education_and_hackathons",
+    keywords: ["samarth", "samarth edu", "university admission", "cuet admission", "higher education governance"],
+    description: "Unified information management system for central and state universities.",
+    isGovernmentIndia: true
+  },
+  // 3. Citizen Services, Identity & Digital Public Infrastructure
+  {
+    id: "india_gov",
+    name: "National Portal of India",
+    url: "https://www.india.gov.in",
+    category: "citizen_services_and_identity",
+    keywords: ["india gov", "national portal", "government services", "forms", "citizen services"],
+    description: "Single-entry portal for all Government of India services, schemes, and directories.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "mygov",
+    name: "MyGov India - Citizen Engagement Platform",
+    url: "https://www.mygov.in",
+    category: "citizen_services_and_identity",
+    keywords: ["mygov", "citizen engagement", "quizzes", "polls", "volunteer", "pm talk"],
+    description: "Platform for citizen participation in government policymaking and national initiatives.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "digilocker",
+    name: "DigiLocker - National Digital Document Wallet",
+    url: "https://www.digilocker.gov.in",
+    category: "citizen_services_and_identity",
+    keywords: ["digilocker", "digital locker", "aadhaar download", "marksheet", "driving license download", "rc download"],
+    description: "Cloud storage wallet for accessing verified digital driving licenses, marksheets, and identity cards.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "uidai",
+    name: "UIDAI - Unique Identification Authority of India (Aadhaar)",
+    url: "https://uidai.gov.in",
+    category: "citizen_services_and_identity",
+    keywords: ["uidai", "aadhaar", "download aadhaar", "update aadhaar", "myaadhaar", "aadhaar status"],
+    description: "Official portal for 12-digit Aadhaar card generation, updates, and biometric authentication.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "umang",
+    name: "UMANG - Unified Mobile Application for New-age Governance",
+    url: "https://web.umang.gov.in",
+    category: "citizen_services_and_identity",
+    keywords: ["umang", "umang portal", "pan card status", "epfo umang", "gas booking umang"],
+    description: "Unified interface offering 1,200+ Central and State government services on a single dashboard.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "apisetu",
+    name: "API Setu - Open API Exchange for Digital Governance",
+    url: "https://apisetu.gov.in",
+    category: "citizen_services_and_identity",
+    keywords: ["api setu", "government api", "developer portal", "open data api", "consent api"],
+    description: "National API platform enabling secure data exchange between government bodies and startups.",
+    isGovernmentIndia: true
+  },
+  // 4. Taxes, Finance, Corporate Affairs & Banking
+  {
+    id: "incometax",
+    name: "Income Tax e-Filing Portal",
+    url: "https://www.incometax.gov.in",
+    category: "finance_tax_and_corporate",
+    keywords: ["income tax", "itr", "file itr", "tax refund", "form 16", "pan aadhaar link", "e-filing"],
+    description: "Official portal for filing annual income tax returns, checking refunds, and verifying PAN.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "gst",
+    name: "GST - Goods and Services Tax Portal",
+    url: "https://www.gst.gov.in",
+    category: "finance_tax_and_corporate",
+    keywords: ["gst", "goods and services tax", "gst return", "gstr 1", "gstr 3b", "gst registration", "e-way bill"],
+    description: "Unified indirect tax portal for taxpayer registration, returns filing, and tax payments.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "mca",
+    name: "MCA21 - Ministry of Corporate Affairs",
+    url: "https://www.mca.gov.in",
+    category: "finance_tax_and_corporate",
+    keywords: ["mca", "mca21", "company registration", "cin lookup", "din lookup", "roc filing", "annual return"],
+    description: "Official portal for registering private/public companies, LLP filings, and director details.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "gem",
+    name: "GeM - Government e-Marketplace",
+    url: "https://gem.gov.in",
+    category: "finance_tax_and_corporate",
+    keywords: ["gem", "government emarketplace", "tenders", "government procurement", "gem portal vendor"],
+    description: "National public procurement portal for government ministries, departments, and PSUs.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "epfindia",
+    name: "EPFO - Employees Provident Fund Organisation",
+    url: "https://www.epfindia.gov.in",
+    category: "finance_tax_and_corporate",
+    keywords: ["epfo", "pf balance", "uan portal", "provident fund", "epfo claim", "passbook download"],
+    description: "Provident fund management, universal account number (UAN) passbooks, and retirement claims.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "esic",
+    name: "ESIC - Employees State Insurance Corporation",
+    url: "https://www.esic.gov.in",
+    category: "finance_tax_and_corporate",
+    keywords: ["esic", "esi portal", "medical benefits", "esic pehchan", "employee insurance"],
+    description: "Social security and healthcare organization for Indian workers and their families.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "rbi",
+    name: "Reserve Bank of India (RBI)",
+    url: "https://www.rbi.org.in",
+    category: "finance_tax_and_corporate",
+    keywords: ["rbi", "central bank", "repo rate", "banking ombudsman", "currency", "monetary policy"],
+    description: "India's central bank governing monetary policy, currency issuance, and banking regulations.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "sebi",
+    name: "Securities and Exchange Board of India (SEBI)",
+    url: "https://www.sebi.gov.in",
+    category: "finance_tax_and_corporate",
+    keywords: ["sebi", "stock market regulator", "ipo approval", "mutual fund rules", "scores complaints"],
+    description: "Regulatory body governing capital markets, stock exchanges, and mutual funds.",
+    isGovernmentIndia: true
+  },
+  // 5. Transport, Railways, Highways & Aviation
+  {
+    id: "irctc",
+    name: "IRCTC - Next Generation eTicketing System",
+    url: "https://www.irctc.co.in",
+    category: "transport_and_railways",
+    keywords: ["irctc", "train ticket", "book train", "railway booking", "tatkal ticket", "pnr status"],
+    description: "Official Indian Railways portal for booking train tickets, checking PNR status, and catering.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "parivahan",
+    name: "Parivahan Sewa - Ministry of Road Transport and Highways",
+    url: "https://parivahan.gov.in",
+    category: "transport_and_railways",
+    keywords: ["parivahan", "driving licence", "dl status", "rc status", "sarathi", "vahan", "echallan"],
+    description: "National portal for driving license tests, vehicle registration (RC), and traffic e-challan payments.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "digiyatra",
+    name: "DigiYatra - Facial Recognition Seamless Air Travel",
+    url: "https://www.digiyatra.com",
+    category: "transport_and_railways",
+    keywords: ["digiyatra", "digi yatra", "airport checkin", "paperless boarding", "facial biometric airport"],
+    description: "Biometric, contactless paperless boarding process for domestic air passengers in India.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "nhai",
+    name: "NHAI - National Highways Authority of India",
+    url: "https://nhai.gov.in",
+    category: "transport_and_railways",
+    keywords: ["nhai", "national highways", "fastag recharge", "toll plazas", "expressways"],
+    description: "National agency responsible for building, operating, and tolling expressways across India.",
+    isGovernmentIndia: true
+  },
+  // 6. Passports, Visas & Consular Services
+  {
+    id: "passport",
+    name: "Passport Seva - Ministry of External Affairs",
+    url: "https://www.passportindia.gov.in",
+    category: "passports_and_external_affairs",
+    keywords: ["passport", "passport seva", "apply passport", "passport appointment", "tatkal passport", "police verification"],
+    description: "Official portal for applying for fresh passports, renewals, and police clearance certificates.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "evisa",
+    name: "Indian e-Visa Official Portal",
+    url: "https://indianvisaonline.gov.in",
+    category: "passports_and_external_affairs",
+    keywords: ["evisa", "indian visa", "visa on arrival", "tourist visa india", "business visa"],
+    description: "Official government portal for foreign nationals applying for electronic tourist and business visas.",
+    isGovernmentIndia: true
+  },
+  // 7. Health, Telemedicine & Social Welfare
+  {
+    id: "pmjay",
+    name: "Ayushman Bharat - PM-JAY (National Health Authority)",
+    url: "https://pmjay.gov.in",
+    category: "health_and_welfare",
+    keywords: ["ayushman bharat", "pmjay", "health card", "5 lakh insurance", "ayushman hospital list"],
+    description: "World\u2019s largest health insurance scheme providing \u20B95 lakh cashless annual hospital cover.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "abha",
+    name: "ABHA - Ayushman Bharat Digital Mission (Health ID)",
+    url: "https://abha.abdm.gov.in",
+    category: "health_and_welfare",
+    keywords: ["abha", "health id", "abdm", "digital health record", "ayushman bharat account"],
+    description: "14-digit digital health ID linking medical history, lab reports, and doctor prescriptions.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "esanjeevani",
+    name: "eSanjeevani - National Teleconsultation Service",
+    url: "https://esanjeevani.mohfw.gov.in",
+    category: "health_and_welfare",
+    keywords: ["esanjeevani", "teleconsultation", "free doctor consultation", "online opd", "telemedicine"],
+    description: "Free telemedicine OPD connecting citizens with certified doctors and medical specialists.",
+    isGovernmentIndia: true
+  },
+  // 8. Law, Judiciary & Public Grievances
+  {
+    id: "ecourts",
+    name: "e-Courts Services - Integrated Judicial System",
+    url: "https://ecourts.gov.in",
+    category: "law_justice_and_consumer",
+    keywords: ["ecourts", "case status", "court orders", "district court case", "cnr number lookup"],
+    description: "National judicial case tracking portal for District, Sessions, and High Courts across India.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "sci",
+    name: "Supreme Court of India Official Portal",
+    url: "https://www.sci.gov.in",
+    category: "law_justice_and_consumer",
+    keywords: ["supreme court", "sci", "judgments", "daily orders", "cause list", "supreme court status"],
+    description: "Apex court of India with case listings, full bench judgments, and live constitutional proceedings.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "rtionline",
+    name: "RTI Online - Right to Information Portal",
+    url: "https://rtionline.gov.in",
+    category: "law_justice_and_consumer",
+    keywords: ["rti", "rti online", "file rti", "right to information", "first appeal", "rti status"],
+    description: "Official portal to file electronic RTI requests and appeals to all Central Government ministries.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "cybercrime",
+    name: "National Cyber Crime Reporting Portal",
+    url: "https://cybercrime.gov.in",
+    category: "law_justice_and_consumer",
+    keywords: ["cyber crime", "report cyber crime", "online fraud complaint", "1930 helpline", "cyber fraud"],
+    description: "Official national portal for citizens to lodge complaints about financial frauds and cyber crimes.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "nch",
+    name: "National Consumer Helpline (NCH)",
+    url: "https://consumerhelpline.gov.in",
+    category: "law_justice_and_consumer",
+    keywords: ["consumer forum", "consumer helpline", "complaint against company", "e-daakhil", "consumer protection"],
+    description: "Dispute grievance redressal portal for consumer complaints against corporations and brands.",
+    isGovernmentIndia: true
+  },
+  // 9. Agriculture & Rural Empowerment
+  {
+    id: "pmkisan",
+    name: "PM-Kisan Samman Nidhi",
+    url: "https://pmkisan.gov.in",
+    category: "agriculture_and_rural",
+    keywords: ["pm kisan", "kisan samman nidhi", "farmer installment", "beneficiary status", "ekyc farmer"],
+    description: "Income support scheme transferring \u20B96,000 annually into farmer bank accounts.",
+    isGovernmentIndia: true
+  },
+  {
+    id: "enam",
+    name: "e-NAM - National Agriculture Market",
+    url: "https://enam.gov.in",
+    category: "agriculture_and_rural",
+    keywords: ["enam", "e nam", "mandi rates", "crop trading", "apmc online", "farmer market price"],
+    description: "Pan-India electronic trading portal uniting APMC mandis for competitive crop prices.",
+    isGovernmentIndia: true
+  }
+];
+var GLOBAL_REFERENCE_PORTALS = [
+  // Knowledge & Research
+  {
+    id: "wikipedia",
+    name: "Wikipedia - The Free Encyclopedia",
+    url: "https://www.wikipedia.org",
+    category: "knowledge_and_research",
+    keywords: ["wikipedia", "wiki", "encyclopedia", "lookup", "article", "summary", "reference"],
+    description: "Free multilingual open-collaborative online encyclopedia."
+  },
+  {
+    id: "arxiv",
+    name: "arXiv - Open Access Scientific Papers",
+    url: "https://arxiv.org",
+    category: "knowledge_and_research",
+    keywords: ["arxiv", "research papers", "ai papers", "physics papers", "computer science preprints"],
+    description: "Preprint server for physics, mathematics, computer science, and AI."
+  },
+  {
+    id: "archive_org",
+    name: "Internet Archive & Wayback Machine",
+    url: "https://archive.org",
+    category: "knowledge_and_research",
+    keywords: ["wayback machine", "internet archive", "historical website", "cached page", "digital library"],
+    description: "Digital library of Internet sites, historical snapshots, and public domain media."
+  },
+  // Developer & Open Source
+  {
+    id: "github",
+    name: "GitHub - Code Hosting & Developer Collaboration",
+    url: "https://github.com",
+    category: "developer_and_tech",
+    keywords: ["github", "git", "repo", "repository", "pull request", "issue", "open source", "code"],
+    description: "Leading platform for software development, version control, and collaboration."
+  },
+  {
+    id: "huggingface",
+    name: "Hugging Face - The AI Community",
+    url: "https://huggingface.co",
+    category: "developer_and_tech",
+    keywords: ["hugging face", "hf", "models", "datasets", "spaces", "transformers", "llm open source"],
+    description: "Open-source platform for machine learning models, datasets, and AI demo spaces."
+  },
+  {
+    id: "stackoverflow",
+    name: "Stack Overflow - Developer Questions and Answers",
+    url: "https://stackoverflow.com",
+    category: "developer_and_tech",
+    keywords: ["stack overflow", "programming error", "coding help", "debug exception", "stackoverflow"],
+    description: "Largest question-and-answer community for programmers and software engineers."
+  },
+  // E-Commerce & Shopping (India & Global)
+  {
+    id: "amazon_in",
+    name: "Amazon India",
+    url: "https://www.amazon.in",
+    category: "ecommerce_and_retail",
+    keywords: ["amazon", "amazon india", "online shopping", "buy electronics", "prime"],
+    description: "E-commerce marketplace for electronics, books, apparel, and daily essentials."
+  },
+  {
+    id: "flipkart",
+    name: "Flipkart - Online Shopping Marketplace",
+    url: "https://www.flipkart.com",
+    category: "ecommerce_and_retail",
+    keywords: ["flipkart", "buy phone", "buy laptop", "big billion days", "online store"],
+    description: "One of India's leading e-commerce platforms for electronics and appliances."
+  },
+  // Travel & Hospitality
+  {
+    id: "makemytrip",
+    name: "MakeMyTrip - Flights, Hotels & Holiday Packages",
+    url: "https://www.makemytrip.com",
+    category: "travel_and_hospitality",
+    keywords: ["makemytrip", "mmt", "book flight", "book hotel", "holiday package", "cheapest flights"],
+    description: "Online travel agency for domestic and international flights, trains, and hotels."
+  },
+  {
+    id: "google_flights",
+    name: "Google Flights - Compare Airfares",
+    url: "https://www.google.com/travel/flights",
+    category: "travel_and_hospitality",
+    keywords: ["google flights", "compare airfare", "flight tracker", "cheapest tickets"],
+    description: "Airfare search engine comparing flight prices across airlines and routes."
+  }
+];
+var MASTER_WEB_DIRECTORY = [
+  ...INDIAN_GOVERNMENT_PORTALS,
+  ...GLOBAL_REFERENCE_PORTALS
+];
+function resolvePortalFromQuery(query) {
+  if (!query || typeof query !== "string")
+    return void 0;
+  const q2 = query.toLowerCase().trim();
+  if (q2.includes("bhuvan")) {
+    if (q2.includes("map") || q2.includes("ngmap") || q2.includes("viewer")) {
+      return "https://bhuvan.nrsc.gov.in/ngmaps";
+    }
+    return "https://bhuvan.nrsc.gov.in";
+  }
+  if (q2.includes("mosdac"))
+    return "https://mosdac.gov.in";
+  if (q2.includes("vedas"))
+    return "https://vedas.sac.gov.in";
+  if (q2.includes("bhoonidhi"))
+    return "https://bhoonidhi.nrsc.gov.in";
+  if (q2.includes("sih") || q2.includes("smart india hackathon"))
+    return "https://sih.gov.in";
+  let bestPortal;
+  let maxKeywordLength = 0;
+  for (const portal of MASTER_WEB_DIRECTORY) {
+    for (const keyword of portal.keywords) {
+      if (q2.includes(keyword)) {
+        if (keyword.length > maxKeywordLength) {
+          maxKeywordLength = keyword.length;
+          bestPortal = portal;
+        }
+      }
+    }
+  }
+  if (bestPortal) {
+    return bestPortal.url;
+  }
+  const words = q2.split(/\s+/).map((w) => w.replace(/[^a-z0-9]/g, ""));
+  for (const portal of MASTER_WEB_DIRECTORY) {
+    if (words.includes(portal.id)) {
+      return portal.url;
+    }
+  }
+  return void 0;
 }
 
 // ../../packages/protocol/dist/domain-playbooks.js
@@ -15530,250 +16089,6 @@ var REGISTERED_PLAYBOOKS = [
   FLIPKART_PLAYBOOK,
   WIKIPEDIA_PLAYBOOK
 ];
-function lookupDomainPlaybook(urlOrHostname) {
-  if (!urlOrHostname)
-    return void 0;
-  let hostname = urlOrHostname.toLowerCase().trim();
-  try {
-    if (hostname.includes("://")) {
-      hostname = new URL(hostname).hostname;
-    }
-  } catch {
-    hostname = hostname.replace(/^[a-z]+:\/\//i, "").split("/")[0].split(":")[0];
-  }
-  return REGISTERED_PLAYBOOKS.find((playbook) => {
-    if (hostname === playbook.domain || hostname.endsWith(`.${playbook.domain}`)) {
-      return true;
-    }
-    return playbook.aliases.some((alias) => hostname.includes(alias.toLowerCase()));
-  });
-}
-function isUrlMatchingRoute(url, route) {
-  if (!url)
-    return false;
-  const u = url.toLowerCase();
-  const rPath = route.path.toLowerCase();
-  if (u.includes(rPath))
-    return true;
-  if (route.aliases) {
-    for (const alias of route.aliases) {
-      if (u.includes(alias.toLowerCase()))
-        return true;
-    }
-  }
-  if (route.name === "problemStatements") {
-    if (u.includes("problem-statement") || u.includes("problemstatement") || /\/sih\d*ps/i.test(u) || u.includes("sih2026ps")) {
-      return true;
-    }
-  }
-  return false;
-}
-function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
-  const normQuery = normalizeSemanticText(userQuery);
-  const queryTokens = tokenizeSemanticText(normQuery);
-  if (!normQuery) {
-    return {
-      playbookName: playbook.name,
-      matchedIntent: "none",
-      confidence: 0,
-      rationale: "Empty user query"
-    };
-  }
-  const isMetricQuery = queryTokens.some((t) => ["how", "many", "count", "total", "number", "status", "check", "show"].includes(t));
-  if (isMetricQuery) {
-    for (const rule of playbook.metricsRules) {
-      const match = rule.labelKeywords.some((kw) => {
-        const kwTokens = tokenizeSemanticText(kw);
-        return kwTokens.every((kt2) => queryTokens.includes(kt2) || queryTokens.some((qt2) => isFuzzyTokenMatch(kt2, qt2)));
-      });
-      if (match) {
-        return {
-          playbookName: playbook.name,
-          matchedIntent: "extract_metric",
-          confidence: 0.95,
-          metricRule: rule,
-          targetPhrase: rule.labelKeywords[0],
-          rationale: `Matched metric extraction rule '${rule.metricId}' (${rule.description}) based on query keywords`
-        };
-      }
-    }
-  }
-  const isNavQuery = /^(?:(?:please|kindly)\s+)?(?:go\s+to|navigate\s+to|visit|open|load|take\s+me\s+to)\b/i.test(userQuery) || queryTokens.length > 0 && ["go", "navigate", "visit", "load"].includes(queryTokens[0]);
-  const extractedSearch = extractSearchQueryFromGoal(userQuery);
-  const hasSearchDirective = Boolean(extractedSearch && extractedSearch.length > 1) || /\b(?:search(?:\s+for)?|find|locate|lookup|filter(?:\s+by)?|query|type)\b/i.test(userQuery);
-  if (isNavQuery) {
-    for (const route of playbook.routes) {
-      if (route.name === "search" && hasSearchDirective) {
-        continue;
-      }
-      const match = route.matchKeywords.some((kw) => {
-        const kwNorm = normalizeSemanticText(kw);
-        if (normQuery.includes(kwNorm))
-          return true;
-        const kwTokens = tokenizeSemanticText(kwNorm);
-        return kwTokens.length > 0 && kwTokens.every((kt2) => queryTokens.includes(kt2) || queryTokens.some((qt2) => isFuzzyTokenMatch(kt2, qt2)));
-      });
-      if (match) {
-        const targetUrl = `https://${playbook.domain}${route.path}`;
-        const isAlreadyOnRoute = isUrlMatchingRoute(currentUrl, route);
-        return {
-          playbookName: playbook.name,
-          matchedIntent: isAlreadyOnRoute ? "none" : "navigate",
-          confidence: 0.95,
-          targetUrl,
-          targetPhrase: route.name === "problemStatements" ? "Problem Statements" : route.matchKeywords[0],
-          targetRole: "link",
-          rationale: isAlreadyOnRoute ? `Already on route '${route.name}' (${route.path})` : `Matched playbook route '${route.name}' (${route.path}) from user intent`
-        };
-      }
-    }
-  }
-  const mentionsProblemStatements = normQuery.includes("problem statement") || normQuery.includes("problem statements") || /\bps\s*\d+\b/i.test(userQuery) || queryTokens.includes("ps") && queryTokens.some((t) => /\d+/.test(t));
-  const psRoute = playbook.routes.find((r) => r.name === "problemStatements");
-  const alreadyOnPsRoute = psRoute ? isUrlMatchingRoute(currentUrl, psRoute) : false;
-  if (mentionsProblemStatements && currentUrl && !alreadyOnPsRoute) {
-    if (psRoute) {
-      return {
-        playbookName: playbook.name,
-        matchedIntent: "navigate",
-        confidence: 0.96,
-        targetUrl: `https://${playbook.domain}${psRoute.path}`,
-        targetPhrase: "Problem Statements",
-        targetRole: "link",
-        rationale: `Query references Problem Statements while currently on '${currentUrl}'. Navigating to Problem Statements page first.`
-      };
-    }
-  }
-  const isInputSearchIntent = hasSearchDirective || queryTokens.some((t) => ["search", "find", "locate", "query", "type", "enter", "filter", "lookup"].includes(t));
-  const sortedLandmarks = isInputSearchIntent ? [...playbook.landmarks].sort((a, b) => {
-    const aIsInput = a.role === "input" || a.intentAction === "type" ? -1 : 1;
-    const bIsInput = b.role === "input" || b.intentAction === "type" ? -1 : 1;
-    return aIsInput - bIsInput;
-  }) : playbook.landmarks;
-  for (const landmark of sortedLandmarks) {
-    const allAliases = [landmark.phrase, ...landmark.aliases];
-    const match = allAliases.some((alias) => {
-      const aliasNorm = normalizeSemanticText(alias);
-      if (normQuery.includes(aliasNorm))
-        return true;
-      const aliasTokens = tokenizeSemanticText(aliasNorm);
-      return aliasTokens.length > 0 && aliasTokens.every((at) => queryTokens.includes(at) || queryTokens.some((qt2) => isFuzzyTokenMatch(at, qt2)));
-    });
-    if (match) {
-      if (landmark.role === "input" || landmark.intentAction === "type") {
-        return {
-          playbookName: playbook.name,
-          matchedIntent: "fill_field",
-          confidence: 0.92,
-          targetPhrase: landmark.phrase,
-          targetRole: landmark.role,
-          rationale: `Matched landmark '${landmark.phrase}' (${landmark.description}) for input/search intent`
-        };
-      }
-      return {
-        playbookName: playbook.name,
-        matchedIntent: "click_landmark",
-        confidence: 0.94,
-        targetPhrase: landmark.phrase,
-        targetRole: landmark.role,
-        rationale: `Matched landmark '${landmark.phrase}' (${landmark.description}) in playbook for domain '${playbook.domain}'`
-      };
-    }
-  }
-  for (const route of playbook.routes) {
-    if (route.name === "search" && hasSearchDirective) {
-      continue;
-    }
-    const match = route.matchKeywords.some((kw) => {
-      const kwNorm = normalizeSemanticText(kw);
-      if (normQuery.includes(kwNorm))
-        return true;
-      const kwTokens = tokenizeSemanticText(kwNorm);
-      return kwTokens.length > 0 && kwTokens.every((kt2) => queryTokens.includes(kt2) || queryTokens.some((qt2) => isFuzzyTokenMatch(kt2, qt2)));
-    });
-    if (match) {
-      const targetUrl = `https://${playbook.domain}${route.path}`;
-      const isAlreadyOnRoute = currentUrl ? currentUrl.includes(route.path) : false;
-      return {
-        playbookName: playbook.name,
-        matchedIntent: isAlreadyOnRoute ? "none" : "navigate",
-        confidence: 0.85,
-        targetUrl,
-        rationale: isAlreadyOnRoute ? `Already on route '${route.name}' (${route.path})` : `Matched playbook route '${route.name}' (${route.path}) from user intent`
-      };
-    }
-  }
-  return {
-    playbookName: playbook.name,
-    matchedIntent: "none",
-    confidence: 0.2,
-    rationale: "No domain playbook route or landmark matched query tokens directly"
-  };
-}
-function extractMetricsWithPlaybook(textContext, metricRule) {
-  if (!textContext || !metricRule)
-    return void 0;
-  const textLower = textContext.toLowerCase();
-  const pattern = new RegExp(metricRule.valuePattern, "g");
-  for (const kw of metricRule.labelKeywords) {
-    const kwLower = kw.toLowerCase();
-    let kwIndex = textLower.indexOf(kwLower);
-    while (kwIndex !== -1) {
-      const start = Math.max(0, kwIndex - 25);
-      const end = Math.min(textContext.length, kwIndex + kwLower.length + 45);
-      const afterSnippet = textContext.slice(kwIndex + kwLower.length, end);
-      const beforeSnippet = textContext.slice(start, kwIndex);
-      const afterDirectMatch = afterSnippet.match(/^[\s:=]+([0-9][0-9,.]*[kKmMbB]?)/);
-      if (afterDirectMatch) {
-        return {
-          value: afterDirectMatch[1],
-          label: metricRule.metricId
-        };
-      }
-      const beforeMatches = [...beforeSnippet.matchAll(new RegExp(metricRule.valuePattern, "g"))];
-      if (beforeMatches.length > 0) {
-        const lastBefore = beforeMatches[beforeMatches.length - 1];
-        if (lastBefore.index !== void 0 && beforeSnippet.length - (lastBefore.index + lastBefore[0].length) <= 5) {
-          return {
-            value: lastBefore[0],
-            label: metricRule.metricId
-          };
-        }
-      }
-      const afterMatch = afterSnippet.match(new RegExp(metricRule.valuePattern));
-      if (afterMatch && (afterMatch.index ?? 99) <= 15) {
-        return {
-          value: afterMatch[0],
-          label: metricRule.metricId
-        };
-      }
-      const snippet = textContext.slice(start, end);
-      const snippetMatches = [...snippet.matchAll(pattern)];
-      if (snippetMatches.length > 0) {
-        return {
-          value: snippetMatches[0][0],
-          label: metricRule.metricId
-        };
-      }
-      kwIndex = textLower.indexOf(kwLower, kwIndex + 1);
-    }
-  }
-  const matches = [...textContext.matchAll(pattern)];
-  for (const match of matches) {
-    const matchIndex = match.index ?? -1;
-    if (matchIndex >= 0) {
-      const surrounding = textLower.slice(Math.max(0, matchIndex - 25), Math.min(textLower.length, matchIndex + match[0].length + 25));
-      const hasKeyword = metricRule.labelKeywords.some((kw) => surrounding.includes(kw.toLowerCase()));
-      if (hasKeyword) {
-        return {
-          value: match[0],
-          label: metricRule.metricId
-        };
-      }
-    }
-  }
-  return void 0;
-}
 function extractSearchQueryFromGoal(goal) {
   let q2 = (goal || "").trim();
   if (!q2)
@@ -15843,6 +16158,10 @@ function extractTargetUrlFromGoal(goal) {
     }
     return `https://${domain}${path}`;
   }
+  const directoryMatch = resolvePortalFromQuery(g);
+  if (directoryMatch) {
+    return directoryMatch;
+  }
   const contextMatch = g.match(/\b(?:in|on|at|open|load|visit|go\s+to|navigate\s+to)\s+(?:the\s+)?([a-zA-Z0-9_\s.-]+?)\s+(?:website|portal|site|page|org|organisation)\b/i);
   if (contextMatch) {
     const siteKeyword = contextMatch[1].trim().toLowerCase();
@@ -15898,37 +16217,31 @@ function extractTargetUrlFromGoal(goal) {
       return "http://localhost:4500";
     }
   }
-  const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:in\s+)?([a-zA-Z0-9_.-]+)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*|$)/i);
+  const navDirective = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:in\s+)?([a-zA-Z0-9_.\s-]+?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*|$)/i);
   if (navDirective) {
     const target = navDirective[1].trim().toLowerCase();
-    if (target.includes(".")) {
-      if (target === "wikipedia.org" || target.endsWith(".wikipedia.org"))
-        return "https://www.wikipedia.org";
-      if (target === "isro.gov.in")
-        return "https://www.isro.gov.in";
-      return `https://${target}`;
+    if (target.includes("bhuvan")) {
+      return target.includes("map") || target.includes("ngmap") ? "https://bhuvan.nrsc.gov.in/ngmaps" : "https://bhuvan.nrsc.gov.in";
     }
-    if (target === "amazon" || target.includes("amazon"))
-      return "https://www.amazon.in";
-    if (target === "flipkart" || target.includes("flipkart"))
-      return "https://www.flipkart.com";
-    if (target === "isro" || target.includes("isro"))
-      return "https://www.isro.gov.in";
-    if (target === "gmail" || target.includes("gmail"))
-      return "https://mail.google.com/mail";
-    if (target.includes("bhuvan"))
-      return "https://bhuvan.nrsc.gov.in";
     if (target.includes("mosdac"))
       return "https://mosdac.gov.in";
     if (target.includes("vedas"))
       return "https://vedas.sac.gov.in";
     if (target.includes("bhoonidhi"))
       return "https://bhoonidhi.nrsc.gov.in";
-    if (target === "sih" || target.includes("sih"))
+    if (target === "sih" || target.includes("sih") || target.includes("hackathon"))
       return "https://sih.gov.in";
+    if (target === "isro" || target.includes("isro"))
+      return "https://www.isro.gov.in";
+    if (target === "amazon" || target.includes("amazon"))
+      return "https://www.amazon.in";
+    if (target === "flipkart" || target.includes("flipkart"))
+      return "https://www.flipkart.com";
+    if (target === "gmail" || target.includes("gmail"))
+      return "https://mail.google.com/mail";
     if (target === "github" || target.includes("github"))
       return "https://github.com";
-    if (target === "wikipedia" || target.includes("wikipedia"))
+    if (target === "wikipedia" || target.includes("wikipedia") || target.includes("wiki"))
       return "https://www.wikipedia.org";
     if (target === "youtube" || target.includes("youtube"))
       return "https://www.youtube.com";
@@ -15938,8 +16251,15 @@ function extractTargetUrlFromGoal(goal) {
       return "https://duckduckgo.com";
     if (target === "google" || target.includes("google"))
       return "https://www.google.com";
-    if (target.includes("demo") || target.includes("portal"))
+    if (target.includes("demo") || target.includes("portal") || target.includes("mock"))
       return "http://localhost:4500";
+    if (target.includes(".")) {
+      if (target === "wikipedia.org" || target.endsWith(".wikipedia.org"))
+        return "https://www.wikipedia.org";
+      if (target === "isro.gov.in")
+        return "https://www.isro.gov.in";
+      return `https://${target}`;
+    }
   }
   const isOnPageAction = /\b(?:on\s+this|in\s+this|this\s+page|this\s+table|filter|find|type|fill|enter|about|check|see|tell|count|submissions?|how\s+many|what\s+is)\b/i.test(g);
   if (!isOnPageAction) {
@@ -16501,7 +16821,9 @@ var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "createNewTab",
   "description",
   "targetName",
-  "elementText"
+  "elementText",
+  "searchQuery",
+  "searchResults"
 ]);
 var ALLOWED_ATOMIC_ACTION_KEYS = /* @__PURE__ */ new Set([
   "actionId",
@@ -16528,7 +16850,8 @@ var ALLOWED_ATOMIC_ACTION_KEYS = /* @__PURE__ */ new Set([
   "url",
   "targetUrl",
   "createNewTab",
-  "description"
+  "description",
+  "searchQuery"
 ]);
 var VALID_ACTION_KINDS = /* @__PURE__ */ new Set([
   "observe",
@@ -16547,6 +16870,7 @@ var VALID_ACTION_KINDS = /* @__PURE__ */ new Set([
   "request_user_input",
   "batch",
   "spawn_subagents",
+  "web_search",
   "finish",
   "blocked"
 ]);
@@ -16670,13 +16994,23 @@ function validateActionProposal(proposal, validElements) {
   if (proposal.semanticMatchReason !== void 0 && (typeof proposal.semanticMatchReason !== "string" || proposal.semanticMatchReason.length > 1e3 || hasProhibitedScriptPattern(proposal.semanticMatchReason) || hasProhibitedUrlPattern(proposal.semanticMatchReason))) {
     return { isValid: false, errorMessage: 'Field "semanticMatchReason" must be a safe string up to 1000 characters' };
   }
-  if (proposal.fallbackStrategy !== void 0 && !(/* @__PURE__ */ new Set(["reperceive", "wait_for_hydration", "retry_target", "scroll_to_target", "navigate_fallback", "refresh_once", "request_user_input", "fail_safe"])).has(proposal.fallbackStrategy)) {
-    return { isValid: false, errorMessage: "Invalid fallbackStrategy" };
+  if (proposal.fallbackStrategy !== void 0) {
+    const allowedFallbacks = /* @__PURE__ */ new Set(["reperceive", "wait_for_hydration", "retry_target", "scroll_to_target", "navigate_fallback", "refresh_once", "request_user_input", "fail_safe"]);
+    if (typeof proposal.fallbackStrategy !== "string" || !allowedFallbacks.has(proposal.fallbackStrategy)) {
+      delete proposal.fallbackStrategy;
+    }
   }
   if (proposal.completionEvidence !== void 0) {
     const allowedEvidence = /* @__PURE__ */ new Set(["url", "element", "text", "input_value", "dialog", "attribute", "scroll", "visual_change"]);
-    if (!Array.isArray(proposal.completionEvidence) || proposal.completionEvidence.length > 8 || proposal.completionEvidence.some((item) => typeof item !== "string" || !allowedEvidence.has(item))) {
-      return { isValid: false, errorMessage: "completionEvidence must contain only supported evidence kinds" };
+    if (Array.isArray(proposal.completionEvidence)) {
+      proposal.completionEvidence = proposal.completionEvidence.map((item) => typeof item === "string" ? item.trim().toLowerCase() : "").filter((item) => allowedEvidence.has(item));
+      if (proposal.completionEvidence.length === 0) {
+        delete proposal.completionEvidence;
+      }
+    } else if (typeof proposal.completionEvidence === "string" && allowedEvidence.has(proposal.completionEvidence.trim().toLowerCase())) {
+      proposal.completionEvidence = [proposal.completionEvidence.trim().toLowerCase()];
+    } else {
+      delete proposal.completionEvidence;
     }
   }
   if (proposal.expectedState !== void 0) {
@@ -16878,6 +17212,22 @@ function validateActionProposal(proposal, validElements) {
   }
   if (proposal.createNewTab !== void 0 && typeof proposal.createNewTab !== "boolean") {
     return { isValid: false, errorMessage: 'Field "createNewTab" must be a boolean' };
+  }
+  if (kind === "web_search") {
+    const query = proposal.searchQuery;
+    if (typeof query !== "string" || query.length === 0 || query.length > 500) {
+      return { isValid: false, errorMessage: 'Action kind "web_search" requires a valid "searchQuery" string (1-500 chars)' };
+    }
+    if (hasProhibitedScriptPattern(query)) {
+      return { isValid: false, errorMessage: "searchQuery contains prohibited script patterns" };
+    }
+  } else if (proposal.searchQuery !== void 0) {
+    if (typeof proposal.searchQuery !== "string" || proposal.searchQuery.length > 500 || hasProhibitedScriptPattern(proposal.searchQuery)) {
+      return { isValid: false, errorMessage: 'Field "searchQuery" must be a string up to 500 characters' };
+    }
+  }
+  if (proposal.searchResults !== void 0 && !Array.isArray(proposal.searchResults)) {
+    return { isValid: false, errorMessage: 'Field "searchResults" must be an array' };
   }
   if (proposal.userApproved !== void 0 && typeof proposal.userApproved !== "boolean") {
     return { isValid: false, errorMessage: 'Field "userApproved" must be a boolean' };
@@ -17244,32 +17594,26 @@ var SENSITIVE_FIELD_KEYWORDS = [
   "diagnosis",
   "prescription",
   "patient",
+  "patient_notes",
   "health",
   "doctor_note",
   "clinical",
   // Phone & Mobile
   "phone",
   "mobile",
-  "contact",
   "tel",
   "cell",
   "phonenumber",
   "phone_number",
-  "usernumber",
-  "user_number",
   "mobile_number",
   "contact_number",
   "cellphone",
   // Address & Location
   "address",
-  "street",
-  "city",
-  "state",
-  "zip",
+  "street_address",
   "zipcode",
   "pincode",
   "pin_code",
-  "postal",
   "postal_code",
   "currentaddress",
   "permanentaddress",
@@ -17277,28 +17621,20 @@ var SENSITIVE_FIELD_KEYWORDS = [
   "permanent_address",
   // Date of Birth
   "dob",
-  "birth",
+  "birth_date",
   "birthday",
   "bday",
   "dateofbirth",
   "date_of_birth",
   // Name & Identity
-  "firstname",
-  "lastname",
-  "fullname",
-  "name",
-  "fname",
-  "lname",
-  "first_name",
-  "last_name",
-  "user_name",
-  "applicant_name",
-  // Account Handles
+  // Account login identifiers, not generic public name/user controls
   "username",
+  "user_name",
+  "login_id",
+  "login_name",
   "user_id",
   "userid",
-  "user_handle",
-  "user_profile"
+  "user_handle"
 ];
 var SENSITIVE_AUTOCOMPLETE_VALUES = [
   "current-password",
@@ -17640,7 +17976,9 @@ function scanTextForPII(text) {
       const start = match.index;
       const end = match.index + match[0].length;
       const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
-      if (!alreadyCovered) {
+      const prefix = text.slice(Math.max(0, start - 40), start);
+      const hasBirthLabel = /(?:^|[\s([{,;])(?:dob|date\s+of\s+birth|birth\s+date|birthday|bday)\s*[:=\-]?\s*$/i.test(prefix);
+      if (!alreadyCovered && hasBirthLabel) {
         matches.push({
           category: "date_of_birth",
           startIndex: start,
@@ -17689,133 +18027,102 @@ function scanTextForPII(text) {
 }
 
 // ../../packages/pii-rules/dist/dom-semantic.js
+var SAFE = { isSensitive: false, confidence: 1 };
+var SEARCH_TERMS = /(?:^|[^a-z0-9])(?:search|filter|find|query|institute|college|topic|keyword)(?:$|[^a-z0-9])/i;
+var COMPACT_IDENTIFIERS = [
+  [/^(?:cardnumber|creditcardnumber|debitcardnumber|ccnumber|ccnum)\d*$/i, "credit_card"],
+  [/^(?:accountnumber|bankaccountnumber|bankaccount)\d*$/i, "bank_account"],
+  [/^(?:phonenumber|mobilenumber|contactnumber)\d*$/i, "phone"],
+  [/^(?:dateofbirth|birthdate|dob)\d*$/i, "date_of_birth"],
+  [/^(?:username|loginid|userid)\d*$/i, "username"],
+  [/^(?:apikey|authkey|accesskey|accesstoken|secretkey)\d*$/i, "token"],
+  [/^(?:ssn|aadhaar(?:number)?|aadhar(?:number)?|pannumber|socialsecuritynumber)\d*$/i, "national_id"]
+];
+var SENSITIVE_LABELS = [
+  [/\b(?:password|passcode|passwd|pwd|current password|new password)\b/i, "password"],
+  [/\b(?:one time (?:code|password)|otp|2fa|mfa|verification code|auth(?:entication)? code)\b/i, "auth_code"],
+  [/\b(?:cvv|cvc|card security code|security code)\b/i, "cvv"],
+  [/\b(?:credit card|debit card|card number|card no|cc num|payment card)\b/i, "credit_card"],
+  [/\b(?:aadhaar|aadhar|ssn|social security(?: number)?|pan (?:number|no)|permanent account number|national id)\b/i, "national_id"],
+  [/\b(?:bank account|account number|account no|iban|ifsc|routing number)\b/i, "bank_account"],
+  [/\b(?:diagnosis|prescription|patient (?:notes?|record)|medical (?:notes?|history|record)|health (?:diagnosis|record)|clinical (?:notes?|diagnosis)|doctor (?:notes?|diagnosis))\b/i, "uninspectable"],
+  [/\b(?:date of birth|birth date|birthday|dob|bday)\b/i, "date_of_birth"],
+  [/\b(?:email|e mail|email address)\b/i, "email"],
+  [/\b(?:phone (?:number|no)|mobile (?:number|no)|telephone number|contact number|cellphone)\b/i, "phone"],
+  [/\b(?:street address|postal address|home address|permanent address|current address|pin code|pincode|postal code|zipcode)\b/i, "address"],
+  [/\b(?:username|user name|user id|login id|login name|user handle)\b/i, "username"],
+  [/\b(?:api key|auth key|access token|secret key|secret canary|canary)\b/i, "token"]
+];
+function decision(category, reason) {
+  return { isSensitive: true, category, reason, confidence: 0.95 };
+}
 function analyzeDomElementSensitivity(desc) {
-  const type = (desc.type || "").toLowerCase();
-  const autocomplete = (desc.autocomplete || "").toLowerCase();
-  const name2 = (desc.name || "").toLowerCase();
-  const id2 = (desc.id || "").toLowerCase();
-  const placeholder = (desc.placeholder || "").toLowerCase();
-  const ariaLabel = (desc.ariaLabel || "").toLowerCase();
-  const labelText = (desc.associatedLabelText || "").toLowerCase();
-  if (type === "password") {
-    return {
-      isSensitive: true,
-      category: "password",
-      reason: 'input[type="password"]',
-      confidence: 1
-    };
+  const tag = desc.tagName?.toLowerCase();
+  if (tag !== "input" && tag !== "textarea")
+    return SAFE;
+  const type = (desc.type || "").trim().toLowerCase();
+  if (tag === "input" && ["button", "submit", "reset", "image", "checkbox", "radio", "file", "hidden"].includes(type))
+    return SAFE;
+  if (type === "password")
+    return decision("password", 'input[type="password"]');
+  if (type === "email")
+    return decision("email", 'input[type="email"]');
+  if (type === "tel")
+    return decision("phone", 'input[type="tel"]');
+  const autocompleteTokens = (desc.autocomplete || "").toLowerCase().split(/\s+/);
+  for (const token of autocompleteTokens) {
+    if (!SENSITIVE_AUTOCOMPLETE_VALUES.includes(token))
+      continue;
+    let category = "password";
+    if (token === "cc-csc")
+      category = "cvv";
+    else if (token.startsWith("cc-"))
+      category = "credit_card";
+    else if (token.startsWith("bday"))
+      category = "date_of_birth";
+    else if (token === "one-time-code")
+      category = "auth_code";
+    else if (token.startsWith("tel"))
+      category = "phone";
+    else if (token === "email")
+      category = "email";
+    else if (token.includes("address") || token === "postal-code")
+      category = "address";
+    else if (token.includes("name") || token === "username")
+      category = "username";
+    return decision(category, `autocomplete="${token}"`);
   }
-  for (const autoVal of SENSITIVE_AUTOCOMPLETE_VALUES) {
-    if (autocomplete.includes(autoVal)) {
-      let cat = "password";
-      if (autoVal === "cc-csc")
-        cat = "cvv";
-      else if (autoVal.startsWith("cc-"))
-        cat = "credit_card";
-      else if (autoVal.startsWith("bday"))
-        cat = "date_of_birth";
-      else if (autoVal === "one-time-code")
-        cat = "auth_code";
-      else if (autoVal.startsWith("tel"))
-        cat = "phone";
-      else if (autoVal.includes("address") || autoVal.includes("postal-code"))
-        cat = "address";
-      else if (autoVal.includes("name") || autoVal === "username")
-        cat = "username";
-      else if (autoVal === "email")
-        cat = "email";
-      return {
-        isSensitive: true,
-        category: cat,
-        reason: `autocomplete="${autoVal}"`,
-        confidence: 1
-      };
+  const value = typeof desc.value === "string" ? desc.value.trim() : "";
+  if (value) {
+    const match = scanTextForPII(value)[0];
+    if (match)
+      return decision(match.category, `live value matches PII (${match.category})`);
+  }
+  const searchHints = [desc.name, desc.id, desc.placeholder, desc.ariaLabel].map((s) => (s || "").replace(/([a-z\d])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " "));
+  if (type === "search" || searchHints.some((hint) => SEARCH_TERMS.test(hint)))
+    return SAFE;
+  for (const [attribute, raw] of Object.entries({ name: desc.name, id: desc.id, placeholder: desc.placeholder, label: desc.associatedLabelText, aria: desc.ariaLabel })) {
+    const normalized = (raw || "").replace(/([a-z\d])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
+    for (const [pattern, category] of SENSITIVE_LABELS) {
+      if (pattern.test(normalized))
+        return decision(category, `sensitive ${attribute} field`);
     }
-  }
-  if (type === "email" || autocomplete === "email") {
-    return {
-      isSensitive: true,
-      category: "email",
-      reason: "type/autocomplete email",
-      confidence: 0.95
-    };
-  }
-  if (type === "tel" || autocomplete === "tel") {
-    return {
-      isSensitive: true,
-      category: "phone",
-      reason: "type/autocomplete tel",
-      confidence: 0.95
-    };
-  }
-  const combinedTokens = `${name2} ${id2} ${placeholder} ${ariaLabel} ${labelText}`.replace(/([a-z\d])([A-Z])/g, "$1 $2").toLowerCase();
-  for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
-    const regex = new RegExp(`\\b${keyword}\\b|_${keyword}|${keyword}_`, "i");
-    if (regex.test(combinedTokens) || combinedTokens.includes("secret_canary") || combinedTokens.includes("canary")) {
-      let cat = "token";
-      if (keyword.includes("password") || keyword.includes("passcode") || keyword.includes("pwd"))
-        cat = "password";
-      else if (keyword.includes("card") || keyword.includes("cc_"))
-        cat = "credit_card";
-      else if (keyword.includes("cvv") || keyword.includes("cvc"))
-        cat = "cvv";
-      else if (keyword.includes("email") || keyword.includes("mail"))
-        cat = "email";
-      else if (keyword.includes("phone") || keyword.includes("mobile") || keyword.includes("contact") || keyword.includes("tel") || keyword.includes("cell") || keyword.includes("usernumber"))
-        cat = "phone";
-      else if (keyword.includes("pan"))
-        cat = "national_id";
-      else if (keyword.includes("aadhaar") || keyword.includes("aadhar"))
-        cat = "national_id";
-      else if (keyword.includes("ssn") || keyword.includes("social_security"))
-        cat = "national_id";
-      else if (keyword.includes("bank") || keyword.includes("ifsc") || keyword.includes("iban"))
-        cat = "bank_account";
-      else if (keyword.includes("otp") || keyword.includes("2fa") || keyword.includes("mfa"))
-        cat = "auth_code";
-      else if (keyword.includes("medical") || keyword.includes("diagnosis") || keyword.includes("prescription") || keyword.includes("patient") || keyword.includes("health") || keyword.includes("doctor_note") || keyword.includes("clinical"))
-        cat = "uninspectable";
-      else if (keyword.includes("address") || keyword.includes("street") || keyword.includes("city") || keyword.includes("state") || keyword.includes("zip") || keyword.includes("postal") || keyword.includes("pincode"))
-        cat = "address";
-      else if (keyword.includes("dob") || keyword.includes("birth") || keyword.includes("bday"))
-        cat = "date_of_birth";
-      else if (keyword.includes("name") || keyword.includes("fname") || keyword.includes("lname") || keyword.includes("user") || keyword.includes("applicant"))
-        cat = "username";
-      return {
-        isSensitive: true,
-        category: cat,
-        reason: `token match: "${keyword}"`,
-        confidence: 0.95
-      };
-    }
-  }
-  if (desc.value && typeof desc.value === "string") {
-    const trimmedVal = desc.value.trim();
-    if (trimmedVal.length > 0) {
-      const piiMatches = scanTextForPII(trimmedVal);
-      if (piiMatches.length > 0) {
-        return {
-          isSensitive: true,
-          category: piiMatches[0].category,
-          reason: `live value matches PII (${piiMatches[0].category})`,
-          confidence: 0.95
-        };
+    if (attribute === "name" || attribute === "id") {
+      for (const [pattern, category] of COMPACT_IDENTIFIERS) {
+        if (pattern.test((raw || "").trim()))
+          return decision(category, `sensitive ${attribute} field`);
       }
-      const isSearchBox = combinedTokens.includes("search") || combinedTokens.includes("filter") || combinedTokens.includes("find") || type === "search";
-      if (!isSearchBox && (desc.tagName === "textarea" || desc.tagName === "input" && type !== "submit" && type !== "button" && type !== "checkbox" && type !== "radio")) {
-        return {
-          isSensitive: true,
-          category: "username",
-          reason: `live input value in form field: "${desc.name || desc.id || desc.placeholder || "input"}"`,
-          confidence: 0.85
-        };
+      for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
+        const words = keyword.replace(/_/g, " ");
+        if (new RegExp(`(?:^|[^a-z0-9])${words}(?:$|[^a-z0-9])`, "i").test(normalized)) {
+          const category = SENSITIVE_LABELS.find(([pattern]) => pattern.test(words))?.[1];
+          if (category)
+            return decision(category, `sensitive ${attribute} field`);
+        }
       }
     }
   }
-  return {
-    isSensitive: false,
-    confidence: 1
-  };
+  return SAFE;
 }
 
 // ../../packages/pii-rules/dist/scrubber.js
@@ -17874,8 +18181,8 @@ var CoordinateTransformer = class {
 function detectDomSensitiveRegions(elements, transformer) {
   const regions = [];
   for (const el2 of elements) {
-    const decision = analyzeDomElementSensitivity(el2.descriptor);
-    if (decision.isSensitive && decision.category) {
+    const decision2 = analyzeDomElementSensitivity(el2.descriptor);
+    if (decision2.isSensitive && decision2.category) {
       const viewportBox = {
         space: "viewportCssPixel",
         x: el2.boundingClientRect.x,
@@ -17883,16 +18190,16 @@ function detectDomSensitiveRegions(elements, transformer) {
         width: el2.boundingClientRect.width,
         height: el2.boundingClientRect.height
       };
-      const screenshotBox = transformer.toScreenshotBox(viewportBox, 6);
+      const screenshotBox = transformer.toScreenshotBox(viewportBox, 0);
       if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
       regions.push({
         id: `dom_sens_${el2.id}`,
-        category: decision.category,
+        category: decision2.category,
         viewportBox,
         screenshotBox,
         detectorSource: "dom_semantic",
         method: "opaque_mask",
-        label: decision.reason
+        label: decision2.reason
       });
     }
   }
@@ -17916,7 +18223,7 @@ function detectTextSensitiveRegions(textNodes, transformer) {
               width: rect.width,
               height: rect.height
             };
-            const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
+            const screenshotBox = transformer.toScreenshotBox(viewportBox, 0);
             if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
             unmergedRegions.push({
               id: `text_pii_${node.id}_${i}_${rIdx}`,
@@ -17929,7 +18236,8 @@ function detectTextSensitiveRegions(textNodes, transformer) {
             });
           }
         } else {
-          const fallbackRect = rangeMatch.fallbackParentRect || node.boundingClientRect;
+          if (!rangeMatch.fallbackParentRect) continue;
+          const fallbackRect = rangeMatch.fallbackParentRect;
           const viewportBox = {
             space: "viewportCssPixel",
             x: fallbackRect.x,
@@ -17963,7 +18271,7 @@ function detectTextSensitiveRegions(textNodes, transformer) {
             width: node.boundingClientRect.width,
             height: node.boundingClientRect.height
           };
-          const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
+          const screenshotBox = transformer.toScreenshotBox(viewportBox, 2);
           if (screenshotBox.width > 1 && screenshotBox.height > 1) {
             unmergedRegions.push({
               id: `text_pii_${node.id}_${i}`,
@@ -18484,24 +18792,15 @@ var MaskRenderer = class _MaskRenderer {
         });
         continue;
       }
-      const x = Math.max(0, Math.min(canvasWidth - 1, Math.floor(box.x)));
-      const y = Math.max(0, Math.min(canvasHeight - 1, Math.floor(box.y)));
-      const w = Math.max(1, Math.min(canvasWidth - x, Math.ceil(box.width)));
-      const h = Math.max(1, Math.min(canvasHeight - y, Math.ceil(box.height)));
+      const x = Math.max(0, Math.floor(box.x));
+      const y = Math.max(0, Math.floor(box.y));
+      const w = Math.max(1, Math.min(canvasWidth, Math.ceil(box.x + box.width)) - x);
+      const h = Math.max(1, Math.min(canvasHeight, Math.ceil(box.y + box.height)) - y);
       const clampedBox = { x, y, width: w, height: h };
       try {
         ctx.save();
         ctx.fillStyle = "#0f172a";
         ctx.fillRect(x, y, w, h);
-        ctx.strokeStyle = "#38bdf8";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, y, w, h);
-        if (w > 45 && h > 12) {
-          ctx.fillStyle = "#38bdf8";
-          ctx.font = "bold 9px sans-serif";
-          const label = `[REDACTED: ${region.category.toUpperCase()}]`;
-          ctx.fillText(label, x + 3, y + Math.min(11, h - 2));
-        }
         ctx.restore();
         let success = true;
         let failureReason;
@@ -18553,18 +18852,18 @@ var MaskRenderer = class _MaskRenderer {
     let dataUrl;
     if (typeof imageCanvas.toDataURL === "function") {
       dataUrl = imageCanvas.toDataURL("image/png");
-      if (dataUrl && dataUrl.length > 2.5 * 1024 * 1024) {
+      if (dataUrl && dataUrl.length > 800 * 1024) {
         try {
-          const jpegUrl = imageCanvas.toDataURL("image/jpeg", 0.88);
+          const jpegUrl = imageCanvas.toDataURL("image/jpeg", 0.85);
           if (jpegUrl && jpegUrl.startsWith("data:image/jpeg;base64,") && jpegUrl.length < dataUrl.length) {
             dataUrl = jpegUrl;
           }
         } catch (_) {
         }
       }
-      if (dataUrl && dataUrl.length > 3.5 * 1024 * 1024) {
+      if (dataUrl && dataUrl.length > 1.8 * 1024 * 1024) {
         try {
-          const compressedUrl = imageCanvas.toDataURL("image/jpeg", 0.72);
+          const compressedUrl = imageCanvas.toDataURL("image/jpeg", 0.75);
           if (compressedUrl && compressedUrl.startsWith("data:image/jpeg;base64,") && compressedUrl.length < dataUrl.length) {
             dataUrl = compressedUrl;
           }
@@ -19199,8 +19498,8 @@ var SanitizerPipeline = class {
         coarseBounds,
         state: el2.state,
         actionCapabilities,
-        containerContext: el2.containerContext,
-        nearestHeading: el2.nearestHeading,
+        ...el2.containerContext ? { containerContext: sanitizeElementName(el2.containerContext) } : {},
+        ...el2.nearestHeading ? { nearestHeading: sanitizeElementName(el2.nearestHeading) } : {},
         isInsideDialog: el2.isInsideDialog,
         ...el2.verticalOffset ? { verticalOffset: el2.verticalOffset } : {},
         ...el2.inViewport !== void 0 ? { inViewport: el2.inViewport } : {}
@@ -20291,8 +20590,8 @@ var TEST_FIXTURES = {
 
 // src/background/http-client.ts
 var DEFAULT_SERVER_BASE_URL = "http://localhost:4501";
-var REASONING_TIMEOUT_MS = 12e4;
-var CHAT_TIMEOUT_MS = 12e4;
+var REASONING_TIMEOUT_MS = 4e4;
+var CHAT_TIMEOUT_MS = 4e4;
 var HEALTH_TIMEOUT_MS = 3e3;
 var ReasoningHttpClient = class {
   serverBaseUrl;
@@ -20662,6 +20961,32 @@ var ReasoningHttpClient = class {
     }
     return null;
   }
+  /**
+   * Performs an autonomous web search via Tavily through the reasoning server gateway.
+   */
+  async searchWeb(query, maxResults = 5) {
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.serverBaseUrl}/api/v1/search`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-PrivaPilot-Version": "1.0"
+          },
+          body: JSON.stringify({ query, maxResults })
+        },
+        "Tavily Web Search",
+        1e4
+      );
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (err) {
+      console.warn("[PrivaPilot HttpClient] Tavily search failed:", err?.message || err);
+    }
+    return { success: false, query, results: [] };
+  }
 };
 
 // src/background/audit-logger.ts
@@ -20681,7 +21006,7 @@ var AuditLogger = class {
       }
     }
   }
-  logRedactionEvent(region, captureId, payloadDigest, decision = "redacted") {
+  logRedactionEvent(region, captureId, payloadDigest, decision2 = "redacted") {
     const record = {
       id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       timestamp: Date.now(),
@@ -20691,7 +21016,7 @@ var AuditLogger = class {
       redactionMethod: region.method,
       captureId,
       sanitizedPayloadDigest: payloadDigest,
-      decision
+      decision: decision2
     };
     this.auditTrail.push(record);
     if (this.auditTrail.length > 500) {
@@ -21303,6 +21628,35 @@ function matchFieldToVault(descriptor, profile, siteCredentials = [], _targetDom
 }
 
 // src/background/coordinator.ts
+function selectBestTavilyResult(results, query, goal, currentUrl = "") {
+  if (!results || results.length === 0) return void 0;
+  const combined = `${query} ${goal}`.toLowerCase();
+  if (combined.includes("bhuvan")) {
+    const bhuvanMatch = results.find((r) => r.url && /bhuvan(?:\.nrsc)?\.gov\.in/i.test(r.url));
+    if (bhuvanMatch) return bhuvanMatch;
+  }
+  if (combined.includes("sih") || combined.includes("hackathon")) {
+    const sihMatch = results.find((r) => r.url && /sih\.gov\.in/i.test(r.url));
+    if (sihMatch) return sihMatch;
+  }
+  if (combined.includes("isro")) {
+    const isroMatch = results.find((r) => r.url && /isro\.gov\.in/i.test(r.url));
+    if (isroMatch) return isroMatch;
+  }
+  if (combined.includes("wikipedia")) {
+    const wikiMatch = results.find((r) => r.url && /wikipedia\.org/i.test(r.url));
+    if (wikiMatch) return wikiMatch;
+  }
+  if (combined.includes("github")) {
+    const ghMatch = results.find((r) => r.url && /github\.com/i.test(r.url));
+    if (ghMatch) return ghMatch;
+  }
+  const nonArticle = results.find(
+    (r) => r.url && r.url !== currentUrl && !currentUrl.startsWith(r.url) && !r.url.includes("/article/") && !r.url.includes("/news/") && !r.url.includes("/blog/") && !r.url.includes("/post/") && !r.url.includes("medium.com")
+  );
+  if (nonArticle) return nonArticle;
+  return results.find((r) => r.url && r.url !== currentUrl && !currentUrl.startsWith(r.url)) || results[0];
+}
 function sanitizeErrorDetail(rawMessage) {
   if (!rawMessage) return "Unknown error";
   let sanitized = String(rawMessage);
@@ -21554,10 +21908,13 @@ var RunCoordinator = class {
   previousUrl = "";
   lastExecutedProposal = null;
   lastExecutionResult = null;
+  hasTavilyRecovered = false;
+  options;
   constructor(browser = new WebExtensionAdapter(), httpClient = new ReasoningHttpClient(), auditLogger = new AuditLogger(), options = {}) {
     this.browser = browser;
     this.httpClient = httpClient;
     this.auditLogger = auditLogger;
+    this.options = options;
     this.defaultMaxSteps = Math.max(1, Math.min(options.defaultMaxSteps ?? 10, 20));
     this.defaultMaxStaleRetries = options.maxStaleRetries ?? 2;
   }
@@ -21688,975 +22045,6 @@ var RunCoordinator = class {
         rationale: `Locally routed scroll ${dir} to satisfy explicit navigation directive`,
         expectedPostcondition: { kind: "scroll_changed", direction: dir }
       };
-    }
-    const isDownloadIntent = /\b(?:download|down;oad|downlaod|domwload|domwloadn|doenmlao|save|export|fetch|get\s+file)\b/i.test(trimmedGoal);
-    const activeUrl = currentUrl || sanitized.pageState?.url || "";
-    const isCurrentUrlFile = /\.(?:pdf|zip|csv|kmz|kml|tif|tiff|docx?|xlsx?)(?:\?.*)?$/i.test(activeUrl);
-    if (isCurrentUrlFile && isDownloadIntent) {
-      const filename = activeUrl.split("/").pop()?.split("?")[0] || "document.pdf";
-      try {
-        if (typeof chrome !== "undefined" && chrome.downloads?.download) {
-          chrome.downloads.download({
-            url: activeUrl,
-            filename,
-            saveAs: false
-          });
-        }
-      } catch (_) {
-      }
-      return {
-        actionId: `act_download_active_${step}_${Date.now()}`,
-        kind: "finish",
-        confidence: 1,
-        risk: "safe",
-        rationale: `Downloaded "${filename}" directly to your device.`,
-        reply: `\u2713 The file "${filename}" has been downloaded and saved to your device.`
-      };
-    }
-    if (isDownloadIntent) {
-      const downloadTarget = sanitized.elements.find((el2) => {
-        if (el2.role !== "link" && el2.role !== "button") return false;
-        const nameNorm = (el2.sanitizedName || "").toLowerCase();
-        if (nameNorm.includes("brochure") || nameNorm.includes("pdf") || nameNorm.includes("download") || nameNorm.includes("annual report") || nameNorm.includes("report")) {
-          return true;
-        }
-        return false;
-      });
-      if (downloadTarget) {
-        const hasAlreadyClickedDownload = this.actionHistory.some(
-          (a) => a.actionId && (a.actionId.includes("download") || a.actionId.includes("brochure"))
-        );
-        if (hasAlreadyClickedDownload) {
-          return {
-            actionId: `act_download_complete_${step}_${Date.now()}`,
-            kind: "finish",
-            confidence: 1,
-            risk: "safe",
-            rationale: `File download has already been triggered for "${downloadTarget.sanitizedName}".`,
-            reply: `\u2713 The download for "${downloadTarget.sanitizedName}" has been initiated and saved to your device.`
-          };
-        }
-        return {
-          actionId: `act_download_click_${step}_${Date.now()}`,
-          kind: "click",
-          targetLocalId: downloadTarget.localId,
-          confidence: 0.98,
-          risk: "safe",
-          rationale: `Clicking "${downloadTarget.sanitizedName}" to trigger file download to your device.`
-        };
-      }
-    }
-    const isNavigationIntent = /\b(?:see|se|look|find|check|show|open|navigate|go\s+to|explore)\b/i.test(trimmedGoal) && !/\b(?:download|down;oad|scroll|type|search\s+bar|input|how\s+many|count|submissions?)\b/i.test(trimmedGoal);
-    if (isNavigationIntent && step === 1) {
-      const targetKeywords = trimmedGoal.replace(/^(?:see|se|look|find|check|show|open|navigate|go\s+to|explore)\s+(?:for\s+)?(?:the\s+)?/i, "").replace(/\b(?:program|here|now|page|section|tab|link|menu)\b/gi, "").trim().toLowerCase();
-      if (targetKeywords.length >= 3) {
-        const cleanKw = targetKeywords.replace(/[^a-z0-9]/g, "");
-        const hasContextualQualifier = /\b(?:for|in|from|at|under|row|column)\s+[a-z0-9]+/i.test(trimmedGoal);
-        if (!hasContextualQualifier) {
-          const matchingLinks = sanitized.elements.filter((el2) => {
-            if (el2.role !== "link" && el2.role !== "button" && el2.role !== "tab" && el2.role !== "menuitem") return false;
-            const name2 = (el2.sanitizedName || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-            return name2.length >= 3 && (name2 === cleanKw || name2.includes(cleanKw) || cleanKw.length >= 4 && cleanKw.includes(name2));
-          });
-          if (matchingLinks.length === 1) {
-            const matchingLink = matchingLinks[0];
-            return {
-              actionId: `act_local_link_nav_${step}_${Date.now()}`,
-              kind: "click",
-              targetLocalId: matchingLink.localId,
-              confidence: 0.98,
-              risk: "safe",
-              rationale: `Clicking "${matchingLink.sanitizedName}" to open ${targetKeywords}.`
-            };
-          }
-        }
-      }
-    }
-    const hasWebTarget = /\b(?:https?:\/\/|[a-zA-Z0-9-]+\.(?:com|in|org|net|co|io|gov)|twitter|reddit|github)\b/i.test(trimmedGoal) || Boolean(currentUrl && !currentUrl.startsWith("chrome://") && !currentUrl.startsWith("chrome-extension://") && !currentUrl.startsWith("about:"));
-    if (!hasWebTarget && (trimmedGoal.includes("bookmark") || trimmedGoal.includes("book mark")) && !/\b(?:click|clcik|clik|cilck|tap|press)\b/i.test(trimmedGoal)) {
-      if (trimmedGoal.includes("open") || trimmedGoal.includes("go to") || trimmedGoal.includes("manager") || trimmedGoal.includes("launch")) {
-        this.browser.openBookmarksManager?.();
-        return {
-          actionId: `act_bookmarks_open_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 1,
-          risk: "safe",
-          rationale: "Opened Chrome Bookmarks Manager in a new tab."
-        };
-      }
-      return {
-        actionId: `act_bookmarks_audit_${step}_${Date.now()}`,
-        kind: "finish",
-        confidence: 0.98,
-        risk: "safe",
-        rationale: "Bookmarks audit verified: Inspected active bookmarks bar and folders. You can manage them directly or ask me to navigate to any bookmarked site."
-      };
-    }
-    const effectivePageUrl = currentUrl || sanitized.pageState?.url || "";
-    const hasSearchDirective = Boolean(this.getSearchQuery(goal));
-    const isOnSearchResultsPage = effectivePageUrl.includes("search") || (sanitized.pageState?.title || "").toLowerCase().includes("search") || (sanitized.pageState?.title || "").toLowerCase().includes("results");
-    const isSearchingActive = hasSearchDirective && (!this.actionHistory.some((a) => a.actionId && (a.actionId.startsWith("act_playbook_fill_") || a.actionId.startsWith("act_generic_search_fill_") || a.kind === "type")) || isOnSearchResultsPage && !this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_")));
-    if (this.currentTaskContract?.isAnswerGoal && !isSearchingActive) {
-      const topic = (this.currentTaskContract.queryTopic || "submission").toLowerCase();
-      const pageCounters = sanitized.pageState?.counters || [];
-      const pageSummaries = sanitized.pageState?.contentSummaries || [];
-      const statusSummaries = sanitized.pageState?.statusSummaries || [];
-      const matchingCounter = pageCounters.find((c) => {
-        const l = c.label.toLowerCase();
-        return l.includes(topic) || l.includes("submi") || l.includes("completed") || l.includes("total") || l.includes("count") || topic.split(/\s+/).some((t) => l.includes(t));
-      });
-      if (matchingCounter) {
-        return {
-          actionId: `act_local_answer_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 0.98,
-          risk: "safe",
-          rationale: `Answer verified: Found ${matchingCounter.value} ${matchingCounter.label} on current page.`
-        };
-      }
-      const matchingSummary = pageSummaries.find((s) => {
-        const l = s.toLowerCase();
-        return l.includes(topic) || l.includes("submi") || l.includes("completed") || topic.split(/\s+/).some((t) => l.includes(t));
-      });
-      if (matchingSummary) {
-        return {
-          actionId: `act_local_answer_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 0.96,
-          risk: "safe",
-          rationale: `Answer verified from page context: ${matchingSummary}`
-        };
-      }
-      const matchingEl = sanitized.elements.find((e) => {
-        const name2 = e.sanitizedName.toLowerCase();
-        return /\b\d[\d,.]*\b/.test(name2) && (name2.includes("submi") || name2.includes("complete") || name2.includes("problem") || name2.includes("total"));
-      });
-      if (matchingEl) {
-        return {
-          actionId: `act_local_answer_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 0.95,
-          risk: "safe",
-          rationale: `Answer verified from page element: "${matchingEl.sanitizedName}"`
-        };
-      }
-      const matchingStatus = statusSummaries.find((s) => {
-        const l = s.toLowerCase();
-        return l.includes(topic) || l.includes("submi") || l.includes("completed") || topic.split(/\s+/).some((t) => l.includes(t));
-      });
-      if (matchingStatus) {
-        return {
-          actionId: `act_local_answer_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 0.95,
-          risk: "safe",
-          rationale: `Answer verified from page status: ${matchingStatus}`
-        };
-      }
-      const navCandidate = step === 1 || this.actionHistory.length === 0 ? sanitized.elements.find((e) => {
-        if (e.role !== "tab" && e.role !== "link" && e.role !== "button") return false;
-        const name2 = e.sanitizedName.toLowerCase();
-        return name2.includes("submission") || name2.includes("problem") || name2.includes("statement") || name2.includes("dashboard") || name2.includes("overview");
-      }) : null;
-      if (navCandidate) {
-        return {
-          actionId: `act_local_nav_${step}_${Date.now()}`,
-          kind: "click",
-          targetLocalId: navCandidate.localId,
-          confidence: 0.95,
-          risk: "safe",
-          rationale: `Navigating to "${navCandidate.sanitizedName}" to find ${topic} metrics`,
-          expectedPostcondition: { kind: "status_changed" }
-        };
-      }
-      return null;
-    }
-    const urlForPlaybook = currentUrl || (sanitized.pageState?.routeFingerprint ? `https://sih.gov.in${sanitized.pageState.routeFingerprint}` : "");
-    const playbook = lookupDomainPlaybook(urlForPlaybook) || (trimmedGoal.includes("sih") ? lookupDomainPlaybook("sih.gov.in") : void 0);
-    if (playbook) {
-      const resolution = resolvePlaybookIntent(playbook, goal, currentUrl);
-      if (resolution.matchedIntent === "none" && resolution.rationale?.includes("Already on route")) {
-        const hasUnfinishedSearchOrGoal = Boolean(this.getSearchQuery(goal)) || /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
-        if (!hasUnfinishedSearchOrGoal) {
-          const reply = `You are already on the active ${playbook.name} route. All interactive navigation controls, map canvas layers, and search tools are loaded and ready.`;
-          return {
-            actionId: `act_local_answer_${step}_${Date.now()}`,
-            kind: "answer",
-            confidence: 0.98,
-            risk: "safe",
-            rationale: reply,
-            reply
-          };
-        }
-      }
-      if (resolution.matchedIntent === "extract_metric" && resolution.metricRule) {
-        const allText = [
-          ...(sanitized.pageState?.counters || []).map((c) => `${c.label}: ${c.value}`),
-          ...sanitized.pageState?.contentSummaries || [],
-          ...sanitized.pageState?.statusSummaries || [],
-          sanitized.pageState?.title || ""
-        ].join(" ");
-        const metricFound = extractMetricsWithPlaybook(allText, resolution.metricRule);
-        if (metricFound) {
-          const reply = `Playbook verified: Found ${metricFound.value} ${resolution.metricRule.labelKeywords[0]} on ${playbook.name}`;
-          return {
-            actionId: `act_playbook_metric_${step}_${Date.now()}`,
-            kind: "answer",
-            confidence: resolution.confidence,
-            risk: "safe",
-            rationale: reply,
-            reply
-          };
-        }
-      }
-      if (resolution.matchedIntent === "click_landmark" && resolution.targetPhrase) {
-        if ((currentUrl || "").includes("/ngmaps") && resolution.targetPhrase.toLowerCase().includes("2d")) {
-          const hasPendingDownstreamGoal = Boolean(this.getSearchQuery(goal)) || /\b(?:search|find|locate|inspect|examine|thematic|summarize|summarise|milestone|milestones|tell|analyze|analyse|what\s+is|what\s+are|extract)\b/i.test(trimmedGoal);
-          if (!hasPendingDownstreamGoal) {
-            const reply = "You are already on the active Bhuvan NextGen 2D/3D Map Viewer. The satellite map canvas and geospatial navigation controls are loaded and ready.";
-            return {
-              actionId: `act_local_answer_${step}_${Date.now()}`,
-              kind: "answer",
-              confidence: 0.98,
-              risk: "safe",
-              rationale: reply,
-              reply
-            };
-          }
-        }
-        const hasAlreadyClickedLandmark = this.actionHistory.some(
-          (a) => a.actionId && a.actionId.startsWith("act_playbook_click_")
-        );
-        if (hasAlreadyClickedLandmark) {
-          return {
-            actionId: `act_local_finish_${step}_${Date.now()}`,
-            kind: "finish",
-            confidence: 0.98,
-            risk: "safe",
-            rationale: `Playbook landmark "${resolution.targetPhrase}" clicked and navigation verified`
-          };
-        }
-        const targetTokens = tokenizeSemanticText(resolution.targetPhrase);
-        const matchingEl = sanitized.elements.find((el2) => {
-          const nameNorm = el2.sanitizedName.toLowerCase();
-          const phraseNorm = resolution.targetPhrase.toLowerCase();
-          if (nameNorm === phraseNorm || nameNorm.includes(phraseNorm) || phraseNorm.includes(nameNorm)) return true;
-          return targetTokens.length > 0 && targetTokens.every((t) => nameNorm.includes(t));
-        });
-        if (matchingEl) {
-          return {
-            actionId: `act_playbook_click_${step}_${Date.now()}`,
-            kind: "click",
-            targetLocalId: matchingEl.localId,
-            confidence: resolution.confidence,
-            risk: "safe",
-            rationale: `Playbook landmark grounded: ${resolution.rationale}`,
-            expectedPostcondition: { kind: "status_changed" }
-          };
-        }
-      }
-      if (resolution.matchedIntent === "navigate" && resolution.targetUrl) {
-        const hasAlreadyNavigated = this.actionHistory.some(
-          (a) => a.actionId && a.actionId.startsWith("act_playbook_nav_")
-        );
-        if (!hasAlreadyNavigated) {
-          const targetPhraseNorm = (resolution.targetPhrase || "").toLowerCase();
-          const phraseTokens = tokenizeSemanticText(targetPhraseNorm);
-          const routeKeywordTokens = tokenizeSemanticText(goal);
-          const navLink = sanitized.elements.find((el2) => {
-            if (el2.role !== "link" && el2.role !== "button" && el2.role !== "tab") return false;
-            const nameNorm = el2.sanitizedName.toLowerCase();
-            if (targetPhraseNorm && (nameNorm === targetPhraseNorm || nameNorm.includes(targetPhraseNorm) || targetPhraseNorm.includes(nameNorm))) {
-              return true;
-            }
-            if (phraseTokens.length > 0 && phraseTokens.every((t) => nameNorm.includes(t))) {
-              return true;
-            }
-            return routeKeywordTokens.some((t) => t.length > 3 && nameNorm.includes(t));
-          });
-          if (navLink) {
-            return {
-              actionId: `act_playbook_nav_${step}_${Date.now()}`,
-              kind: "click",
-              targetLocalId: navLink.localId,
-              confidence: resolution.confidence,
-              risk: "safe",
-              rationale: `Playbook navigation grounded to link "${navLink.sanitizedName}"`,
-              expectedPostcondition: { kind: "status_changed" }
-            };
-          }
-        }
-      }
-      const isSearchDirective = resolution.matchedIntent === "fill_field" || this.actionHistory.some((a) => a.actionId && (a.actionId.startsWith("act_playbook_nav_") || a.actionId.startsWith("act_init_nav_"))) && /(?:(?:search(?:\s+for)?|find|filter(?:\s+by)?)\s+)/i.test(trimmedGoal);
-      if (isSearchDirective) {
-        const hasAlreadyFilled = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_playbook_fill_"));
-        if (hasAlreadyFilled) {
-          const query = this.getSearchQuery(goal) || "query";
-          const queryTokens = tokenizeSemanticText(query.toLowerCase());
-          const STOPWORDS = /* @__PURE__ */ new Set([
-            "and",
-            "the",
-            "for",
-            "with",
-            "from",
-            "that",
-            "this",
-            "into",
-            "about",
-            "or",
-            "in",
-            "on",
-            "at",
-            "by",
-            "to",
-            "a",
-            "an",
-            "of",
-            "is",
-            "it",
-            "as",
-            "be",
-            "are",
-            "was",
-            "all",
-            "any",
-            "can",
-            "her",
-            "one",
-            "our",
-            "out",
-            "day",
-            "get",
-            "has",
-            "him",
-            "his",
-            "how",
-            "man",
-            "new",
-            "now",
-            "old",
-            "see",
-            "two",
-            "way",
-            "who",
-            "boy",
-            "did",
-            "its",
-            "let",
-            "put",
-            "say",
-            "she",
-            "too",
-            "use",
-            "what",
-            "where",
-            "when",
-            "why",
-            "then",
-            "summarize",
-            "summarise",
-            "analyze",
-            "analyse",
-            "milestone",
-            "milestones"
-          ]);
-          const meaningfulTokens = queryTokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t));
-          const hasAlreadyClickedSuggestion = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_dropdown_suggestion_click_"));
-          const isMapDomain = (playbook.domain || "").includes("bhuvan") || (currentUrl || "").includes("bhuvan") || (currentUrl || "").includes("/ngmaps") || (playbook.name || "").toLowerCase().includes("bhuvan");
-          if (isMapDomain && !hasAlreadyClickedSuggestion) {
-            const suggestionItem = sanitized.elements.find((el2) => {
-              const nameNorm = el2.sanitizedName.toLowerCase();
-              const isSuggestionRole = el2.role === "menuitem" || el2.role === "button" || el2.role === "link" || el2.role === "option";
-              if (!isSuggestionRole) return false;
-              if (nameNorm.includes("about") || nameNorm.includes("random") || nameNorm.includes("upload") || nameNorm.includes("help") || nameNorm.includes("terms") || nameNorm.includes("privacy")) {
-                return false;
-              }
-              const matchesMeaningful = meaningfulTokens.some((t) => {
-                const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i");
-                return re.test(nameNorm);
-              });
-              const matchesGeo = nameNorm.includes("bengaluru") || nameNorm.includes("bangalore") || nameNorm.includes("karnataka") || nameNorm.includes("india") || nameNorm.includes("district");
-              return matchesMeaningful || matchesGeo;
-            });
-            if (suggestionItem) {
-              return {
-                actionId: `act_dropdown_suggestion_click_${step}_${Date.now()}`,
-                kind: "click",
-                targetLocalId: suggestionItem.localId,
-                targetName: suggestionItem.sanitizedName,
-                confidence: 0.96,
-                risk: "safe",
-                rationale: `Selecting location suggestion "${suggestionItem.sanitizedName}" for query "${query}"`,
-                expectedPostcondition: { kind: "status_changed" }
-              };
-            }
-          }
-          if (isMapDomain && hasAlreadyClickedSuggestion) {
-            const needsLayerInspection = /\b(?:inspect|examine|explore|show|open|available|thematic|satellite|imagery|layers?|overlays?|data\s+services?)\b/i.test(trimmedGoal);
-            const hasOpenedLayers = this.actionHistory.some((a) => a.actionId?.startsWith("act_bhuvan_layers_"));
-            if (needsLayerInspection && !hasOpenedLayers) {
-              const layerControl = sanitized.elements.find((el2) => {
-                if (!["button", "link", "tab", "menuitem", "generic"].includes(el2.role)) return false;
-                const semanticText = `${el2.sanitizedName || ""} ${el2.containerContext || ""} ${el2.nearestHeading || ""}`.toLowerCase();
-                return /\b(?:map\s+layers?|layers?|thematic|data\s+services?|overlays?|catalog(?:ue)?)\b/i.test(semanticText) || /open\s+drawer/i.test(semanticText);
-              });
-              if (layerControl) {
-                return {
-                  actionId: `act_bhuvan_layers_${step}_${Date.now()}`,
-                  kind: "click",
-                  targetLocalId: layerControl.localId,
-                  targetName: layerControl.sanitizedName,
-                  confidence: 0.97,
-                  risk: "safe",
-                  rationale: `Opening Bhuvan layer control "${layerControl.sanitizedName}" after centering ${query}`
-                };
-              }
-              return null;
-            }
-            if (needsLayerInspection && hasOpenedLayers) {
-              return null;
-            }
-            return {
-              actionId: `act_local_finish_${step}_${Date.now()}`,
-              kind: "finish",
-              confidence: 0.98,
-              risk: "safe",
-              rationale: `Location "${query}" selected from suggestions and centered on map`
-            };
-          }
-          const isOnSearchResults = (currentUrl || "").includes("search.html") || (currentUrl || "").includes("gsc.q=") || (currentUrl || "").includes("Special:Search") || (currentUrl || "").includes("/search?") || (currentUrl || "").includes("search=") || (currentUrl || "").includes("?q=");
-          const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_"));
-          if (isOnSearchResults && !hasAlreadyClickedResult) {
-            const isChromeLink = (n) => {
-              return n === "search" || n === "search wikipedia" || n === "random article" || n === "upload file" || n === "main page" || n === "contents" || n === "current events" || n === "recent changes" || n.includes("privacy policy") || n.includes("terms of use") || n.includes("disclaimer") || n.includes("developers") || n.includes("statistics") || n.includes("cookie") || n.includes("mobile view");
-            };
-            const resultLink = sanitized.elements.find((el2) => {
-              if (el2.role !== "link" && el2.role !== "button") return false;
-              const nameNorm = el2.sanitizedName.toLowerCase().trim();
-              if (isChromeLink(nameNorm) || nameNorm.length < 3) return false;
-              const matchCount = meaningfulTokens.filter((t) => {
-                const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i");
-                return re.test(nameNorm);
-              }).length;
-              return matchCount >= Math.min(2, meaningfulTokens.length);
-            });
-            if (resultLink) {
-              return {
-                actionId: `act_search_result_click_${step}_${Date.now()}`,
-                kind: "click",
-                targetLocalId: resultLink.localId,
-                targetName: resultLink.sanitizedName,
-                confidence: 0.96,
-                risk: "safe",
-                rationale: `Drilling into search result "${resultLink.sanitizedName}" on search page`,
-                expectedPostcondition: { kind: "status_changed" }
-              };
-            }
-          }
-          const hasClickedSearchBtn = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_btn_click_"));
-          if (!isOnSearchResults && !hasClickedSearchBtn) {
-            const searchBtn = sanitized.elements.find((el2) => {
-              if (el2.role !== "button") return false;
-              const nameNorm = el2.sanitizedName.toLowerCase().trim();
-              return nameNorm === "search" || nameNorm === "search wikipedia" || nameNorm === "go";
-            });
-            if (searchBtn) {
-              return {
-                actionId: `act_search_btn_click_${step}_${Date.now()}`,
-                kind: "click",
-                targetLocalId: searchBtn.localId,
-                targetName: searchBtn.sanitizedName || "Search Button",
-                confidence: 0.95,
-                risk: "safe",
-                rationale: `Clicking search button "${searchBtn.sanitizedName}" to submit query "${query}"`,
-                expectedPostcondition: { kind: "status_changed" }
-              };
-            }
-          }
-          const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
-          if (wantsContentReasoning) {
-            return null;
-          }
-          const wantsEcomAnalysis = /(?:analyze|analysis|price|prices|cost|how\s+much|compare)/i.test(trimmedGoal) && sanitized.elements.some((el2) => /(?:iphone|apple|phone|₹|\$|rs\.?)/i.test(el2.sanitizedName || ""));
-          if (wantsEcomAnalysis) {
-            const productElements = sanitized.elements.filter((el2) => {
-              const text = el2.sanitizedName || "";
-              return /(?:iphone|apple|phone|₹|\$|rs\.?|gb|off|deal|price|model)/i.test(text) && text.length > 3;
-            });
-            const topProducts = Array.from(new Set(productElements.map((el2) => el2.sanitizedName.trim()))).slice(0, 6);
-            let analysisRationale = `Searched for "${query}" on ${currentUrl || "portal"}.
-
-` + (topProducts.length > 0 ? `**Extracted Listings & Pricing from Page:**
-` + topProducts.map((p) => `\u2022 ${p}`).join("\n") : `**Live Search Completed:** Results for "${query}" loaded and verified on the page.`);
-            return {
-              actionId: `act_local_answer_${step}_${Date.now()}`,
-              kind: "answer",
-              confidence: 0.98,
-              risk: "safe",
-              rationale: analysisRationale
-            };
-          }
-          return {
-            actionId: `act_local_finish_${step}_${Date.now()}`,
-            kind: "finish",
-            confidence: 0.98,
-            risk: "safe",
-            rationale: `Playbook search query "${query}" executed and verified on ${playbook.name}`
-          };
-        }
-        const phraseToMatch = (resolution.targetPhrase || "search").toLowerCase();
-        const targetTokens = tokenizeSemanticText(phraseToMatch);
-        const searchKeywords = ["search", "filter", "query", "find", "keyword"];
-        const matchingEl = sanitized.elements.find((el2) => {
-          if (el2.role !== "input" && el2.role !== "textarea") return false;
-          const nameNorm = el2.sanitizedName.toLowerCase();
-          if (nameNorm === phraseToMatch || nameNorm.includes(phraseToMatch) || phraseToMatch.includes(nameNorm)) return true;
-          if (targetTokens.some((t) => nameNorm.includes(t))) return true;
-          if (searchKeywords.some((kw) => nameNorm.includes(kw))) return true;
-          return false;
-        });
-        if (matchingEl) {
-          const textToType = this.getSearchQuery(goal);
-          return {
-            actionId: `act_playbook_fill_${step}_${Date.now()}`,
-            kind: "type",
-            targetLocalId: matchingEl.localId,
-            targetName: matchingEl.sanitizedName || `${playbook.name} Search`,
-            textToType,
-            pressEnter: true,
-            confidence: resolution.confidence || 0.92,
-            risk: "safe",
-            rationale: `Search query "${textToType}" grounded into input "${matchingEl.sanitizedName}"`
-          };
-        }
-      }
-    }
-    const genericSearchQuery = this.getSearchQuery(goal);
-    const hasGenericSearchDirective = Boolean(genericSearchQuery) && /\b(?:search(?:\s+for)?|search\s+box|search\s+bar|search\s+input|query\s+for|lookup)\b/i.test(trimmedGoal);
-    if (!playbook && hasGenericSearchDirective) {
-      const query = genericSearchQuery || "search query";
-      const hasAlreadyFilled = this.actionHistory.some(
-        (a) => a.actionId && (a.actionId.startsWith("act_generic_search_fill_") || a.actionId.startsWith("act_playbook_fill_") || a.kind === "type")
-      );
-      if (!hasAlreadyFilled) {
-        const searchInputCandidates = sanitized.elements.filter((el2) => {
-          if (el2.role !== "input" && el2.role !== "textarea") return false;
-          if (el2.state.includes("disabled")) return false;
-          return true;
-        });
-        const searchInput = searchInputCandidates.find((el2) => {
-          const nameNorm = (el2.sanitizedName || "").toLowerCase();
-          return nameNorm.includes("search") || nameNorm.includes("find") || nameNorm.includes("query") || nameNorm.includes("filter") || nameNorm.includes("keyword") || nameNorm === "q" || nameNorm === "kwd" || nameNorm === "searchbox" || nameNorm === "searchinput";
-        }) || (searchInputCandidates.length === 1 ? searchInputCandidates[0] : null);
-        if (searchInput) {
-          return {
-            actionId: `act_generic_search_fill_${step}_${Date.now()}`,
-            kind: "type",
-            targetLocalId: searchInput.localId,
-            targetName: searchInput.sanitizedName || "Search Input",
-            textToType: query,
-            pressEnter: true,
-            confidence: 0.95,
-            risk: "safe",
-            rationale: `Universal search: Entering query "${query}" into "${searchInput.sanitizedName || "search bar"}" and pressing Enter`
-          };
-        }
-      } else {
-        const queryTokens = tokenizeSemanticText(query.toLowerCase());
-        const STOPWORDS = /* @__PURE__ */ new Set([
-          "and",
-          "the",
-          "for",
-          "with",
-          "from",
-          "that",
-          "this",
-          "into",
-          "about",
-          "or",
-          "in",
-          "on",
-          "at",
-          "by",
-          "to",
-          "a",
-          "an",
-          "of",
-          "is",
-          "it",
-          "as",
-          "be",
-          "are",
-          "was",
-          "all",
-          "any",
-          "can",
-          "her",
-          "one",
-          "our",
-          "out",
-          "day",
-          "get",
-          "has",
-          "him",
-          "his",
-          "how",
-          "man",
-          "new",
-          "now",
-          "old",
-          "see",
-          "two",
-          "way",
-          "who",
-          "boy",
-          "did",
-          "its",
-          "let",
-          "put",
-          "say",
-          "she",
-          "too",
-          "use",
-          "what",
-          "where",
-          "when",
-          "why",
-          "then",
-          "summarize",
-          "summarise",
-          "analyze",
-          "analyse",
-          "milestone",
-          "milestones"
-        ]);
-        const meaningfulTokens = queryTokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t));
-        const activeUrl2 = currentUrl || sanitized.pageState?.url || "";
-        const isOnSearchResults = (activeUrl2 || "").includes("search") || (activeUrl2 || "").includes("?q=") || (activeUrl2 || "").includes("&q=") || (activeUrl2 || "").includes("query=") || (sanitized.pageState?.title || "").toLowerCase().includes("search") || (sanitized.pageState?.title || "").toLowerCase().includes("results");
-        const hasAlreadyClickedResult = this.actionHistory.some((a) => a.actionId && a.actionId.startsWith("act_search_result_click_"));
-        if (isOnSearchResults && !hasAlreadyClickedResult) {
-          const isChromeLink = (n) => {
-            return n === "search" || n === "random article" || n === "upload file" || n === "main page" || n === "contents" || n === "current events" || n === "recent changes" || n.includes("privacy policy") || n.includes("terms of use") || n.includes("disclaimer") || n.includes("developers") || n.includes("statistics") || n.includes("cookie") || n.includes("sign in");
-          };
-          const resultLink = sanitized.elements.find((el2) => {
-            if (el2.role !== "link" && el2.role !== "button") return false;
-            const nameNorm = el2.sanitizedName.toLowerCase().trim();
-            if (isChromeLink(nameNorm) || nameNorm.length < 3) return false;
-            const matchCount = meaningfulTokens.filter((t) => {
-              const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i");
-              return re.test(nameNorm);
-            }).length;
-            return matchCount >= Math.min(2, meaningfulTokens.length);
-          });
-          if (resultLink) {
-            return {
-              actionId: `act_search_result_click_${step}_${Date.now()}`,
-              kind: "click",
-              targetLocalId: resultLink.localId,
-              targetName: resultLink.sanitizedName,
-              confidence: 0.96,
-              risk: "safe",
-              rationale: `Drilling into search result "${resultLink.sanitizedName}" on search results page`,
-              expectedPostcondition: { kind: "status_changed" }
-            };
-          }
-        }
-        const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
-        if (wantsContentReasoning) {
-          return null;
-        }
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 0.98,
-          risk: "safe",
-          rationale: `Universal search query "${query}" executed and verified on current page`
-        };
-      }
-    }
-    if (step > 1 && this.actionHistory.length > 0 && this.currentTaskContract) {
-      const lastAction = this.actionHistory[this.actionHistory.length - 1];
-      const isDialogGoal = this.currentTaskContract.expectedTerminal.kind === "dialog_visible";
-      const reqFragment = (this.currentTaskContract.expectedTargetNameSubstring || "preview").toLowerCase();
-      const dialogTitles = (sanitized.pageState?.dialogTitles || []).map((t) => t.toLowerCase());
-      const dialogElements = sanitized.elements.filter((e) => e.role === "dialog");
-      const elementNames = dialogElements.map((e) => e.sanitizedName.toLowerCase());
-      const dialogVisible = dialogTitles.some((t) => t.includes(reqFragment)) || elementNames.some((n) => n.includes(reqFragment));
-      if (isDialogGoal && lastAction.kind === "click" && dialogVisible) {
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 1,
-          risk: "safe",
-          rationale: `Safe ${reqFragment} drawer is visible and verified; task completed locally`
-        };
-      }
-      if (lastAction.actionId && lastAction.actionId.startsWith("act_search_result_click_")) {
-        const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
-        if (wantsContentReasoning) {
-          return null;
-        }
-        const pageTitle = sanitized.pageState?.title || "Details Page";
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 0.98,
-          risk: "safe",
-          rationale: `Navigated from search results to verified details page: "${pageTitle}"`
-        };
-      }
-      if (lastAction.actionId && lastAction.actionId.startsWith("act_dropdown_suggestion_click_")) {
-        const query = this.getSearchQuery(goal) || "query";
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 0.98,
-          risk: "safe",
-          rationale: `Location "${query}" selected from suggestions and centered on map`
-        };
-      }
-      if (lastAction.actionId && (lastAction.actionId.startsWith("act_playbook_fill_") || lastAction.actionId.startsWith("act_generic_search_fill_"))) {
-        const wantsContentReasoning = /(?:summarize|summarise|milestone|milestones|explain|tell\s+me|analyze|analyse|what\s+is|what\s+are|key|details|overview|findings|compare)/i.test(trimmedGoal);
-        if (wantsContentReasoning) {
-          return null;
-        }
-        const query = this.getSearchQuery(goal) || "query";
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 0.98,
-          risk: "safe",
-          rationale: `Search query "${query}" executed and verified on page`
-        };
-      }
-      const isStatusGoal = this.currentTaskContract.expectedTerminal.kind === "status_changed";
-      const targetSub = (this.currentTaskContract.expectedTargetNameSubstring || "").toLowerCase();
-      const statusSummaries = (sanitized.pageState?.statusSummaries || []).map((s) => s.toLowerCase());
-      const postSummary = (sanitized.pageState?.postconditionSummary || "").toLowerCase();
-      const isSynchronized = statusSummaries.some((s) => s.includes("synchronized")) || postSummary.includes("synchronized");
-      if (isStatusGoal && lastAction.kind === "click" && (targetSub.includes("sync") || targetSub.includes("refresh")) && isSynchronized) {
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 1,
-          risk: "safe",
-          rationale: `Status mutation for ${targetSub} verified: final status Synchronized; task completed locally`
-        };
-      }
-      const isFilterGoal = this.currentTaskContract.goalPattern === "search_filter";
-      const isFilteredOnPage = (sanitized.pageState?.statusSummaries || []).some((s) => s.toLowerCase().includes("filtered"));
-      if (isFilterGoal && lastAction.kind === "type" && isFilteredOnPage) {
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 1,
-          risk: "safe",
-          rationale: `Table filter is active and verified; task completed locally`
-        };
-      }
-      const isSelectGoal = this.currentTaskContract.goalPattern === "select_option" || this.currentTaskContract.expectedTerminal.kind === "select_changed";
-      if (isSelectGoal && lastAction.kind === "select") {
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 1,
-          risk: "safe",
-          rationale: `Select option was executed and verified; task completed locally`
-        };
-      }
-    }
-    if (/^(dismiss|accept|close)\s+(cookie|banner|notice|modal|dialog)/i.test(trimmedGoal)) {
-      const candidates = sanitized.elements.filter((e) => {
-        const name2 = (e.sanitizedName || "").toLowerCase();
-        return e.role === "button" && (name2.includes("accept") || name2.includes("dismiss") || name2.includes("close") || name2.includes("got it") || name2.includes("agree"));
-      });
-      if (candidates.length === 1) {
-        const candidate = candidates[0];
-        return {
-          actionId: `act_local_dismiss_${step}_${Date.now()}`,
-          kind: "click",
-          targetLocalId: candidate.localId,
-          confidence: 0.95,
-          risk: "safe",
-          rationale: `Locally resolved dismissal of banner via button "${candidate.sanitizedName}"`,
-          expectedPostcondition: { kind: "visibility_changed", targetLocalId: candidate.localId, state: "hidden" }
-        };
-      }
-    }
-    const isExplicitTypeGoal = /^(?:(?:please|kindly)\s+)?(?:type|enter|write|fill)\s+/i.test(trimmedGoal) || Boolean(this.currentTaskContract?.structuredIntent?.submitAfter) || Boolean(this.currentTaskContract?.structuredIntent?.formAssignments) || this.currentTaskContract?.structuredIntent?.targetPhrase === "chatbox";
-    const formAssignments = this.currentTaskContract?.structuredIntent?.formAssignments;
-    if (isExplicitTypeGoal && formAssignments && formAssignments.length > 0) {
-      const assignmentIdx = step - 1;
-      if (assignmentIdx < formAssignments.length) {
-        const assignment = formAssignments[assignmentIdx];
-        const subIntent = {
-          intent: "type",
-          targetPhrase: assignment.target,
-          targetTokens: tokenizeSemanticText(assignment.target),
-          requestedValue: assignment.value
-        };
-        const grounding = groundTargetCandidates(sanitized.elements, subIntent);
-        const target = grounding.bestCandidate && (grounding.status === "unambiguous_match" || grounding.bestCandidate.score >= 40) ? grounding.bestCandidate.element : sanitized.elements.filter((el2) => el2.actionCapabilities.includes("type") && !el2.state.includes("disabled"))[assignmentIdx];
-        if (target) {
-          return {
-            actionId: `act_local_form_${step}_${Date.now()}`,
-            kind: "type",
-            targetLocalId: target.localId,
-            textToType: assignment.value,
-            confidence: 0.95,
-            risk: "safe",
-            rationale: `Form filling: entered "${assignment.value}" into "${target.sanitizedName || assignment.target}"`
-          };
-        }
-      } else {
-        return {
-          actionId: `act_local_finish_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 1,
-          risk: "safe",
-          rationale: "All requested form fields filled successfully"
-        };
-      }
-    }
-    if (isExplicitTypeGoal && step === 1 && this.currentTaskContract?.structuredIntent?.intent === "type" && this.currentTaskContract.structuredIntent.requestedValue) {
-      const intent = this.currentTaskContract.structuredIntent;
-      const grounding = groundTargetCandidates(sanitized.elements, intent);
-      const target = grounding.bestCandidate && (grounding.status === "unambiguous_match" || grounding.bestCandidate.score >= 50) ? grounding.bestCandidate.element : sanitized.elements.find((el2) => el2.actionCapabilities.includes("type") && !el2.state.includes("disabled"));
-      if (target) {
-        return {
-          actionId: `act_local_type_${step}_${Date.now()}`,
-          kind: "type",
-          targetLocalId: target.localId,
-          textToType: intent.requestedValue,
-          confidence: 0.95,
-          risk: "safe",
-          rationale: `Locally resolved typing "${intent.requestedValue}" into "${target.sanitizedName}"`,
-          pressEnter: Boolean(intent.pressEnter)
-        };
-      }
-    }
-    if (isExplicitTypeGoal && step === 2 && this.actionHistory.length > 0 && this.actionHistory[0].kind === "type" && this.currentTaskContract?.structuredIntent?.intent === "type") {
-      const intent = this.currentTaskContract.structuredIntent;
-      if (intent.submitAfter) {
-        const sendBtn = sanitized.elements.find((e) => {
-          if (e.role !== "button" || e.state.includes("disabled")) return false;
-          const name2 = (e.sanitizedName || "").toLowerCase().trim();
-          if (name2.startsWith("sending") || name2.includes("draft") || name2.includes("accordion")) return false;
-          return /\b(?:send|submit|post)\b/i.test(name2) || name2 === "\u2191" || name2.includes("arrow");
-        });
-        if (sendBtn) {
-          return {
-            actionId: `act_local_send_${step}_${Date.now()}`,
-            kind: "click",
-            targetLocalId: sendBtn.localId,
-            confidence: 0.95,
-            risk: "safe",
-            userApproved: true,
-            rationale: `Clicking send/submit button "${sendBtn.sanitizedName}" following message entry`
-          };
-        }
-      }
-      return {
-        actionId: `act_local_finish_${step}_${Date.now()}`,
-        kind: "finish",
-        confidence: 1,
-        risk: "safe",
-        rationale: `Typed "${intent.requestedValue || ""}" into target field; directive completed`
-      };
-    }
-    if (isExplicitTypeGoal && step > 2 && this.actionHistory.length > 0 && this.currentTaskContract?.structuredIntent?.intent === "type") {
-      return {
-        actionId: `act_local_finish_${step}_${Date.now()}`,
-        kind: "finish",
-        confidence: 1,
-        risk: "safe",
-        rationale: `Directive completed`
-      };
-    }
-    const isFlightGoal = /\b(?:flight|flights|airline|airlines|ticket|tickets|fare|fares)\b/i.test(trimmedGoal);
-    if (isFlightGoal) {
-      const originMatch = trimmedGoal.match(/(?:from\s+([a-zA-Z\s]+?)\s+to\s+([a-zA-Z\s]+?))(?:\s+on|\s+for|\s+with|\s+in|\s+using|\s+and|\s*$)/i) || trimmedGoal.match(/\b([a-zA-Z\s]+?)\s+to\s+([a-zA-Z\s]+?)\s+flights?\b/i) || trimmedGoal.match(/\bflights?\s+(?:from\s+)?([a-zA-Z\s]+?)\s+(?:to\s+)?([a-zA-Z\s]+?)\b/i);
-      const originCity = originMatch ? originMatch[1].trim() : "Delhi";
-      const destCity = originMatch ? originMatch[2].trim() : "Mumbai";
-      const originCode = AIRPORT_CODES[originCity.toLowerCase()] || originCity.slice(0, 3).toUpperCase();
-      const destCode = AIRPORT_CODES[destCity.toLowerCase()] || destCity.slice(0, 3).toUpperCase();
-      const elementsTexts = sanitized.elements.map((e) => e.sanitizedName || e.text || "");
-      const hasPrices = elementsTexts.some((t) => /(?:₹|Rs\.?|INR)\s*[\d,]+/i.test(t));
-      const hasFlightCodes = elementsTexts.some((t) => /\b(?:6E|AI|UK|SG|QP|G8)[-\s]?\d{3,4}\b/i.test(t));
-      if (hasPrices || hasFlightCodes) {
-        const topPrices = elementsTexts.filter((t) => /(?:₹|Rs\.?|INR)\s*[\d,]+/i.test(t)).slice(0, 5);
-        const topCodes = elementsTexts.filter((t) => /\b(?:6E|AI|UK|SG|QP|G8)[-\s]?\d{3,4}\b/i.test(t)).slice(0, 5);
-        return {
-          actionId: `act_local_flight_finish_${step}_${Date.now()}`,
-          kind: "finish",
-          confidence: 0.98,
-          risk: "safe",
-          rationale: `Flight search listings verified on page: Fares: ${topPrices.join(", ") || "Available"}${topCodes.length > 0 ? ` | Flights: ${topCodes.join(", ")}` : ""}`
-        };
-      }
-      const hasTypedOrigin = this.actionHistory.some((a) => a.kind === "type" && (a.textToType?.toLowerCase().includes(originCity.toLowerCase()) || a.textToType?.toLowerCase().includes(originCode.toLowerCase())));
-      const hasTypedDest = this.actionHistory.some((a) => a.kind === "type" && (a.textToType?.toLowerCase().includes(destCity.toLowerCase()) || a.textToType?.toLowerCase().includes(destCode.toLowerCase())));
-      if (hasTypedOrigin && !hasTypedDest) {
-        const suggestion = findAirportSuggestion(sanitized.elements, originCity, originCode);
-        if (suggestion) {
-          return {
-            actionId: `act_local_flight_orig_sel_${step}_${Date.now()}`,
-            kind: "click",
-            targetLocalId: suggestion.localId,
-            confidence: 0.96,
-            risk: "safe",
-            rationale: `Selecting airport option "${suggestion.sanitizedName}" for origin`
-          };
-        }
-        const destInput = findFlightDestinationElement(sanitized.elements);
-        if (destInput) {
-          return {
-            actionId: `act_local_flight_dest_${step}_${Date.now()}`,
-            kind: "type",
-            targetLocalId: destInput.localId,
-            textToType: destCity,
-            confidence: 0.95,
-            risk: "safe",
-            rationale: `Entering destination "${destCity}"`
-          };
-        }
-      }
-      if (hasTypedDest) {
-        const destSuggestion = findAirportSuggestion(sanitized.elements, destCity, destCode);
-        if (destSuggestion) {
-          return {
-            actionId: `act_local_flight_dest_sel_${step}_${Date.now()}`,
-            kind: "click",
-            targetLocalId: destSuggestion.localId,
-            confidence: 0.96,
-            risk: "safe",
-            rationale: `Selecting airport option "${destSuggestion.sanitizedName}" for destination`
-          };
-        }
-        const searchBtn = findFlightSearchButton(sanitized.elements);
-        if (searchBtn) {
-          return {
-            actionId: `act_local_flight_search_${step}_${Date.now()}`,
-            kind: "click",
-            targetLocalId: searchBtn.localId,
-            confidence: 0.96,
-            risk: "safe",
-            rationale: `Submitting flight search for ${originCity} to ${destCity}`
-          };
-        }
-      }
-      const originInput = findFlightOriginElement(sanitized.elements);
-      if (originInput && !hasTypedOrigin) {
-        return {
-          actionId: `act_local_flight_orig_${step}_${Date.now()}`,
-          kind: "type",
-          targetLocalId: originInput.localId,
-          textToType: originCity,
-          confidence: 0.95,
-          risk: "safe",
-          rationale: `Entering origin "${originCity}"`
-        };
-      }
     }
     return null;
   }
@@ -22984,6 +22372,7 @@ var RunCoordinator = class {
     this.lastStaleTargetId = null;
     this.pendingAction = null;
     this.actionHistory = [];
+    this.hasTavilyRecovered = false;
     this.t0_runStart = Date.now();
     this.cumulativeClientLatency = 0;
     this.cumulativeServerLatency = 0;
@@ -23028,30 +22417,45 @@ var RunCoordinator = class {
         let activeTab = await this.browser.getActiveTab(this.currentTabId);
         const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
         if (restrictedCheck.isRestricted) {
-          let targetUrl = extractTargetUrlFromGoal(goal);
+          let proposal2 = null;
+          try {
+            const blankScreenshot = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+            const blankContext = {
+              _brand: "SanitizedContext_Verified",
+              protocolVersion: "1.0",
+              runId: this.currentRunId,
+              captureId: `cap_init_${Date.now()}`,
+              goal,
+              sanitizedScreenshotDataUrl: blankScreenshot,
+              elements: [],
+              pageState: {
+                title: activeTab?.title || "New Tab",
+                url: activeTab?.url || "chrome://newtab",
+                viewport: [1280, 800]
+              },
+              maskCount: 0,
+              payloadDigestSha256: "sha256_init_blank",
+              timestamp: Date.now()
+            };
+            this.transition("sending-sanitized-context", `Step ${step}/${maxSteps}: Transmitting initial tab context`);
+            this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Formulating initial navigation action`);
+            proposal2 = await this.httpClient.requestReasoningAction(blankContext);
+          } catch (err) {
+            console.warn("[PrivaPilot Coordinator] Initial LLM reasoning unavailable on blank tab, using fallback resolution:", err?.message || err);
+          }
+          let targetUrl = proposal2 && proposal2.kind === "navigate" ? proposal2.url || proposal2.targetUrl : void 0;
           if (!targetUrl) {
-            const lowerGoal = (goal || "").toLowerCase();
-            if (lowerGoal.includes("amazon")) {
-              targetUrl = "https://www.amazon.in";
-            } else if (lowerGoal.includes("flipkart")) {
-              targetUrl = "https://www.flipkart.com";
-            } else if (lowerGoal.includes("wikipedia") || lowerGoal.includes("wiki")) {
-              targetUrl = "https://www.wikipedia.org";
-            } else if (lowerGoal.includes("sih") || lowerGoal.includes("smart india hackathon") || lowerGoal.includes("hackathon") || lowerGoal.includes("problem statement") || lowerGoal.includes("spoc") || lowerGoal.includes("submission")) {
-              targetUrl = "https://sih.gov.in";
-            } else if (lowerGoal.includes("isro") || lowerGoal.includes("chandrayaan") || lowerGoal.includes("gaganyaan") || lowerGoal.includes("aditya") || lowerGoal.includes("satellite") || lowerGoal.includes("rocket") || lowerGoal.includes("launcher") || lowerGoal.includes("mission")) {
-              targetUrl = "https://www.isro.gov.in";
-            } else if (lowerGoal.includes("github") || lowerGoal.includes("repo")) {
-              targetUrl = "https://github.com";
-            } else {
-              targetUrl = "https://www.google.com";
-            }
+            targetUrl = extractTargetUrlFromGoal(goal);
+          }
+          if (!targetUrl) {
+            targetUrl = "https://www.google.com";
           }
           if (targetUrl && typeof this.browser.navigateTab === "function") {
             hasNavigatedInitially = true;
-            const navAction = {
+            const navAction = proposal2 && proposal2.kind === "navigate" ? proposal2 : {
               actionId: `act_init_nav_${Date.now()}`,
               kind: "navigate",
+              url: targetUrl,
               confidence: 1,
               risk: "safe",
               rationale: `Direct navigation from blank tab to target website: ${targetUrl}`,
@@ -23528,7 +22932,6 @@ var RunCoordinator = class {
         let t4_reasoningReceived = Date.now();
         const currentEffectiveUrl = sanitized.pageState?.url || activeTab?.url;
         const localScrollProposal = isPureScrollDirective ? this.tryResolveLocalSafeAction(goal, sanitized, step, currentEffectiveUrl) : null;
-        const localPlaybookProposal = this.tryResolveLocalSafeAction(goal, sanitized, step, currentEffectiveUrl);
         const isAutofillGoal = /\b(?:fill|autofill|populate|form)\b/i.test(this.currentGoal || "");
         const prefersDemoData = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || "") || /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || "");
         const hasAutofilled = this.actionHistory.some((a) => a.actionId && (a.actionId.includes("act_local_autofill_batch_") || a.actionId.includes("act_autofill_")));
@@ -23691,12 +23094,6 @@ var RunCoordinator = class {
           networkRequestMade = false;
           t4_reasoningReceived = Date.now();
           this.transition("validating-action", `Step ${step}/${maxSteps}: Locally resolved form autofill (${localAutofillProposal.batchActions?.length || 0} fields)`);
-        } else if (localPlaybookProposal && localPlaybookProposal.confidence >= 0.9) {
-          proposal = localPlaybookProposal;
-          decisionOrigin = "local";
-          networkRequestMade = false;
-          t4_reasoningReceived = Date.now();
-          this.transition("validating-action", `Step ${step}/${maxSteps}: Locally resolved via domain playbook (${proposal.kind})`);
         } else {
           this.transition("sending-sanitized-context", `Step ${step}/${maxSteps}: Transmitting sanitized context`);
           this.transition("awaiting-reasoning", `Step ${step}/${maxSteps}: Awaiting reasoning action`);
@@ -23739,6 +23136,19 @@ var RunCoordinator = class {
             sanitized.observedOutcome = this.lastExecutionResult?.message || sanitized.pageState.stateDelta?.observedOutcome || "";
             sanitized.meaningfulProgress = Boolean(sanitized.pageState.stateDelta?.verificationPassed || sanitized.pageState.stateDelta?.urlChanged || Math.abs(sanitized.pageState.stateDelta?.scrollDeltaY || 0) > 2);
             sanitized.recentActionHistory = this.recentActionHistory.slice(-10);
+            const isDocumentGoal = /\b(?:download|brochure|pdf|whitepaper|circular|report|dataset)\b/i.test(this.currentGoal || "");
+            const isUnrelatedSite = /\b(?:youtube\.com|youtu\.be|google\.[a-z.]+|bing\.com|duckduckgo\.com|twitter\.com|x\.com)\b/i.test(activeTab?.url || "");
+            const isFirstPerception = step === 1 || step === 2 && hasNavigatedInitially;
+            if (isFirstPerception && !this.hasTavilyRecovered && (isDocumentGoal || isUnrelatedSite && !extractTargetUrlFromGoal(this.currentGoal || ""))) {
+              try {
+                const searchQuery = extractSearchQueryFromGoal(this.currentGoal || "") || this.currentGoal || "";
+                const searchRes = await this.httpClient.searchWeb(searchQuery, 5);
+                if (searchRes?.success && searchRes.results && searchRes.results.length > 0) {
+                  sanitized.searchResults = searchRes.results;
+                }
+              } catch (_) {
+              }
+            }
             proposal = await this.httpClient.requestReasoningAction(sanitized);
           } catch (err) {
             console.warn("[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:", err?.message || err);
@@ -23780,8 +23190,24 @@ var RunCoordinator = class {
         this.lastActionProposal = proposal;
         if (this.listeners.onActionProposed) {
           const matchedEl = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
+          let proposalReasoning = proposal.reasoning || (proposal.rationale && !proposal.rationale.includes("[semantically grounded]") ? proposal.rationale : void 0);
+          if (!proposalReasoning) {
+            const targetName = matchedEl?.sanitizedName || proposal.targetLocalId || "target";
+            if (proposal.kind === "click") {
+              proposalReasoning = `Clicking "${targetName}" to advance toward goal.`;
+            } else if (proposal.kind === "type") {
+              proposalReasoning = `Entering "${proposal.textToType || ""}" into ${targetName}.`;
+            } else if (proposal.kind === "scroll") {
+              proposalReasoning = `Scrolling viewport down to reveal additional page content.`;
+            } else if (proposal.kind === "navigate") {
+              proposalReasoning = `Navigating browser tab to ${proposal.url || proposal.targetUrl || "destination"}.`;
+            } else if (proposal.rationale) {
+              proposalReasoning = proposal.rationale;
+            }
+          }
           const enrichedProposal = {
             ...proposal,
+            reasoning: proposalReasoning,
             sanitizedTargetName: matchedEl?.sanitizedName || proposal.elementText || void 0
           };
           this.listeners.onActionProposed(enrichedProposal, this.currentRunId);
@@ -23966,32 +23392,48 @@ var RunCoordinator = class {
             Boolean(sanitized.pageState?.visibleDialogCount && sanitized.pageState.visibleDialogCount > 0)
           );
           if (grounding.status === "no_match" && this.currentTaskContract?.goalPattern === "click_control") {
-            const errorMsg2 = `Action rejected: Requested target "${structuredIntent.targetPhrase}" is not present on the current page.`;
-            this.transition("failed-safe", errorMsg2);
-            const stepTrace2 = {
-              step,
-              captureId: sanitized.captureId,
-              pageGeneration: sanitized.captureId,
-              maskCount: sanitized.maskCount,
-              sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
-              decisionOrigin,
-              proposal,
-              riskDecision: "blocked",
-              confidenceDecision: "missing_target",
-              executed: false,
-              networkRequestMade,
-              timings: { total: Date.now() - t0_step }
-            };
-            this.stepsTrace.push(stepTrace2);
-            return this.completeWithResult({
-              success: false,
-              state: "failed-safe",
-              error: errorMsg2,
-              sanitized,
-              proposal,
-              stepCount: step,
-              steps: this.stepsTrace
-            });
+            if (!this.hasTavilyRecovered) {
+              this.hasTavilyRecovered = true;
+              const fallbackQuery = `${structuredIntent.targetPhrase || this.currentGoal}`.trim();
+              console.log(`[Coordinator] Target "${structuredIntent.targetPhrase}" not found on page. Engaging autonomous Tavily web search: "${fallbackQuery}"`);
+              proposal = {
+                actionId: `act_tavily_fallback_${Date.now()}`,
+                kind: "web_search",
+                searchQuery: fallbackQuery,
+                confidence: 0.95,
+                risk: "safe",
+                userApproved: true,
+                rationale: `Target "${structuredIntent.targetPhrase}" was not found on current page. Searching web via Tavily to locate direct resource.`
+              };
+              riskLevel = "safe";
+            } else {
+              const errorMsg2 = `Action rejected: Requested target "${structuredIntent.targetPhrase}" is not present on the current page.`;
+              this.transition("failed-safe", errorMsg2);
+              const stepTrace2 = {
+                step,
+                captureId: sanitized.captureId,
+                pageGeneration: sanitized.captureId,
+                maskCount: sanitized.maskCount,
+                sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+                decisionOrigin,
+                proposal,
+                riskDecision: "blocked",
+                confidenceDecision: "missing_target",
+                executed: false,
+                networkRequestMade,
+                timings: { total: Date.now() - t0_step }
+              };
+              this.stepsTrace.push(stepTrace2);
+              return this.completeWithResult({
+                success: false,
+                state: "failed-safe",
+                error: errorMsg2,
+                sanitized,
+                proposal,
+                stepCount: step,
+                steps: this.stepsTrace
+              });
+            }
           }
           if (grounding.status === "ambiguous_match") {
             proposal = {
@@ -24237,7 +23679,8 @@ var RunCoordinator = class {
           const lastClickIdx = this.actionHistory.map((a) => a.kind).lastIndexOf("click");
           const hasScrolledAfterLastClick = lastClickIdx >= 0 ? this.actionHistory.slice(lastClickIdx).some((a) => a.kind === "scroll") : this.actionHistory.some((a) => a.kind === "scroll");
           const isAtTopOfLongPage = Boolean(sm2 && sm2.scrollableBelow && sm2.maxScrollTop > 800 && sm2.scrollTop < 250);
-          if (!hasSelectedRelevantSection && isArticleReadingGoal && !hasScrolledAfterLastClick && isAtTopOfLongPage && !isOnSearchResultsPage) {
+          const isUnrelatedSite = /\b(?:youtube\.com|youtu\.be|google\.[a-z.]+|bing\.com|duckduckgo\.com|twitter\.com|x\.com)\b/i.test(activeTab?.url || "");
+          if (!isUnrelatedSite && !hasSelectedRelevantSection && isArticleReadingGoal && !hasScrolledAfterLastClick && isAtTopOfLongPage && !isOnSearchResultsPage) {
             console.log(`[Coordinator] Grounded reading scroll: Navigated to long article at top; scrolling down smoothly to locate content before finishing.`);
             proposal = {
               actionId: `act_grounded_scroll_${Date.now()}`,
@@ -24418,18 +23861,86 @@ var RunCoordinator = class {
         }
         const isDuplicate = this.isRepeatedAction(proposal, sanitized);
         if (isDuplicate) {
-          const errorMsg2 = "Repeated action loop detected: identical action proposed consecutively without progress";
-          this.transition("failed-safe", errorMsg2);
-          const res2 = {
-            success: false,
-            state: "failed-safe",
-            error: errorMsg2,
-            sanitized,
-            proposal,
-            stepCount: step,
-            steps: this.stepsTrace
-          };
-          return this.completeWithResult(res2);
+          if (!this.hasTavilyRecovered) {
+            this.hasTavilyRecovered = true;
+            this.transition("awaiting-reasoning", "\u26A0\uFE0F In-page navigation dead-end detected. Invoking autonomous Tavily search fallback...");
+            try {
+              const pageDomain = sanitized.pageState?.domain || (activeTab?.url ? normalizeDomain(activeTab.url) : "");
+              const cleanGoal = (this.currentGoal || "").replace(/^(?:go to|navigate to|open|search for|download|find)\s+/i, "").trim();
+              const searchQuery = pageDomain && !cleanGoal.toLowerCase().includes(pageDomain.split(".")[0]) ? `${pageDomain} ${cleanGoal}` : cleanGoal;
+              const searchRes = await this.httpClient.searchWeb(searchQuery, 5);
+              if (searchRes?.success && searchRes.results && searchRes.results.length > 0) {
+                const currentUrl2 = activeTab?.url || "";
+                const topResult = selectBestTavilyResult(searchRes.results, searchQuery, this.currentGoal || "", currentUrl2) || searchRes.results[0];
+                if (topResult && topResult.url && topResult.url !== currentUrl2) {
+                  this.transition("executing", `Navigating to target via Tavily search: "${topResult.title}"...`);
+                  proposal = {
+                    actionId: `act_tavily_recover_${step}_${Date.now()}`,
+                    kind: "navigate",
+                    url: topResult.url,
+                    confidence: 0.95,
+                    risk: "safe",
+                    userApproved: true,
+                    rationale: `Autonomously recovered from repeated in-page action loop via Tavily Search: Navigating directly to "${topResult.title}" (${topResult.url})`
+                  };
+                  this.actionHistory = [];
+                } else {
+                  const errorMsg2 = "Repeated action loop detected: identical action proposed consecutively without progress";
+                  this.transition("failed-safe", errorMsg2);
+                  const res2 = {
+                    success: false,
+                    state: "failed-safe",
+                    error: errorMsg2,
+                    sanitized,
+                    proposal,
+                    stepCount: step,
+                    steps: this.stepsTrace
+                  };
+                  return this.completeWithResult(res2);
+                }
+              } else {
+                const errorMsg2 = "Repeated action loop detected: identical action proposed consecutively without progress";
+                this.transition("failed-safe", errorMsg2);
+                const res2 = {
+                  success: false,
+                  state: "failed-safe",
+                  error: errorMsg2,
+                  sanitized,
+                  proposal,
+                  stepCount: step,
+                  steps: this.stepsTrace
+                };
+                return this.completeWithResult(res2);
+              }
+            } catch (tavilyErr) {
+              console.warn("[PrivaPilot Coordinator] Tavily fallback failed:", tavilyErr);
+              const errorMsg2 = "Repeated action loop detected: identical action proposed consecutively without progress";
+              this.transition("failed-safe", errorMsg2);
+              const res2 = {
+                success: false,
+                state: "failed-safe",
+                error: errorMsg2,
+                sanitized,
+                proposal,
+                stepCount: step,
+                steps: this.stepsTrace
+              };
+              return this.completeWithResult(res2);
+            }
+          } else {
+            const errorMsg2 = "Repeated action loop detected: identical action proposed consecutively without progress";
+            this.transition("failed-safe", errorMsg2);
+            const res2 = {
+              success: false,
+              state: "failed-safe",
+              error: errorMsg2,
+              sanitized,
+              proposal,
+              stepCount: step,
+              steps: this.stepsTrace
+            };
+            return this.completeWithResult(res2);
+          }
         }
         this.transition("executing", `Step ${step}/${maxSteps}: Executing '${proposal.kind}' on ${proposal.targetLocalId || "page"}`);
         if (proposal.kind === "wait") {
@@ -24633,6 +24144,43 @@ var RunCoordinator = class {
                 continue;
               }
             } catch (_) {
+            }
+          }
+          if (proposal.kind === "web_search") {
+            const query = proposal.searchQuery || this.currentGoal || "";
+            this.transition("executing", `Searching web via Tavily: "${query}"...`);
+            try {
+              const searchRes = await this.httpClient.searchWeb(query, 5);
+              if (searchRes?.success && searchRes.results && searchRes.results.length > 0) {
+                const currentUrl2 = activeTab?.url || "";
+                const top = selectBestTavilyResult(searchRes.results, query, this.currentGoal || "", currentUrl2) || searchRes.results[0];
+                this.transition("executing", `Navigating to search result: "${top.title}"...`);
+                proposal = {
+                  actionId: `act_web_search_nav_${step}_${Date.now()}`,
+                  kind: "navigate",
+                  url: top.url,
+                  confidence: 0.95,
+                  risk: "safe",
+                  userApproved: true,
+                  rationale: `Navigating to top Tavily search result: "${top.title}" (${top.url})`
+                };
+              } else {
+                execResponse = {
+                  success: false,
+                  message: `Web search for "${query}" returned no results.`
+                };
+                this.recordActionHistory(proposal);
+                await new Promise((r) => setTimeout(r, 600));
+                continue;
+              }
+            } catch (searchErr) {
+              execResponse = {
+                success: false,
+                message: `Web search failed: ${searchErr?.message || searchErr}`
+              };
+              this.recordActionHistory(proposal);
+              await new Promise((r) => setTimeout(r, 600));
+              continue;
             }
           }
           if (proposal.kind === "navigate") {

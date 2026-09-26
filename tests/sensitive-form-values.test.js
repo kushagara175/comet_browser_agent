@@ -162,3 +162,28 @@ test('Sensitive Values Leak Prevention: Live input value secrets do NOT enter Sa
   assert.strictEqual(el3?.actionCapabilities.includes('type'), false, 'Payment must not allow type action');
   assert.strictEqual(el4?.actionCapabilities.includes('type'), false, 'Sensitive textarea must not allow type action');
 });
+
+test('Sanitized action metadata scrubs row and heading context without masking public navigation', async () => {
+  const rawCapture = {
+    _brand: 'RawCapture_InternalOnly', captureId: 'cap_public_controls', timestamp: Date.now(),
+    rawScreenshotDataUrl: '', rawDomSummary: {},
+    metadata: { viewportWidth: 800, viewportHeight: 600, screenshotWidth: 800, screenshotHeight: 600, devicePixelRatio: 1, scrollX: 0, scrollY: 0, captureTimestamp: Date.now() }
+  };
+  const box = { x: 30, y: 40, width: 180, height: 28 };
+  const snapshot = {
+    domElements: [{ id: 'el_1', descriptor: { tagName: 'input', type: 'search', name: 'username', placeholder: 'Search by Institute Name', value: 'IIT Delhi' }, boundingClientRect: box }],
+    textNodes: [], imageElements: [], surfaces: [], pageTitle: 'Institute Directory',
+    interactiveElements: [
+      { localId: 'el_1', role: 'input', rawName: 'Search by Institute Name', boundingBox: box, state: ['visible', 'enabled'], actionCapabilities: ['click', 'type'], containerContext: 'Contact alex@example.com' },
+      { localId: 'el_2', role: 'link', rawName: 'CONTACT US', boundingBox: { x: 30, y: 90, width: 120, height: 28 }, state: ['visible', 'enabled'], actionCapabilities: ['click'], nearestHeading: 'Email: alex@example.com' }
+    ]
+  };
+  const context = await SanitizerPipeline.sanitize(rawCapture, snapshot, 'Search institutes', createMockCanvas(800, 600));
+  const search = context.elements.find(el => el.localId === 'el_1');
+  const contact = context.elements.find(el => el.localId === 'el_2');
+  assert.equal(search.sanitizedName, 'Search by Institute Name');
+  assert.ok(search.actionCapabilities.includes('type'));
+  assert.equal(contact.sanitizedName, 'CONTACT US');
+  assert.ok(contact.actionCapabilities.includes('click'));
+  assert.equal(JSON.stringify(context).includes('alex@example.com'), false);
+});

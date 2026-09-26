@@ -110,32 +110,26 @@
     "diagnosis",
     "prescription",
     "patient",
+    "patient_notes",
     "health",
     "doctor_note",
     "clinical",
     // Phone & Mobile
     "phone",
     "mobile",
-    "contact",
     "tel",
     "cell",
     "phonenumber",
     "phone_number",
-    "usernumber",
-    "user_number",
     "mobile_number",
     "contact_number",
     "cellphone",
     // Address & Location
     "address",
-    "street",
-    "city",
-    "state",
-    "zip",
+    "street_address",
     "zipcode",
     "pincode",
     "pin_code",
-    "postal",
     "postal_code",
     "currentaddress",
     "permanentaddress",
@@ -143,28 +137,20 @@
     "permanent_address",
     // Date of Birth
     "dob",
-    "birth",
+    "birth_date",
     "birthday",
     "bday",
     "dateofbirth",
     "date_of_birth",
     // Name & Identity
-    "firstname",
-    "lastname",
-    "fullname",
-    "name",
-    "fname",
-    "lname",
-    "first_name",
-    "last_name",
-    "user_name",
-    "applicant_name",
-    // Account Handles
+    // Account login identifiers, not generic public name/user controls
     "username",
+    "user_name",
+    "login_id",
+    "login_name",
     "user_id",
     "userid",
-    "user_handle",
-    "user_profile"
+    "user_handle"
   ];
   var SENSITIVE_AUTOCOMPLETE_VALUES = [
     "current-password",
@@ -505,7 +491,9 @@
         const start = match.index;
         const end = match.index + match[0].length;
         const alreadyCovered = matches.some((m) => m.startIndex <= start && m.endIndex >= end);
-        if (!alreadyCovered) {
+        const prefix = text.slice(Math.max(0, start - 40), start);
+        const hasBirthLabel = /(?:^|[\s([{,;])(?:dob|date\s+of\s+birth|birth\s+date|birthday|bday)\s*[:=\-]?\s*$/i.test(prefix);
+        if (!alreadyCovered && hasBirthLabel) {
           matches.push({
             category: "date_of_birth",
             startIndex: start,
@@ -554,133 +542,102 @@
   }
 
   // ../../packages/pii-rules/dist/dom-semantic.js
+  var SAFE = { isSensitive: false, confidence: 1 };
+  var SEARCH_TERMS = /(?:^|[^a-z0-9])(?:search|filter|find|query|institute|college|topic|keyword)(?:$|[^a-z0-9])/i;
+  var COMPACT_IDENTIFIERS = [
+    [/^(?:cardnumber|creditcardnumber|debitcardnumber|ccnumber|ccnum)\d*$/i, "credit_card"],
+    [/^(?:accountnumber|bankaccountnumber|bankaccount)\d*$/i, "bank_account"],
+    [/^(?:phonenumber|mobilenumber|contactnumber)\d*$/i, "phone"],
+    [/^(?:dateofbirth|birthdate|dob)\d*$/i, "date_of_birth"],
+    [/^(?:username|loginid|userid)\d*$/i, "username"],
+    [/^(?:apikey|authkey|accesskey|accesstoken|secretkey)\d*$/i, "token"],
+    [/^(?:ssn|aadhaar(?:number)?|aadhar(?:number)?|pannumber|socialsecuritynumber)\d*$/i, "national_id"]
+  ];
+  var SENSITIVE_LABELS = [
+    [/\b(?:password|passcode|passwd|pwd|current password|new password)\b/i, "password"],
+    [/\b(?:one time (?:code|password)|otp|2fa|mfa|verification code|auth(?:entication)? code)\b/i, "auth_code"],
+    [/\b(?:cvv|cvc|card security code|security code)\b/i, "cvv"],
+    [/\b(?:credit card|debit card|card number|card no|cc num|payment card)\b/i, "credit_card"],
+    [/\b(?:aadhaar|aadhar|ssn|social security(?: number)?|pan (?:number|no)|permanent account number|national id)\b/i, "national_id"],
+    [/\b(?:bank account|account number|account no|iban|ifsc|routing number)\b/i, "bank_account"],
+    [/\b(?:diagnosis|prescription|patient (?:notes?|record)|medical (?:notes?|history|record)|health (?:diagnosis|record)|clinical (?:notes?|diagnosis)|doctor (?:notes?|diagnosis))\b/i, "uninspectable"],
+    [/\b(?:date of birth|birth date|birthday|dob|bday)\b/i, "date_of_birth"],
+    [/\b(?:email|e mail|email address)\b/i, "email"],
+    [/\b(?:phone (?:number|no)|mobile (?:number|no)|telephone number|contact number|cellphone)\b/i, "phone"],
+    [/\b(?:street address|postal address|home address|permanent address|current address|pin code|pincode|postal code|zipcode)\b/i, "address"],
+    [/\b(?:username|user name|user id|login id|login name|user handle)\b/i, "username"],
+    [/\b(?:api key|auth key|access token|secret key|secret canary|canary)\b/i, "token"]
+  ];
+  function decision(category, reason) {
+    return { isSensitive: true, category, reason, confidence: 0.95 };
+  }
   function analyzeDomElementSensitivity(desc) {
-    const type = (desc.type || "").toLowerCase();
-    const autocomplete = (desc.autocomplete || "").toLowerCase();
-    const name = (desc.name || "").toLowerCase();
-    const id = (desc.id || "").toLowerCase();
-    const placeholder = (desc.placeholder || "").toLowerCase();
-    const ariaLabel = (desc.ariaLabel || "").toLowerCase();
-    const labelText = (desc.associatedLabelText || "").toLowerCase();
-    if (type === "password") {
-      return {
-        isSensitive: true,
-        category: "password",
-        reason: 'input[type="password"]',
-        confidence: 1
-      };
+    const tag = desc.tagName?.toLowerCase();
+    if (tag !== "input" && tag !== "textarea")
+      return SAFE;
+    const type = (desc.type || "").trim().toLowerCase();
+    if (tag === "input" && ["button", "submit", "reset", "image", "checkbox", "radio", "file", "hidden"].includes(type))
+      return SAFE;
+    if (type === "password")
+      return decision("password", 'input[type="password"]');
+    if (type === "email")
+      return decision("email", 'input[type="email"]');
+    if (type === "tel")
+      return decision("phone", 'input[type="tel"]');
+    const autocompleteTokens = (desc.autocomplete || "").toLowerCase().split(/\s+/);
+    for (const token of autocompleteTokens) {
+      if (!SENSITIVE_AUTOCOMPLETE_VALUES.includes(token))
+        continue;
+      let category = "password";
+      if (token === "cc-csc")
+        category = "cvv";
+      else if (token.startsWith("cc-"))
+        category = "credit_card";
+      else if (token.startsWith("bday"))
+        category = "date_of_birth";
+      else if (token === "one-time-code")
+        category = "auth_code";
+      else if (token.startsWith("tel"))
+        category = "phone";
+      else if (token === "email")
+        category = "email";
+      else if (token.includes("address") || token === "postal-code")
+        category = "address";
+      else if (token.includes("name") || token === "username")
+        category = "username";
+      return decision(category, `autocomplete="${token}"`);
     }
-    for (const autoVal of SENSITIVE_AUTOCOMPLETE_VALUES) {
-      if (autocomplete.includes(autoVal)) {
-        let cat = "password";
-        if (autoVal === "cc-csc")
-          cat = "cvv";
-        else if (autoVal.startsWith("cc-"))
-          cat = "credit_card";
-        else if (autoVal.startsWith("bday"))
-          cat = "date_of_birth";
-        else if (autoVal === "one-time-code")
-          cat = "auth_code";
-        else if (autoVal.startsWith("tel"))
-          cat = "phone";
-        else if (autoVal.includes("address") || autoVal.includes("postal-code"))
-          cat = "address";
-        else if (autoVal.includes("name") || autoVal === "username")
-          cat = "username";
-        else if (autoVal === "email")
-          cat = "email";
-        return {
-          isSensitive: true,
-          category: cat,
-          reason: `autocomplete="${autoVal}"`,
-          confidence: 1
-        };
+    const value = typeof desc.value === "string" ? desc.value.trim() : "";
+    if (value) {
+      const match = scanTextForPII(value)[0];
+      if (match)
+        return decision(match.category, `live value matches PII (${match.category})`);
+    }
+    const searchHints = [desc.name, desc.id, desc.placeholder, desc.ariaLabel].map((s) => (s || "").replace(/([a-z\d])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " "));
+    if (type === "search" || searchHints.some((hint) => SEARCH_TERMS.test(hint)))
+      return SAFE;
+    for (const [attribute, raw] of Object.entries({ name: desc.name, id: desc.id, placeholder: desc.placeholder, label: desc.associatedLabelText, aria: desc.ariaLabel })) {
+      const normalized = (raw || "").replace(/([a-z\d])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
+      for (const [pattern, category] of SENSITIVE_LABELS) {
+        if (pattern.test(normalized))
+          return decision(category, `sensitive ${attribute} field`);
       }
-    }
-    if (type === "email" || autocomplete === "email") {
-      return {
-        isSensitive: true,
-        category: "email",
-        reason: "type/autocomplete email",
-        confidence: 0.95
-      };
-    }
-    if (type === "tel" || autocomplete === "tel") {
-      return {
-        isSensitive: true,
-        category: "phone",
-        reason: "type/autocomplete tel",
-        confidence: 0.95
-      };
-    }
-    const combinedTokens = `${name} ${id} ${placeholder} ${ariaLabel} ${labelText}`.replace(/([a-z\d])([A-Z])/g, "$1 $2").toLowerCase();
-    for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
-      const regex = new RegExp(`\\b${keyword}\\b|_${keyword}|${keyword}_`, "i");
-      if (regex.test(combinedTokens) || combinedTokens.includes("secret_canary") || combinedTokens.includes("canary")) {
-        let cat = "token";
-        if (keyword.includes("password") || keyword.includes("passcode") || keyword.includes("pwd"))
-          cat = "password";
-        else if (keyword.includes("card") || keyword.includes("cc_"))
-          cat = "credit_card";
-        else if (keyword.includes("cvv") || keyword.includes("cvc"))
-          cat = "cvv";
-        else if (keyword.includes("email") || keyword.includes("mail"))
-          cat = "email";
-        else if (keyword.includes("phone") || keyword.includes("mobile") || keyword.includes("contact") || keyword.includes("tel") || keyword.includes("cell") || keyword.includes("usernumber"))
-          cat = "phone";
-        else if (keyword.includes("pan"))
-          cat = "national_id";
-        else if (keyword.includes("aadhaar") || keyword.includes("aadhar"))
-          cat = "national_id";
-        else if (keyword.includes("ssn") || keyword.includes("social_security"))
-          cat = "national_id";
-        else if (keyword.includes("bank") || keyword.includes("ifsc") || keyword.includes("iban"))
-          cat = "bank_account";
-        else if (keyword.includes("otp") || keyword.includes("2fa") || keyword.includes("mfa"))
-          cat = "auth_code";
-        else if (keyword.includes("medical") || keyword.includes("diagnosis") || keyword.includes("prescription") || keyword.includes("patient") || keyword.includes("health") || keyword.includes("doctor_note") || keyword.includes("clinical"))
-          cat = "uninspectable";
-        else if (keyword.includes("address") || keyword.includes("street") || keyword.includes("city") || keyword.includes("state") || keyword.includes("zip") || keyword.includes("postal") || keyword.includes("pincode"))
-          cat = "address";
-        else if (keyword.includes("dob") || keyword.includes("birth") || keyword.includes("bday"))
-          cat = "date_of_birth";
-        else if (keyword.includes("name") || keyword.includes("fname") || keyword.includes("lname") || keyword.includes("user") || keyword.includes("applicant"))
-          cat = "username";
-        return {
-          isSensitive: true,
-          category: cat,
-          reason: `token match: "${keyword}"`,
-          confidence: 0.95
-        };
-      }
-    }
-    if (desc.value && typeof desc.value === "string") {
-      const trimmedVal = desc.value.trim();
-      if (trimmedVal.length > 0) {
-        const piiMatches = scanTextForPII(trimmedVal);
-        if (piiMatches.length > 0) {
-          return {
-            isSensitive: true,
-            category: piiMatches[0].category,
-            reason: `live value matches PII (${piiMatches[0].category})`,
-            confidence: 0.95
-          };
+      if (attribute === "name" || attribute === "id") {
+        for (const [pattern, category] of COMPACT_IDENTIFIERS) {
+          if (pattern.test((raw || "").trim()))
+            return decision(category, `sensitive ${attribute} field`);
         }
-        const isSearchBox = combinedTokens.includes("search") || combinedTokens.includes("filter") || combinedTokens.includes("find") || type === "search";
-        if (!isSearchBox && (desc.tagName === "textarea" || desc.tagName === "input" && type !== "submit" && type !== "button" && type !== "checkbox" && type !== "radio")) {
-          return {
-            isSensitive: true,
-            category: "username",
-            reason: `live input value in form field: "${desc.name || desc.id || desc.placeholder || "input"}"`,
-            confidence: 0.85
-          };
+        for (const keyword of SENSITIVE_FIELD_KEYWORDS) {
+          const words = keyword.replace(/_/g, " ");
+          if (new RegExp(`(?:^|[^a-z0-9])${words}(?:$|[^a-z0-9])`, "i").test(normalized)) {
+            const category = SENSITIVE_LABELS.find(([pattern]) => pattern.test(words))?.[1];
+            if (category)
+              return decision(category, `sensitive ${attribute} field`);
+          }
         }
       }
     }
-    return {
-      isSensitive: false,
-      confidence: 1
-    };
+    return SAFE;
   }
 
   // ../../packages/pii-rules/dist/surface-classifier.js
@@ -849,6 +806,24 @@
   var TEXT_NODE_TYPE = typeof Node !== "undefined" ? Node.TEXT_NODE : 3;
   var ELEMENT_NODE_TYPE = typeof Node !== "undefined" ? Node.ELEMENT_NODE : 1;
   var SHOW_TEXT_FILTER = typeof NodeFilter !== "undefined" ? NodeFilter.SHOW_TEXT : 4;
+  var MAX_INTERACTIVE_ELEMENTS = 80;
+  var INTERACTIVE_SELECTOR = 'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [role="option"], [role="menuitem"], [contenteditable="true"], [role="listbox"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed], .MuiListItemButton-root, [class*="suggestion" i], [class*="autocomplete-item" i], [class*="dropdown-item" i]';
+  function isVisibleElement(el) {
+    for (let current = el; current; current = current.parentElement) {
+      if (current.hasAttribute?.("hidden") || current.getAttribute?.("aria-hidden") === "true") return false;
+      const style = current.ownerDocument?.defaultView?.getComputedStyle?.(current);
+      if (style && (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || Number(style.opacity) === 0)) return false;
+    }
+    return true;
+  }
+  function isRedundantInteractiveWrapper(el) {
+    const tag = el.tagName.toLowerCase();
+    if (!["div", "span", "section"].includes(tag) || el.hasAttribute?.("role") || el.isContentEditable || !el.children || !el.childNodes || !el.querySelector) return false;
+    const children = Array.from(el.children).filter((child) => child.matches?.(INTERACTIVE_SELECTOR));
+    if (children.length !== 1 || el.children.length !== 1) return false;
+    const ownText = Array.from(el.childNodes).some((node) => node.nodeType === TEXT_NODE_TYPE && Boolean(node.nodeValue?.trim()));
+    return !ownText && !el.querySelector('h1, h2, h3, h4, [role="heading"]');
+  }
   function measureTextRangeRects(doc, nodeOrContainer, startIndex, endIndex, viewportWidth, viewportHeight) {
     try {
       const range = doc.createRange();
@@ -939,16 +914,16 @@
       const viewportHeight = doc.defaultView?.innerHeight || doc.documentElement?.clientHeight || 720;
       let surfaceCounter = 0;
       const processDocumentLevel = (currentDoc, offset = { x: 0, y: 0 }, depth = 0) => {
-        const candidates = currentDoc.querySelectorAll(
-          'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="combobox"], [role="searchbox"], [role="option"], [role="menuitem"], [contenteditable="true"], [role="listbox"], [aria-haspopup="listbox"], [tabindex="0"], [draggable="true"], [role="slider"], [aria-grabbed], .MuiListItemButton-root, [class*="suggestion" i], [class*="autocomplete-item" i], [class*="dropdown-item" i]'
-        );
+        const candidates = currentDoc.querySelectorAll(INTERACTIVE_SELECTOR);
         candidates.forEach((node) => {
           const el = node;
           if (typeof el.closest === "function" && el.closest(".privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]") || typeof el.getAttribute === "function" && el.getAttribute("data-privapilot-ignore") === "true" || el.classList && typeof el.classList.contains === "function" && el.classList.contains("privapilot-overlay")) {
             return;
           }
           const rect = el.getBoundingClientRect();
-          if (rect.width === 0 || rect.height === 0) return;
+          if (rect.width <= 0.5 || rect.height <= 0.5 || !isVisibleElement(el)) return;
+          if (el.tagName?.toLowerCase() === "input" && el.getAttribute?.("type")?.toLowerCase() === "hidden") return;
+          if (isRedundantInteractiveWrapper(el)) return;
           this.counter++;
           const localId = `el_${this.counter}`;
           this.elementMap.set(localId, el);
@@ -1100,18 +1075,23 @@
           } catch (_) {
           }
           let verticalOffset = "in_view";
-          if (rect.bottom < 0) {
+          if ((rect.bottom ?? rect.y + rect.height) + offset.y <= 0) {
             verticalOffset = "above";
-          } else if (rect.top > viewportHeight) {
+          } else if ((rect.top ?? rect.y) + offset.y >= viewportHeight) {
             verticalOffset = "below";
           }
-          const inViewport = verticalOffset === "in_view" && rect.right > 0 && rect.left < viewportWidth;
+          const inViewport = verticalOffset === "in_view" && (rect.right ?? rect.x + rect.width) + offset.x > 0 && rect.x + offset.x < viewportWidth;
+          const isPrimaryNavLink = role === "link" && Boolean(el.closest?.('nav, header, [role="navigation"]'));
           interactiveElements.push({
+            isPrimaryNavLink,
             localId,
             role,
             rawName,
             boundingBox: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height },
-            state: ["visible", el.disabled ? "disabled" : "enabled"],
+            state: [
+              "visible",
+              el.disabled && !el.querySelector?.("button:not([disabled]), a[href]") ? "disabled" : "enabled"
+            ],
             actionCapabilities: caps,
             containerContext,
             nearestHeading,
@@ -1119,7 +1099,7 @@
             verticalOffset,
             inViewport
           });
-          const isEditable = tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable || el.getAttribute("contenteditable") === "true";
+          const isEditable = (tag === "input" || tag === "textarea") && !["button", "submit", "reset", "image", "checkbox", "radio", "file", "hidden"].includes((el.getAttribute("type") || "").toLowerCase());
           if (isEditable) {
             const liveVal = el.value !== void 0 ? el.value : el.textContent || void 0;
             const liveValueStr = typeof liveVal === "string" ? liveVal : void 0;
@@ -1138,23 +1118,6 @@
               },
               boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
             });
-            if (liveValueStr && liveValueStr.trim().length > 0 && rect.width > 0 && rect.height > 0) {
-              const inputValTrimmed = liveValueStr.trim();
-              const valMatches = scanTextForPII(inputValTrimmed);
-              const boxX = rect.x + offset.x;
-              const boxY = rect.y + offset.y;
-              textNodes.push({
-                id: `input_val_${localId}`,
-                text: inputValTrimmed,
-                boundingClientRect: { x: boxX, y: boxY, width: rect.width, height: rect.height },
-                matchedRanges: [{
-                  category: valMatches.length > 0 ? valMatches[0].category : "username",
-                  startIndex: 0,
-                  endIndex: inputValTrimmed.length,
-                  rects: [{ x: boxX, y: boxY, width: rect.width, height: rect.height }]
-                }]
-              });
-            }
           }
         });
         const textWalker = currentDoc.createTreeWalker ? currentDoc.createTreeWalker(currentDoc.body || currentDoc, SHOW_TEXT_FILTER) : null;
@@ -1166,9 +1129,9 @@
             const content = textNode.nodeValue || "";
             const trimmed = content.trim();
             const parent = textNode.parentElement;
-            if (trimmed.length > 2 && parent && parent.tagName !== "SCRIPT" && parent.tagName !== "STYLE" && parent.tagName !== "NOSCRIPT") {
+            if (trimmed.length > 2 && parent && !parent.closest('input, textarea, select, button, [contenteditable="true"], script, style, noscript, .privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]') && isVisibleElement(parent)) {
               const parentRect = parent.getBoundingClientRect();
-              if (parentRect.width > 0 && parentRect.height > 0) {
+              if (parentRect.width > 0.5 && parentRect.height > 0.5 && parentRect.right + offset.x > 0 && parentRect.bottom + offset.y > 0 && parentRect.left + offset.x < viewportWidth && parentRect.top + offset.y < viewportHeight) {
                 textIdx++;
                 const nodeId = `txt_${depth}_${textIdx}`;
                 const isAccountIdentity = Boolean(
@@ -1202,23 +1165,19 @@
                 let matchedRanges = void 0;
                 if (matches.length > 0) {
                   matchedRanges = matches.map((match) => {
-                    const rects = measureTextRangeRects(doc, textNode, match.startIndex, match.endIndex, viewportWidth, viewportHeight);
+                    const rects = measureTextRangeRects(textNode.ownerDocument || doc, textNode, match.startIndex, match.endIndex, viewportWidth, viewportHeight);
                     const offsetRects = rects.map((r) => ({ ...r, x: r.x + offset.x, y: r.y + offset.y }));
                     return {
                       category: match.category,
                       startIndex: match.startIndex,
                       endIndex: match.endIndex,
-                      rects: offsetRects,
-                      ...parentRect.height <= 60 ? {
-                        fallbackParentRect: {
-                          x: Math.max(0, parentRect.x + offset.x),
-                          y: Math.max(0, parentRect.y + offset.y),
-                          width: Math.min(parentRect.width, viewportWidth - Math.max(0, parentRect.x + offset.x)),
-                          height: Math.min(parentRect.height, viewportHeight - Math.max(0, parentRect.y + offset.y))
-                        }
-                      } : {}
+                      rects: offsetRects
                     };
-                  });
+                  }).filter((match) => match.rects.length > 0);
+                }
+                if (matches.length > 0 && !matchedRanges?.length) {
+                  textNode = textWalker.nextNode();
+                  continue;
                 }
                 textNodes.push({
                   id: nodeId,
@@ -1234,7 +1193,8 @@
                   for (const cm of containerMatches) {
                     const isCovered = matchedRanges?.some((mr) => mr.category === cm.category);
                     if (!isCovered) {
-                      const containerRects = measureTextRangeRects(doc, parent, cm.startIndex, cm.endIndex, viewportWidth, viewportHeight);
+                      const containerRects = measureTextRangeRects(parent.ownerDocument || doc, parent, cm.startIndex, cm.endIndex, viewportWidth, viewportHeight);
+                      if (!containerRects.length) continue;
                       const offsetContainerRects = containerRects.map((r) => ({ ...r, x: r.x + offset.x, y: r.y + offset.y }));
                       textIdx++;
                       textNodes.push({
@@ -1245,15 +1205,7 @@
                           category: cm.category,
                           startIndex: cm.startIndex,
                           endIndex: cm.endIndex,
-                          rects: offsetContainerRects,
-                          ...parentRect.height <= 40 ? {
-                            fallbackParentRect: {
-                              x: Math.max(0, parentRect.x + offset.x),
-                              y: Math.max(0, parentRect.y + offset.y),
-                              width: Math.min(parentRect.width, viewportWidth - Math.max(0, parentRect.x + offset.x)),
-                              height: Math.min(parentRect.height, viewportHeight - Math.max(0, parentRect.y + offset.y))
-                            }
-                          } : {}
+                          rects: offsetContainerRects
                         }]
                       });
                     }
@@ -1478,7 +1430,7 @@
         const dialogCandidates = doc.querySelectorAll('dialog, [role="dialog"], [aria-modal="true"], [id*="drawer"], [class*="drawer"]');
         dialogCandidates.forEach((node) => {
           const el = node;
-          const isHidden = el.hidden || el.getAttribute?.("aria-hidden") === "true" || el.classList?.contains("hidden") || typeof getComputedStyle !== "undefined" && getComputedStyle(el).display === "none" || typeof getComputedStyle !== "undefined" && getComputedStyle(el).visibility === "hidden";
+          const isHidden = !isVisibleElement(el) || el.classList?.contains("hidden");
           if (!isHidden && (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0)) {
             visibleDialogCount++;
             const title = el.getAttribute("aria-label") || el.querySelector('h1, h2, h3, h4, [class*="title"]')?.textContent?.trim() || "";
@@ -1494,7 +1446,7 @@
         const statusNodes = doc.querySelectorAll('[role="status"], [role="alert"], .badge');
         statusNodes.forEach((node) => {
           const text = (node.textContent || "").trim().slice(0, 150);
-          if (text) {
+          if (text && isVisibleElement(node)) {
             statusSummaries.push(text);
           }
         });
@@ -1505,6 +1457,7 @@
       try {
         const counterNodes = doc.querySelectorAll('.counter, .count, [class*="stat"], [class*="metric"], [class*="badge"], [data-count]');
         counterNodes.forEach((node) => {
+          if (!isVisibleElement(node)) return;
           const text = (node.textContent || "").trim().replace(/\s+/g, " ");
           const numMatch = text.match(/\b\d[\d,.]*\b/);
           if (numMatch && text.length < 100) {
@@ -1515,12 +1468,13 @@
         const headings = doc.querySelectorAll("h1, h2, h3, h4");
         headings.forEach((h) => {
           const text = (h.textContent || "").trim().replace(/\s+/g, " ");
-          if (text && text.length > 2 && text.length < 120) {
+          if (text && text.length > 2 && text.length < 120 && isVisibleElement(h)) {
             contentSummaries.push(`Heading: ${text}`);
           }
         });
         const tables = doc.querySelectorAll('table, [role="table"], [role="grid"]');
         tables.forEach((tbl, idx) => {
+          if (!isVisibleElement(tbl)) return;
           const rows = tbl.querySelectorAll('tr, [role="row"]');
           const headers = Array.from(tbl.querySelectorAll('th, [role="columnheader"]')).map((th) => (th.textContent || "").trim()).filter(Boolean).slice(0, 6);
           contentSummaries.push(`Table ${idx + 1}: ${rows.length > 0 ? rows.length - 1 : 0} records; columns: [${headers.join(", ")}]`);
@@ -1537,6 +1491,7 @@
         });
         const dls = doc.querySelectorAll("dl");
         dls.forEach((dl) => {
+          if (!isVisibleElement(dl)) return;
           const dts = dl.querySelectorAll("dt");
           const dds = dl.querySelectorAll("dd");
           for (let i = 0; i < Math.min(dts.length, dds.length, 6); i++) {
@@ -1549,6 +1504,7 @@
         });
         const docLinks = doc.querySelectorAll('a[href$=".pdf" i], a[href$=".zip" i], a[href$=".csv" i], a[href$=".kmz" i]');
         docLinks.forEach((a) => {
+          if (!isVisibleElement(a)) return;
           const aText = (a.textContent || a.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ");
           const aHref = a.getAttribute("href") || "";
           const fileName = aHref.split("/").pop()?.split("?")[0] || "";
@@ -1558,7 +1514,7 @@
         });
         const commentThreads = doc.querySelectorAll('ytd-comment-thread-renderer, [role="article"].comment, .comment-body, .comment');
         commentThreads.forEach((ct) => {
-          if (contentSummaries.length >= 35) return;
+          if (contentSummaries.length >= 35 || !isVisibleElement(ct)) return;
           const authorEl = ct.querySelector('#author-text, .author, [class*="author"], [class*="user"]');
           const contentEl = ct.querySelector('#content-text, .comment-text, [class*="content"], p');
           const author = (authorEl?.textContent || "").trim().replace(/\s+/g, " ");
@@ -1603,26 +1559,16 @@
         pixelsBelow,
         pixelsAbove
       };
-      let cappedInteractiveElements = interactiveElements;
-      if (cappedInteractiveElements.length > 180) {
-        cappedInteractiveElements = [...cappedInteractiveElements].sort((a, b) => {
-          const aDialog = a.isInsideDialog ? 1 : 0;
-          const bDialog = b.isInsideDialog ? 1 : 0;
-          if (aDialog !== bDialog) return bDialog - aDialog;
-          const roleScore = (r) => {
-            if (r === "input" || r === "textarea" || r === "select") return 4;
-            if (r === "button") return 3;
-            if (r === "tab" || r === "menuitem") return 2;
-            return 1;
-          };
-          const aScore = roleScore(a.role);
-          const bScore = roleScore(b.role);
-          if (aScore !== bScore) return bScore - aScore;
-          const aInView = a.boundingBox && a.boundingBox.y >= 0 && a.boundingBox.y <= viewportHeight ? 1 : 0;
-          const bInView = b.boundingBox && b.boundingBox.y >= 0 && b.boundingBox.y <= viewportHeight ? 1 : 0;
-          if (aInView !== bInView) return bInView - aInView;
-          return (a.boundingBox?.y || 0) - (b.boundingBox?.y || 0);
-        }).slice(0, 180);
+      const cappedInteractiveElements = [...interactiveElements].sort((a, b) => {
+        const score = (el) => {
+          const roleScore = el.role === "input" || el.role === "textarea" || el.role === "select" ? 40 : el.role === "button" ? 35 : el.isPrimaryNavLink ? 30 : el.role === "link" || el.role === "tab" || el.role === "menuitem" ? 25 : 5;
+          return (el.inViewport ? 100 : 0) + (el.isInsideDialog ? 30 : 0) + roleScore;
+        };
+        return score(b) - score(a) || a.boundingBox.y - b.boundingBox.y || Number(a.localId.slice(3)) - Number(b.localId.slice(3));
+      }).slice(0, MAX_INTERACTIVE_ELEMENTS);
+      const retainedIds = new Set(cappedInteractiveElements.map((el) => el.localId));
+      for (const id of this.elementMap.keys()) {
+        if (!retainedIds.has(id)) this.elementMap.delete(id);
       }
       return {
         snapshot: {
@@ -1911,8 +1857,21 @@
           message: `Target element '${proposal.targetLocalId}' is hidden or invisible`
         };
       }
-      const isDisabled = targetEl.disabled === true || targetEl.hasAttribute?.("disabled") || targetEl.getAttribute?.("aria-disabled") === "true";
-      if (isDisabled) {
+      if (proposal.kind === "click" || proposal.kind === "hover") {
+        const actionableChild = targetEl.querySelector?.(
+          'button:not([disabled]):not([aria-disabled="true"]), a[href], [role="button"]:not([aria-disabled="true"]), button, a, [role="button"]'
+        ) || null;
+        if (actionableChild && actionableChild !== targetEl) {
+          targetEl = actionableChild;
+        } else {
+          const parentBtn = targetEl.closest?.('button, a, [role="button"]');
+          if (parentBtn && parentBtn !== targetEl) {
+            targetEl = parentBtn;
+          }
+        }
+      }
+      const isStrictlyDisabled = targetEl.disabled === true || targetEl.hasAttribute?.("disabled");
+      if (isStrictlyDisabled && (proposal.kind === "type" || proposal.kind === "select")) {
         return {
           actionId: proposal.actionId,
           success: false,
@@ -1988,14 +1947,43 @@
               anchorEl.setAttribute("target", "_self");
             }
           }
+          const PointerEventCtor = win?.PointerEvent || (typeof PointerEvent !== "undefined" ? PointerEvent : null);
+          if (PointerEventCtor) {
+            try {
+              targetEl.dispatchEvent(new PointerEventCtor("pointerdown", { ...mouseInit, pointerId: 1, pointerType: "mouse" }));
+              targetEl.dispatchEvent(new PointerEventCtor("pointerup", { ...mouseInit, pointerId: 1, pointerType: "mouse" }));
+            } catch (_) {
+            }
+          }
           if (MouseEventCtor) {
             targetEl.dispatchEvent(new MouseEventCtor("mousedown", mouseInit));
             targetEl.dispatchEvent(new MouseEventCtor("mouseup", mouseInit));
+          }
+          const hadDisabled = targetEl.hasAttribute?.("disabled");
+          if (hadDisabled) {
+            try {
+              targetEl.removeAttribute("disabled");
+            } catch (_) {
+            }
           }
           if (typeof targetEl.click === "function") {
             targetEl.click();
           } else if (EventCtor) {
             targetEl.dispatchEvent(new (MouseEventCtor || EventCtor)("click", mouseInit));
+          }
+          if (targetEl.parentElement && targetEl.parentElement !== targetEl.ownerDocument?.body) {
+            try {
+              if (MouseEventCtor) {
+                targetEl.parentElement.dispatchEvent(new MouseEventCtor("click", mouseInit));
+              }
+            } catch (_) {
+            }
+          }
+          if (hadDisabled) {
+            try {
+              targetEl.setAttribute("disabled", "");
+            } catch (_) {
+            }
           }
           return {
             actionId: proposal.actionId,
