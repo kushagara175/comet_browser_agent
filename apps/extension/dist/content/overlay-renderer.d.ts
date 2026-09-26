@@ -10,6 +10,8 @@ export declare class OverlayRenderer {
     private clearTimer;
     private workingGlowEl;
     private glowWatchdogTimer;
+    private cropBoxEl;
+    private cropBoxTimer;
     private cursorEl;
     private cursorDismissTimer;
     private currentCursorX;
@@ -29,6 +31,17 @@ export declare class OverlayRenderer {
     flashActionDispatched(): void;
     private dismissBox;
     clear(): void;
+    /**
+     * Highlights the specific captured region with an animated "rope / marching-ants" viewfinder border
+     * for 2.5 - 3 seconds, giving the user immediate live visual proof of the cropped area.
+     */
+    highlightFocusedCropRegion(rect: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        type?: string;
+    }, durationMs?: number): void;
     private ensureGlowStyles;
     showAgentWorkingGlow(label?: string): void;
     hideAgentWorkingGlow(): void;

@@ -18802,6 +18802,34 @@ var MaskRenderer = class _MaskRenderer {
         ctx.fillStyle = "#0f172a";
         ctx.fillRect(x, y, w, h);
         ctx.restore();
+        if (w >= 36 && h >= 12) {
+          ctx.save();
+          ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+          const labelText = _MaskRenderer.getSemanticCategoryLabel(region.category, w);
+          if (labelText) {
+            const fontSize = Math.max(8, Math.min(11, Math.floor(h * 0.55)));
+            ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+            ctx.fillStyle = "#38bdf8";
+            ctx.textBaseline = "middle";
+            const measured = ctx.measureText ? ctx.measureText(labelText).width : fontSize * labelText.length * 0.6;
+            if (measured <= w - 6) {
+              const textX = x + Math.max(3, Math.floor((w - measured) / 2));
+              const textY = y + Math.floor(h / 2);
+              ctx.fillText(labelText, textX, textY);
+            } else if (w >= 28) {
+              const shortLabel = `[${region.category.toUpperCase().slice(0, 4)}]`;
+              const shortW = ctx.measureText ? ctx.measureText(shortLabel).width : fontSize * shortLabel.length * 0.6;
+              if (shortW <= w - 4) {
+                const textX = x + Math.max(2, Math.floor((w - shortW) / 2));
+                const textY = y + Math.floor(h / 2);
+                ctx.fillText(shortLabel, textX, textY);
+              }
+            }
+          }
+          ctx.restore();
+        }
         let success = true;
         let failureReason;
         if (typeof ctx.getImageData === "function") {
@@ -19006,6 +19034,41 @@ var MaskRenderer = class _MaskRenderer {
       ctx.fillText(label, badgeX + 3, badgeY + 10);
     }
     ctx.restore();
+  }
+  /**
+   * Returns a clean, human-readable semantic surrogate label for a sensitive category.
+   * Gives multimodal vision models unambiguous visual understanding of the data slot without exposing PII.
+   */
+  static getSemanticCategoryLabel(category, availableWidth) {
+    const isNarrow = availableWidth < 80;
+    switch (category) {
+      case "password":
+        return isNarrow ? "[PASS]" : "[PASSWORD]";
+      case "auth_code":
+        return isNarrow ? "[OTP]" : "[OTP CODE]";
+      case "credit_card":
+      case "cvv":
+      case "bank_account":
+        return isNarrow ? "[CARD]" : "[PAYMENT CARD]";
+      case "national_id":
+        return isNarrow ? "[ID]" : "[NATIONAL ID]";
+      case "email":
+        return isNarrow ? "[EMAIL]" : "[EMAIL ADDRESS]";
+      case "phone":
+        return isNarrow ? "[PHONE]" : "[PHONE NUMBER]";
+      case "token":
+        return isNarrow ? "[TOKEN]" : "[API TOKEN]";
+      case "name":
+        return isNarrow ? "[NAME]" : "[FULL NAME]";
+      case "address":
+        return isNarrow ? "[ADDR]" : "[POSTAL ADDRESS]";
+      case "dob":
+        return isNarrow ? "[DOB]" : "[DATE OF BIRTH]";
+      case "face":
+        return isNarrow ? "[AVATAR]" : "[USER AVATAR]";
+      default:
+        return isNarrow ? "[REDACTED]" : `[REDACTED: ${category.toUpperCase()}]`;
+    }
   }
 };
 
@@ -22869,6 +22932,14 @@ var RunCoordinator = class {
           screenshotDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
         }
         const t1_captureComplete = Date.now();
+        if (domResponse?.snapshot?.focusedRegion && activeTab?.id) {
+          this.browser.sendMessageToTab(activeTab.id, {
+            type: "HIGHLIGHT_FOCUSED_REGION",
+            region: domResponse.snapshot.focusedRegion,
+            durationMs: 3e3
+          }).catch(() => {
+          });
+        }
         const rawCapture = {
           _brand: "RawCapture_InternalOnly",
           captureId,

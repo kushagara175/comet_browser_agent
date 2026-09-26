@@ -179,3 +179,22 @@ test('Focused Area Crop: SanitizerPipeline end-to-end produces verified context 
   const validation = validateSanitizedPayload(netPayload);
   assert.strictEqual(validation.isValid, true, `Server schema rejected cropped payload: ${validation.errorMessage}`);
 });
+
+test('Semantic Redaction Overlay: getSemanticCategoryLabel returns crisp labels for all PII slots', () => {
+  // Full width labels
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('password', 150), '[PASSWORD]');
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('email', 150), '[EMAIL ADDRESS]');
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('phone', 150), '[PHONE NUMBER]');
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('national_id', 150), '[NATIONAL ID]');
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('name', 150), '[FULL NAME]');
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('credit_card', 150), '[PAYMENT CARD]');
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('face', 150), '[USER AVATAR]');
+
+  // Narrow width labels
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('password', 50), '[PASS]');
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('email', 50), '[EMAIL]');
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('phone', 50), '[PHONE]');
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('national_id', 50), '[ID]');
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('name', 50), '[NAME]');
+  assert.strictEqual(MaskRenderer.getSemanticCategoryLabel('face', 50), '[AVATAR]');
+});

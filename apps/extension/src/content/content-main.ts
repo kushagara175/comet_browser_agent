@@ -71,7 +71,8 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       message?.type !== 'CLEAR_OVERLAYS' &&
       message?.type !== 'FILL_FORM_FIELDS' &&
       message?.type !== 'UPLOAD_FILE' &&
-      message?.type !== 'SET_ACTIVE_BORDER'
+      message?.type !== 'SET_ACTIVE_BORDER' &&
+      message?.type !== 'HIGHLIGHT_FOCUSED_REGION'
     ) {
       return false;
     }
@@ -96,6 +97,13 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 }
 
 export async function handleMessage(message: any): Promise<any> {
+  if (message.type === 'HIGHLIGHT_FOCUSED_REGION') {
+    if (message.region) {
+      overlay.highlightFocusedCropRegion(message.region, message.durationMs || 3000);
+    }
+    return { success: true };
+  }
+
   if (message.type === 'SET_ACTIVE_BORDER') {
     if (message.active) {
       overlay.showAgentWorkingGlow(message.label || 'PrivaPilot Agent Active');

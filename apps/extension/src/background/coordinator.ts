@@ -1599,6 +1599,15 @@ export class RunCoordinator {
       }
       const t1_captureComplete = Date.now();
 
+      // Live Viewfinder: Highlight focused task area with rope/marching-ants border on the webpage
+      if (domResponse?.snapshot?.focusedRegion && activeTab?.id) {
+        this.browser.sendMessageToTab(activeTab.id, {
+          type: 'HIGHLIGHT_FOCUSED_REGION',
+          region: domResponse.snapshot.focusedRegion,
+          durationMs: 3000
+        }).catch(() => {});
+      }
+
       // Ephemeral raw capture - strictly scoped to this cycle, never persisted
       const rawCapture: RawCapture = {
         _brand: 'RawCapture_InternalOnly',

@@ -11,6 +11,8 @@ export class OverlayRenderer {
   private clearTimer: any = null;
   private workingGlowEl: HTMLElement | null = null;
   private glowWatchdogTimer: any = null;
+  private cropBoxEl: HTMLElement | null = null;
+  private cropBoxTimer: any = null;
 
   // Animated AI Ghost Cursor state
   private cursorEl: HTMLElement | null = null;
@@ -147,8 +149,143 @@ export class OverlayRenderer {
       this.overlayContainer.innerHTML = '';
     }
     this.currentBox = null;
+    this.cropBoxEl = null;
     this.hideCursor(0);
     this.disableSafetyShield();
+  }
+
+  /**
+   * Highlights the specific captured region with an animated "rope / marching-ants" viewfinder border
+   * for 2.5 - 3 seconds, giving the user immediate live visual proof of the cropped area.
+   */
+  highlightFocusedCropRegion(
+    rect: { x: number; y: number; width: number; height: number; type?: string },
+    durationMs: number = 3000
+  ): void {
+    if (typeof document === 'undefined' || !rect || rect.width <= 0 || rect.height <= 0) return;
+    const root = this.ensureContainer();
+
+    // Inject marching ants keyframes if not already present
+    if (!document.getElementById('privapilot-crop-keyframes')) {
+      const style = document.createElement('style');
+      style.id = 'privapilot-crop-keyframes';
+      style.textContent = `
+        @keyframes privapilotMarchingAnts {
+          0% { background-position: 0 0, 100% 0, 100% 100%, 0 100%; }
+          100% { background-position: 24px 0, 100% 24px, calc(100% - 24px) 100%, 0 calc(100% - 24px); }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    if (this.cropBoxTimer) {
+      clearTimeout(this.cropBoxTimer);
+      this.cropBoxTimer = null;
+    }
+    if (this.cropBoxEl && root.contains(this.cropBoxEl)) {
+      root.removeChild(this.cropBoxEl);
+      this.cropBoxEl = null;
+    }
+
+    const box = document.createElement('div');
+    box.className = 'privapilot-overlay privapilot-crop-viewfinder';
+    box.setAttribute('data-privapilot-ignore', 'true');
+    box.style.position = 'absolute';
+    box.style.left = `${Math.max(0, rect.x - 6)}px`;
+    box.style.top = `${Math.max(0, rect.y - 6)}px`;
+    box.style.width = `${rect.width + 12}px`;
+    box.style.height = `${rect.height + 12}px`;
+    box.style.borderRadius = '6px';
+    box.style.pointerEvents = 'none';
+    box.style.zIndex = '2147483645';
+    box.style.boxShadow = '0 0 0 1px rgba(56, 189, 248, 0.4), 0 8px 32px rgba(0, 0, 0, 0.4)';
+    box.style.backgroundColor = 'rgba(15, 23, 42, 0.08)';
+
+    // Authentic marching-ants dashed border using linear-gradients
+    box.style.backgroundImage = `
+      linear-gradient(90deg, #38bdf8 50%, transparent 50%),
+      linear-gradient(180deg, #38bdf8 50%, transparent 50%),
+      linear-gradient(270deg, #38bdf8 50%, transparent 50%),
+      linear-gradient(0deg, #38bdf8 50%, transparent 50%)
+    `;
+    box.style.backgroundRepeat = 'repeat-x, repeat-y, repeat-x, repeat-y';
+    box.style.backgroundSize = '16px 2px, 2px 16px, 16px 2px, 2px 16px';
+    box.style.backgroundPosition = '0 0, 100% 0, 100% 100%, 0 100%';
+    box.style.animation = 'privapilotMarchingAnts 0.8s linear infinite';
+    box.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out';
+    box.style.opacity = '1';
+
+    // Top-left Viewfinder Pill
+    const pill = document.createElement('div');
+    pill.className = 'privapilot-overlay privapilot-crop-pill';
+    pill.setAttribute('data-privapilot-ignore', 'true');
+    const labelType = (rect.type || 'TASK AREA').toUpperCase();
+    pill.innerHTML = `
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      <span>PrivaPilot: ${labelType} (${Math.round(rect.width)} × ${Math.round(rect.height)})</span>
+    `;
+    pill.style.position = 'absolute';
+    pill.style.top = rect.y > 30 ? '-26px' : '4px';
+    pill.style.left = '0';
+    pill.style.display = 'flex';
+    pill.style.alignItems = 'center';
+    pill.style.gap = '5px';
+    pill.style.background = '#0f172a';
+    pill.style.color = '#e2e8f0';
+    pill.style.border = '1px solid rgba(56, 189, 248, 0.4)';
+    pill.style.fontSize = '10px';
+    pill.style.fontWeight = '600';
+    pill.style.padding = '3px 8px';
+    pill.style.borderRadius = '5px';
+    pill.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.4)';
+    pill.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    pill.style.pointerEvents = 'none';
+    pill.style.whiteSpace = 'nowrap';
+
+    // High-tech Corner brackets
+    const bracketSize = 10;
+    const bracketWidth = 2;
+    const bracketColor = '#38bdf8';
+
+    const corners = [
+      { top: '-2px', left: '-2px', borderTop: `${bracketWidth}px solid ${bracketColor}`, borderLeft: `${bracketWidth}px solid ${bracketColor}` },
+      { top: '-2px', right: '-2px', borderTop: `${bracketWidth}px solid ${bracketColor}`, borderRight: `${bracketWidth}px solid ${bracketColor}` },
+      { bottom: '-2px', left: '-2px', borderBottom: `${bracketWidth}px solid ${bracketColor}`, borderLeft: `${bracketWidth}px solid ${bracketColor}` },
+      { bottom: '-2px', right: '-2px', borderBottom: `${bracketWidth}px solid ${bracketColor}`, borderRight: `${bracketWidth}px solid ${bracketColor}` }
+    ];
+
+    corners.forEach((c) => {
+      const cornerEl = document.createElement('div');
+      cornerEl.setAttribute('data-privapilot-ignore', 'true');
+      cornerEl.style.position = 'absolute';
+      cornerEl.style.width = `${bracketSize}px`;
+      cornerEl.style.height = `${bracketSize}px`;
+      cornerEl.style.pointerEvents = 'none';
+      Object.assign(cornerEl.style, c);
+      box.appendChild(cornerEl);
+    });
+
+    box.appendChild(pill);
+    root.appendChild(box);
+    this.cropBoxEl = box;
+
+    if (durationMs > 0) {
+      this.cropBoxTimer = setTimeout(() => {
+        if (this.cropBoxEl && root.contains(this.cropBoxEl)) {
+          this.cropBoxEl.style.opacity = '0';
+          this.cropBoxEl.style.transform = 'scale(0.98)';
+          setTimeout(() => {
+            if (this.cropBoxEl && root.contains(this.cropBoxEl)) {
+              root.removeChild(this.cropBoxEl);
+              this.cropBoxEl = null;
+            }
+          }, 320);
+        }
+      }, durationMs);
+    }
   }
 
   private ensureGlowStyles(): void {

@@ -77,5 +77,10 @@ export declare class MaskRenderer {
      * on the sanitized screenshot canvas.
      */
     static renderSetOfMarks(imageCanvas: HTMLCanvasElement | OffscreenCanvas, elements: ReadonlyArray<any>, viewportWidth?: number, viewportHeight?: number): void;
+    /**
+     * Returns a clean, human-readable semantic surrogate label for a sensitive category.
+     * Gives multimodal vision models unambiguous visual understanding of the data slot without exposing PII.
+     */
+    static getSemanticCategoryLabel(category: string, availableWidth: number): string;
 }
 //# sourceMappingURL=mask-renderer.d.ts.map

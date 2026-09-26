@@ -270,11 +270,44 @@ export class MaskRenderer {
 
       try {
         ctx.save();
-        // Solid opaque blackout mask (Alpha = 1.0)
+        // 1. Solid opaque blackout mask (Alpha = 1.0) - guarantees 100% pixel destruction
         ctx.fillStyle = '#0f172a'; // Deep slate (RGB: 15, 23, 42)
         ctx.fillRect(x, y, w, h);
-
         ctx.restore();
+
+        // 2. Semantic Redaction Overlay: Draw crisp monospace label in #38bdf8 (MASK_CHROME_RGB)
+        // so multimodal vision models unambiguously understand the semantic slot without seeing raw PII
+        if (w >= 36 && h >= 12) {
+          ctx.save();
+          // Subtle border in #38bdf8 (40% opacity)
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+
+          const labelText = MaskRenderer.getSemanticCategoryLabel(region.category, w);
+          if (labelText) {
+            const fontSize = Math.max(8, Math.min(11, Math.floor(h * 0.55)));
+            ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+            ctx.fillStyle = '#38bdf8'; // Sky cyan
+            ctx.textBaseline = 'middle';
+
+            const measured = ctx.measureText ? ctx.measureText(labelText).width : fontSize * labelText.length * 0.6;
+            if (measured <= w - 6) {
+              const textX = x + Math.max(3, Math.floor((w - measured) / 2));
+              const textY = y + Math.floor(h / 2);
+              ctx.fillText(labelText, textX, textY);
+            } else if (w >= 28) {
+              const shortLabel = `[${region.category.toUpperCase().slice(0, 4)}]`;
+              const shortW = ctx.measureText ? ctx.measureText(shortLabel).width : fontSize * shortLabel.length * 0.6;
+              if (shortW <= w - 4) {
+                const textX = x + Math.max(2, Math.floor((w - shortW) / 2));
+                const textY = y + Math.floor(h / 2);
+                ctx.fillText(shortLabel, textX, textY);
+              }
+            }
+          }
+          ctx.restore();
+        }
 
         // Pixel-true post verification of opaque mask
         let success = true;
@@ -545,5 +578,41 @@ export class MaskRenderer {
     }
 
     ctx.restore();
+  }
+
+  /**
+   * Returns a clean, human-readable semantic surrogate label for a sensitive category.
+   * Gives multimodal vision models unambiguous visual understanding of the data slot without exposing PII.
+   */
+  static getSemanticCategoryLabel(category: string, availableWidth: number): string {
+    const isNarrow = availableWidth < 80;
+    switch (category) {
+      case 'password':
+        return isNarrow ? '[PASS]' : '[PASSWORD]';
+      case 'auth_code':
+        return isNarrow ? '[OTP]' : '[OTP CODE]';
+      case 'credit_card':
+      case 'cvv':
+      case 'bank_account':
+        return isNarrow ? '[CARD]' : '[PAYMENT CARD]';
+      case 'national_id':
+        return isNarrow ? '[ID]' : '[NATIONAL ID]';
+      case 'email':
+        return isNarrow ? '[EMAIL]' : '[EMAIL ADDRESS]';
+      case 'phone':
+        return isNarrow ? '[PHONE]' : '[PHONE NUMBER]';
+      case 'token':
+        return isNarrow ? '[TOKEN]' : '[API TOKEN]';
+      case 'name':
+        return isNarrow ? '[NAME]' : '[FULL NAME]';
+      case 'address':
+        return isNarrow ? '[ADDR]' : '[POSTAL ADDRESS]';
+      case 'dob':
+        return isNarrow ? '[DOB]' : '[DATE OF BIRTH]';
+      case 'face':
+        return isNarrow ? '[AVATAR]' : '[USER AVATAR]';
+      default:
+        return isNarrow ? '[REDACTED]' : `[REDACTED: ${category.toUpperCase()}]`;
+    }
   }
 }
