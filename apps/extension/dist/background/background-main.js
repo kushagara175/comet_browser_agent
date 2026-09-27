@@ -26384,57 +26384,69 @@ Step 4: Execute tool spawn_subagents across isolated browser contexts.`;
       { goal, enableSubAgents: true, maxParallel: 2, contextUrl: targetUrl1 },
       activeKey
     );
-    this.listeners.onStepProgress?.(4, 4, "\u2713 Sub-agents completed parallel extraction; synthesizing comparative report.", this.currentRunId);
-    const subTasksSummary = subTasks.map((st2, idx) => {
-      const link = st2.targetUrl ? ` ([Open Site](${st2.targetUrl}))` : "";
-      const realSnippet = idx === 0 ? `
-  > Live Page Data: ${sub1Result.summary}` : `
-  > Live Page Data: ${sub2Result.summary}`;
-      return `\u2022 **Sub-Agent ${idx + 1} (${st2.title})**: \u2713 Completed${link}${realSnippet}`;
-    }).join("\n\n");
-    let finalSynthesisText = "";
-    const hasRealPrices = sub1Result.summary.includes("\u20B9") || sub1Result.summary.includes("Rs") || sub1Result.summary.includes("INR") || sub2Result.summary.includes("\u20B9") || sub2Result.summary.includes("Rs") || sub2Result.summary.includes("INR") || sub1Result.summary.includes("Fares:") || sub2Result.summary.includes("Fares:");
-    if (!hasRealPrices && isFlightQuery) {
-      finalSynthesisText = `The sub-agents completed live visual interactions across both airline portals:
-\u2022 **${name1}**: ${sub1Result.summary}
-\u2022 **${name2}**: ${sub2Result.summary}
+    this.listeners.onStepProgress?.(4, 4, "Sub-agents completed tasks; synthesizing price comparison.", this.currentRunId);
+    const parsePrice = (txt) => {
+      const match = (txt || "").match(/(?:₹|Rs\.?|INR)\s*([\d,]+)/i);
+      if (match) {
+        const num = parseInt(match[1].replace(/,/g, ""), 10);
+        return isNaN(num) ? null : num;
+      }
+      return null;
+    };
+    const p1 = parsePrice(sub1Result.summary);
+    const p2 = parsePrice(sub2Result.summary);
+    let priceDiffNotice = "";
+    if (p1 !== null && p2 !== null) {
+      if (p1 === p2) {
+        priceDiffNotice = `
 
-Flight searches were physically submitted on screen. Real live fare listings are rendering directly in your browser tabs.`;
-    } else {
-      const synthPrompt = `You are PrivaPilot's Comparative Swarm Synthesizer. Synthesize these live extracted browser findings into a concise, factual comparison for the user's goal: "${goal}"
+**Price Difference:** \u20B90 (Identical price of \u20B9${p1.toLocaleString("en-IN")} on both ${name1} and ${name2})`;
+      } else if (p1 < p2) {
+        const diff = p2 - p1;
+        priceDiffNotice = `
+
+**Price Difference:** ${name1} is **\u20B9${diff.toLocaleString("en-IN")} cheaper** than ${name2} (${name1}: \u20B9${p1.toLocaleString("en-IN")} vs ${name2}: \u20B9${p2.toLocaleString("en-IN")})`;
+      } else {
+        const diff = p1 - p2;
+        priceDiffNotice = `
+
+**Price Difference:** ${name2} is **\u20B9${diff.toLocaleString("en-IN")} cheaper** than ${name1} (${name2}: \u20B9${p2.toLocaleString("en-IN")} vs ${name1}: \u20B9${p1.toLocaleString("en-IN")})`;
+      }
+    }
+    let finalSynthesisText = "";
+    const synthPrompt = `You are PrivaPilot's Comparative Analyst. Synthesize the findings from Sub-Agent 1 (${name1}) and Sub-Agent 2 (${name2}) for the user's goal: "${goal}".
 
 Sub-Agent 1 [${name1}]: ${sub1Result.summary}
 Sub-Agent 2 [${name2}]: ${sub2Result.summary}
 
-CRITICAL RULES:
-- ONLY include prices, flights, and departure times that appear explicitly in the live data above.
-- NEVER hallucinate, invent, simulate, or guess fares, flight numbers, or schedules.
-- If live fare cards are still loading, state that clearly instead of generating mock values.
-
-Provide a helpful comparative breakdown based strictly on the live data above:`;
-      try {
-        const chatRes = await this.httpClient.requestGeneralChat(synthPrompt);
-        if (chatRes && chatRes.reply) finalSynthesisText = chatRes.reply;
-      } catch (_) {
-      }
+CRITICAL INSTRUCTIONS:
+- Provide a clean, direct, and factual comparison.
+- Specifically compute or highlight the PRICE DIFFERENCE between ${name1} and ${name2} (which platform is cheaper and by how much).
+- DO NOT use any emojis.
+- DO NOT include marketing slogans, compliance proofs, or jargon.
+- Keep it simple, structured, and easy to read.`;
+    try {
+      const chatRes = await this.httpClient.requestGeneralChat(synthPrompt);
+      if (chatRes && chatRes.reply) finalSynthesisText = chatRes.reply;
+    } catch (_) {
     }
     if (!finalSynthesisText || finalSynthesisText.includes("iPhone 16") && isFlightQuery) {
-      finalSynthesisText = taskResponse?.finalSynthesis || `Comparative extraction completed across ${name1} and ${name2}.
-\u2022 ${name1}: ${sub1Result.summary}
-\u2022 ${name2}: ${sub2Result.summary}`;
-    }
-    const fullReply = [
-      `\u{1F916} **Sub-Agent Swarm Deployed (${subTasks.length} Parallel Workers)**
-`,
-      subTasksSummary,
-      `
-### Swarm Synthesis & Comparative Analysis
-`,
-      finalSynthesisText || `Multi-agent comparison completed across ${name1} and ${name2}.`,
-      `
+      if (isFlightQuery) {
+        finalSynthesisText = `**Flight Comparison (${origin} \u2192 ${dest}):**
 
-\u{1F6E1}\uFE0F *Compliance Proof: \`${taskResponse?.complianceAudit?.proofId || "audit_verified"}\` \u2022 Zero Plaintext PII Guaranteed*`
-    ].filter(Boolean).join("\n");
+- **${name1}**: ${sub1Result.summary}
+- **${name2}**: ${sub2Result.summary}` + (priceDiffNotice || "");
+      } else {
+        finalSynthesisText = `**Price Comparison (${cleanedQuery}):**
+
+- **${name1}**: ${sub1Result.summary}
+- **${name2}**: ${sub2Result.summary}` + (priceDiffNotice || "");
+      }
+    } else if (priceDiffNotice && !finalSynthesisText.toLowerCase().includes("price difference")) {
+      finalSynthesisText += priceDiffNotice;
+    }
+    finalSynthesisText = finalSynthesisText.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").replace(/🛡️?\s*\*?Compliance Proof[^\n]*/gi, "").replace(/###\s*Swarm Synthesis[^\n]*/gi, "").trim();
+    const fullReply = finalSynthesisText;
     this.transition("complete", "Sub-Agent Swarm execution complete");
     return this.completeWithResult({
       success: true,

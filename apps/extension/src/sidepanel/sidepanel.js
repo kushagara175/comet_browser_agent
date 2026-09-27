@@ -3476,7 +3476,7 @@ if (typeof document !== 'undefined') {
           return `Searching web for "${q.length > 24 ? q.slice(0, 24) + '…' : q}"...`;
         }
         if (kind === 'spawn_subagents') {
-          return act.rationale || 'Deploying sub-agents in parallel...';
+          return 'Deploying subagents...';
         }
         if (kind === 'finish' || kind === 'done') {
           return 'Finalizing results...';
@@ -3551,7 +3551,7 @@ if (typeof document !== 'undefined') {
           return `Searched web for "${q.length > 28 ? q.slice(0, 28) + '…' : q}"`;
         }
         if (kind === 'spawn_subagents') {
-          return act.rationale || 'Deployed sub-agents in parallel';
+          return 'Deployed subagents';
         }
         if (kind === 'finish' || kind === 'done') {
           return 'Completed';
@@ -4132,160 +4132,54 @@ if (typeof document !== 'undefined') {
     }
 
     // =========================================================================
-    // Sub-Agent Swarm Components (Multi-Agent Live Execution & Drawer)
+    // Sub-Agent Swarm Components (Simple, Minimalist Live Timeline & Done Ticks)
     // =========================================================================
     function renderSubAgentSwarmExecuting(subTasks, statusMessage) {
       const tasks = Array.isArray(subTasks) && subTasks.length > 0 ? subTasks : [
-        { title: 'Sub-Agent 1', taskDescription: 'Assigning task & initializing isolated tab…', statusText: 'Deploying in isolated tab…' },
-        { title: 'Sub-Agent 2', taskDescription: 'Assigning task & initializing isolated tab…', statusText: 'Deploying in isolated tab…' }
+        { title: 'Sub-Agent 1', taskDescription: 'Assigning task...', statusText: 'Deploying in isolated tab…' },
+        { title: 'Sub-Agent 2', taskDescription: 'Assigning task...', statusText: 'Deploying in isolated tab…' }
       ];
 
       const workersHtml = tasks.map((worker, idx) => {
-        const title = worker.title || `Sub-Agent ${idx + 1}`;
-        const desc = worker.taskDescription || 'Assigned task';
-        const status = worker.statusText || 'Deploying in isolated tab…';
-        const url = worker.targetUrl || '';
-        const domain = url ? extractWebDomain(url) : '';
-        const favicon = url ? getWebFaviconUrl(url) : '';
+        const title = worker.title || `Portal ${idx + 1}`;
+        const label = `Sub-Agent ${idx + 1}: Inspecting ${title}...`;
 
         return `
-          <div class="subagent-worker-row" data-agent="${idx + 1}">
-            <div class="subagent-worker-main">
-              <span class="subagent-index-badge">${idx + 1}</span>
-              ${favicon ? `<img src="${escapeHtml(favicon)}" class="subagent-worker-favicon" onerror="this.style.display='none';" />` : ''}
-              <div class="subagent-worker-meta">
-                <div class="subagent-worker-title">
-                  ${escapeHtml(title)}
-                  ${domain ? `<span class="subagent-domain-pill">${escapeHtml(domain)}</span>` : ''}
-                </div>
-                <div class="subagent-worker-desc">${escapeHtml(desc)}</div>
-              </div>
-            </div>
-            <span class="subagent-worker-status thinking-shimmer-text">${escapeHtml(status)}</span>
+          <div class="subagent-live-row" data-agent="${idx + 1}" data-title="${escapeHtml(title)}" style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; margin: 3px 0;">
+            <span class="subagent-row-num" style="color: #38bdf8; font-weight: 600; min-width: 14px;">${idx + 1}.</span>
+            <span class="subagent-row-text thinking-shimmer-text" style="color: #cbd5e1;">${escapeHtml(label)}</span>
           </div>
         `;
       }).join('');
 
       return `
-        <div class="subagent-timeline-node is-executing">
-          <div class="subagent-node-header is-loading">
-            <div class="subagent-node-icon-wrap">
-              <svg class="subagent-node-icon swarm-pulse-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-                <circle cx="9" cy="7" r="4"></circle>
-                <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-              </svg>
-            </div>
-            <span class="subagent-node-title thinking-shimmer-text">${escapeHtml(statusMessage || 'Deploying Sub-Agents Swarm…')}</span>
-            <span class="subagent-dpdp-pill">DPDP Isolated</span>
+        <div class="subagent-live-timeline" style="margin: 4px 0 6px 0;">
+          <div class="subagent-live-header" style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #38bdf8; margin-bottom: 3px;">
+            <span class="subagent-header-title thinking-shimmer-text">${escapeHtml(statusMessage || 'Deploying subagents...')}</span>
           </div>
-          <div class="subagent-workers-list">
+          <div class="subagent-live-rows" style="display: flex; flex-direction: column; gap: 2px; padding-left: 8px;">
             ${workersHtml}
           </div>
         </div>
       `;
     }
 
-    function renderSubAgentSwarmComponent(subTasks, isExpanded = true) {
+    function renderSubAgentSwarmComponent(subTasks) {
       if (!Array.isArray(subTasks) || subTasks.length === 0) return '';
-
-      // Unique favicons for overlapping stack
-      const uniqueSources = [];
-      const seenDomains = new Set();
-      for (const st of subTasks) {
-        const url = st.targetUrl || '';
-        const domain = extractWebDomain(url);
-        if (domain && !seenDomains.has(domain)) {
-          seenDomains.add(domain);
-          uniqueSources.push({
-            domain,
-            favicon: getWebFaviconUrl(url)
-          });
-        }
-      }
-
-      const sourceStackHtml = `
-        <div class="subagent-source-stack">
-          ${uniqueSources.map((s, i) => `
-            <span class="subagent-stack-circle" style="z-index: ${uniqueSources.length - i};" title="${escapeHtml(s.domain)}">
-              <img src="${escapeHtml(s.favicon)}" alt="${escapeHtml(s.domain)}" onerror="this.style.display='none';" />
-            </span>
-          `).join('')}
-        </div>
-      `;
-
-      const cardsHtml = subTasks.map((st, idx) => {
+      return subTasks.map((st, idx) => {
         const title = st.title || `Sub-Agent ${idx + 1}`;
-        const desc = st.taskDescription || '';
-        const url = st.targetUrl || '';
-        const domain = url ? extractWebDomain(url) : '';
-        const favicon = url ? getWebFaviconUrl(url) : '';
-        const summary = st.result?.summary || st.summary || '';
-
+        const label = `${idx + 1}. Sub-Agent ${idx + 1}: Inspected ${title}`;
         return `
-          <div class="subagent-result-card">
-            <div class="subagent-card-header">
-              <div class="subagent-card-identity">
-                <span class="subagent-index-badge is-done">${idx + 1}</span>
-                ${favicon ? `<img src="${escapeHtml(favicon)}" class="subagent-worker-favicon" onerror="this.style.display='none';" />` : ''}
-                <span class="subagent-worker-title">${escapeHtml(title)}</span>
-                ${st.role ? `<span class="subagent-role-pill">${escapeHtml(st.role)}</span>` : ''}
-              </div>
-              <div class="subagent-card-actions">
-                <span class="subagent-status-done-badge">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                  Completed
-                </span>
-                ${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="subagent-tab-link" title="Open ${escapeHtml(domain || 'tab')}">Tab ↗</a>` : ''}
-              </div>
-            </div>
-            ${desc ? `<div class="subagent-card-task"><strong>Task:</strong> ${escapeHtml(desc)}</div>` : ''}
-            ${summary ? `<div class="subagent-card-snippet">${escapeHtml(summary)}</div>` : ''}
-            <div class="subagent-card-footer">
-              <span class="subagent-footer-item">🛡️ Isolated Tab Execution</span>
-              <span class="subagent-footer-item">DPDP: 0 PII Leakage</span>
-            </div>
+          <div class="action-status-line is-done" style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; margin: 3px 0; padding: 1px 0;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.85;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span style="color: #cbd5e1;">${escapeHtml(label)}</span>
           </div>
         `;
       }).join('');
-
-      return `
-        <div class="subagent-timeline-node" data-expanded="${isExpanded ? 'true' : 'false'}">
-          <button type="button" class="subagent-node-header">
-            <div class="subagent-node-icon-wrap">
-              <svg class="subagent-node-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-                <circle cx="9" cy="7" r="4"></circle>
-                <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-              </svg>
-            </div>
-            <span class="subagent-node-title">Sub-Agent Swarm (${subTasks.length} Parallel Workers)</span>
-            ${sourceStackHtml}
-            <span class="subagent-dpdp-pill">DPDP Isolated</span>
-            <svg class="subagent-node-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-          </button>
-          <div class="subagent-drawer">
-            ${cardsHtml}
-          </div>
-        </div>
-      `;
     }
 
     function bindSubAgentSwarmComponentEvents(container) {
-      if (!container) return;
-      const headerBtn = container.querySelector('.subagent-node-header');
-      const node = container.querySelector('.subagent-timeline-node');
-      if (headerBtn && node) {
-        headerBtn.addEventListener('click', (e) => {
-          e.preventDefault();
-          const current = node.getAttribute('data-expanded') === 'true';
-          node.setAttribute('data-expanded', current ? 'false' : 'true');
-        });
-      }
+      // Clean tick lines do not need collapsible events
     }
 
     const WEBSEARCH_CACHE_STORAGE_KEY = 'comet_semantic_websearch_cache_v1';
@@ -6084,43 +5978,37 @@ if (typeof document !== 'undefined') {
                 liveActionSpan.textContent = cleanStepMsg;
               }
 
-              // Update sub-agent timeline node if active
-              const executingSwarm = lastAgentBubble?.querySelector('.subagent-timeline-node.is-executing');
-              if (executingSwarm) {
-                const headerTitle = executingSwarm.querySelector('.subagent-node-title');
-                if (cleanStepMsg.toLowerCase().includes('working in parallel')) {
-                  if (headerTitle) headerTitle.textContent = 'Sub-agents working in parallel…';
-                  executingSwarm.querySelectorAll('.subagent-worker-status').forEach(s => {
-                    s.textContent = 'Working in parallel…';
-                  });
-                } else if (cleanStepMsg.toLowerCase().includes('sub-agent 1')) {
-                  const s1Row = executingSwarm.querySelector('.subagent-worker-row[data-agent="1"]');
-                  const s1Status = s1Row?.querySelector('.subagent-worker-status');
-                  if (s1Status) {
-                    if (cleanStepMsg.includes('✓') || cleanStepMsg.toLowerCase().includes('extracted')) {
-                      s1Status.innerHTML = '<span style="color: #34d399; font-weight: 600;">✓ Extracted data</span>';
-                      s1Status.classList.remove('thinking-shimmer-text');
-                    } else {
-                      s1Status.textContent = cleanStepMsg.replace(/^.*Sub-Agent 1[^:]*:\s*/i, '') || 'Extracting live page data…';
-                    }
+              // Update sub-agent live timeline if active
+              const liveTimeline = lastAgentBubble?.querySelector('.subagent-live-timeline');
+              if (liveTimeline) {
+                const headerTitle = liveTimeline.querySelector('.subagent-header-title');
+                const lowerMsg = cleanStepMsg.toLowerCase();
+                if (lowerMsg.includes('working in parallel')) {
+                  if (headerTitle) headerTitle.textContent = 'Deploying subagents...';
+                } else if (lowerMsg.includes('sub-agent 1') && (cleanStepMsg.includes('✓') || lowerMsg.includes('extracted'))) {
+                  const s1Row = liveTimeline.querySelector('.subagent-live-row[data-agent="1"]');
+                  if (s1Row && !s1Row.classList.contains('is-done')) {
+                    s1Row.classList.add('is-done');
+                    const title = s1Row.getAttribute('data-title') || 'Portal 1';
+                    s1Row.innerHTML = `
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.85;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                      <span style="color: #cbd5e1;">1. Sub-Agent 1: Inspected ${escapeHtml(title)}</span>
+                    `;
                   }
-                } else if (cleanStepMsg.toLowerCase().includes('sub-agent 2')) {
-                  const s2Row = executingSwarm.querySelector('.subagent-worker-row[data-agent="2"]');
-                  const s2Status = s2Row?.querySelector('.subagent-worker-status');
-                  if (s2Status) {
-                    if (cleanStepMsg.includes('✓') || cleanStepMsg.toLowerCase().includes('extracted')) {
-                      s2Status.innerHTML = '<span style="color: #34d399; font-weight: 600;">✓ Extracted data</span>';
-                      s2Status.classList.remove('thinking-shimmer-text');
-                    } else {
-                      s2Status.textContent = cleanStepMsg.replace(/^.*Sub-Agent 2[^:]*:\s*/i, '') || 'Extracting live page data…';
-                    }
+                } else if (lowerMsg.includes('sub-agent 2') && (cleanStepMsg.includes('✓') || lowerMsg.includes('extracted'))) {
+                  const s2Row = liveTimeline.querySelector('.subagent-live-row[data-agent="2"]');
+                  if (s2Row && !s2Row.classList.contains('is-done')) {
+                    s2Row.classList.add('is-done');
+                    const title = s2Row.getAttribute('data-title') || 'Portal 2';
+                    s2Row.innerHTML = `
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.85;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                      <span style="color: #cbd5e1;">2. Sub-Agent 2: Inspected ${escapeHtml(title)}</span>
+                    `;
                   }
-                } else if (cleanStepMsg.toLowerCase().includes('completed')) {
-                  if (headerTitle) headerTitle.textContent = '✓ Sub-agents completed tasks';
-                  executingSwarm.querySelectorAll('.subagent-worker-status').forEach(s => {
-                    s.innerHTML = '<span style="color: #34d399; font-weight: 600;">✓ Completed</span>';
-                    s.classList.remove('thinking-shimmer-text');
-                  });
+                }
+                if (lowerMsg.includes('completed') || lowerMsg.includes('synthesizing')) {
+                  const header = liveTimeline.querySelector('.subagent-live-header');
+                  if (header) header.style.display = 'none';
                 }
               }
             }
@@ -6183,7 +6071,7 @@ if (typeof document !== 'undefined') {
                   } else if (act.kind === 'spawn_subagents') {
                     newExecuting.style.display = 'block';
                     newExecuting.style.margin = '6px 0';
-                    newExecuting.innerHTML = renderSubAgentSwarmExecuting(act.subTasks, 'Deploying Sub-Agents Swarm…');
+                    newExecuting.innerHTML = renderSubAgentSwarmExecuting(act.subTasks, 'Deploying subagents...');
                   } else {
                     newExecuting.style.display = 'flex';
                     newExecuting.style.alignItems = 'center';

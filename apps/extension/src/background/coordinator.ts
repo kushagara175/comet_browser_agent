@@ -5150,51 +5150,73 @@ export class RunCoordinator {
       activeKey
     );
 
-    this.listeners.onStepProgress?.(4, 4, '✓ Sub-agents completed parallel extraction; synthesizing comparative report.', this.currentRunId);
+    this.listeners.onStepProgress?.(4, 4, 'Sub-agents completed tasks; synthesizing price comparison.', this.currentRunId);
 
-    const subTasksSummary = subTasks.map((st: any, idx: number) => {
-      const link = st.targetUrl ? ` ([Open Site](${st.targetUrl}))` : '';
-      const realSnippet = idx === 0 ? `\n  > Live Page Data: ${sub1Result.summary}` :
-                          `\n  > Live Page Data: ${sub2Result.summary}`;
-      return `• **Sub-Agent ${idx + 1} (${st.title})**: ✓ Completed${link}${realSnippet}`;
-    }).join('\n\n');
+    // Extract numeric prices directly to guarantee an accurate price difference
+    const parsePrice = (txt: string): number | null => {
+      const match = (txt || '').match(/(?:₹|Rs\.?|INR)\s*([\d,]+)/i);
+      if (match) {
+        const num = parseInt(match[1].replace(/,/g, ''), 10);
+        return isNaN(num) ? null : num;
+      }
+      return null;
+    };
+
+    const p1 = parsePrice(sub1Result.summary);
+    const p2 = parsePrice(sub2Result.summary);
+
+    let priceDiffNotice = '';
+    if (p1 !== null && p2 !== null) {
+      if (p1 === p2) {
+        priceDiffNotice = `\n\n**Price Difference:** ₹0 (Identical price of ₹${p1.toLocaleString('en-IN')} on both ${name1} and ${name2})`;
+      } else if (p1 < p2) {
+        const diff = p2 - p1;
+        priceDiffNotice = `\n\n**Price Difference:** ${name1} is **₹${diff.toLocaleString('en-IN')} cheaper** than ${name2} (${name1}: ₹${p1.toLocaleString('en-IN')} vs ${name2}: ₹${p2.toLocaleString('en-IN')})`;
+      } else {
+        const diff = p1 - p2;
+        priceDiffNotice = `\n\n**Price Difference:** ${name2} is **₹${diff.toLocaleString('en-IN')} cheaper** than ${name1} (${name2}: ₹${p2.toLocaleString('en-IN')} vs ${name1}: ₹${p1.toLocaleString('en-IN')})`;
+      }
+    }
 
     let finalSynthesisText = '';
-    const hasRealPrices = sub1Result.summary.includes('₹') || sub1Result.summary.includes('Rs') || sub1Result.summary.includes('INR') ||
-                          sub2Result.summary.includes('₹') || sub2Result.summary.includes('Rs') || sub2Result.summary.includes('INR') ||
-                          sub1Result.summary.includes('Fares:') || sub2Result.summary.includes('Fares:');
-    if (!hasRealPrices && isFlightQuery) {
-      finalSynthesisText = `The sub-agents completed live visual interactions across both airline portals:\n` +
-        `• **${name1}**: ${sub1Result.summary}\n` +
-        `• **${name2}**: ${sub2Result.summary}\n\n` +
-        `Flight searches were physically submitted on screen. Real live fare listings are rendering directly in your browser tabs.`;
-    } else {
-      const synthPrompt = `You are PrivaPilot's Comparative Swarm Synthesizer. Synthesize these live extracted browser findings into a concise, factual comparison for the user's goal: "${goal}"\n\n` +
-        `Sub-Agent 1 [${name1}]: ${sub1Result.summary}\n` +
-        `Sub-Agent 2 [${name2}]: ${sub2Result.summary}\n\n` +
-        `CRITICAL RULES:\n` +
-        `- ONLY include prices, flights, and departure times that appear explicitly in the live data above.\n` +
-        `- NEVER hallucinate, invent, simulate, or guess fares, flight numbers, or schedules.\n` +
-        `- If live fare cards are still loading, state that clearly instead of generating mock values.\n\n` +
-        `Provide a helpful comparative breakdown based strictly on the live data above:`;
-      try {
-        const chatRes = await this.httpClient.requestGeneralChat(synthPrompt);
-        if (chatRes && chatRes.reply) finalSynthesisText = chatRes.reply;
-      } catch (_) {}
-    }
+    const synthPrompt = `You are PrivaPilot's Comparative Analyst. Synthesize the findings from Sub-Agent 1 (${name1}) and Sub-Agent 2 (${name2}) for the user's goal: "${goal}".\n\n` +
+      `Sub-Agent 1 [${name1}]: ${sub1Result.summary}\n` +
+      `Sub-Agent 2 [${name2}]: ${sub2Result.summary}\n\n` +
+      `CRITICAL INSTRUCTIONS:\n` +
+      `- Provide a clean, direct, and factual comparison.\n` +
+      `- Specifically compute or highlight the PRICE DIFFERENCE between ${name1} and ${name2} (which platform is cheaper and by how much).\n` +
+      `- DO NOT use any emojis.\n` +
+      `- DO NOT include marketing slogans, compliance proofs, or jargon.\n` +
+      `- Keep it simple, structured, and easy to read.`;
+    try {
+      const chatRes = await this.httpClient.requestGeneralChat(synthPrompt);
+      if (chatRes && chatRes.reply) finalSynthesisText = chatRes.reply;
+    } catch (_) {}
 
     if (!finalSynthesisText || (finalSynthesisText.includes('iPhone 16') && isFlightQuery)) {
-      finalSynthesisText = taskResponse?.finalSynthesis ||
-        `Comparative extraction completed across ${name1} and ${name2}.\n• ${name1}: ${sub1Result.summary}\n• ${name2}: ${sub2Result.summary}`;
+      if (isFlightQuery) {
+        finalSynthesisText = `**Flight Comparison (${origin} → ${dest}):**\n\n` +
+          `- **${name1}**: ${sub1Result.summary}\n` +
+          `- **${name2}**: ${sub2Result.summary}` +
+          (priceDiffNotice || '');
+      } else {
+        finalSynthesisText = `**Price Comparison (${cleanedQuery}):**\n\n` +
+          `- **${name1}**: ${sub1Result.summary}\n` +
+          `- **${name2}**: ${sub2Result.summary}` +
+          (priceDiffNotice || '');
+      }
+    } else if (priceDiffNotice && !finalSynthesisText.toLowerCase().includes('price difference')) {
+      finalSynthesisText += priceDiffNotice;
     }
 
-    const fullReply = [
-      `🤖 **Sub-Agent Swarm Deployed (${subTasks.length} Parallel Workers)**\n`,
-      subTasksSummary,
-      `\n### Swarm Synthesis & Comparative Analysis\n`,
-      finalSynthesisText || `Multi-agent comparison completed across ${name1} and ${name2}.`,
-      `\n\n🛡️ *Compliance Proof: \`${taskResponse?.complianceAudit?.proofId || 'audit_verified'}\` • Zero Plaintext PII Guaranteed*`
-    ].filter(Boolean).join('\n');
+    // Strip any rogue emojis, compliance proof blocks, or redundant headers
+    finalSynthesisText = finalSynthesisText
+      .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+      .replace(/🛡️?\s*\*?Compliance Proof[^\n]*/gi, '')
+      .replace(/###\s*Swarm Synthesis[^\n]*/gi, '')
+      .trim();
+
+    const fullReply = finalSynthesisText;
 
     this.transition('complete', 'Sub-Agent Swarm execution complete');
     return this.completeWithResult({
