@@ -423,24 +423,30 @@ export function sanitizeReasoningText(raw) {
 /**
  * Aggregates reasoning from all executed steps of a completed run to display the complete multi-step thought history.
  */
-export function collectAllStepReasoning(res) {
+export function collectAllStepReasoning(res, liveReasoning = '') {
   const parts = [];
-  if (Array.isArray(res?.steps) && res.steps.length > 0) {
-    for (const s of res.steps) {
-      const r = s.proposal?.reasoning || s.proposal?.thought || s.proposal?.rationale || s.reasoning;
-      if (r && typeof r === 'string' && r.trim()) {
-        const trimmed = r.trim();
-        if (!parts.includes(trimmed)) {
-          parts.push(trimmed);
-        }
-      }
+  const steps = Array.isArray(res?.steps) ? res.steps : [];
+  const ordered = [...steps].sort((a, b) => (a.step || 0) - (b.step || 0));
+  for (const s of ordered) {
+    const text = sanitizeReasoningText(s.proposal?.reasoning || s.proposal?.thought || s.reasoning || s.proposal?.rationale);
+    if (text) parts.push(`Step ${parts.length + 1}: ${text}`);
+  }
+  const known = parts.map(part => part.replace(/^Step \d+:\s*/, '').trim());
+  for (const source of [res?.reasoning, liveReasoning]) {
+    const clean = sanitizeReasoningText(source);
+    if (!clean) continue;
+    const blocks = clean.match(/Step \d+:[\s\S]*?(?=\n\s*Step \d+:|$)/g) || clean.split(/\n\s*\n/);
+    for (const block of blocks) {
+      const text = block.replace(/^Step \d+:\s*/, '').trim();
+      if (!text || known.some(item => item === text || item.includes(text)) ||
+        (known.length && known.some(item => text.includes(item)) && !/^Step \d+:/.test(clean))) continue;
+      known.push(text);
+      parts.push(`Step ${parts.length + 1}: ${text}`);
     }
   }
-  if (parts.length === 0) {
-    const fallback = res?.reasoning || res?.proposal?.reasoning || res?.proposal?.thought || res?.proposal?.rationale || res?.message || '';
-    if (fallback && typeof fallback === 'string' && fallback.trim()) {
-      parts.push(fallback.trim());
-    }
+  if (!parts.length) {
+    const fallback = sanitizeReasoningText(res?.proposal?.reasoning || res?.proposal?.thought || res?.proposal?.rationale || res?.message);
+    if (fallback) parts.push(`Step 1: ${fallback}`);
   }
   return parts.join('\n\n');
 }
@@ -480,6 +486,8 @@ export function parseReasoningLines(rawText) {
 
   for (const line of rawLines) {
     let text = line.replace(/^[\*\-\•]\s+/, '').replace(/^\d+\.\s+/, '').trim();
+    const stepLabel = text.match(/^Step (\d+):\s*/i)?.[0] || '';
+    if (stepLabel) text = text.slice(stepLabel.length);
     if (!text) continue;
 
     // Filter out internal grounding debug traces and synthetic verification shortcuts
@@ -534,11 +542,9 @@ export function parseReasoningLines(rawText) {
     if (!body) continue;
 
     const normalizedBody = body.toLowerCase().trim();
-    if (seenBodies.has(normalizedBody)) {
-      // Skip exact duplicate sentences across multi-step execution
-      continue;
-    }
-    seenBodies.add(normalizedBody);
+    const dedupeKey = `${stepLabel}:${normalizedBody}`;
+    if (seenBodies.has(dedupeKey)) continue;
+    seenBodies.add(dedupeKey);
 
     if (body.length > 0) {
       body = body.charAt(0).toUpperCase() + body.slice(1);
@@ -554,7 +560,7 @@ export function parseReasoningLines(rawText) {
       }
     }
 
-    parsed.push({ icon, category, body });
+    parsed.push({ icon, category, body: `${stepLabel}${body}` });
   }
 
   return parsed;

@@ -1173,13 +1173,24 @@ export class VlmReasoningEngine {
         const candidateIntended = intendedName || (rationaleMatch ? rationaleMatch[1].trim() : '');
 
         if (currentTargetEl && candidateIntended && candidateIntended.length >= 3) {
-          const currentNameNorm = (currentTargetEl.sanitizedName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-          const intendedNorm = candidateIntended.toLowerCase().replace(/[^a-z0-9]/g, '');
-          if (currentNameNorm && intendedNorm && !currentNameNorm.includes(intendedNorm) && !intendedNorm.includes(currentNameNorm)) {
-            const betterEl = payload.elements.find((e) => {
-              const elNorm = (e.sanitizedName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-              return elNorm === intendedNorm || elNorm.includes(intendedNorm) || intendedNorm.includes(elNorm);
+          const normalize = (text: string) => text.toLocaleLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+          const currentNameNorm = normalize(currentTargetEl.sanitizedName || '');
+          const intendedNorm = normalize(candidateIntended);
+          const compatible = (el: typeof currentTargetEl) => parsed.kind === 'type'
+            ? (el.role === 'input' || el.role === 'textarea') && el.actionCapabilities.includes('type')
+            : parsed.kind === 'click' ? el.actionCapabilities.includes('click') : false;
+          const matches = (name: string) => name === intendedNorm ||
+            (intendedNorm.length >= 5 && name.length >= 5 &&
+              (` ${name} `.includes(` ${intendedNorm} `) || ` ${intendedNorm} `.includes(` ${name} `)));
+          if (intendedNorm.length >= 3 && !matches(currentNameNorm) &&
+              (parsed.kind === 'click' || parsed.kind === 'type')) {
+            const candidates = payload.elements.filter(e => {
+              const name = normalize(e.sanitizedName || '');
+              return name.length >= 3 && compatible(e) && matches(name) &&
+                e.state.includes('visible') && !e.state.includes('disabled');
             });
+            const exact = candidates.filter(e => normalize(e.sanitizedName) === intendedNorm);
+            const betterEl = (exact.length === 1 ? exact : candidates.length === 1 ? candidates : [])[0];
             if (betterEl) {
               console.log(`[VLM Engine] Target reconciled from ${parsed.targetLocalId} ("${currentTargetEl.sanitizedName}") to ${betterEl.localId} ("${betterEl.sanitizedName}") based on intended target "${candidateIntended}"`);
               parsed.targetLocalId = betterEl.localId;

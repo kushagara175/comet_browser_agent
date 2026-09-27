@@ -22253,6 +22253,66 @@ Executing verified cached action immediately.`;
 };
 
 // src/background/coordinator.ts
+function isMissionBrochureGoal(goal) {
+  return /\b(?:chandrayaan[\s-]*3|chandrayaan)\b/i.test(goal) && /\b(?:brochure|pdf|download)\b/i.test(goal);
+}
+function isroMissionStage(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    if (!/^(?:[a-z0-9-]+\.)*isro\.gov\.in$/i.test(parsed.hostname)) return null;
+    const path = parsed.pathname.toLowerCase().replace(/\/+$/, "") || "/";
+    if (path === "/" || path === "/index.html") return "home";
+    if (path === "/mission.html") return "hub";
+    if (path === "/spacecraftmissions.html") return "directory";
+    if (/^\/chandrayaan[\s_-]*3(?:[_-]details)?\.html$/.test(path)) return "details";
+  } catch (_) {
+  }
+  return null;
+}
+function eligibleMissionElement(el2, capability) {
+  return el2.state.includes("visible") && !el2.state.includes("disabled") && el2.actionCapabilities.includes(capability);
+}
+function enforceIsroMissionProgression(goal, url, elements, proposal) {
+  if (!isMissionBrochureGoal(goal)) return { proposal };
+  const stage = isroMissionStage(url);
+  if (!stage) return { proposal };
+  const candidates = (role, name2, capability) => elements.filter((el2) => el2.role === role && name2.test(el2.sanitizedName) && eligibleMissionElement(el2, capability));
+  let target;
+  let kind = "click";
+  let textToType;
+  if (stage === "home") {
+    target = candidates("link", /missions?\s*accomplished/i, "click")[0] || candidates("link", /^missions?$/i, "click")[0] || // 2. Otherwise click "Activities" navbar link/button to open the dropdown!
+    candidates("link", /activities/i, "click")[0] || candidates("button", /activities/i, "click")[0] || elements.find((el2) => /activities/i.test(el2.sanitizedName) && el2.actionCapabilities?.includes("click"));
+  } else if (stage === "hub") {
+    target = candidates("link", /spacecraft\s*missions/i, "click")[0] || candidates("button", /spacecraft\s*missions/i, "click")[0] || elements.find((el2) => /spacecraft\s*missions/i.test(el2.sanitizedName) && el2.actionCapabilities?.includes("click"));
+  } else if (stage === "directory") {
+    target = candidates("link", /chandrayaan[\s-]*3\b/i, "click")[0] || elements.find((el2) => el2.role === "link" && /chandrayaan[\s-]*3\b/i.test(el2.sanitizedName));
+    if (!target) {
+      kind = "type";
+      target = candidates("input", /table\s*filter|search/i, "type")[0] || elements.find((el2) => (el2.role === "input" || el2.role === "textarea") && /table\s*filter|search/i.test(el2.sanitizedName));
+      textToType = "Chandrayaan";
+    }
+  } else {
+    target = candidates("link", /brochure/i, "click")[0] || elements.find((el2) => el2.role === "link" && /brochure/i.test(el2.sanitizedName));
+  }
+  if (!target) return { proposal };
+  if (proposal.kind === kind && proposal.targetLocalId === target.localId && (kind !== "type" || proposal.textToType === textToType && proposal.pressEnter === false)) {
+    return { proposal };
+  }
+  const rationale = kind === "type" ? `Filter the spacecraft missions table for ${textToType} without submitting site search.` : `Open ${target.sanitizedName} to advance toward the Chandrayaan-3 brochure.`;
+  return { proposal: {
+    actionId: `act_isro_${stage}_${Date.now()}`,
+    kind,
+    targetLocalId: target.localId,
+    textToType,
+    pressEnter: false,
+    confidence: 0.98,
+    risk: "safe",
+    rationale,
+    reasoning: proposal.reasoning || proposal.thought || rationale
+  } };
+}
 function selectBestTavilyResult(results, query, goal, currentUrl = "") {
   if (!results || results.length === 0) return void 0;
   const combined = `${query} ${goal}`.toLowerCase();
@@ -22586,11 +22646,21 @@ var RunCoordinator = class {
     return this.lastRunResult;
   }
   completeWithResult(res) {
-    const finalReasoning = res.reasoning || res.proposal?.reasoning || res.proposal?.thought || this.lastActionProposal?.reasoning || this.lastActionProposal?.thought || Array.isArray(res.steps) && (res.steps.find((s) => s.proposal?.reasoning)?.proposal?.reasoning || res.steps.find((s) => s.proposal?.rationale)?.proposal?.rationale) || res.proposal?.rationale || this.lastActionProposal?.rationale || void 0;
+    const steps = [...this.stepsTrace];
+    for (const entry of res.steps || []) {
+      if (!steps.some((s) => s.proposal?.actionId === entry.proposal?.actionId && s.step === entry.step)) steps.push(entry);
+    }
+    steps.sort((a, b) => a.step - b.step);
+    const stepReasoning = steps.map((entry, index) => {
+      const text = entry.proposal?.reasoning || entry.proposal?.thought || entry.proposal?.rationale;
+      return text ? `Step ${index + 1}: ${text}` : "";
+    }).filter(Boolean).join("\n\n");
+    const finalReasoning = stepReasoning || res.reasoning || res.proposal?.reasoning || res.proposal?.thought || this.lastActionProposal?.reasoning || this.lastActionProposal?.thought || void 0;
     const finalRes = {
       ...res,
       reply: res.reply || res.proposal?.reply || (res.proposal?.kind === "answer" || res.proposal?.kind === "finish" ? res.proposal.rationale || res.message : void 0),
       reasoning: finalReasoning,
+      steps,
       runId: res.runId || this.currentRunId || void 0
     };
     this.lastRunResult = finalRes;
@@ -24234,101 +24304,10 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
             });
           }
         }
-        const isroEffectiveUrl = activeTab?.url || sanitized.pageState?.url || "";
-        const isIsroPortal = isroEffectiveUrl.includes("isro.gov.in");
-        if (isIsroPortal) {
-          const rawGoal = (this.currentGoal || "").toLowerCase();
-          let missionKeyword = "Chandrayaan";
-          if (rawGoal.includes("chandrayaan")) missionKeyword = "Chandrayaan";
-          else if (rawGoal.includes("aditya")) missionKeyword = "Aditya";
-          else if (rawGoal.includes("gaganyaan")) missionKeyword = "Gaganyaan";
-          else if (rawGoal.includes("mangalyaan") || rawGoal.includes("mars")) missionKeyword = "Mangalyaan";
-          const isStage3Table = isroEffectiveUrl.includes("SpacecraftMissions") || isroEffectiveUrl.includes("LaunchMissions");
-          const isStage2Hub = isroEffectiveUrl.includes("Mission.html") && !isStage3Table;
-          const isStage4Profile = isroEffectiveUrl.includes("Chandrayaan3_Details") || isroEffectiveUrl.includes("Chandrayaan3.html") || isroEffectiveUrl.includes("Details.html") && !isStage3Table;
-          const targetEl = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
-          const targetName = (targetEl?.sanitizedName || targetEl?.name || "").toLowerCase();
-          const isNavbarOrHeaderAction = Boolean(
-            /activities|about|services|programmes|home/i.test(targetName) || /site search|header/i.test(targetName) || targetEl?.id === "searchTextD" || targetEl?.id === "searchTextM"
-          );
-          if (isStage3Table) {
-            const missionLink = sanitized.elements.find(
-              (el2) => el2.role === "link" && !/activities|about|services|mission\.html/i.test(el2.sanitizedName || "") && ((el2.sanitizedName || "").toLowerCase().includes(missionKeyword.toLowerCase()) || el2.href?.toLowerCase?.().includes(missionKeyword.toLowerCase()))
-            );
-            const tableFilterInput = sanitized.elements.find(
-              (el2) => el2.role === "input" && (el2.sanitizedName?.toLowerCase().includes("table") || el2.sanitizedName?.toLowerCase() === "search" || el2.placeholder?.toLowerCase() === "search" || el2.classList?.contains("search"))
-            );
-            if (missionLink) {
-              if (proposal.kind !== "click" || proposal.targetLocalId !== missionLink.localId) {
-                console.log(`[Coordinator] Stage 3 Lock: Clicking visible target mission "${missionLink.sanitizedName}" (${missionLink.localId})`);
-                proposal = {
-                  actionId: `act_stage3_mission_click_${step}_${Date.now()}`,
-                  kind: "click",
-                  targetLocalId: missionLink.localId,
-                  confidence: 0.99,
-                  risk: "safe",
-                  thought: `On spacecraft missions directory table, target mission "${missionLink.sanitizedName}" is visible. Clicking to access mission profile.`,
-                  rationale: `Click target mission link "${missionLink.sanitizedName}" in directory table`
-                };
-              }
-            } else if (tableFilterInput) {
-              if (proposal.kind !== "type" || proposal.targetLocalId !== tableFilterInput.localId || isNavbarOrHeaderAction) {
-                console.log(`[Coordinator] Stage 3 Lock: Suppressing navbar regression and targeting Table Filter for "${missionKeyword}"`);
-                proposal = {
-                  actionId: `act_stage3_table_filter_${step}_${Date.now()}`,
-                  kind: "type",
-                  targetLocalId: tableFilterInput.localId,
-                  textToType: missionKeyword,
-                  pressEnter: false,
-                  confidence: 0.98,
-                  risk: "safe",
-                  thought: `On missions directory table, filtering table rows by typing "${missionKeyword}".`,
-                  rationale: `Filter missions table by typing "${missionKeyword}"`
-                };
-              } else if (proposal.kind === "type" && proposal.textToType && /chandrayaan/i.test(proposal.textToType)) {
-                proposal = { ...proposal, textToType: missionKeyword, pressEnter: false };
-              }
-            }
-          } else if (isStage2Hub) {
-            if (isNavbarOrHeaderAction || proposal.kind === "click" && !/spacecraft|launch/i.test(targetName)) {
-              const spacecraftCard = sanitized.elements.find(
-                (el2) => /spacecraft missions/i.test(el2.sanitizedName || "") || /SpacecraftMissions\.html/i.test(el2.href || "")
-              );
-              if (spacecraftCard) {
-                console.log(`[Coordinator] Stage 2 Lock: Suppressing navbar regression and targeting Spacecraft Missions card (${spacecraftCard.localId})`);
-                proposal = {
-                  actionId: `act_stage2_spacecraft_card_${step}_${Date.now()}`,
-                  kind: "click",
-                  targetLocalId: spacecraftCard.localId,
-                  confidence: 0.98,
-                  risk: "safe",
-                  thought: `On missions accomplished hub, clicking "Spacecraft Missions*" category card to open full missions directory table.`,
-                  rationale: `Click "Spacecraft Missions*" card to open directory table`
-                };
-              }
-            }
-          } else if (isStage4Profile) {
-            const brochureLink = sanitized.elements.find(
-              (el2) => el2.role === "link" && (/brochure/i.test(el2.sanitizedName || "") || /\.pdf\b/i.test(el2.href || ""))
-            );
-            if (brochureLink && (proposal.kind !== "click" || proposal.targetLocalId !== brochureLink.localId)) {
-              console.log(`[Coordinator] Stage 4 Lock: Targeting authentic Brochure link "${brochureLink.sanitizedName}" (${brochureLink.localId})`);
-              proposal = {
-                actionId: `act_stage4_brochure_click_${step}_${Date.now()}`,
-                kind: "click",
-                targetLocalId: brochureLink.localId,
-                confidence: 0.99,
-                risk: "safe",
-                thought: `Located official mission brochure download link "${brochureLink.sanitizedName}". Clicking to download brochure PDF.`,
-                rationale: `Click "${brochureLink.sanitizedName}" to download official brochure`
-              };
-            }
-          }
-        }
         const activeObjective = this.currentTaskSpec && this.objectiveProgress ? getCurrentObjective(this.currentTaskSpec, this.objectiveProgress) : void 0;
         if (activeObjective && !proposal.objectiveId) proposal = { ...proposal, objectiveId: activeObjective.id };
         this.lastActionProposal = proposal;
-        if (this.listeners.onActionProposed) {
+        if (this.listeners.onActionProposed && !(isMissionBrochureGoal(this.currentGoal || "") && isroMissionStage(activeTab?.url || ""))) {
           const matchedEl = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
           let proposalReasoning = proposal.reasoning || proposal.thought || (proposal.rationale && !proposal.rationale.includes("[semantically grounded]") ? proposal.rationale : void 0);
           if (!proposalReasoning) {
@@ -24642,8 +24621,9 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
         if (targetElement && proposal.kind === "click") {
           const isHighConfidenceOrLink = (proposal.confidence || 0) >= 0.9 || targetElement.role === "link" || proposal.actionId.startsWith("act_search_result_click_") || proposal.actionId.startsWith("act_download_") || proposal.actionId.startsWith("act_playbook_") || proposal.actionId.startsWith("act_nav_");
           if (!isHighConfidenceOrLink) {
+            const selectedElement = targetElement;
             const duplicates = sanitized.elements.filter(
-              (e) => e.localId !== targetElement.localId && e.role === targetElement.role && e.sanitizedName.toLowerCase() === targetElement.sanitizedName.toLowerCase()
+              (e) => e.localId !== selectedElement.localId && e.role === selectedElement.role && e.sanitizedName.toLowerCase() === selectedElement.sanitizedName.toLowerCase()
             );
             if (duplicates.length > 0 && !structuredIntent?.contextPhrase) {
               proposal = {
@@ -25205,89 +25185,8 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
         const isSearchTarget = Boolean(
           typedSearchElement && (typedSearchElement.role === "input" && (/search|query|find|txtsearch/i.test(typedSearchElement.sanitizedName || "") || /search|query|find|txtsearch/i.test(typedSearchElement.name || "") || /search|query|find|txtsearch/i.test(typedSearchElement.placeholder || "") || /search|query|find|txtsearch/i.test(typedSearchElement.id || "")))
         );
-        if (proposal.kind === "type" && !proposal.pressEnter && (this.currentTaskContract?.structuredIntent?.pressEnter || /(?:amazon|flipkart|google|search|isro|wikipedia)/i.test(currentUrl) || isSearchTarget)) {
+        if (proposal.kind === "type" && !proposal.pressEnter && (this.currentTaskContract?.structuredIntent?.pressEnter || /(?:amazon|flipkart|google|search|isro|wikipedia)/i.test(currentUrl) || isSearchTarget) && !(isMissionBrochureGoal(this.currentGoal || "") && isroMissionStage(currentUrl) === "directory")) {
           proposal = { ...proposal, pressEnter: true };
-        }
-        if (currentUrl.includes("SpacecraftMissions") || currentUrl.includes("LaunchMissions")) {
-          const rawGoal = (this.currentGoal || "").toLowerCase();
-          let missionGoalKeyword = "Chandrayaan";
-          if (rawGoal.includes("chandrayaan")) missionGoalKeyword = "Chandrayaan";
-          else if (rawGoal.includes("aditya")) missionGoalKeyword = "Aditya";
-          else if (rawGoal.includes("gaganyaan")) missionGoalKeyword = "Gaganyaan";
-          else if (rawGoal.includes("mangalyaan") || rawGoal.includes("mars")) missionGoalKeyword = "Mangalyaan";
-          else {
-            const rawQ = this.getSearchQuery(this.currentGoal || "");
-            missionGoalKeyword = rawQ.replace(/\b(?:brochure|pdf|document|report|mission|download|details)\b/gi, "").trim() || "Chandrayaan";
-          }
-          if (proposal.kind === "type" && proposal.textToType) {
-            let normalizedText = proposal.textToType;
-            if (/chandrayaan/i.test(proposal.textToType)) {
-              normalizedText = "Chandrayaan";
-            } else if (/aditya/i.test(proposal.textToType)) {
-              normalizedText = "Aditya";
-            }
-            proposal = { ...proposal, textToType: normalizedText, pressEnter: false };
-          }
-          const directMissionRow = sanitized.elements.find(
-            (el2) => el2.role === "link" && !/activities|about|services|mission\.html/i.test(el2.sanitizedName || "") && ((el2.sanitizedName || "").toLowerCase().includes(missionGoalKeyword.toLowerCase()) || el2.href?.toLowerCase?.().includes(missionGoalKeyword.toLowerCase()))
-          );
-          const targetElObj = sanitized.elements.find((el2) => el2.localId === proposal.targetLocalId);
-          const isNavbarActivitiesClick = Boolean(
-            proposal.kind === "click" && targetElObj && (/activities/i.test(targetElObj.sanitizedName || "") || /activities/i.test(targetElObj.name || ""))
-          );
-          const isHeaderSearchType = Boolean(
-            proposal.kind === "type" && targetElObj && (/site search|header/i.test(targetElObj.sanitizedName || "") || targetElObj.id === "searchTextD")
-          );
-          if (directMissionRow && (isNavbarActivitiesClick || isHeaderSearchType || proposal.kind !== "click" || proposal.targetLocalId !== directMissionRow.localId)) {
-            console.log(`[Coordinator] Progression Lock: Target mission "${directMissionRow.sanitizedName}" (${directMissionRow.localId}) is visible; clicking directly`);
-            proposal = {
-              actionId: `act_mission_row_click_${step}_${Date.now()}`,
-              kind: "click",
-              targetLocalId: directMissionRow.localId,
-              confidence: 0.98,
-              risk: "safe",
-              thought: `On missions directory table, target mission "${directMissionRow.sanitizedName}" is visible. Clicking to open mission details.`,
-              rationale: `Click target mission link "${directMissionRow.sanitizedName}" in directory table`
-            };
-          } else if (isNavbarActivitiesClick || isHeaderSearchType) {
-            console.log("[Coordinator] Progression Lock: Suppressing backward regression and targeting table filter");
-            const tableFilterInput = sanitized.elements.find(
-              (el2) => el2.role === "input" && (el2.sanitizedName?.toLowerCase().includes("table") || el2.sanitizedName?.toLowerCase() === "search" || el2.placeholder?.toLowerCase() === "search")
-            );
-            if (tableFilterInput) {
-              proposal = {
-                actionId: `act_table_filter_${step}_${Date.now()}`,
-                kind: "type",
-                targetLocalId: tableFilterInput.localId,
-                textToType: missionGoalKeyword,
-                pressEnter: false,
-                confidence: 0.98,
-                risk: "safe",
-                thought: `On missions directory table, filtering table rows for "${missionGoalKeyword}".`,
-                rationale: `Filter missions table by typing "${missionGoalKeyword}"`
-              };
-            }
-          }
-        }
-        if (currentUrl.includes("Chandrayaan") || currentUrl.includes("Details") || currentUrl.includes("Aditya")) {
-          const wantsBrochure = /\b(?:brochure|pdf|document|download)\b/i.test(this.currentGoal || "");
-          if (wantsBrochure) {
-            const brochureLink = sanitized.elements.find(
-              (el2) => el2.role === "link" && (/brochure/i.test(el2.sanitizedName || "") || /brochure/i.test(el2.name || "") || /\.pdf\b/i.test(el2.href || ""))
-            );
-            if (brochureLink && (proposal.kind !== "click" || proposal.targetLocalId !== brochureLink.localId)) {
-              console.log(`[Coordinator] Progression Lock: Brochure link "${brochureLink.sanitizedName}" (${brochureLink.localId}) found; clicking directly`);
-              proposal = {
-                actionId: `act_brochure_click_${step}_${Date.now()}`,
-                kind: "click",
-                targetLocalId: brochureLink.localId,
-                confidence: 0.99,
-                risk: "safe",
-                thought: `Located mission brochure link "${brochureLink.sanitizedName}". Clicking to initiate document download.`,
-                rationale: `Click "${brochureLink.sanitizedName}" to download brochure`
-              };
-            }
-          }
         }
         if (proposal.kind === "type" && proposal.targetLocalId && !proposal.actionId?.startsWith("act_autofill_")) {
           try {
@@ -25329,6 +25228,38 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
             }
           } catch (_) {
           }
+        }
+        const missionGate = enforceIsroMissionProgression(this.currentGoal || "", activeTab?.url || "", sanitized.elements, proposal);
+        if (missionGate.error) {
+          this.transition("failed-safe", missionGate.error);
+          return this.completeWithResult({
+            success: false,
+            state: "failed-safe",
+            error: missionGate.error,
+            sanitized,
+            proposal,
+            stepCount: step,
+            steps: this.stepsTrace
+          });
+        }
+        proposal = missionGate.proposal;
+        if (isMissionBrochureGoal(this.currentGoal || "") && isroMissionStage(activeTab?.url || "") && proposal.kind === "type" && proposal.targetLocalId && proposal.textToType === "Chandrayaan" && this.lastExecutedProposal?.kind === "type" && this.lastExecutedProposal.targetLocalId === proposal.targetLocalId && this.lastExecutedProposal.textToType === proposal.textToType && this.lastExecutionResult?.success) {
+          const error = "Table filter did not reveal a visible Chandrayaan-3 row; stopping instead of repeating the filter.";
+          this.transition("failed-safe", error);
+          return this.completeWithResult({
+            success: false,
+            state: "failed-safe",
+            error,
+            sanitized,
+            proposal,
+            stepCount: step,
+            steps: this.stepsTrace
+          });
+        }
+        targetElement = proposal.targetLocalId ? sanitized.elements.find((e) => e.localId === proposal.targetLocalId) : void 0;
+        this.lastActionProposal = proposal;
+        if (this.listeners.onActionProposed && isMissionBrochureGoal(this.currentGoal || "") && isroMissionStage(activeTab?.url || "")) {
+          this.listeners.onActionProposed(proposal, this.currentRunId);
         }
         let execResponse;
         if (proposal.kind === "batch" && proposal.batchActions && proposal.batchActions.length > 0) {

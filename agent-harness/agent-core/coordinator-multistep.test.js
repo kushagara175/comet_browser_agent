@@ -16,7 +16,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert';
-import { RunCoordinator } from '../../apps/extension/dist/background/coordinator.js';
+import { RunCoordinator, enforceIsroMissionProgression } from '../../apps/extension/dist/background/coordinator.js';
 
 function createSampleElements() {
   return [
@@ -149,6 +149,36 @@ function createSequenceHttpClient(proposals) {
     }
   };
 }
+
+test('ISRO mission progression rejects navigation, batches, headers and Hindi on the directory', () => {
+  const element = (localId, role, sanitizedName, actionCapabilities) => ({
+    localId, role, sanitizedName, actionCapabilities, state: ['visible', 'enabled'], coarseBounds: [0, 0, 0.2, 0.1]
+  });
+  const elements = [
+    element('el_hindi', 'link', 'हिंदी', ['click']),
+    element('el_activities', 'link', 'Activities', ['click']),
+    element('el_site', 'input', 'Site Search', ['type']),
+    element('el_filter', 'input', 'Table Filter (Search)', ['type'])
+  ];
+  const goal = 'Download Chandrayaan-3 mission brochure PDF';
+  const url = 'https://www.isro.gov.in/SpacecraftMissions.html';
+  for (const kind of ['click', 'type', 'navigate', 'batch']) {
+    const guarded = enforceIsroMissionProgression(goal, url, elements,
+      { actionId: 'bad', kind, targetLocalId: 'el_hindi', url: 'https://evil.example', batchActions: [], confidence: 1, risk: 'safe', rationale: 'go back' });
+    assert.strictEqual(guarded.proposal.kind, 'type');
+    assert.strictEqual(guarded.proposal.targetLocalId, 'el_filter');
+    assert.strictEqual(guarded.proposal.textToType, 'Chandrayaan');
+    assert.strictEqual(guarded.proposal.pressEnter, false);
+  }
+  elements.push(element('el_row', 'link', 'Chandrayaan-3', ['click']));
+  assert.strictEqual(enforceIsroMissionProgression(goal, url, elements,
+    { kind: 'type', targetLocalId: 'el_filter' }).proposal.targetLocalId, 'el_row');
+  elements[4].state = ['disabled'];
+  elements[3].state = ['disabled'];
+  assert.match(enforceIsroMissionProgression(goal, url, elements, { kind: 'navigate' }).error, /No visible, enabled/);
+  assert.strictEqual(enforceIsroMissionProgression('Read ISRO news', url, elements, { kind: 'navigate' }).proposal.kind, 'navigate');
+  assert.strictEqual(enforceIsroMissionProgression(goal, 'https://isro.gov.in.evil.example/SpacecraftMissions.html', elements, { kind: 'navigate' }).proposal.kind, 'navigate');
+});
 
 // ============================================================================
 // Multi-Step Agent Loop Test Suite

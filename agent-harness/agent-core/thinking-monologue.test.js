@@ -145,6 +145,25 @@ test('Thinking: collectAllStepReasoning aggregates reasoning across multi-step r
   assert.ok(aggregated.includes('On search page'));
 });
 
+test('Thinking: completion merges partial steps and live reasoning without losing step boundaries', () => {
+  const result = { steps: [
+    { step: 1, proposal: { reasoning: 'Observation: Opened missions hub.' } },
+    { step: 2, proposal: { reasoning: 'Observation: Opened missions directory.' } }
+  ], reasoning: 'Step 2: Observation: Opened missions directory.' };
+  const merged = collectAllStepReasoning(result,
+    'Observation: Opened missions hub.\n\nObservation: Opened missions directory.\n\nObservation: Found Chandrayaan-3 row.');
+  assert.match(merged, /Step 1:.*Opened missions hub/);
+  assert.match(merged, /Step 2:.*Opened missions directory/);
+  assert.match(merged, /Step 3:.*Found Chandrayaan-3 row/);
+  assert.equal((merged.match(/Opened missions directory/g) || []).length, 1);
+  const repeated = collectAllStepReasoning({ steps: [
+    { step: 1, proposal: { reasoning: 'Observation: Checking the page.' } },
+    { step: 2, proposal: { reasoning: 'Observation: Checking the page.' } }
+  ] });
+  assert.equal((repeated.match(/Checking the page/g) || []).length, 2);
+  assert.ok(formatReasoningIntoLinesHtml(repeated).includes('Step 2:'));
+});
+
 test('Thinking: parseReasoningLines strips repetitive duplicate category labels', () => {
   const duplicateLabelText = 'Observation: Observation: The current page is the Wikipedia article for Chandrayaan-3.';
   const parsed = parseReasoningLines(duplicateLabelText);

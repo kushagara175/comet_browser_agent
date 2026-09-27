@@ -11,10 +11,15 @@
  * 7. Semantically Verify UI Outcome
  * 8. Repeat perception cycle up to bounded step budget or until finish/failure
  */
-import { AgentState, RawCapture, SanitizedContext, ActionProposal, ChatHistoryMessage, RunTelemetry } from '@privapilot/protocol';
+import { AgentState, RawCapture, SanitizedContext, SanitizedElement, ActionProposal, ChatHistoryMessage, RunTelemetry } from '@privapilot/protocol';
 import { BrowserAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
+/** Only sanitized names are available here; no href, placeholder or DOM class survives sanitization. */
+export declare function enforceIsroMissionProgression(goal: string, url: string, elements: readonly SanitizedElement[], proposal: ActionProposal): {
+    proposal?: ActionProposal;
+    error?: string;
+};
 export interface ChatOutcome {
     readonly success: boolean;
     readonly reply: string;

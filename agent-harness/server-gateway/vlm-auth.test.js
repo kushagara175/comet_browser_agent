@@ -1,7 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildProviderAuthHeaders, extractThinking, stripThinkingTags } from '../../apps/server/dist/engines/vlm-engine.js';
+import { buildProviderAuthHeaders, extractThinking, stripThinkingTags, VlmReasoningEngine } from '../../apps/server/dist/engines/vlm-engine.js';
 import { validateActionProposal } from '../../packages/protocol/dist/index.js';
+
+test('VLM reconciliation never matches an empty normalized Hindi language switch', () => {
+  const engine = new VlmReasoningEngine();
+  const elements = [
+    { localId: 'el_filter', role: 'input', sanitizedName: '*** of 34 Countries', state: ['visible', 'enabled'], actionCapabilities: ['type'] },
+    { localId: 'el_hindi', role: 'link', sanitizedName: 'हिंदी', state: ['visible', 'enabled'], actionCapabilities: ['click'] },
+    { localId: 'el_table', role: 'input', sanitizedName: 'Table Filter (Search)', state: ['visible', 'enabled'], actionCapabilities: ['type'] }
+  ];
+  const proposal = engine.parseActionProposal(JSON.stringify({ actionId: 'act_filter', kind: 'type', targetLocalId: 'el_filter',
+    targetName: 'Spacecraft Missions table filter', textToType: 'Chandrayaan', confidence: 0.95, risk: 'safe', rationale: 'Filter missions' }),
+    { elements, goal: 'Download Chandrayaan-3 brochure' });
+  assert.notEqual(proposal.targetLocalId, 'el_hindi');
+});
 
 test('VLM auth uses api-key for Azure OpenAI endpoints', () => {
   assert.deepEqual(
