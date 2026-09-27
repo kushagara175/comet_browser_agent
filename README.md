@@ -257,8 +257,8 @@ sequenceDiagram
 ### 2. Clone Repository & Install Dependencies
 ```bash
 # Clone the repository
-git clone https://github.com/kushagara175/SIH.git
-cd SIH
+git clone https://github.com/kushagara175/comet_browser_agent.git
+cd comet_browser_agent
 
 # Install dependencies across all workspace packages
 npm install
