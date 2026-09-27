@@ -68,7 +68,7 @@ export const DEFAULT_USER_PROFILE: UserProfileData = {
   fullName: 'Kushagra Singh',
   firstName: 'Kushagra',
   lastName: 'Singh',
-  email: 'kushagra@example.com',
+  email: 'kushagrasingh175@gmail.com',
   phone: '+91 98765 43210',
   organization: 'SIH Innovation Lab',
   address: '123 Cyber Way',

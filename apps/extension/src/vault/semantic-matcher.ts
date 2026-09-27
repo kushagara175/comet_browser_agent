@@ -237,6 +237,23 @@ export function classifyFieldDescriptor(descriptor: FormElementDescriptor): {
   confidence: number;
   reason: string;
 } | null {
+  const rawSanitized = descriptor.sanitizedName || '';
+  if (/\[EMAIL(?:\s+ADDRESS)?\]/i.test(rawSanitized)) {
+    return { canonical: 'email', confidence: 0.99, reason: 'Matched privacy token [EMAIL ADDRESS]' };
+  }
+  if (/\[(?:FULL\s+)?NAME\]/i.test(rawSanitized)) {
+    return { canonical: 'fullName', confidence: 0.99, reason: 'Matched privacy token [FULL NAME]' };
+  }
+  if (/\[PHONE(?:\s+NUMBER)?\]/i.test(rawSanitized)) {
+    return { canonical: 'phone', confidence: 0.99, reason: 'Matched privacy token [PHONE NUMBER]' };
+  }
+  if (/\[PASSWORD\]/i.test(rawSanitized)) {
+    return { canonical: 'password', confidence: 0.99, reason: 'Matched privacy token [PASSWORD]' };
+  }
+  if (/\[ADDRESS\]/i.test(rawSanitized) && !/\[EMAIL/i.test(rawSanitized)) {
+    return { canonical: 'address', confidence: 0.99, reason: 'Matched privacy token [ADDRESS]' };
+  }
+
   const typeAttr = (descriptor.type || '').toLowerCase().trim();
   const autocomplete = (descriptor.autocomplete || '').toLowerCase().trim();
 
@@ -257,6 +274,11 @@ export function classifyFieldDescriptor(descriptor: FormElementDescriptor): {
   let bestMatch: { canonical: CanonicalFieldKey; confidence: number; reason: string } | null = null;
 
   for (const group of SYNONYM_GROUPS) {
+    // Exclude physical street address if text mentions email or digital web/url
+    if (group.canonical === 'address' && /\b(?:email|e-mail|mail|web|url|ip|mac)\b/i.test(textCorpus)) {
+      continue;
+    }
+
     let score = 0;
     const reasons: string[] = [];
 
@@ -272,8 +294,9 @@ export function classifyFieldDescriptor(descriptor: FormElementDescriptor): {
       reasons.push(`autocomplete="${autocomplete}"`);
     }
 
-    // 3. Exact alias match in text corpus
-    for (const alias of group.aliases) {
+    // 3. Exact alias match in text corpus (sort descending by length to favor longer, more specific matches)
+    const sortedAliases = [...group.aliases].sort((a, b) => b.length - a.length);
+    for (const alias of sortedAliases) {
       const aliasClean = cleanTokens(alias);
       const regex = new RegExp(`\\b${aliasClean.replace(/\s+/g, '\\s+')}\\b`, 'i');
       if (regex.test(textCorpus)) {

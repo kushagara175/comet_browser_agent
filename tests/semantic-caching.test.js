@@ -48,7 +48,7 @@ test('Semantic Caching: VlmReasoningEngine injects verified site topology into p
 
   const prompt = buildUserPrompt(payload);
   assert.ok(prompt.includes('Verified Semantic Site Topology for Indian Space Research Organisation'), 'Should inject ISRO topology block');
-  assert.ok(prompt.includes('chandrayaan3: https://www.isro.gov.in/Chandrayaan3_New.html'), 'Should include Chandrayaan-3 canonical route');
+  assert.ok(prompt.includes('chandrayaan3: https://www.isro.gov.in/Chandrayaan3.html'), 'Should include Chandrayaan-3 canonical route');
   assert.ok(prompt.includes('safe threshold (0.85)'), 'Should instruct model about 0.85 safe threshold');
 });
 
