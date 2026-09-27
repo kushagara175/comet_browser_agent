@@ -305,7 +305,7 @@ test('MultiStepCoordinator: Scenario 2 - Protected submit approval pauses and re
   assert.strictEqual(httpClient.callCount, 2);
 
   // User clicks Approve and resumes multi-step loop
-  const finalResult = await coordinator.approvePendingAction({ resumeLoop: true });
+  const finalResult = await coordinator.approvePendingAction({ resumeLoop: true, runId: initialResult.runId, actionId: initialResult.proposal.actionId });
 
   assert.strictEqual(finalResult.success, true);
   assert.strictEqual(finalResult.state, 'complete');
@@ -328,11 +328,11 @@ test('MultiStepCoordinator: Scenario 3 - Denial of protected action stops loop a
   const httpClient = createSequenceHttpClient([step1Protected]);
   const coordinator = new RunCoordinator(browser, httpClient);
 
-  await coordinator.startRun('Submit order');
+  const pending = await coordinator.startRun('Submit order');
   assert.strictEqual(coordinator.getState(), 'awaiting-user-confirmation');
 
   // User clicks Deny
-  const denyResult = coordinator.denyPendingAction();
+  const denyResult = coordinator.denyPendingAction({ runId: pending.runId, actionId: pending.proposal.actionId });
 
   assert.strictEqual(denyResult.success, false);
   assert.strictEqual(denyResult.state, 'idle');

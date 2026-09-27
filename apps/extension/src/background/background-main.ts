@@ -40,7 +40,7 @@ coordinator.setListeners({
         payloadDigestSha256: sanitized.payloadDigestSha256,
         maskCount: sanitized.maskCount,
         elementCount: sanitized.elements.length,
-        sanitizedScreenshot: sanitized.sanitizedScreenshotDataUrl,
+        sanitizedScreenshot: sanitized.inspectorScreenshotDataUrl || sanitized.sanitizedScreenshotDataUrl,
         rawScreenshot: raw.rawScreenshotDataUrl,
         elements: sanitized.elements,
         timestamp: sanitized.timestamp
@@ -91,6 +91,10 @@ async function handleSidepanelRequest(message: any): Promise<any> {
     return coordinator.chatWithoutPage(message.message || '', message.history, message.customPrompt);
   }
 
+  if (message.type === 'WEB_SEARCH') {
+    return coordinator.searchWeb(message.query || '', message.maxResults || 5);
+  }
+
   if (message.type === 'CHAT_WITH_PAGE') {
     return coordinator.chatWithPage(message.message || '', message.history, message.customPrompt);
   }
@@ -103,7 +107,8 @@ async function handleSidepanelRequest(message: any): Promise<any> {
         resumeLoop: message.resumeLoop ?? true,
         targetLocalId: message.targetLocalId,
         saveToVault: message.saveToVault,
-        inputKey: message.inputKey
+        inputKey: message.inputKey,
+        runId: message.runId
       }
     );
   }
@@ -177,9 +182,9 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onConnect) {
       if (!requestId) return;
 
       handleSidepanelRequest(message).then((response) => {
-        port.postMessage({ requestId, response });
+        try { port.postMessage({ requestId, response }); } catch (_) { /* Panel closed during run. */ }
       }).catch((err) => {
-        port.postMessage({
+        try { port.postMessage({
           requestId,
           response: {
             success: false,
@@ -190,7 +195,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onConnect) {
             elementCount: 0,
             modelConnected: false
           }
-        });
+        }); } catch (_) { /* Panel closed during run. */ }
       });
     });
   });
@@ -209,18 +214,36 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (message.type === 'TRIGGER_DOWNLOAD' && message.url) {
+      let downloadUrl = message.url;
+      try {
+        if (!/^https?:\/\//i.test(downloadUrl)) {
+          const baseUrl = _sender?.tab?.url || 'https://www.isro.gov.in';
+          downloadUrl = new URL(downloadUrl, baseUrl).href;
+        }
+      } catch (_) {}
+
       if (typeof chrome !== 'undefined' && chrome.downloads && typeof chrome.downloads.download === 'function') {
         try {
           chrome.downloads.download({
-            url: message.url,
+            url: downloadUrl,
             filename: message.filename,
+            conflictAction: 'uniquify',
             saveAs: false
           }, (downloadId: any) => {
-            console.log(`[Background] Native download triggered: id=${downloadId} url=${message.url}`);
+            if (chrome.runtime.lastError) {
+              console.warn('[Background] chrome.downloads error:', chrome.runtime.lastError.message);
+              if (_sender?.tab?.id) {
+                chrome.tabs.update(_sender.tab.id, { url: downloadUrl }).catch(() => {});
+              }
+            } else {
+              console.log(`[Background] Native download triggered: id=${downloadId} url=${downloadUrl}`);
+            }
           });
-        } catch (_) {}
+        } catch (dlErr: any) {
+          console.warn('[Background] chrome.downloads exception:', dlErr);
+        }
       }
-      sendResponse({ success: true });
+      sendResponse({ success: true, url: downloadUrl });
       return true;
     }
 
@@ -284,7 +307,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (message.type === 'APPROVE_ACTION') {
-      coordinator.approvePendingAction({ resumeLoop: message.resumeLoop ?? true }).then((result) => {
+      coordinator.approvePendingAction({ resumeLoop: message.resumeLoop ?? true, runId: message.runId, actionId: message.actionId }).then((result) => {
         sendResponse(result);
       }).catch((err) => {
         sendResponse({ success: false, state: 'failed-safe', error: err.message });
@@ -293,7 +316,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (message.type === 'DENY_ACTION') {
-      const result = coordinator.denyPendingAction();
+      const result = coordinator.denyPendingAction({ runId: message.runId, actionId: message.actionId });
       sendResponse(result);
       return true;
     }
@@ -306,7 +329,8 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
           resumeLoop: message.resumeLoop ?? true,
           targetLocalId: message.targetLocalId,
           saveToVault: message.saveToVault,
-          inputKey: message.inputKey
+          inputKey: message.inputKey,
+          runId: message.runId
         }
       ).then((result) => {
         sendResponse(result);

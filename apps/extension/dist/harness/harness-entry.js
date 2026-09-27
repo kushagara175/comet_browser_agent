@@ -14133,14 +14133,22 @@ as ORT format: ${n}`);
     "dateofbirth",
     "date_of_birth",
     // Name & Identity
-    // Account login identifiers, not generic public name/user controls
     "username",
     "user_name",
     "login_id",
     "login_name",
     "user_id",
     "userid",
-    "user_handle"
+    "user_handle",
+    "name",
+    "full_name",
+    "fullname",
+    "first_name",
+    "firstname",
+    "last_name",
+    "lastname",
+    "applicant_name",
+    "candidate_name"
   ];
   var SENSITIVE_AUTOCOMPLETE_VALUES = [
     "current-password",
@@ -14181,9 +14189,9 @@ as ORT format: ${n}`);
   var DELIVERY_ADDRESS_REGEX = /(?:^|(?<=\s|[([{"']))(?:Deliver(?:y|ing)?\s+to|Ship\s+to|Shipping\s+to|Delivered\s+to)\s+([^\n\r<]{3,80})/gi;
   var HOME_WORK_LOCATION_REGEX = /\b(?:HOME|WORK|OFFICE|OTHER)\s+(?:at\s+|-\s+)([^\n\r<]{3,80})/gi;
   var PINCODE_IN_CONTEXT_REGEX = /(?:[A-Za-z]+[\-,]\s*|[,\-]\s*|\b(?:pin(?:\s*code)?|postal(?:\s*code)?|zip(?:\s*code)?)[\s:\-,]*)([1-9][0-9]{2}\s?[0-9]{3})\b/gi;
-  var LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt|Sector|Block|Pocket|Street|St\.|Road|Rd\.|Cross|Main|Nagar|Colony|Enclave|Vihar|Kunj|Society|Layout|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Bhavan|Bhawan)\b[^\n\r,;]{2,60}/gi;
+  var LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt)\s*(?:(?:No\.?|#)\s*[A-Za-z0-9/-]{1,10}|\d+[A-Za-z0-9/-]*)\b|\b(?:Sector|Block|Pocket)\s*(?:[-#]\s*[A-Za-z0-9/-]{1,8}|(?:No\.?|#)\s*[A-Za-z0-9/-]{1,8}|\d+[A-Za-z0-9/-]*|[A-Z]\b)|\b\d+(?:st|nd|rd|th)?\s+(?:Main|Cross)(?:\s+(?:Road|Rd))?\b|\bMain\s+(?:Road|Street)\b|\b[A-Z][a-zA-Z0-9'-]+(?:\s+[A-Z][a-zA-Z0-9'-]+){0,2}\s+(?:Nagar|Colony|Enclave|Vihar|Kunj|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Puram|Pally|Palli|Guda|Pura)\b/gi;
   var ACCOUNT_GREETING_REGEX = /\b(?:Hello|Hi|Welcome),\s+([A-Za-z0-9_]{2,30})\b/gi;
-  var STREET_ADDRESS_REGEX = /\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir)\b[^\n\r,;]*/gi;
+  var STREET_ADDRESS_REGEX = /\b(?<![~≈])\b\d{1,5}(?:[/-]\d{1,5})?\s+(?!(?:km|kg|m\/s|mb|gb|tb|hz|khz|mhz|ghz|cm|mm|meters?|miles?|hours?|hrs?|mins?|sec(?:onds?)?|days?|years?|percent|%|x|deg|v|w|a|k)\b)[A-Za-z0-9'.-]{1,25}(?:\s+[A-Za-z0-9'.-]{1,25}){0,2}\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Circle|Cir)\b(?:\s+(?:Apt|Suite|Unit|Flat|Floor|#)\s*[A-Za-z0-9/-]+)?/gi;
   var DATE_OF_BIRTH_REGEX = /\b(?:\d{1,2}[\s/-](?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s/-]\d{2,4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b/gi;
   var EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
   var OBFUSCATED_EMAIL_REGEX = /(?:^|(?<=\s|[([{:;,]))[A-Za-z0-9._%+-]+(?:\s*\[at\]\s*|\s*\(at\)\s*|\s*@\s*)[A-Za-z0-9.-]+(?:\s*\[dot\]\s*|\s*\(dot\)\s*|\s*\.\s*)[A-Za-z]{2,}(?:\s*\[dot\]\s*[A-Za-z]{2,}|\s*\.\s*[A-Za-z]{2,})*/gi;
@@ -14199,7 +14207,7 @@ as ORT format: ${n}`);
   var CVV_CONTEXT_REGEX = /\b(?:cvv|cvc|cvn|security code)[\s:]*([0-9]{3,4})\b/gi;
   var JWT_TOKEN_REGEX = /\beyJ[A-Za-z0-9-_]+\.eyJ[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\b/g;
   var GENERIC_SECRET_KEY_REGEX = /\b(?:sk_live_|ghp_|akIA)[A-Za-z0-9_]{16,}\b/g;
-  function scanTextForPII(text) {
+  function scanTextForPII(text, options = {}) {
     if (!text || typeof text !== "string") {
       return [];
     }
@@ -14226,7 +14234,7 @@ as ORT format: ${n}`);
         });
       }
     }
-    for (const match of text.matchAll(HANDLE_REGEX)) {
+    for (const match of options.publicAuthorHandles ? [] : text.matchAll(HANDLE_REGEX)) {
       if (match.index !== void 0 && match[1]) {
         const handleOffset = match[0].indexOf(match[1]);
         const handleStart = match.index + handleOffset;
@@ -14541,6 +14549,7 @@ as ORT format: ${n}`);
     [/^(?:phonenumber|mobilenumber|contactnumber)\d*$/i, "phone"],
     [/^(?:dateofbirth|birthdate|dob)\d*$/i, "date_of_birth"],
     [/^(?:username|loginid|userid)\d*$/i, "username"],
+    [/^(?:fullname|firstname|lastname|applicantname|candidatename|studentname|name|txtname|custname)\d*$/i, "name"],
     [/^(?:apikey|authkey|accesskey|accesstoken|secretkey)\d*$/i, "token"],
     [/^(?:ssn|aadhaar(?:number)?|aadhar(?:number)?|pannumber|socialsecuritynumber)\d*$/i, "national_id"]
   ];
@@ -14557,6 +14566,7 @@ as ORT format: ${n}`);
     [/\b(?:phone (?:number|no)|mobile (?:number|no)|telephone number|contact number|cellphone)\b/i, "phone"],
     [/\b(?:street address|postal address|home address|permanent address|current address|pin code|pincode|postal code|zipcode)\b/i, "address"],
     [/\b(?:username|user name|user id|login id|login name|user handle)\b/i, "username"],
+    [/\b(?:(?:full|first|last|middle|applicant|candidate|student|user|your|person)\s*name|(?:enter|type|input|provide)\s*(?:your\s*)?name|^name\b|name\s*(?::|$))\b/i, "name"],
     [/\b(?:api key|auth key|access token|secret key|secret canary|canary)\b/i, "token"]
   ];
   function decision(category, reason) {
@@ -14594,8 +14604,10 @@ as ORT format: ${n}`);
         category = "email";
       else if (token.includes("address") || token === "postal-code")
         category = "address";
-      else if (token.includes("name") || token === "username")
+      else if (token === "username")
         category = "username";
+      else if (token.includes("name"))
+        category = "name";
       return decision(category, `autocomplete="${token}"`);
     }
     const value = typeof desc.value === "string" ? desc.value.trim() : "";
@@ -14632,11 +14644,11 @@ as ORT format: ${n}`);
   }
 
   // ../../packages/pii-rules/dist/scrubber.js
-  function scrubText(text) {
+  function scrubText(text, options = {}) {
     if (!text || typeof text !== "string") {
       return text;
     }
-    const matches = scanTextForPII(text);
+    const matches = scanTextForPII(text, options);
     if (matches.length === 0) {
       return text;
     }
@@ -14656,10 +14668,10 @@ as ORT format: ${n}`);
     result += text.substring(lastIndex);
     return result;
   }
-  function sanitizeElementName(rawName) {
+  function sanitizeElementName(rawName, options = {}) {
     if (!rawName)
       return "";
-    const scrubbed = scrubText(rawName).trim();
+    const scrubbed = scrubText(rawName, options).trim();
     if (scrubbed.length > 80) {
       return scrubbed.substring(0, 77) + "...";
     }
@@ -14680,6 +14692,8 @@ as ORT format: ${n}`);
     /discord\.com\/channels/i,
     /teams\.microsoft\.com/i,
     /web\.telegram\.org/i,
+    /messenger\.com/i,
+    /threads\.net\/messages/i,
     // Banking & Financial
     /netbanking/i,
     /banking/i,
@@ -14741,7 +14755,7 @@ as ORT format: ${n}`);
   ];
   function classifyPageZone(url = "") {
     const cleanUrl = (url || "").toLowerCase();
-    if (/(?:\/inbox|\/mail(?:\/|$|\?)|\/compose|\/messages(?:\/|$|\?)|\/chat(?:\/|$|\?)|\/banking|\/netbanking|\/payroll|\/hrms|\/myaccount|\/statements|\/checkout)\b/i.test(cleanUrl)) {
+    if (/(?:\/(?:direct|inbox|messages?|messaging|conversations?|chat|mail|compose|banking|netbanking|payroll|hrms|myaccount|statements|checkout)(?:[/?#]|$))/i.test(cleanUrl)) {
       return "private_workspace";
     }
     for (const pattern of PRIVATE_WORKSPACE_PATTERNS) {
@@ -14808,6 +14822,61 @@ as ORT format: ${n}`);
     }
     return false;
   }
+  function isPrivateMessagingSurface(el2, url = "") {
+    if (!el2)
+      return false;
+    const cleanUrl = (url || el2.ownerDocument?.defaultView?.location?.href || el2.baseURI || "").toLowerCase();
+    if (/(?:\/(?:direct|inbox|messages?|messaging|conversations?|chat)(?:[/?#]|$))/i.test(cleanUrl)) {
+      return true;
+    }
+    try {
+      if (typeof el2.closest === "function") {
+        const container = el2.closest('[data-testid*="conversation" i], [data-testid*="message" i], [data-testid*="chat" i], [data-testid*="direct" i], [class*="conversation" i], [class*="message-list" i], [class*="chat-list" i], [class*="msg-thread" i], [class*="direct-inbox" i], [aria-label*="Direct" i], [aria-label*="Messages" i], [aria-label*="Chats" i], [aria-label*="Thread" i], [aria-label*="Inbox" i]');
+        if (container)
+          return true;
+      }
+    } catch (_) {
+    }
+    return false;
+  }
+  function isPublicPostContent(el2) {
+    try {
+      if (!el2 || isPrivateAccountShell(el2) || typeof el2.closest !== "function")
+        return false;
+      const currentDocUrl = (el2.ownerDocument?.defaultView?.location?.href || el2.baseURI || "").toLowerCase();
+      if (classifyPageZone(currentDocUrl) === "private_workspace") {
+        return false;
+      }
+      if (isPrivateMessagingSurface(el2, currentDocUrl)) {
+        return false;
+      }
+      if (currentDocUrl.includes("youtube.com") || currentDocUrl.includes("youtu.be") || currentDocUrl.includes("vimeo.com") || currentDocUrl.includes("twitch.tv")) {
+        return !isPrivateAccountShell(el2);
+      }
+      if ((currentDocUrl.includes("x.com") || currentDocUrl.includes("twitter.com")) && !currentDocUrl.includes("/messages")) {
+        const inPrimaryFeed = el2.closest('[data-testid="primaryColumn"], [data-testid="cellInnerDiv"], [data-testid="tweet"], [data-testid="Tweet-User-Avatar"], article, [role="article"], [aria-label*="Timeline" i], main, [role="main"]');
+        if (inPrimaryFeed && !isPrivateAccountShell(el2)) {
+          return true;
+        }
+      }
+      if (currentDocUrl.includes("instagram.com") && !currentDocUrl.includes("/direct") && !currentDocUrl.includes("/messages")) {
+        const inInstagramFeed = el2.closest('article, [role="article"], [role="feed"], .feed, main, [role="main"], section, [data-testid*="post" i]');
+        if (inInstagramFeed && !isPrivateAccountShell(el2)) {
+          return true;
+        }
+      }
+      if ((currentDocUrl.includes("reddit.com") || currentDocUrl.includes("linkedin.com") || currentDocUrl.includes("threads.net")) && !currentDocUrl.includes("/messages") && !currentDocUrl.includes("/messaging")) {
+        const inSocialFeed = el2.closest('article, [role="article"], [role="feed"], .feed, main, [role="main"], shreddit-post, [data-testid="post-container"]');
+        if (inSocialFeed && !isPrivateAccountShell(el2)) {
+          return true;
+        }
+      }
+      const post = el2.closest('article, [role="article"], [data-testid="tweet"], [data-testid="cellInnerDiv"], [data-testid="primaryColumn"], [data-testid="Tweet-User-Avatar"], [data-testid="tweetText"], [data-testid="UserCell"], [data-testid="sidebarColumn"], aside, [aria-label*="who to follow" i], [aria-label*="timeline" i], [aria-label*="trending" i], ytd-comment-thread-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, ytd-rich-grid-row, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-thumbnail, ytd-channel-name, #related, #contents, #items, .comment-body, .comment, shreddit-post, shreddit-comment, [data-testid="post-container"], .TimelineItem, .repo-list, [role="feed"], .feed');
+      return Boolean(post && !isPrivateAccountShell(post));
+    } catch (_) {
+      return false;
+    }
+  }
   function isPrivateAccountShell(el2) {
     if (!el2)
       return false;
@@ -14815,13 +14884,23 @@ as ORT format: ${n}`);
       const aria = (el2.getAttribute?.("aria-label") || "").toLowerCase();
       const testId = (el2.getAttribute?.("data-testid") || "").toLowerCase();
       const id2 = (el2.id || "").toLowerCase();
-      if (aria.includes("google account") || aria.includes("account menu") || aria.includes("switch account") || aria.includes("sign out") || testId.includes("useravatar") || testId.includes("user-menu") || testId.includes("profile-button") || id2 === "avatar-btn") {
+      const title = (el2.getAttribute?.("title") || "").toLowerCase();
+      const className = String(el2.className || "").toLowerCase();
+      if (aria.includes("google account") || aria.includes("account menu") || aria.includes("switch account") || aria.includes("sign out") || testId === "sidenav_accountswitcher_button" || testId.includes("accountswitcher") || testId === "user-menu" || id2 === "avatar-btn") {
         return true;
       }
       if (typeof el2.closest === "function") {
-        const container = el2.closest('#avatar-btn, [data-testid*="user-menu" i], [aria-label*="Google Account" i], [aria-label*="Account menu" i]');
+        const container = el2.closest('#avatar-btn, [data-testid*="accountswitcher" i], [aria-label*="Google Account" i], [aria-label*="Account menu" i], [aria-label*="Switch account" i], [class*="accountswitcher" i], [data-testid*="user-menu" i]');
         if (container)
           return true;
+        const inHeader = el2.closest('header, [role="banner"]');
+        if (inHeader) {
+          const hasPopup = Boolean(el2.hasAttribute?.("aria-haspopup") || el2.getAttribute?.("aria-haspopup"));
+          const isAccountSpecific = aria.includes("account") || aria.includes("profile") || aria.includes("avatar") || aria.includes("user") || title.includes("account") || title.includes("profile") || testId.includes("profile") || testId.includes("user") || className.includes("user-profile") || className.includes("account-btn");
+          if (hasPopup && isAccountSpecific) {
+            return true;
+          }
+        }
       }
     } catch (_) {
     }
@@ -14843,8 +14922,8 @@ as ORT format: ${n}`);
     return true;
   }
   function isRedundantInteractiveWrapper(el2) {
-    const tag = el2.tagName.toLowerCase();
-    if (!["div", "span", "section"].includes(tag) || el2.hasAttribute?.("role") || el2.isContentEditable || !el2.children || !el2.childNodes || !el2.querySelector) return false;
+    const tag = (el2.tagName || "").toLowerCase();
+    if (!tag || !["div", "span", "section"].includes(tag) || el2.hasAttribute?.("role") || el2.isContentEditable || !el2.children || !el2.childNodes || !el2.querySelector) return false;
     const children = Array.from(el2.children).filter((child) => child.matches?.(INTERACTIVE_SELECTOR));
     if (children.length !== 1 || el2.children.length !== 1) return false;
     const ownText = Array.from(el2.childNodes).some((node) => node.nodeType === TEXT_NODE_TYPE && Boolean(node.nodeValue?.trim()));
@@ -14922,6 +15001,21 @@ as ORT format: ${n}`);
       }
       return resultRects;
     } catch {
+      try {
+        const el2 = nodeOrContainer.parentElement || nodeOrContainer;
+        if (typeof el2?.getBoundingClientRect === "function") {
+          const b = el2.getBoundingClientRect();
+          if (b && b.width > 0.5 && b.height > 0.5) {
+            return [{
+              x: Math.max(0, Math.min(b.left !== void 0 ? b.left : b.x, viewportWidth)),
+              y: Math.max(0, Math.min(b.top !== void 0 ? b.top : b.y, viewportHeight)),
+              width: b.width,
+              height: b.height
+            }];
+          }
+        }
+      } catch (_) {
+      }
       return [];
     }
   }
@@ -14940,6 +15034,9 @@ as ORT format: ${n}`);
       const viewportHeight = doc.defaultView?.innerHeight || doc.documentElement?.clientHeight || 720;
       let surfaceCounter = 0;
       const processDocumentLevel = (currentDoc, offset = { x: 0, y: 0 }, depth = 0) => {
+        const currentDocUrl = currentDoc.defaultView?.location?.href || doc.location?.href || "";
+        const pageZone2 = classifyPageZone(currentDocUrl);
+        const isPublicBroadcast = pageZone2 === "public_broadcast";
         const candidates = currentDoc.querySelectorAll(INTERACTIVE_SELECTOR);
         candidates.forEach((node) => {
           const el2 = node;
@@ -15018,7 +15115,8 @@ as ORT format: ${n}`);
             const nameAttr = (typeof el2.getAttribute === "function" ? el2.getAttribute("name") || "" : "").trim();
             const typeAttr = (typeof el2.getAttribute === "function" ? el2.getAttribute("type") || "" : "").trim().toLowerCase();
             const ariaControls = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-controls") || "" : "").trim();
-            rawName = associatedLabelText || ariaLabel || placeholder || title || (typeAttr === "search" ? "Search" : "") || (ariaControls.toLowerCase().includes("table") ? "Search" : "") || nameAttr || role;
+            const buttonValue = typeAttr === "submit" || typeAttr === "button" || typeAttr === "reset" ? (typeof el2.getAttribute === "function" ? el2.getAttribute("value") || "" : "").trim() || (typeAttr === "submit" ? "Submit" : "") : "";
+            rawName = buttonValue || associatedLabelText || ariaLabel || placeholder || title || (typeAttr === "search" ? "Search" : "") || (ariaControls.toLowerCase().includes("table") ? "Search" : "") || nameAttr || role;
           } else {
             const textContent = el2.innerText?.trim() || (el2.textContent && el2.textContent.trim().length < 80 ? el2.textContent.trim() : "") || "";
             const aria = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-label")?.trim() || el2.getAttribute("title")?.trim() : "") || (el2.querySelector?.("[aria-label]")?.getAttribute("aria-label")?.trim() || "");
@@ -15077,6 +15175,20 @@ as ORT format: ${n}`);
             if (tag === "a" && el2.hasAttribute?.("download") && !rawName.toLowerCase().includes("download")) {
               rawName = `Download ${rawName}`;
             }
+            const isAcctShell = !isPublicBroadcast && isPrivateAccountShell(el2);
+            const isMsgSurface = !isPublicBroadcast && isPrivateMessagingSurface(el2, currentDocUrl);
+            if (isAcctShell) {
+              rawName = "Switch Account ([REDACTED_USER])";
+            } else if (isMsgSurface && !/^(?:messages|requests|search|send\s+message|new\s+message|direct|chats|inbox|all|unread|primary|general)$/i.test(rawName.trim())) {
+              const isThread = Boolean(
+                el2.closest('[role="listitem"], [role="row"], [data-testid*="conversation" i], [class*="conversation" i], [class*="thread" i], [class*="direct" i]') || (role === "button" || role === "link" || role === "menuitem")
+              );
+              if (isThread) {
+                const timeMatch = rawName.match(/\b(?:\d+\s*[hdwm]|yesterday|\d+:\d+\s*(?:am|pm)?)\b/i);
+                const timeDesc = timeMatch ? ` (${timeMatch[0]})` : "";
+                rawName = `Conversation thread: [REDACTED_USER]${timeDesc}`;
+              }
+            }
           }
           let containerContext;
           try {
@@ -15108,16 +15220,24 @@ as ORT format: ${n}`);
           }
           const inViewport = verticalOffset === "in_view" && (rect.right ?? rect.x + rect.width) + offset.x > 0 && rect.x + offset.x < viewportWidth;
           const isPrimaryNavLink = role === "link" && Boolean(el2.closest?.('nav, header, [role="navigation"]'));
+          const inputVal = el2.value || "";
+          const isPlaceholderLike = /^(?:enter\s+(?:your\s+)?|type\s+(?:your\s+)?|first\s*name|last\s*name|email\s*(?:address|id)?|e\.?g\.?|sample|your\s+name|name\s+here|email\s+here)/i.test(inputVal.trim());
+          const isPopulated = (tag === "input" || tag === "textarea") && !["button", "submit", "reset", "image", "checkbox", "radio", "file", "hidden"].includes((el2.getAttribute("type") || "").toLowerCase()) && Boolean(inputVal.trim().length > 0 && !isPlaceholderLike);
+          const elementStates = [
+            "visible",
+            el2.disabled && !el2.querySelector?.("button:not([disabled]), a[href]") ? "disabled" : "enabled"
+          ];
+          if (isPopulated) {
+            elementStates.push("filled");
+          }
           interactiveElements.push({
             isPrimaryNavLink,
             localId,
             role,
             rawName,
+            publicAuthorHandles: isPublicPostContent(el2),
             boundingBox: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height },
-            state: [
-              "visible",
-              el2.disabled && !el2.querySelector?.("button:not([disabled]), a[href]") ? "disabled" : "enabled"
-            ],
+            state: elementStates,
             actionCapabilities: caps,
             containerContext,
             nearestHeading,
@@ -15155,22 +15275,31 @@ as ORT format: ${n}`);
             const content = textNode.nodeValue || "";
             const trimmed = content.trim();
             const parent = textNode.parentElement;
-            if (trimmed.length > 2 && parent && !parent.closest('input, textarea, select, button, [contenteditable="true"], script, style, noscript, .privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]') && isVisibleElement(parent)) {
+            if (!parent) {
+              textNode = textWalker.nextNode();
+              continue;
+            }
+            const isIgnored = Boolean(
+              typeof parent.closest === "function" && parent.closest("script, style, noscript, .privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]")
+            );
+            if (trimmed.length > 1 && !isIgnored && isVisibleElement(parent)) {
               const parentRect = parent.getBoundingClientRect();
               if (parentRect.width > 0.5 && parentRect.height > 0.5 && parentRect.right + offset.x > 0 && parentRect.bottom + offset.y > 0 && parentRect.left + offset.x < viewportWidth && parentRect.top + offset.y < viewportHeight) {
                 textIdx++;
                 const nodeId = `txt_${depth}_${textIdx}`;
-                const isAccountIdentity = Boolean(
+                const isAccountIdentity = !isPublicBroadcast && !isPublicPostContent(parent) && Boolean(
+                  typeof parent.closest === "function" && (isPrivateAccountShell(parent) || parent.closest(
+                    '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [title*="profile" i], [title*="account" i], [class*="account-info" i], [class*="profile-info" i], [data-testid*="account" i], [data-testid*="profile" i]'
+                  ))
+                );
+                const isMsgSurface = !isPublicPostContent(parent) && (pageZone2 === "private_workspace" || isPrivateMessagingSurface(parent, currentDocUrl));
+                const isDeliveryAddressContainer = !isPublicBroadcast && Boolean(
                   typeof parent.closest === "function" && parent.closest(
-                    '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [title*="profile" i], [title*="account" i], [class*="account" i], [class*="profile" i], [class*="user" i], [data-testid*="account" i], [data-testid*="profile" i]'
+                    '[class*="deliver" i], [id*="deliver" i], [class*="shipping-address" i], [id*="shipping-address" i], [class*="delivery-address" i], [id*="delivery-address" i], [class*="pincode" i], [id*="pincode" i]'
                   )
                 );
-                const isDeliveryAddressContainer = Boolean(
-                  typeof parent.closest === "function" && (parent.closest(
-                    '[class*="deliver" i], [id*="deliver" i], [class*="address" i], [id*="address" i], [class*="location" i], [id*="location" i], [class*="pincode" i], [id*="pincode" i], address'
-                  ) || parent.parentElement?.textContent?.includes("Address"))
-                );
-                let matches = scanTextForPII(content);
+                const isPublicAuthor = isPublicPostContent(parent);
+                let matches = scanTextForPII(content, { publicAuthorHandles: isPublicAuthor });
                 if (matches.length === 0 && isDeliveryAddressContainer && trimmed.length > 2 && trimmed.length < 120 && !/^(?:address|location|pin\s*code|postal\s*code)$/i.test(trimmed) && (/\b(?:home|work|office|deliver|katra|nagar|colony|road|street|bhavan|bhawan|marg|lane|avenue|floor|block|sector|plot|post|pin|[1-9][0-9]{2}\s?[0-9]{3})\b/i.test(trimmed) || /[1-9][0-9]{2}\s?[0-9]{3}/.test(trimmed))) {
                   matches = [{
                     category: "address",
@@ -15179,7 +15308,18 @@ as ORT format: ${n}`);
                     matchedLength: content.length,
                     confidence: 0.95
                   }];
-                } else if (matches.length === 0 && isAccountIdentity && trimmed.length > 1 && trimmed.length < 80 && !/^(?:login|sign in|sign up|register|cart|orders|notifications|help|wishlist|explore|become a seller)$/i.test(trimmed)) {
+                } else if (matches.length === 0 && isMsgSurface && trimmed.length > 1 && !/^(?:messages|requests|search|send message|new message|direct|chats|inbox|all|unread|primary|general)$/i.test(trimmed)) {
+                  const isSnippet = Boolean(
+                    trimmed.includes("\u2022") || trimmed.length > 35 || /\b(?:sent an attachment|replied to|seen|yesterday|\d+:\d+|\d+\s*[hdwm])\b/i.test(trimmed)
+                  );
+                  matches = [{
+                    category: isSnippet ? "uninspectable" : "username",
+                    startIndex: 0,
+                    endIndex: content.length,
+                    matchedLength: content.length,
+                    confidence: 0.95
+                  }];
+                } else if (matches.length === 0 && isAccountIdentity && trimmed.length > 1 && trimmed.length < 80 && !/^(?:login|sign in|sign up|register|cart|orders|notifications|help|wishlist|explore|become a seller|messages|requests|direct|chats|home|about|about\s+us|activities|services|programmes|resources|engagements|media|missions|careers?|tenders?|faq|contact|contact\s+us|sitemap|feedback|rti|menu|navigation|search|overview|gallery|centres|facilities|launchers|satellites)$/i.test(trimmed)) {
                   matches = [{
                     category: "username",
                     startIndex: 0,
@@ -15187,6 +15327,13 @@ as ORT format: ${n}`);
                     matchedLength: content.length,
                     confidence: 0.95
                   }];
+                }
+                const isInsideActionControl = Boolean(
+                  typeof parent.closest === "function" && parent.closest('button, [role="button"], input, textarea, select')
+                );
+                if (matches.length === 0 && isInsideActionControl) {
+                  textNode = textWalker.nextNode();
+                  continue;
                 }
                 let matchedRanges = void 0;
                 if (matches.length > 0) {
@@ -15209,13 +15356,14 @@ as ORT format: ${n}`);
                   id: nodeId,
                   text: trimmed,
                   boundingClientRect: { x: parentRect.x + offset.x, y: parentRect.y + offset.y, width: parentRect.width, height: parentRect.height },
-                  matchedRanges
+                  matchedRanges,
+                  publicAuthorHandles: isPublicAuthor
                 });
-                const isSmallInlineWrapper = parent.children.length > 0 && !visitedContainers.has(parent) && parentRect.height <= 50 && parentRect.width <= 600 && parent.tagName !== "ARTICLE" && parent.tagName !== "MAIN" && parent.tagName !== "SECTION";
+                const isSmallInlineWrapper = Boolean(parent.children && parent.children.length > 0) && !visitedContainers.has(parent) && parentRect.height <= 50 && parentRect.width <= 600 && parent.tagName !== "ARTICLE" && parent.tagName !== "MAIN" && parent.tagName !== "SECTION";
                 if (isSmallInlineWrapper) {
                   visitedContainers.add(parent);
                   const containerText = parent.textContent || "";
-                  const containerMatches = scanTextForPII(containerText);
+                  const containerMatches = scanTextForPII(containerText, { publicAuthorHandles: isPublicAuthor });
                   for (const cm2 of containerMatches) {
                     const isCovered = matchedRanges?.some((mr2) => mr2.category === cm2.category);
                     if (!isCovered) {
@@ -15227,6 +15375,7 @@ as ORT format: ${n}`);
                         id: `txt_cont_${depth}_${textIdx}`,
                         text: containerText,
                         boundingClientRect: { x: parentRect.x + offset.x, y: parentRect.y + offset.y, width: parentRect.width, height: parentRect.height },
+                        publicAuthorHandles: isPublicAuthor,
                         matchedRanges: [{
                           category: cm2.category,
                           startIndex: cm2.startIndex,
@@ -15257,34 +15406,43 @@ as ORT format: ${n}`);
           const alt = (el2.getAttribute?.("alt") || "").toLowerCase();
           const ariaLabel = (el2.getAttribute?.("aria-label") || "").toLowerCase();
           const src = (el2.getAttribute?.("src") || el2.getAttribute?.("srcset") || "").toLowerCase();
-          const isAvatar = classText.includes("avatar") || classText.includes("profile") || classText.includes("user-pic") || classText.includes("user-img") || classText.includes("user-photo") || classText.includes("user-image") || classText.includes("author-img") || classText.includes("gravatar") || testId.includes("avatar") || testId.includes("useravatar") || testId.includes("profile-pic") || alt.includes("avatar") || alt.includes("profile") || alt.includes("user photo") || alt.includes("author") || ariaLabel.includes("avatar") || ariaLabel.includes("profile") || ariaLabel.includes("account") || src.includes("profile_images") || src.includes("avatar") || src.includes("gravatar.com") || src.includes("avatars.githubusercontent") || src.includes("googleusercontent.com") || Boolean(typeof el2.closest === "function" && el2.closest('[data-testid*="UserAvatar" i], [data-testid*="avatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i], [data-testid*="user-profile" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [class*="account" i], [class*="profile" i], [class*="user-info" i], [class*="user-header" i], [class*="user-badge" i]'));
-          const isVisualMedia = tagName === "IMG" || tagName === "SVG" || role === "img" || isAvatar;
+          const isInNavigation = Boolean(typeof el2.closest === "function" && el2.closest('nav, [role="navigation"], header, [data-testid="sidebarColumn"], aside'));
+          const isNavAria = ariaLabel === "profile" || ariaLabel === "account" || ariaLabel === "user" || ariaLabel === "home" || ariaLabel === "bookmarks";
+          if (tagName === "SVG" || isInNavigation && isNavAria) {
+            return;
+          }
+          const isAvatar = classText.includes("avatar") || classText.includes("user-pic") || classText.includes("user-img") || classText.includes("user-photo") || classText.includes("author-img") || classText.includes("gravatar") || testId.includes("avatar") || testId.includes("useravatar") || testId.includes("profile-pic") || alt.includes("avatar") || alt.includes("user photo") || alt.includes("profile") && !alt.includes("profile link") && !alt.includes("view profile") || ariaLabel.includes("avatar") && !isInNavigation || src.includes("profile_images") || src.includes("avatar") || src.includes("gravatar.com") || src.includes("avatars.githubusercontent") || src.includes("googleusercontent.com") || Boolean(typeof el2.closest === "function" && el2.closest('[data-testid*="UserAvatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i]'));
+          const isVisualMedia = tagName === "IMG" || role === "img" || isAvatar;
           if (!isVisualMedia) return;
-          const isPublicCommentAvatar = Boolean(
-            typeof el2.closest === "function" && el2.closest('ytd-comment-thread-renderer, #comments, .comment, [role="article"]')
-          );
-          const isUserShell = isPrivateAccountShell(el2);
-          const shouldProtectAvatar = isUserShell || !isPublicCommentAvatar && isAvatar;
+          const isPublicContent = isPublicPostContent(el2);
+          const shouldProtectAvatar = isPrivateAccountShell(el2) || !isPublicContent && isAvatar && !isInNavigation;
           imageElements.push({
             id: `img_${depth}_${idx + 1}`,
             isProfilePhotoOrAvatar: shouldProtectAvatar,
+            isPublicPostImage: isPublicContent && !isPrivateAccountShell(el2),
             boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
           });
         });
-        const currentDocUrl = currentDoc.defaultView?.location?.href || doc.location?.href || "";
         const canvases = currentDoc.querySelectorAll("canvas");
         canvases.forEach((c) => {
           const rect = c.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
             surfaceCounter++;
             const isMap = isFunctionalMapCanvas(c, currentDocUrl);
-            if (isMap) {
+            const isPublicMediaCanvas = currentDocUrl.includes("youtube.com") || currentDocUrl.includes("youtu.be") || currentDocUrl.includes("vimeo.com") || currentDocUrl.includes("twitch.tv") || Boolean(c.closest('#player, ytd-player, .html5-video-player, [class*="player" i], [id*="player" i], .video-stream'));
+            const isSignature = Boolean(
+              c.closest('[class*="signature" i], [id*="signature" i], canvas[class*="sig" i], [aria-label*="signature" i]')
+            );
+            const pageZone3 = classifyPageZone(currentDocUrl);
+            const isPublicContent = isPublicPostContent(c);
+            const isSmallDecorative = rect.width <= 60 && rect.height <= 60;
+            if ((isMap || isPublicMediaCanvas || pageZone3 === "public_broadcast" || isPublicContent || isSmallDecorative) && !isSignature) {
               surfaces.push({
                 id: `cvs_${surfaceCounter}`,
                 surfaceType: "canvas",
                 isCrossOriginOrUninspectable: false,
                 inspectionStatus: "inspected_same_origin",
-                reason: "functional_geospatial_map",
+                reason: isMap ? "functional_geospatial_map" : isPublicContent ? "public_post_canvas" : isSmallDecorative ? "decorative_ui_canvas" : "public_media_canvas",
                 boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
               });
               return;
@@ -15369,10 +15527,12 @@ as ORT format: ${n}`);
           }
         });
         const textImages = currentDoc.querySelectorAll(
-          'img[class*="receipt"], img[class*="invoice"], img[class*="document"], img[class*="statement"], img[class*="card"], img[class*="scanned"], img[class*="id"], img[class*="doc"], [data-has-text="true"], img[alt*="scanned" i], img[alt*="document" i], img[alt*="sensitive" i]'
+          'img[class*="receipt" i], img[class*="invoice" i], img[class*="statement" i], img[class*="credit-card" i], img[class*="id-card" i], img[class*="passport" i], img[class*="national-id" i], img[class*="scanned-doc" i], [data-has-sensitive-text="true"], img[alt*="scanned document" i], img[alt*="sensitive document" i]'
         );
         textImages.forEach((img) => {
-          const rect = img.getBoundingClientRect();
+          const el2 = img;
+          if (isPublicPostContent(el2)) return;
+          const rect = el2.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
             surfaceCounter++;
             surfaces.push({
@@ -15515,6 +15675,32 @@ as ORT format: ${n}`);
       const counters = [];
       const contentSummaries = [];
       try {
+        const posts = doc.querySelectorAll('article, [role="article"]');
+        let postCount = 0;
+        for (const post of Array.from(posts)) {
+          if (postCount >= 8) break;
+          if (!isVisibleElement(post) || !isPublicPostContent(post)) continue;
+          const box = post.getBoundingClientRect();
+          if (box.width <= 0 || box.height <= 0 || box.bottom <= 0 || box.top >= viewportHeight) continue;
+          const authorNode = post.querySelector('[data-testid="User-Name"], [rel="author"], .author, [class*="author-name" i]');
+          const bodyNode = post.querySelector('[data-testid="tweetText"], [data-testid="post-text"], .post-content, .post-body, [itemprop="articleBody"]');
+          const safeText = (node, limit) => {
+            if (!node || !isVisibleElement(node) || !isPublicPostContent(node)) return "";
+            const walker = doc.createTreeWalker(node, SHOW_TEXT_FILTER);
+            const parts = [];
+            let child = walker.nextNode();
+            while (child && parts.join(" ").length < limit) {
+              if (child.parentElement && isVisibleElement(child.parentElement) && !isPrivateAccountShell(child.parentElement) && !child.parentElement.closest('button, input, textarea, select, [contenteditable="true"]')) {
+                parts.push(child.nodeValue || "");
+              }
+              child = walker.nextNode();
+            }
+            return parts.join(" ").trim().replace(/\s+/g, " ").slice(0, limit);
+          };
+          const author = safeText(authorNode, 100).replace(/:/g, " ");
+          const body = safeText(bodyNode, 320);
+          if (body) contentSummaries.push(`Visible post ${++postCount}${author ? ` by ${author}` : ""}: ${body}`);
+        }
         const counterNodes = doc.querySelectorAll('.counter, .count, [class*="stat"], [class*="metric"], [class*="badge"], [data-count]');
         counterNodes.forEach((node) => {
           if (!isVisibleElement(node)) return;
@@ -16338,7 +16524,7 @@ as ORT format: ${n}`);
           }
         }
       } else {
-        const matches = scanTextForPII(node.text);
+        const matches = scanTextForPII(node.text, { publicAuthorHandles: node.publicAuthorHandles });
         if (matches.length > 0) {
           for (let i = 0; i < matches.length; i++) {
             const match = matches[i];
@@ -16399,7 +16585,18 @@ as ORT format: ${n}`);
   // src/sanitizer/face-detector.ts
   function detectFaceRegions(images, transformer, modelFaces = []) {
     const regions = [];
+    const publicImages = images.filter((img) => img.isPublicPostImage && !img.isProfilePhotoOrAvatar);
+    const privateImages = images.filter((img) => img.isProfilePhotoOrAvatar);
     for (const face of modelFaces) {
+      const containsFace = (img) => {
+        const box = img.boundingClientRect;
+        return face.viewportBox.x >= box.x && face.viewportBox.y >= box.y && face.viewportBox.x + face.viewportBox.width <= box.x + box.width && face.viewportBox.y + face.viewportBox.height <= box.y + box.height;
+      };
+      const overlapsFace = (img) => {
+        const box = img.boundingClientRect;
+        return face.viewportBox.x < box.x + box.width && face.viewportBox.x + face.viewportBox.width > box.x && face.viewportBox.y < box.y + box.height && face.viewportBox.y + face.viewportBox.height > box.y;
+      };
+      if (publicImages.some(containsFace) && !privateImages.some(overlapsFace)) continue;
       regions.push({
         id: face.id,
         category: "face",
@@ -16422,7 +16619,7 @@ as ORT format: ${n}`);
         width: w,
         height: h
       };
-      const screenshotBox = transformer.toScreenshotBox(viewportBox, 12);
+      const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
       if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
       let alreadyCovered = false;
       for (const modelFace of modelFaces) {
@@ -16523,7 +16720,10 @@ as ORT format: ${n}`);
     if (n === 0) return 0;
     let hits = 0;
     for (let i = 0; i < data.length; i += 4) {
-      if (Math.abs(data[i] - MASK_FILL_RGB[0]) <= tolerance && Math.abs(data[i + 1] - MASK_FILL_RGB[1]) <= tolerance && Math.abs(data[i + 2] - MASK_FILL_RGB[2]) <= tolerance) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const isPureBlack = r <= 24 && g <= 24 && b <= 24;
+      const isLegacySlate = Math.abs(r - MASK_FILL_RGB[0]) <= tolerance && Math.abs(g - MASK_FILL_RGB[1]) <= tolerance && Math.abs(b - MASK_FILL_RGB[2]) <= tolerance;
+      if (isPureBlack || isLegacySlate) {
         hits++;
       }
     }
@@ -16533,17 +16733,36 @@ as ORT format: ${n}`);
     const n = data.length / 4;
     if (n === 0) return 0;
     const dg2 = MASK_CHROME_RGB[1] - MASK_FILL_RGB[1];
-    let hits = 0;
+    let fillHits = 0;
+    let textHits = 0;
     for (let i = 0; i < data.length; i += 4) {
-      const t = Math.max(0, Math.min(1, (data[i + 1] - MASK_FILL_RGB[1]) / dg2));
-      const er = Math.abs(data[i] - (MASK_FILL_RGB[0] + t * (MASK_CHROME_RGB[0] - MASK_FILL_RGB[0])));
-      const eg2 = Math.abs(data[i + 1] - (MASK_FILL_RGB[1] + t * dg2));
-      const eb2 = Math.abs(data[i + 2] - (MASK_FILL_RGB[2] + t * (MASK_CHROME_RGB[2] - MASK_FILL_RGB[2])));
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      if (r <= 25 && g <= 25 && b <= 25) {
+        fillHits++;
+        continue;
+      }
+      const t = Math.max(0, Math.min(1, (g - MASK_FILL_RGB[1]) / dg2));
+      const er = Math.abs(r - (MASK_FILL_RGB[0] + t * (MASK_CHROME_RGB[0] - MASK_FILL_RGB[0])));
+      const eg2 = Math.abs(g - (MASK_FILL_RGB[1] + t * dg2));
+      const eb2 = Math.abs(b - (MASK_FILL_RGB[2] + t * (MASK_CHROME_RGB[2] - MASK_FILL_RGB[2])));
       if (er <= tolerance && eg2 <= tolerance && eb2 <= tolerance) {
-        hits++;
+        fillHits++;
+        continue;
+      }
+      if (r >= 200 && g >= 200 && b >= 200) {
+        textHits++;
+        continue;
+      }
+      if (Math.abs(r - g) <= 15 && Math.abs(g - b) <= 15 && r <= 180 && r >= 30) {
+        textHits++;
+        continue;
       }
     }
-    return hits / n;
+    const fillFraction = fillHits / n;
+    if (fillFraction >= 0.5) {
+      return (fillHits + textHits) / n;
+    }
+    return fillFraction;
   }
   function verifyRegionPixelBuffer(sanitizedData, rawData, method, regionId = "region") {
     const sampledPixels = sanitizedData.length / 4;
@@ -16719,6 +16938,21 @@ as ORT format: ${n}`);
       const canvasWidth = imageCanvas.width || 1280;
       const canvasHeight = imageCanvas.height || 720;
       const regionRecords = [];
+      const renderedLabelBoxes = [];
+      const shouldDrawLabel = (targetBox) => {
+        for (const lb2 of renderedLabelBoxes) {
+          const xA = Math.max(targetBox.x, lb2.x);
+          const yA = Math.max(targetBox.y, lb2.y);
+          const xB = Math.min(targetBox.x + targetBox.width, lb2.x + lb2.width);
+          const yB = Math.min(targetBox.y + targetBox.height, lb2.y + lb2.height);
+          const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+          const minArea = Math.min(targetBox.width * targetBox.height, lb2.width * lb2.height);
+          if (minArea > 0 && interArea / minArea > 0.3) {
+            return false;
+          }
+        }
+        return true;
+      };
       const blurRegions = regions.filter((r) => r.method === "gaussian_blur" && r.category === "face");
       const opaqueRegions = regions.filter((r) => r.method !== "gaussian_blur" || r.category !== "face");
       let maskCount = 0;
@@ -16737,10 +16971,12 @@ as ORT format: ${n}`);
           continue;
         }
         const padding = 8;
-        const x = Math.max(0, Math.min(canvasWidth - 1, Math.floor(box.x - padding)));
-        const y = Math.max(0, Math.min(canvasHeight - 1, Math.floor(box.y - padding)));
-        const w = Math.max(1, Math.min(canvasWidth - x, Math.ceil(box.width + padding * 2)));
-        const h = Math.max(1, Math.min(canvasHeight - y, Math.ceil(box.height + padding * 2)));
+        const x = Math.max(0, Math.floor(box.x - padding));
+        const y = Math.max(0, Math.floor(box.y - padding));
+        const right = Math.min(canvasWidth, Math.ceil(box.x + box.width + padding));
+        const bottom = Math.min(canvasHeight, Math.ceil(box.y + box.height + padding));
+        const w = right - x;
+        const h = bottom - y;
         const clampedBox = { x, y, width: w, height: h };
         try {
           let fallbackNeeded = false;
@@ -16784,35 +17020,40 @@ as ORT format: ${n}`);
             const residualVariance = computeLuminanceVariance(data);
             const varianceReduction = rawHasDetail ? 1 - residualVariance / rawVariance : 0;
             ctx.putImageData(imgData, x, y);
-            ctx.save();
-            ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(x, y, w, h);
-            if (w >= 40 && h >= 16) {
-              ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
-              ctx.fillRect(x + 2, y + 2, Math.min(w - 4, 85), 14);
-              ctx.fillStyle = "#38bdf8";
-              ctx.font = "bold 9px sans-serif";
-              ctx.fillText("[FACE BLUR]", x + 5, y + 12);
-            }
-            ctx.restore();
             if (!rawHasDetail || varianceReduction < 0.8 || residualVariance >= 150) {
               fallbackNeeded = true;
+            }
+            if (!fallbackNeeded && w >= 60 && h >= 20 && shouldDrawLabel({ x: x + 2, y: y + 2, width: Math.min(w - 4, 85), height: 14 })) {
+              ctx.save();
+              _MaskRenderer.clipToRect(ctx, x, y, w, h);
+              ctx.fillStyle = "#050505";
+              ctx.fillRect(x + 2, y + 2, Math.min(w - 4, 85), 14);
+              ctx.fillStyle = "#ffffff";
+              ctx.font = "bold 9px sans-serif";
+              ctx.fillText("[FACE BLUR]", x + 5, y + 12);
+              ctx.restore();
+              renderedLabelBoxes.push({ x: x + 2, y: y + 2, width: Math.min(w - 4, 85), height: 14 });
             }
           } else {
             fallbackNeeded = true;
           }
           if (fallbackNeeded) {
             ctx.save();
-            ctx.fillStyle = "#0f172a";
+            ctx.fillStyle = "#050505";
             ctx.fillRect(x, y, w, h);
-            ctx.strokeStyle = "#38bdf8";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(x, y, w, h);
-            if (w > 45 && h > 12) {
-              ctx.fillStyle = "#38bdf8";
-              ctx.font = "bold 9px sans-serif";
-              ctx.fillText("[REDACTED: FACE]", x + 3, y + Math.min(11, h - 2));
+            if (w >= 40 && h >= 14 && shouldDrawLabel({ x, y, width: w, height: h })) {
+              _MaskRenderer.clipToRect(ctx, x, y, w, h);
+              const labelText = _MaskRenderer.getSemanticCategoryLabel("face", w);
+              const fontSize = Math.max(8, Math.min(10, Math.floor(h * 0.55)));
+              ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+              const measured = ctx.measureText ? ctx.measureText(labelText).width : fontSize * labelText.length * 0.6;
+              if (measured <= w - 8) {
+                ctx.fillStyle = "#ffffff";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(labelText, x + Math.floor(w / 2), y + Math.floor(h / 2));
+                renderedLabelBoxes.push({ x, y, width: w, height: h });
+              }
             }
             ctx.restore();
           }
@@ -16825,7 +17066,7 @@ as ORT format: ${n}`);
               const overlayFrac = overlayFractionOf(finalData);
               if (overlayFrac < 0.85) {
                 ctx.save();
-                ctx.fillStyle = "#0f172a";
+                ctx.fillStyle = "#050505";
                 ctx.fillRect(x, y, w, h);
                 ctx.restore();
                 success = true;
@@ -16877,32 +17118,32 @@ as ORT format: ${n}`);
         const clampedBox = { x, y, width: w, height: h };
         try {
           ctx.save();
-          ctx.fillStyle = "#0f172a";
+          ctx.fillStyle = "#050505";
           ctx.fillRect(x, y, w, h);
           ctx.restore();
-          if (w >= 36 && h >= 12) {
+          if (w >= 36 && h >= 14 && shouldDrawLabel({ x, y, width: w, height: h })) {
             ctx.save();
-            ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+            _MaskRenderer.clipToRect(ctx, x, y, w, h);
             const labelText = _MaskRenderer.getSemanticCategoryLabel(region.category, w);
             if (labelText) {
               const fontSize = Math.max(8, Math.min(11, Math.floor(h * 0.55)));
               ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-              ctx.fillStyle = "#38bdf8";
+              ctx.fillStyle = "#ffffff";
               ctx.textBaseline = "middle";
               const measured = ctx.measureText ? ctx.measureText(labelText).width : fontSize * labelText.length * 0.6;
               if (measured <= w - 6) {
                 const textX = x + Math.max(3, Math.floor((w - measured) / 2));
                 const textY = y + Math.floor(h / 2);
                 ctx.fillText(labelText, textX, textY);
-              } else if (w >= 28) {
-                const shortLabel = `[${region.category.toUpperCase().slice(0, 4)}]`;
+                renderedLabelBoxes.push({ x, y, width: w, height: h });
+              } else if (w >= 40) {
+                const shortLabel = region.category === "face" ? "[AVATAR]" : region.category === "high_risk_surface" || region.category === "uninspectable" ? "[PROTECTED]" : "[MASK]";
                 const shortW = ctx.measureText ? ctx.measureText(shortLabel).width : fontSize * shortLabel.length * 0.6;
-                if (shortW <= w - 4) {
+                if (shortW <= w - 6) {
                   const textX = x + Math.max(2, Math.floor((w - shortW) / 2));
                   const textY = y + Math.floor(h / 2);
                   ctx.fillText(shortLabel, textX, textY);
+                  renderedLabelBoxes.push({ x, y, width: w, height: h });
                 }
               }
             }
@@ -16917,7 +17158,7 @@ as ORT format: ${n}`);
               let overlayFrac = overlayFractionOf(finalData);
               if (overlayFrac < 0.85) {
                 ctx.save();
-                ctx.fillStyle = "#0f172a";
+                ctx.fillStyle = "#050505";
                 ctx.fillRect(x, y, w, h);
                 ctx.restore();
                 success = true;
@@ -16947,6 +17188,8 @@ as ORT format: ${n}`);
           });
         }
       }
+      const previewCanvas = focusedRegion ? _MaskRenderer.cropCanvasToRegion(imageCanvas, focusedRegion, viewport).targetCanvas : imageCanvas;
+      const inspectorScreenshotDataUrl = _MaskRenderer.exportCanvas(previewCanvas);
       if (interactiveElements && interactiveElements.length > 0) {
         _MaskRenderer.renderSetOfMarks(
           imageCanvas,
@@ -16964,6 +17207,17 @@ as ORT format: ${n}`);
         cropApplied = cropResult.cropApplied;
         cropBox = cropResult.cropBox;
       }
+      const dataUrl = _MaskRenderer.exportCanvas(exportCanvas);
+      return {
+        sanitizedScreenshotDataUrl: dataUrl,
+        inspectorScreenshotDataUrl,
+        renderedMaskCount: maskCount,
+        regionRecords,
+        cropApplied,
+        ...cropBox ? { cropBox } : {}
+      };
+    }
+    static exportCanvas(exportCanvas) {
       let dataUrl;
       if (typeof exportCanvas.toDataURL === "function") {
         dataUrl = exportCanvas.toDataURL("image/png");
@@ -16991,13 +17245,7 @@ as ORT format: ${n}`);
       if (!dataUrl || !dataUrl.startsWith("data:image/png;base64,") && !dataUrl.startsWith("data:image/jpeg;base64,") && !dataUrl.startsWith("data:image/webp;base64,")) {
         throw new Error("Sanitized screenshot export failed: invalid data URL produced");
       }
-      return {
-        sanitizedScreenshotDataUrl: dataUrl,
-        renderedMaskCount: maskCount,
-        regionRecords,
-        cropApplied,
-        ...cropBox ? { cropBox } : {}
-      };
+      return dataUrl;
     }
     /**
      * Safely crops an image canvas to a focused region of interest (e.g. active modal or form card).
@@ -17017,8 +17265,11 @@ as ORT format: ${n}`);
       const padY = 24 * scaleY;
       const sx = Math.max(0, Math.floor(focusedRegion.x * scaleX - padX));
       const sy = Math.max(0, Math.floor(focusedRegion.y * scaleY - padY));
-      const sw = Math.max(80, Math.min(canvasWidth - sx, Math.ceil(focusedRegion.width * scaleX + padX * 2)));
-      const sh = Math.max(60, Math.min(canvasHeight - sy, Math.ceil(focusedRegion.height * scaleY + padY * 2)));
+      const right = Math.min(canvasWidth, Math.ceil((focusedRegion.x + focusedRegion.width) * scaleX + padX));
+      const bottom = Math.min(canvasHeight, Math.ceil((focusedRegion.y + focusedRegion.height) * scaleY + padY));
+      const sw = right - sx;
+      const sh = bottom - sy;
+      if (sw < 80 || sh < 60) return { targetCanvas: imageCanvas, cropApplied: false };
       if (sw >= canvasWidth * 0.96 && sh >= canvasHeight * 0.96) {
         return { targetCanvas: imageCanvas, cropApplied: false };
       }
@@ -17125,9 +17376,11 @@ as ORT format: ${n}`);
         case "auth_code":
           return isNarrow ? "[OTP]" : "[OTP CODE]";
         case "credit_card":
-        case "cvv":
-        case "bank_account":
           return isNarrow ? "[CARD]" : "[PAYMENT CARD]";
+        case "cvv":
+          return isNarrow ? "[CVV]" : "[CARD SECURITY CODE]";
+        case "bank_account":
+          return isNarrow ? "[BANK]" : "[BANK ACCOUNT]";
         case "national_id":
           return isNarrow ? "[ID]" : "[NATIONAL ID]";
         case "email":
@@ -17136,16 +17389,35 @@ as ORT format: ${n}`);
           return isNarrow ? "[PHONE]" : "[PHONE NUMBER]";
         case "token":
           return isNarrow ? "[TOKEN]" : "[API TOKEN]";
+        case "username":
+          return isNarrow ? "[USER]" : "[ACCOUNT USERNAME]";
         case "name":
           return isNarrow ? "[NAME]" : "[FULL NAME]";
         case "address":
           return isNarrow ? "[ADDR]" : "[POSTAL ADDRESS]";
-        case "dob":
+        case "date_of_birth":
           return isNarrow ? "[DOB]" : "[DATE OF BIRTH]";
         case "face":
           return isNarrow ? "[AVATAR]" : "[USER AVATAR]";
+        case "high_risk_surface":
+        case "uninspectable":
+          return isNarrow ? "[MASK]" : "[PROTECTED AREA]";
         default:
-          return isNarrow ? "[REDACTED]" : `[REDACTED: ${category.toUpperCase()}]`;
+          return "[REDACTED]";
+      }
+    }
+    /**
+     * Safely applies canvas clipping to the bounding box if the 2D context supports it.
+     */
+    static clipToRect(ctx, x, y, w, h) {
+      if (typeof ctx.beginPath === "function") {
+        ctx.beginPath();
+      }
+      if (typeof ctx.rect === "function") {
+        ctx.rect(x, y, w, h);
+      }
+      if (typeof ctx.clip === "function") {
+        ctx.clip();
       }
     }
   };
@@ -17355,7 +17627,12 @@ as ORT format: ${n}`);
         const xmax = Math.min(origWidth, (cx + w / 2) * origWidth);
         const ymax = Math.min(origHeight, (cy + h / 2) * origHeight);
         if (xmax > xmin && ymax > ymin) {
-          candidates.push({ xmin, ymin, xmax, ymax, score: faceProb });
+          const boxW = xmax - xmin;
+          const boxH = ymax - ymin;
+          const aspect = boxW / boxH;
+          if (boxW >= 12 && boxH >= 12 && aspect >= 0.35 && aspect <= 2.8) {
+            candidates.push({ xmin, ymin, xmax, ymax, score: faceProb });
+          }
         }
       }
     }
@@ -17584,6 +17861,7 @@ as ORT format: ${n}`);
         requiresFailClosedBlock: false
       };
       let sanitizedDataUrl;
+      let inspectorDataUrl;
       let renderedCount = 0;
       let regionRecords = [];
       let workingCanvas = null;
@@ -17611,6 +17889,7 @@ as ORT format: ${n}`);
           snapshot.focusedRegion
         );
         sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
+        inspectorDataUrl = renderResult.inspectorScreenshotDataUrl;
         renderedCount = renderResult.renderedMaskCount;
         regionRecords = renderResult.regionRecords;
       } else if (typeof document !== "undefined" && rawCapture.rawScreenshotDataUrl && rawCapture.rawScreenshotDataUrl.startsWith("data:image")) {
@@ -17648,6 +17927,7 @@ as ORT format: ${n}`);
           snapshot.focusedRegion
         );
         sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
+        inspectorDataUrl = renderResult.inspectorScreenshotDataUrl;
         renderedCount = renderResult.renderedMaskCount;
         regionRecords = renderResult.regionRecords;
       } else {
@@ -17701,7 +17981,7 @@ as ORT format: ${n}`);
           }
           actionCapabilities = actionCapabilities.filter((cap) => cap !== "type");
         } else {
-          sanitizedName = sanitizeElementName(el2.rawName);
+          sanitizedName = sanitizeElementName(el2.rawName, { publicAuthorHandles: el2.publicAuthorHandles });
         }
         return {
           localId: el2.localId,
@@ -17803,6 +18083,15 @@ as ORT format: ${n}`);
         visionProvider: visibleRegions.some((r) => r.category === "face") ? "ModelRunner" : "None",
         durationMs: Date.now() - (rawCapture.timestamp || Date.now())
       };
+      const safePostSummary = (summary) => {
+        if (!summary.startsWith("Visible post ")) return sanitizeElementName(summary);
+        const match = /^Visible post \d+(?: by [^:]{1,100})?: /.exec(summary);
+        if (!match) return sanitizeElementName(summary);
+        const prefix = match[0].slice(0, -2);
+        const body = summary.slice(match[0].length);
+        const text = `${scrubText(prefix, { publicAuthorHandles: true })}: ${scrubText(body)}`.trim().slice(0, 480);
+        return scanTextForPII(text, { publicAuthorHandles: true }).length === 0 ? text : sanitizeElementName(text);
+      };
       const pageStateObj = {
         title: sanitizedTitle,
         viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight],
@@ -17812,7 +18101,7 @@ as ORT format: ${n}`);
         ...snapshot.routeFingerprint ? { routeFingerprint: snapshot.routeFingerprint } : {},
         ...snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {},
         ...snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map((c) => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {},
-        ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {},
+        ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => safePostSummary(s)) } : {},
         ...snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {},
         ...snapshot.scrollMetrics ? { scrollMetrics: snapshot.scrollMetrics } : {},
         ...snapshot.pageZone ? { pageZone: snapshot.pageZone } : {}
@@ -17832,6 +18121,7 @@ as ORT format: ${n}`);
         captureId: rawCapture.captureId,
         goal: sanitizeElementName(goal),
         sanitizedScreenshotDataUrl: sanitizedDataUrl,
+        inspectorScreenshotDataUrl: inspectorDataUrl,
         elements: finalSanitizedElements,
         pageState: pageStateObj,
         maskCount: visibleRegions.length,

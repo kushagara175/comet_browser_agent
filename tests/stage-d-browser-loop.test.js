@@ -152,9 +152,11 @@ test('Stage D3 & D4: Stale protected actions are never auto-retried and approval
     rationale: 'Execute irreversible wire transfer'
   };
   coordinator['currentSanitizedContext'] = await mockBrowser.runInSanitizerHost({ goal: 'Transfer funds' });
+  coordinator['currentRunId'] = 'run_expired';
+  coordinator['state'] = 'awaiting-user-confirmation';
 
   // Attempt to approve expired action -> must reject
-  const result = await coordinator.approvePendingAction();
+  const result = await coordinator.approvePendingAction({ runId: 'run_expired', actionId: 'act_protected_1' });
   assert.equal(result.success, false);
   assert.ok(result.error?.includes('expired'), `Expected expiration message, got: ${result.error}`);
 });

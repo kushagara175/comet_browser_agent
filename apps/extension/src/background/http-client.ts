@@ -457,7 +457,7 @@ export class ReasoningHttpClient {
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
     return {
-      apiKey: `privapilot_live_${hex}`,
+      apiKey: `comet_live_${hex}`,
       tenantId: `tenant_${hex.slice(0, 10)}`,
       name: name || 'Production Workspace',
       tier: tier || 'enterprise',
@@ -468,7 +468,7 @@ export class ReasoningHttpClient {
 
   async dispatchPlatformTask(
     payload: { goal: string; enableSubAgents?: boolean; maxParallel?: number; contextUrl?: string },
-    apiKey = 'privapilot_live_sih2026_demo_key'
+    apiKey = 'comet_live_sih2026_demo_key'
   ): Promise<any> {
     const urls = [
       `${this.serverBaseUrl}/api/v1/agent/dispatch`,

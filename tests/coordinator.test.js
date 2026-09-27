@@ -200,11 +200,11 @@ test('Coordinator: approvePendingAction executes action and returns verified Coo
   const httpClient = createFakeHttpClient(protectedProposal);
   const coordinator = new RunCoordinator(browser, httpClient);
 
-  await coordinator.startRun('Pay invoice');
+  const pending = await coordinator.startRun('Pay invoice');
   assert.strictEqual(coordinator.getState(), 'awaiting-user-confirmation');
 
   // User clicks Approve
-  const approveResult = await coordinator.approvePendingAction();
+  const approveResult = await coordinator.approvePendingAction({ runId: pending.runId, actionId: pending.proposal.actionId });
 
   assert.strictEqual(approveResult.success, true);
   assert.strictEqual(approveResult.state, 'complete');
@@ -230,11 +230,11 @@ test('Coordinator: denyPendingAction returns cancelled result and does not execu
   const httpClient = createFakeHttpClient(protectedProposal);
   const coordinator = new RunCoordinator(browser, httpClient);
 
-  await coordinator.startRun('Pay invoice');
+  const pending = await coordinator.startRun('Pay invoice');
   assert.strictEqual(coordinator.getState(), 'awaiting-user-confirmation');
 
   // User clicks Deny
-  const denyResult = coordinator.denyPendingAction();
+  const denyResult = coordinator.denyPendingAction({ runId: pending.runId, actionId: pending.proposal.actionId });
 
   assert.strictEqual(denyResult.success, false);
   assert.strictEqual(denyResult.state, 'idle');

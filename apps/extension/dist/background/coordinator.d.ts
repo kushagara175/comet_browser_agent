@@ -43,7 +43,7 @@ export interface CoordinatorListeners {
     onActionProposed?(action: ActionProposal, runId?: string): void;
     onActionConfirmedRequired?(action: ActionProposal, runId?: string): void;
     onUserInputRequired?(request: {
-        kind: 'credentials' | 'text_input';
+        kind: 'credentials' | 'text_input' | 'clarification';
         prompt: string;
         targetLocalId?: string;
         inputKey?: string;
@@ -92,8 +92,11 @@ export interface CoordinatorRunResult {
     readonly diagnostic?: SanitizerDiagnostic;
     readonly steps?: ReadonlyArray<E2EStepTrace>;
     readonly inputRequest?: {
-        kind: 'credentials' | 'text_input';
+        kind: 'credentials' | 'text_input' | 'clarification';
         prompt: string;
+        targetLocalId?: string;
+        inputKey?: string;
+        runId?: string;
     };
 }
 export type SanitizerFailureClass = 'OFFSCREEN_UNAVAILABLE' | 'SCREENSHOT_DECODE_FAILED' | 'CANVAS_UNAVAILABLE' | 'MASK_RENDER_FAILED' | 'MASK_VERIFICATION_FAILED' | 'DIGEST_FAILED' | 'SANITIZER_TIMEOUT' | 'UNKNOWN_SANITIZER_FAILURE';
@@ -140,6 +143,7 @@ export declare class RunCoordinator {
     private maxStaleRetries;
     private lastStaleTargetId;
     private pendingAction;
+    private pendingInputRequest;
     private currentSanitizedContext;
     private lastActionProposal;
     private lastRunResult;
@@ -164,6 +168,7 @@ export declare class RunCoordinator {
     private lastExecutedProposal;
     private lastExecutionResult;
     private hasTavilyRecovered;
+    private autofilledTargets;
     private readonly options;
     constructor(browser?: BrowserAdapter, httpClient?: ReasoningHttpClient, auditLogger?: AuditLogger, options?: {
         defaultMaxSteps?: number;
@@ -181,16 +186,13 @@ export declare class RunCoordinator {
     private isRepeatedAction;
     private getSearchQuery;
     private tryResolveLocalSafeAction;
+    private isXBookmarkGoal;
     private verifyTerminalPostcondition;
     private createTelemetry;
     /**
      * Starts an automated bounded multi-step agent run for a specific user goal.
      */
     startRun(goal: string, options?: CoordinatorRunOptions): Promise<CoordinatorRunResult>;
-    /**
-     * Resumes the agent loop after a paused state or user approval.
-     */
-    resumeRun(): Promise<CoordinatorRunResult>;
     private executeLoop;
     /**
      * Reports whether the reasoning gateway and a model backend are reachable.
@@ -228,11 +230,16 @@ export declare class RunCoordinator {
      */
     approvePendingAction(options?: {
         resumeLoop?: boolean;
+        runId?: string;
+        actionId?: string;
     }): Promise<CoordinatorRunResult>;
     /**
      * Called when the user clicks 'Deny' on a protected action card.
      */
-    denyPendingAction(): CoordinatorRunResult;
+    denyPendingAction(options?: {
+        runId?: string;
+        actionId?: string;
+    }): CoordinatorRunResult;
     /**
      * Safely fills user-provided credentials or text into the active tab's form inputs locally
      * without transmitting raw credentials across the network.
@@ -246,7 +253,12 @@ export declare class RunCoordinator {
         targetLocalId?: string;
         saveToVault?: boolean;
         inputKey?: string;
+        runId?: string;
     }): Promise<CoordinatorRunResult>;
+    /**
+     * Performs an autonomous web search using the configured Tavily client.
+     */
+    searchWeb(query: string, maxResults?: number): Promise<any>;
     setServerUrl(url: string): void;
 }
 //# sourceMappingURL=coordinator.d.ts.map

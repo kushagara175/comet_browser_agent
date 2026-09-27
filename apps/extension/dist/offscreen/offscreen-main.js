@@ -14112,14 +14112,22 @@ as ORT format: ${n}`);
     "dateofbirth",
     "date_of_birth",
     // Name & Identity
-    // Account login identifiers, not generic public name/user controls
     "username",
     "user_name",
     "login_id",
     "login_name",
     "user_id",
     "userid",
-    "user_handle"
+    "user_handle",
+    "name",
+    "full_name",
+    "fullname",
+    "first_name",
+    "firstname",
+    "last_name",
+    "lastname",
+    "applicant_name",
+    "candidate_name"
   ];
   var SENSITIVE_AUTOCOMPLETE_VALUES = [
     "current-password",
@@ -14160,9 +14168,9 @@ as ORT format: ${n}`);
   var DELIVERY_ADDRESS_REGEX = /(?:^|(?<=\s|[([{"']))(?:Deliver(?:y|ing)?\s+to|Ship\s+to|Shipping\s+to|Delivered\s+to)\s+([^\n\r<]{3,80})/gi;
   var HOME_WORK_LOCATION_REGEX = /\b(?:HOME|WORK|OFFICE|OTHER)\s+(?:at\s+|-\s+)([^\n\r<]{3,80})/gi;
   var PINCODE_IN_CONTEXT_REGEX = /(?:[A-Za-z]+[\-,]\s*|[,\-]\s*|\b(?:pin(?:\s*code)?|postal(?:\s*code)?|zip(?:\s*code)?)[\s:\-,]*)([1-9][0-9]{2}\s?[0-9]{3})\b/gi;
-  var LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt|Sector|Block|Pocket|Street|St\.|Road|Rd\.|Cross|Main|Nagar|Colony|Enclave|Vihar|Kunj|Society|Layout|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Bhavan|Bhawan)\b[^\n\r,;]{2,60}/gi;
+  var LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt)\s*(?:(?:No\.?|#)\s*[A-Za-z0-9/-]{1,10}|\d+[A-Za-z0-9/-]*)\b|\b(?:Sector|Block|Pocket)\s*(?:[-#]\s*[A-Za-z0-9/-]{1,8}|(?:No\.?|#)\s*[A-Za-z0-9/-]{1,8}|\d+[A-Za-z0-9/-]*|[A-Z]\b)|\b\d+(?:st|nd|rd|th)?\s+(?:Main|Cross)(?:\s+(?:Road|Rd))?\b|\bMain\s+(?:Road|Street)\b|\b[A-Z][a-zA-Z0-9'-]+(?:\s+[A-Z][a-zA-Z0-9'-]+){0,2}\s+(?:Nagar|Colony|Enclave|Vihar|Kunj|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Puram|Pally|Palli|Guda|Pura)\b/gi;
   var ACCOUNT_GREETING_REGEX = /\b(?:Hello|Hi|Welcome),\s+([A-Za-z0-9_]{2,30})\b/gi;
-  var STREET_ADDRESS_REGEX = /\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir)\b[^\n\r,;]*/gi;
+  var STREET_ADDRESS_REGEX = /\b(?<![~≈])\b\d{1,5}(?:[/-]\d{1,5})?\s+(?!(?:km|kg|m\/s|mb|gb|tb|hz|khz|mhz|ghz|cm|mm|meters?|miles?|hours?|hrs?|mins?|sec(?:onds?)?|days?|years?|percent|%|x|deg|v|w|a|k)\b)[A-Za-z0-9'.-]{1,25}(?:\s+[A-Za-z0-9'.-]{1,25}){0,2}\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Circle|Cir)\b(?:\s+(?:Apt|Suite|Unit|Flat|Floor|#)\s*[A-Za-z0-9/-]+)?/gi;
   var DATE_OF_BIRTH_REGEX = /\b(?:\d{1,2}[\s/-](?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s/-]\d{2,4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b/gi;
   var EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
   var OBFUSCATED_EMAIL_REGEX = /(?:^|(?<=\s|[([{:;,]))[A-Za-z0-9._%+-]+(?:\s*\[at\]\s*|\s*\(at\)\s*|\s*@\s*)[A-Za-z0-9.-]+(?:\s*\[dot\]\s*|\s*\(dot\)\s*|\s*\.\s*)[A-Za-z]{2,}(?:\s*\[dot\]\s*[A-Za-z]{2,}|\s*\.\s*[A-Za-z]{2,})*/gi;
@@ -14178,7 +14186,7 @@ as ORT format: ${n}`);
   var CVV_CONTEXT_REGEX = /\b(?:cvv|cvc|cvn|security code)[\s:]*([0-9]{3,4})\b/gi;
   var JWT_TOKEN_REGEX = /\beyJ[A-Za-z0-9-_]+\.eyJ[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\b/g;
   var GENERIC_SECRET_KEY_REGEX = /\b(?:sk_live_|ghp_|akIA)[A-Za-z0-9_]{16,}\b/g;
-  function scanTextForPII(text) {
+  function scanTextForPII(text, options = {}) {
     if (!text || typeof text !== "string") {
       return [];
     }
@@ -14205,7 +14213,7 @@ as ORT format: ${n}`);
         });
       }
     }
-    for (const match of text.matchAll(HANDLE_REGEX)) {
+    for (const match of options.publicAuthorHandles ? [] : text.matchAll(HANDLE_REGEX)) {
       if (match.index !== void 0 && match[1]) {
         const handleOffset = match[0].indexOf(match[1]);
         const handleStart = match.index + handleOffset;
@@ -14520,6 +14528,7 @@ as ORT format: ${n}`);
     [/^(?:phonenumber|mobilenumber|contactnumber)\d*$/i, "phone"],
     [/^(?:dateofbirth|birthdate|dob)\d*$/i, "date_of_birth"],
     [/^(?:username|loginid|userid)\d*$/i, "username"],
+    [/^(?:fullname|firstname|lastname|applicantname|candidatename|studentname|name|txtname|custname)\d*$/i, "name"],
     [/^(?:apikey|authkey|accesskey|accesstoken|secretkey)\d*$/i, "token"],
     [/^(?:ssn|aadhaar(?:number)?|aadhar(?:number)?|pannumber|socialsecuritynumber)\d*$/i, "national_id"]
   ];
@@ -14536,6 +14545,7 @@ as ORT format: ${n}`);
     [/\b(?:phone (?:number|no)|mobile (?:number|no)|telephone number|contact number|cellphone)\b/i, "phone"],
     [/\b(?:street address|postal address|home address|permanent address|current address|pin code|pincode|postal code|zipcode)\b/i, "address"],
     [/\b(?:username|user name|user id|login id|login name|user handle)\b/i, "username"],
+    [/\b(?:(?:full|first|last|middle|applicant|candidate|student|user|your|person)\s*name|(?:enter|type|input|provide)\s*(?:your\s*)?name|^name\b|name\s*(?::|$))\b/i, "name"],
     [/\b(?:api key|auth key|access token|secret key|secret canary|canary)\b/i, "token"]
   ];
   function decision(category, reason) {
@@ -14573,8 +14583,10 @@ as ORT format: ${n}`);
         category = "email";
       else if (token.includes("address") || token === "postal-code")
         category = "address";
-      else if (token.includes("name") || token === "username")
+      else if (token === "username")
         category = "username";
+      else if (token.includes("name"))
+        category = "name";
       return decision(category, `autocomplete="${token}"`);
     }
     const value = typeof desc.value === "string" ? desc.value.trim() : "";
@@ -14611,11 +14623,11 @@ as ORT format: ${n}`);
   }
 
   // ../../packages/pii-rules/dist/scrubber.js
-  function scrubText(text) {
+  function scrubText(text, options = {}) {
     if (!text || typeof text !== "string") {
       return text;
     }
-    const matches = scanTextForPII(text);
+    const matches = scanTextForPII(text, options);
     if (matches.length === 0) {
       return text;
     }
@@ -14635,10 +14647,10 @@ as ORT format: ${n}`);
     result += text.substring(lastIndex);
     return result;
   }
-  function sanitizeElementName(rawName) {
+  function sanitizeElementName(rawName, options = {}) {
     if (!rawName)
       return "";
-    const scrubbed = scrubText(rawName).trim();
+    const scrubbed = scrubText(rawName, options).trim();
     if (scrubbed.length > 80) {
       return scrubbed.substring(0, 77) + "...";
     }
@@ -15329,7 +15341,7 @@ as ORT format: ${n}`);
           }
         }
       } else {
-        const matches = scanTextForPII(node.text);
+        const matches = scanTextForPII(node.text, { publicAuthorHandles: node.publicAuthorHandles });
         if (matches.length > 0) {
           for (let i = 0; i < matches.length; i++) {
             const match = matches[i];
@@ -15390,7 +15402,18 @@ as ORT format: ${n}`);
   // src/sanitizer/face-detector.ts
   function detectFaceRegions(images, transformer, modelFaces = []) {
     const regions = [];
+    const publicImages = images.filter((img) => img.isPublicPostImage && !img.isProfilePhotoOrAvatar);
+    const privateImages = images.filter((img) => img.isProfilePhotoOrAvatar);
     for (const face of modelFaces) {
+      const containsFace = (img) => {
+        const box = img.boundingClientRect;
+        return face.viewportBox.x >= box.x && face.viewportBox.y >= box.y && face.viewportBox.x + face.viewportBox.width <= box.x + box.width && face.viewportBox.y + face.viewportBox.height <= box.y + box.height;
+      };
+      const overlapsFace = (img) => {
+        const box = img.boundingClientRect;
+        return face.viewportBox.x < box.x + box.width && face.viewportBox.x + face.viewportBox.width > box.x && face.viewportBox.y < box.y + box.height && face.viewportBox.y + face.viewportBox.height > box.y;
+      };
+      if (publicImages.some(containsFace) && !privateImages.some(overlapsFace)) continue;
       regions.push({
         id: face.id,
         category: "face",
@@ -15413,7 +15436,7 @@ as ORT format: ${n}`);
         width: w,
         height: h
       };
-      const screenshotBox = transformer.toScreenshotBox(viewportBox, 12);
+      const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
       if (screenshotBox.width <= 1 || screenshotBox.height <= 1) continue;
       let alreadyCovered = false;
       for (const modelFace of modelFaces) {
@@ -15514,7 +15537,10 @@ as ORT format: ${n}`);
     if (n === 0) return 0;
     let hits = 0;
     for (let i = 0; i < data.length; i += 4) {
-      if (Math.abs(data[i] - MASK_FILL_RGB[0]) <= tolerance && Math.abs(data[i + 1] - MASK_FILL_RGB[1]) <= tolerance && Math.abs(data[i + 2] - MASK_FILL_RGB[2]) <= tolerance) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const isPureBlack = r <= 24 && g <= 24 && b <= 24;
+      const isLegacySlate = Math.abs(r - MASK_FILL_RGB[0]) <= tolerance && Math.abs(g - MASK_FILL_RGB[1]) <= tolerance && Math.abs(b - MASK_FILL_RGB[2]) <= tolerance;
+      if (isPureBlack || isLegacySlate) {
         hits++;
       }
     }
@@ -15524,17 +15550,36 @@ as ORT format: ${n}`);
     const n = data.length / 4;
     if (n === 0) return 0;
     const dg2 = MASK_CHROME_RGB[1] - MASK_FILL_RGB[1];
-    let hits = 0;
+    let fillHits = 0;
+    let textHits = 0;
     for (let i = 0; i < data.length; i += 4) {
-      const t = Math.max(0, Math.min(1, (data[i + 1] - MASK_FILL_RGB[1]) / dg2));
-      const er = Math.abs(data[i] - (MASK_FILL_RGB[0] + t * (MASK_CHROME_RGB[0] - MASK_FILL_RGB[0])));
-      const eg2 = Math.abs(data[i + 1] - (MASK_FILL_RGB[1] + t * dg2));
-      const eb2 = Math.abs(data[i + 2] - (MASK_FILL_RGB[2] + t * (MASK_CHROME_RGB[2] - MASK_FILL_RGB[2])));
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      if (r <= 25 && g <= 25 && b <= 25) {
+        fillHits++;
+        continue;
+      }
+      const t = Math.max(0, Math.min(1, (g - MASK_FILL_RGB[1]) / dg2));
+      const er = Math.abs(r - (MASK_FILL_RGB[0] + t * (MASK_CHROME_RGB[0] - MASK_FILL_RGB[0])));
+      const eg2 = Math.abs(g - (MASK_FILL_RGB[1] + t * dg2));
+      const eb2 = Math.abs(b - (MASK_FILL_RGB[2] + t * (MASK_CHROME_RGB[2] - MASK_FILL_RGB[2])));
       if (er <= tolerance && eg2 <= tolerance && eb2 <= tolerance) {
-        hits++;
+        fillHits++;
+        continue;
+      }
+      if (r >= 200 && g >= 200 && b >= 200) {
+        textHits++;
+        continue;
+      }
+      if (Math.abs(r - g) <= 15 && Math.abs(g - b) <= 15 && r <= 180 && r >= 30) {
+        textHits++;
+        continue;
       }
     }
-    return hits / n;
+    const fillFraction = fillHits / n;
+    if (fillFraction >= 0.5) {
+      return (fillHits + textHits) / n;
+    }
+    return fillFraction;
   }
   function verifyRegionPixelBuffer(sanitizedData, rawData, method, regionId = "region") {
     const sampledPixels = sanitizedData.length / 4;
@@ -15710,6 +15755,21 @@ as ORT format: ${n}`);
       const canvasWidth = imageCanvas.width || 1280;
       const canvasHeight = imageCanvas.height || 720;
       const regionRecords = [];
+      const renderedLabelBoxes = [];
+      const shouldDrawLabel = (targetBox) => {
+        for (const lb2 of renderedLabelBoxes) {
+          const xA = Math.max(targetBox.x, lb2.x);
+          const yA = Math.max(targetBox.y, lb2.y);
+          const xB = Math.min(targetBox.x + targetBox.width, lb2.x + lb2.width);
+          const yB = Math.min(targetBox.y + targetBox.height, lb2.y + lb2.height);
+          const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+          const minArea = Math.min(targetBox.width * targetBox.height, lb2.width * lb2.height);
+          if (minArea > 0 && interArea / minArea > 0.3) {
+            return false;
+          }
+        }
+        return true;
+      };
       const blurRegions = regions.filter((r) => r.method === "gaussian_blur" && r.category === "face");
       const opaqueRegions = regions.filter((r) => r.method !== "gaussian_blur" || r.category !== "face");
       let maskCount = 0;
@@ -15728,10 +15788,12 @@ as ORT format: ${n}`);
           continue;
         }
         const padding = 8;
-        const x = Math.max(0, Math.min(canvasWidth - 1, Math.floor(box.x - padding)));
-        const y = Math.max(0, Math.min(canvasHeight - 1, Math.floor(box.y - padding)));
-        const w = Math.max(1, Math.min(canvasWidth - x, Math.ceil(box.width + padding * 2)));
-        const h = Math.max(1, Math.min(canvasHeight - y, Math.ceil(box.height + padding * 2)));
+        const x = Math.max(0, Math.floor(box.x - padding));
+        const y = Math.max(0, Math.floor(box.y - padding));
+        const right = Math.min(canvasWidth, Math.ceil(box.x + box.width + padding));
+        const bottom = Math.min(canvasHeight, Math.ceil(box.y + box.height + padding));
+        const w = right - x;
+        const h = bottom - y;
         const clampedBox = { x, y, width: w, height: h };
         try {
           let fallbackNeeded = false;
@@ -15775,35 +15837,40 @@ as ORT format: ${n}`);
             const residualVariance = computeLuminanceVariance(data);
             const varianceReduction = rawHasDetail ? 1 - residualVariance / rawVariance : 0;
             ctx.putImageData(imgData, x, y);
-            ctx.save();
-            ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(x, y, w, h);
-            if (w >= 40 && h >= 16) {
-              ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
-              ctx.fillRect(x + 2, y + 2, Math.min(w - 4, 85), 14);
-              ctx.fillStyle = "#38bdf8";
-              ctx.font = "bold 9px sans-serif";
-              ctx.fillText("[FACE BLUR]", x + 5, y + 12);
-            }
-            ctx.restore();
             if (!rawHasDetail || varianceReduction < 0.8 || residualVariance >= 150) {
               fallbackNeeded = true;
+            }
+            if (!fallbackNeeded && w >= 60 && h >= 20 && shouldDrawLabel({ x: x + 2, y: y + 2, width: Math.min(w - 4, 85), height: 14 })) {
+              ctx.save();
+              _MaskRenderer.clipToRect(ctx, x, y, w, h);
+              ctx.fillStyle = "#050505";
+              ctx.fillRect(x + 2, y + 2, Math.min(w - 4, 85), 14);
+              ctx.fillStyle = "#ffffff";
+              ctx.font = "bold 9px sans-serif";
+              ctx.fillText("[FACE BLUR]", x + 5, y + 12);
+              ctx.restore();
+              renderedLabelBoxes.push({ x: x + 2, y: y + 2, width: Math.min(w - 4, 85), height: 14 });
             }
           } else {
             fallbackNeeded = true;
           }
           if (fallbackNeeded) {
             ctx.save();
-            ctx.fillStyle = "#0f172a";
+            ctx.fillStyle = "#050505";
             ctx.fillRect(x, y, w, h);
-            ctx.strokeStyle = "#38bdf8";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(x, y, w, h);
-            if (w > 45 && h > 12) {
-              ctx.fillStyle = "#38bdf8";
-              ctx.font = "bold 9px sans-serif";
-              ctx.fillText("[REDACTED: FACE]", x + 3, y + Math.min(11, h - 2));
+            if (w >= 40 && h >= 14 && shouldDrawLabel({ x, y, width: w, height: h })) {
+              _MaskRenderer.clipToRect(ctx, x, y, w, h);
+              const labelText = _MaskRenderer.getSemanticCategoryLabel("face", w);
+              const fontSize = Math.max(8, Math.min(10, Math.floor(h * 0.55)));
+              ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+              const measured = ctx.measureText ? ctx.measureText(labelText).width : fontSize * labelText.length * 0.6;
+              if (measured <= w - 8) {
+                ctx.fillStyle = "#ffffff";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(labelText, x + Math.floor(w / 2), y + Math.floor(h / 2));
+                renderedLabelBoxes.push({ x, y, width: w, height: h });
+              }
             }
             ctx.restore();
           }
@@ -15816,7 +15883,7 @@ as ORT format: ${n}`);
               const overlayFrac = overlayFractionOf(finalData);
               if (overlayFrac < 0.85) {
                 ctx.save();
-                ctx.fillStyle = "#0f172a";
+                ctx.fillStyle = "#050505";
                 ctx.fillRect(x, y, w, h);
                 ctx.restore();
                 success = true;
@@ -15868,32 +15935,32 @@ as ORT format: ${n}`);
         const clampedBox = { x, y, width: w, height: h };
         try {
           ctx.save();
-          ctx.fillStyle = "#0f172a";
+          ctx.fillStyle = "#050505";
           ctx.fillRect(x, y, w, h);
           ctx.restore();
-          if (w >= 36 && h >= 12) {
+          if (w >= 36 && h >= 14 && shouldDrawLabel({ x, y, width: w, height: h })) {
             ctx.save();
-            ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+            _MaskRenderer.clipToRect(ctx, x, y, w, h);
             const labelText = _MaskRenderer.getSemanticCategoryLabel(region.category, w);
             if (labelText) {
               const fontSize = Math.max(8, Math.min(11, Math.floor(h * 0.55)));
               ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-              ctx.fillStyle = "#38bdf8";
+              ctx.fillStyle = "#ffffff";
               ctx.textBaseline = "middle";
               const measured = ctx.measureText ? ctx.measureText(labelText).width : fontSize * labelText.length * 0.6;
               if (measured <= w - 6) {
                 const textX = x + Math.max(3, Math.floor((w - measured) / 2));
                 const textY = y + Math.floor(h / 2);
                 ctx.fillText(labelText, textX, textY);
-              } else if (w >= 28) {
-                const shortLabel = `[${region.category.toUpperCase().slice(0, 4)}]`;
+                renderedLabelBoxes.push({ x, y, width: w, height: h });
+              } else if (w >= 40) {
+                const shortLabel = region.category === "face" ? "[AVATAR]" : region.category === "high_risk_surface" || region.category === "uninspectable" ? "[PROTECTED]" : "[MASK]";
                 const shortW = ctx.measureText ? ctx.measureText(shortLabel).width : fontSize * shortLabel.length * 0.6;
-                if (shortW <= w - 4) {
+                if (shortW <= w - 6) {
                   const textX = x + Math.max(2, Math.floor((w - shortW) / 2));
                   const textY = y + Math.floor(h / 2);
                   ctx.fillText(shortLabel, textX, textY);
+                  renderedLabelBoxes.push({ x, y, width: w, height: h });
                 }
               }
             }
@@ -15908,7 +15975,7 @@ as ORT format: ${n}`);
               let overlayFrac = overlayFractionOf(finalData);
               if (overlayFrac < 0.85) {
                 ctx.save();
-                ctx.fillStyle = "#0f172a";
+                ctx.fillStyle = "#050505";
                 ctx.fillRect(x, y, w, h);
                 ctx.restore();
                 success = true;
@@ -15938,6 +16005,8 @@ as ORT format: ${n}`);
           });
         }
       }
+      const previewCanvas = focusedRegion ? _MaskRenderer.cropCanvasToRegion(imageCanvas, focusedRegion, viewport).targetCanvas : imageCanvas;
+      const inspectorScreenshotDataUrl = _MaskRenderer.exportCanvas(previewCanvas);
       if (interactiveElements && interactiveElements.length > 0) {
         _MaskRenderer.renderSetOfMarks(
           imageCanvas,
@@ -15955,6 +16024,17 @@ as ORT format: ${n}`);
         cropApplied = cropResult.cropApplied;
         cropBox = cropResult.cropBox;
       }
+      const dataUrl = _MaskRenderer.exportCanvas(exportCanvas);
+      return {
+        sanitizedScreenshotDataUrl: dataUrl,
+        inspectorScreenshotDataUrl,
+        renderedMaskCount: maskCount,
+        regionRecords,
+        cropApplied,
+        ...cropBox ? { cropBox } : {}
+      };
+    }
+    static exportCanvas(exportCanvas) {
       let dataUrl;
       if (typeof exportCanvas.toDataURL === "function") {
         dataUrl = exportCanvas.toDataURL("image/png");
@@ -15982,13 +16062,7 @@ as ORT format: ${n}`);
       if (!dataUrl || !dataUrl.startsWith("data:image/png;base64,") && !dataUrl.startsWith("data:image/jpeg;base64,") && !dataUrl.startsWith("data:image/webp;base64,")) {
         throw new Error("Sanitized screenshot export failed: invalid data URL produced");
       }
-      return {
-        sanitizedScreenshotDataUrl: dataUrl,
-        renderedMaskCount: maskCount,
-        regionRecords,
-        cropApplied,
-        ...cropBox ? { cropBox } : {}
-      };
+      return dataUrl;
     }
     /**
      * Safely crops an image canvas to a focused region of interest (e.g. active modal or form card).
@@ -16008,8 +16082,11 @@ as ORT format: ${n}`);
       const padY = 24 * scaleY;
       const sx = Math.max(0, Math.floor(focusedRegion.x * scaleX - padX));
       const sy = Math.max(0, Math.floor(focusedRegion.y * scaleY - padY));
-      const sw = Math.max(80, Math.min(canvasWidth - sx, Math.ceil(focusedRegion.width * scaleX + padX * 2)));
-      const sh = Math.max(60, Math.min(canvasHeight - sy, Math.ceil(focusedRegion.height * scaleY + padY * 2)));
+      const right = Math.min(canvasWidth, Math.ceil((focusedRegion.x + focusedRegion.width) * scaleX + padX));
+      const bottom = Math.min(canvasHeight, Math.ceil((focusedRegion.y + focusedRegion.height) * scaleY + padY));
+      const sw = right - sx;
+      const sh = bottom - sy;
+      if (sw < 80 || sh < 60) return { targetCanvas: imageCanvas, cropApplied: false };
       if (sw >= canvasWidth * 0.96 && sh >= canvasHeight * 0.96) {
         return { targetCanvas: imageCanvas, cropApplied: false };
       }
@@ -16116,9 +16193,11 @@ as ORT format: ${n}`);
         case "auth_code":
           return isNarrow ? "[OTP]" : "[OTP CODE]";
         case "credit_card":
-        case "cvv":
-        case "bank_account":
           return isNarrow ? "[CARD]" : "[PAYMENT CARD]";
+        case "cvv":
+          return isNarrow ? "[CVV]" : "[CARD SECURITY CODE]";
+        case "bank_account":
+          return isNarrow ? "[BANK]" : "[BANK ACCOUNT]";
         case "national_id":
           return isNarrow ? "[ID]" : "[NATIONAL ID]";
         case "email":
@@ -16127,16 +16206,35 @@ as ORT format: ${n}`);
           return isNarrow ? "[PHONE]" : "[PHONE NUMBER]";
         case "token":
           return isNarrow ? "[TOKEN]" : "[API TOKEN]";
+        case "username":
+          return isNarrow ? "[USER]" : "[ACCOUNT USERNAME]";
         case "name":
           return isNarrow ? "[NAME]" : "[FULL NAME]";
         case "address":
           return isNarrow ? "[ADDR]" : "[POSTAL ADDRESS]";
-        case "dob":
+        case "date_of_birth":
           return isNarrow ? "[DOB]" : "[DATE OF BIRTH]";
         case "face":
           return isNarrow ? "[AVATAR]" : "[USER AVATAR]";
+        case "high_risk_surface":
+        case "uninspectable":
+          return isNarrow ? "[MASK]" : "[PROTECTED AREA]";
         default:
-          return isNarrow ? "[REDACTED]" : `[REDACTED: ${category.toUpperCase()}]`;
+          return "[REDACTED]";
+      }
+    }
+    /**
+     * Safely applies canvas clipping to the bounding box if the 2D context supports it.
+     */
+    static clipToRect(ctx, x, y, w, h) {
+      if (typeof ctx.beginPath === "function") {
+        ctx.beginPath();
+      }
+      if (typeof ctx.rect === "function") {
+        ctx.rect(x, y, w, h);
+      }
+      if (typeof ctx.clip === "function") {
+        ctx.clip();
       }
     }
   };
@@ -16346,7 +16444,12 @@ as ORT format: ${n}`);
         const xmax = Math.min(origWidth, (cx + w / 2) * origWidth);
         const ymax = Math.min(origHeight, (cy + h / 2) * origHeight);
         if (xmax > xmin && ymax > ymin) {
-          candidates.push({ xmin, ymin, xmax, ymax, score: faceProb });
+          const boxW = xmax - xmin;
+          const boxH = ymax - ymin;
+          const aspect = boxW / boxH;
+          if (boxW >= 12 && boxH >= 12 && aspect >= 0.35 && aspect <= 2.8) {
+            candidates.push({ xmin, ymin, xmax, ymax, score: faceProb });
+          }
         }
       }
     }
@@ -16575,6 +16678,7 @@ as ORT format: ${n}`);
         requiresFailClosedBlock: false
       };
       let sanitizedDataUrl;
+      let inspectorDataUrl;
       let renderedCount = 0;
       let regionRecords = [];
       let workingCanvas = null;
@@ -16602,6 +16706,7 @@ as ORT format: ${n}`);
           snapshot.focusedRegion
         );
         sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
+        inspectorDataUrl = renderResult.inspectorScreenshotDataUrl;
         renderedCount = renderResult.renderedMaskCount;
         regionRecords = renderResult.regionRecords;
       } else if (typeof document !== "undefined" && rawCapture.rawScreenshotDataUrl && rawCapture.rawScreenshotDataUrl.startsWith("data:image")) {
@@ -16639,6 +16744,7 @@ as ORT format: ${n}`);
           snapshot.focusedRegion
         );
         sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
+        inspectorDataUrl = renderResult.inspectorScreenshotDataUrl;
         renderedCount = renderResult.renderedMaskCount;
         regionRecords = renderResult.regionRecords;
       } else {
@@ -16692,7 +16798,7 @@ as ORT format: ${n}`);
           }
           actionCapabilities = actionCapabilities.filter((cap) => cap !== "type");
         } else {
-          sanitizedName = sanitizeElementName(el2.rawName);
+          sanitizedName = sanitizeElementName(el2.rawName, { publicAuthorHandles: el2.publicAuthorHandles });
         }
         return {
           localId: el2.localId,
@@ -16794,6 +16900,15 @@ as ORT format: ${n}`);
         visionProvider: visibleRegions.some((r) => r.category === "face") ? "ModelRunner" : "None",
         durationMs: Date.now() - (rawCapture.timestamp || Date.now())
       };
+      const safePostSummary = (summary) => {
+        if (!summary.startsWith("Visible post ")) return sanitizeElementName(summary);
+        const match = /^Visible post \d+(?: by [^:]{1,100})?: /.exec(summary);
+        if (!match) return sanitizeElementName(summary);
+        const prefix = match[0].slice(0, -2);
+        const body = summary.slice(match[0].length);
+        const text = `${scrubText(prefix, { publicAuthorHandles: true })}: ${scrubText(body)}`.trim().slice(0, 480);
+        return scanTextForPII(text, { publicAuthorHandles: true }).length === 0 ? text : sanitizeElementName(text);
+      };
       const pageStateObj = {
         title: sanitizedTitle,
         viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight],
@@ -16803,7 +16918,7 @@ as ORT format: ${n}`);
         ...snapshot.routeFingerprint ? { routeFingerprint: snapshot.routeFingerprint } : {},
         ...snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {},
         ...snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map((c) => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {},
-        ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => sanitizeElementName(s)) } : {},
+        ...snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map((s) => safePostSummary(s)) } : {},
         ...snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {},
         ...snapshot.scrollMetrics ? { scrollMetrics: snapshot.scrollMetrics } : {},
         ...snapshot.pageZone ? { pageZone: snapshot.pageZone } : {}
@@ -16823,6 +16938,7 @@ as ORT format: ${n}`);
         captureId: rawCapture.captureId,
         goal: sanitizeElementName(goal),
         sanitizedScreenshotDataUrl: sanitizedDataUrl,
+        inspectorScreenshotDataUrl: inspectorDataUrl,
         elements: finalSanitizedElements,
         pageState: pageStateObj,
         maskCount: visibleRegions.length,
