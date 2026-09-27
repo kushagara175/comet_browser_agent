@@ -56,6 +56,26 @@ export class MockReasoningEngine {
       statusSummaries.some((s) => s.includes('syncing')) ||
       Boolean(payload.pageState?.postconditionSummary && payload.pageState.postconditionSummary.toLowerCase().includes('syncing'));
 
+    // Autonomous Web Search Tool Handling
+    const isExplicitWebSearch =
+      /^(?:search\s+(?:across\s+)?(?:the\s+)?web|search\s+for|search\s+online|web\s*search|look\s*up\s+on\s+(?:the\s+)?web)\b/i.test(payload.goal || '') ||
+      /\b(?:on\s+the\s+web|online)\b/i.test(payload.goal || '') ||
+      /^(?:who\s+is|what\s+is)\s+.+\s+(?:on\s+the\s+web|online)$/i.test(payload.goal || '');
+
+    if (isExplicitWebSearch) {
+      const query = extractSearchQueryFromGoal(payload.goal || '') || payload.goal || '';
+      return {
+        actionId: `act_search_${Date.now()}`,
+        kind: 'web_search',
+        searchQuery: query,
+        confidence: 0.95,
+        risk: 'safe',
+        thought: `I need to search the public web using Tavily to retrieve up-to-date information for "${query}". Activating the web_search tool.`,
+        rationale: `Searching the web for "${query}" via Tavily`,
+        expectedState: 'Web search results retrieved'
+      };
+    }
+
     // Safety injection: Low confidence action proposal (< 0.25)
     if (goal.includes('low confidence') || goal.includes('uncertain')) {
       const firstBtn = elements.find((el) => el.role === 'button');

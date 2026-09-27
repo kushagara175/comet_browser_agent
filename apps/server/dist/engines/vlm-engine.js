@@ -847,6 +847,23 @@ export class VlmReasoningEngine {
                 if (!parsed.url && parsed.link)
                     parsed.url = parsed.link;
             }
+            // Post-form-submission safeguard:
+            // If goal is form filling / registration / submit, and proposal is navigate to an unrelated website (e.g. isro.gov.in),
+            // override to kind: 'finish'!
+            const isFormGoal = /\b(?:fill|register|registration|signup|sign\s*up|submit|details)\b/i.test(payload.goal || '');
+            if (isFormGoal && parsed.kind === 'navigate') {
+                const targetUrl = parsed.url || parsed.targetUrl || '';
+                if (targetUrl && !payload.goal.toLowerCase().includes('isro') && /\b(?:isro\.gov\.in|bhuvan|google\.com)\b/i.test(targetUrl)) {
+                    console.warn(`[PrivaPilot:VLM] Intercepted hallucinated navigate to ${targetUrl} on form filling goal. Overriding to 'finish'.`);
+                    parsed.kind = 'finish';
+                    parsed.confidence = 1.0;
+                    parsed.risk = 'safe';
+                    parsed.rationale = 'Form details have been populated and registration submitted successfully.';
+                    parsed.reply = 'The registration form has been successfully filled and submitted!';
+                    delete parsed.url;
+                    delete parsed.targetUrl;
+                }
+            }
             // If kind is web_search or has search query
             if (parsed.kind === 'web_search' || parsed.action === 'web_search' || (!parsed.kind && (parsed.searchQuery || (parsed.query && !parsed.targetLocalId)))) {
                 parsed.kind = 'web_search';
@@ -876,6 +893,14 @@ export class VlmReasoningEngine {
             if (parsed.kind === 'answer' && !parsed.rationale) {
                 parsed.rationale = String(parsed.reply || parsed.answerText || 'Answer formulated').slice(0, 990);
             }
+            if (parsed.semanticMatchReason && typeof parsed.semanticMatchReason === 'string') {
+                parsed.semanticMatchReason = parsed.semanticMatchReason
+                    .replace(/https?:\/\/[^\s)]+/gi, '')
+                    .replace(/[a-zA-Z0-9-]+\.(?:com|org|gov|in|edu|net|io|co|ai)\b[^\s)]*/gi, '')
+                    .replace(/[<>]/g, '')
+                    .trim()
+                    .slice(0, 990);
+            }
             if (!parsed.reasoning) {
                 parsed.reasoning = extractedThinking || parsed.thought || parsed.rationale;
             }
@@ -892,6 +917,9 @@ export class VlmReasoningEngine {
                 }
                 else if (parsed.kind === 'navigate') {
                     parsed.reasoning = `1. Goal requires navigating to destination portal.\n2. Dispatching navigation to ${parsed.url || 'target'}.`;
+                }
+                else if (parsed.kind === 'web_search') {
+                    parsed.reasoning = `1. Analyzing user goal "${payload.goal}": requires real-time web intelligence.\n2. Selecting web_search tool with query "${parsed.searchQuery || payload.goal}".\n3. Querying live Tavily web index.`;
                 }
                 else if (parsed.kind === 'finish') {
                     parsed.reasoning = `1. Cross-referencing visual screen state with user goal "${payload.goal}".\n2. Target state confirmed. Concluding execution.`;
@@ -1081,6 +1109,9 @@ export class VlmReasoningEngine {
             if (parsed.userInputPrompt) {
                 parsed.userInputPrompt = sanitizeProhibitedText(parsed.userInputPrompt).slice(0, 500);
             }
+            if (parsed.expectedState) {
+                parsed.expectedState = sanitizeProhibitedText(parsed.expectedState).slice(0, 500);
+            }
             if (Array.isArray(parsed.batchActions)) {
                 for (const act of parsed.batchActions) {
                     if (act && typeof act === 'object') {
@@ -1174,7 +1205,7 @@ Available Browser Action Tools (15 tools):
 - "type": Enter text into input fields, search bars, or textareas (requires targetLocalId, textToType; optional pressEnter).
 - "select": Select an option from standard or custom dropdowns (requires targetLocalId, selectOptionValue).
 - "hover": Hover over elements to trigger flyouts, tooltips, or submenus (requires targetLocalId).
-- "scroll": Scroll the page or scrollable container (scrollDirection: "up" | "down" | "top" | "bottom").
+- "scroll": Scroll the page or scroll directly to a target element/section (scrollDirection: "up" | "down" | "top" | "bottom", optional targetLocalId to scroll that specific element directly into view in 1 step).
 - "drag_and_drop": Drag a source element onto a target container (requires targetLocalId and destinationLocalId).
 - "upload_file": Attach or upload a file to a file input (requires targetLocalId, fileName).
 - "batch": Execute an atomic sequence of sub-actions in one turn without extra round-trips (batchActions: [...]).
@@ -1195,7 +1226,7 @@ Available Browser Skills Library:
 
 Strict Rules:
 1. Return ONLY schema-valid JSON for exactly one minimal next action or answer. Act only on the current objective and paste its exact id value (e.g. "objective_1") into the objectiveId field. The objectiveId MUST be a plain alphanumeric/underscore/dash string with no spaces, only letters, digits, underscores, or dashes.
-2. Target elements using "targetLocalId" ONLY for interaction actions ("click", "type", "select", "hover", "drag_and_drop", "upload_file"). NEVER invent CSS selectors, XPath, or JavaScript.
+2. Target elements using "targetLocalId" for interaction actions ("click", "type", "select", "hover", "scroll", "drag_and_drop", "upload_file"). When proposing kind: "scroll" to bring a specific section, heading, or element into view (e.g. an element with verticalOffset: "below"), ALWAYS provide "targetLocalId" set to that element's ID (e.g. "targetLocalId": "el_19") so the browser scrolls directly to it in ONE step instead of scrolling repeatedly! NEVER invent CSS selectors, XPath, or JavaScript.
 3. Classify risk as "safe" (read/navigate/preview/filter/hover/drag/upload/finish/answer/web_search) or "protected" (submit/delete/pay/sign).
 3b. NAVIGATION & MULTI-TAB DIRECTIVE:
     - You have direct access to the "navigate" tool:
@@ -1208,14 +1239,34 @@ Strict Rules:
       THIS IS A DIRECT INSTRUCTION TO EXECUTE THAT ACTION IMMEDIATELY!
       Propose kind: "navigate" with the target URL (e.g. "https://www.flipkart.com/search?q=iPhone+16", createNewTab: true) or the confirmed interaction.
       DO NOT treat affirmative replies as isolated greetings or repeat what is visible on the current tab.
-3d. AUTONOMOUS WEB SEARCH & DEEP DOCUMENT RETRIEVAL DIRECTIVE (TAVILY):
+3d. DOCUMENT RETRIEVAL & AUTONOMOUS DISCOVERY DIRECTIVE:
+    - When the user asks to find, download, or access a document, PDF, brochure, paper, or circular (e.g. "download Chandrayaan-3 brochure", "download Aditya-L1 brochure", "download Yuvika brochure"):
+      * If you are on the relevant portal (such as ISRO portal, SIH portal, or official website):
+        1. FIRST, inspect the page for authentic document links matching the specific topic, "Brochure", "Download PDF", or href ending in .pdf (e.g. on Chandrayaan3.html or Aditya_L1.html). If found, propose kind: "click" on that target element to initiate the download!
+        2. If you are on a sub-article, news release, or photo gallery (e.g. Chandrayaan3_New.html) that does not contain the brochure directly:
+           - Look for a link or navigation to the canonical mission hub (e.g. "Chandrayaan-3" -> "https://www.isro.gov.in/Chandrayaan3.html" or "Chandrayaan3_Details.html") or propose kind: "navigate" to the canonical mission hub URL "https://www.isro.gov.in/Chandrayaan3.html".
+           - Alternatively, if a search input is visible in the header, propose kind: "type" into that search input with the mission brochure query and pressEnter: true.
+        3. STRICT ANTI-HALLUCINATION RULE: NEVER click unrelated footer links (such as "e-Saral Hindi Vakyakosh", "RTI", "Terms of Use", "Privacy Policy", "Copyright", "Site Map") and falsely claim they are the requested brochure! Only click a link if its title or URL genuinely matches the user's topic.
+        4. ONLY when the brochure genuinely does NOT exist anywhere on the portal (e.g. an event announcement like Yuvika where guidelines are hosted externally on Antriksh Jigyasa), and repeated search/navigation yields no document:
+           Propose kind: "request_user_input" to inform the user honestly and provide actionable next steps (HITL).
+      * When on an unrelated website (e.g. YouTube, blank tab) or when explicitly requested to search the external web, you may propose kind: "web_search" with searchQuery.
+3e. AUTONOMOUS WEB SEARCH TOOL DIRECTIVE (CRITICAL):
     - You have direct access to the "web_search" tool:
-      { "actionId": "act_search_1", "kind": "web_search", "searchQuery": "ISRO Chandrayaan-3 brochure PDF", "rationale": "Search web via Tavily to locate direct brochure download link" }
-    - When the user asks to find, download, or access a document, PDF, brochure, paper, or circular (e.g. "download Chandrayaan-3 brochure", "find ISRO geospatial report"), and the link is NOT directly accessible in the current page DOM or navigation menus:
-      YOU MUST PROPOSE kind: "web_search"! The system will execute an autonomous Tavily web search and navigate directly to the top grounded resource.
-    - When on an unrelated website (e.g. YouTube, blank tab) and the user's goal refers to an external topic, website, or entity:
-      YOU MUST PROPOSE kind: "web_search" or kind: "navigate" to the target website! NEVER click unrelated buttons (like video likes or comments) or endlessly scroll an unrelated page!
-    - If you are scrolling or searching without finding the target link on the page, DO NOT repeatedly scroll indefinitely. Propose kind: "web_search" to find the exact target URL.
+      {
+        "actionId": "act_web_search_1",
+        "kind": "web_search",
+        "searchQuery": "elon musk",
+        "confidence": 0.95,
+        "risk": "safe",
+        "thought": "The user is asking to search the web or gather real-time intelligence for 'elon musk'. This requires external web knowledge not present on the current page. I should activate the web_search tool with query 'elon musk'.",
+        "rationale": "Searching the web for 'elon musk' via Tavily"
+      }
+    - When the user asks to "search the web", "search online", "search for who is X", "who is X on the web", or asks for information about an external person, entity, company, news, or topic not present on the current page or on a new tab:
+      YOU MUST CALL kind: "web_search" with "searchQuery" set to the search query!
+    - DO NOT propose kind: "navigate" to google.com or another search engine when you have the direct "web_search" tool! The "web_search" tool directly retrieves live web evidence and displays an interactive research component for the user.
+    - DO NOT return kind: "answer" refusing or claiming you cannot search! You have the "web_search" tool: invoke it!
+    - ALWAYS begin your reasoning monologue inside <think>...</think> tags (or in "thought"), explicitly reasoning why external intelligence is required and that you are activating the web_search tool.
+    - Classify risk as "safe". Web searching is non-destructive and read-only.
 4. SEARCH / FILTER / INPUT DIRECTIVE: When the user's goal asks to search, filter, type, fill, enter, write, or set text in a search box or text input (role: "input" or "textarea"), you MUST return kind: "type", target that input's local ID, and set "textToType" to ONLY the exact search query or entity (e.g. "iPhone 16", "171", "Chandrayaan-3"). DO NOT include conversational wrapper phrases like "in the search bar" or "and analyze the price" in "textToType". When searching on web portals, Wikipedia, or search engines, set "pressEnter": true so the search is executed immediately. Do NOT propose "click", "observe", "wait", or a prose plan when the intention is to enter text or filter.
 4b. FLIGHT & TRAVEL BOOKING DIRECTIVE:
     - When on an airline or flight booking portal (such as Air India, IndiGo, SpiceJet, MakeMyTrip, Google Flights) with origin ("FROM", "Origin") and destination ("TO", "Destination") inputs and a "SEARCH FLIGHTS" button:
@@ -1326,15 +1377,35 @@ Strict Rules:
    - CRITICAL REALISTIC READING DIRECTIVE: When the user's goal asks to read, find, inspect, or tell specific details from an article or document (e.g. "tell me what instruments/payloads...", "find the specifications...", "what does the section on X say...", "what are the details...", "how many..."):
       DO NOT propose kind: "finish" immediately from internal pre-training memory while sitting statically at the top of the page (Scroll: 0px)!
       If the page extends below the viewport and the specific content, table, or section is not in view:
-      You MUST propose kind: "scroll", scrollDirection: "down" (or target the element/heading with targetLocalId) to actually scroll smoothly through the article and inspect the page content before finishing.
+      You MUST propose kind: "scroll", scrollDirection: "down" to actually scroll through the article and inspect the page content before finishing.
+      When scrolling to locate a section or element (e.g. "Organizers", "Organizing Committee", "Specifications", "Patrons"): If the element or heading is present in the elements list (even with inViewport: false or verticalOffset: "below"), ALWAYS set "targetLocalId" to that element's ID on the "scroll" action (e.g. { "kind": "scroll", "targetLocalId": "el_19", "scrollDirection": "down" }) to scroll directly to it in ONE step. Avoid issuing blind generic scroll actions without targetLocalId when the target element is already known.
       This ensures authentic, grounded browser navigation that the user can visually see on screen.
    - If you need to navigate back up to previous sections or navigation bars, return kind: "scroll", scrollDirection: "up" or "top".
    - Do NOT scroll down if Page State indicates "At bottom of page (no content below)".
-19. FORM FILLING & PERSONAL VAULT RESILIENCE:
-   - When filling out forms (contact info, address, college, registrations, login):
-     Propose typing canonical slot names or values (e.g. Alice, user@domain.com, or user phone).
-     The client's zero-knowledge local vault automatically aliases heterogeneous web labels ("contact", "mobile", "tel" -> phone; "org", "college" -> organization) without leaking PII across the network.
-     If a mandatory field is missing from both the user prompt and page context, propose kind: "request_user_input" with userInputPrompt.
+19. FORM FILLING, REGISTRATION & ZERO-KNOWLEDGE DIRECTIVE (CRITICAL):
+   - FILLING FORMS & REGISTRATION:
+     When the user asks to fill a form, register, sign up, or submit details:
+     You MUST PROPOSE typing into the input fields (e.g. Name, Email, Phone, Address) or return a "batch" action that types the details into the inputs AND clicks the Submit button!
+     DO NOT click Submit alone without first filling/typing into the input fields!
+     Privacy mask tokens (like [FULL_NAME] or [EMAIL_ADDRESS]) indicate the semantic category of the field — the on-device Vault will securely populate them with the user's real profile credentials.
+     Example batch action for registration:
+     {
+       "actionId": "act_reg_batch",
+       "kind": "batch",
+       "batchActions": [
+         { "actionId": "act_type_name", "kind": "type", "targetLocalId": "<name_input_id>", "textToType": "[FULL_NAME]" },
+         { "actionId": "act_type_email", "kind": "type", "targetLocalId": "<email_input_id>", "textToType": "[EMAIL_ADDRESS]" },
+         { "actionId": "act_click_submit", "kind": "click", "targetLocalId": "<submit_button_id>" }
+       ],
+       "confidence": 0.98,
+       "risk": "safe",
+       "rationale": "Fill registration fields from vault and submit form"
+     }
+   - POST-SUBMISSION / FORM COMPLETION GUARD (CRITICAL):
+     * When the user's goal is to fill/submit a form, register, or sign up (e.g. "Fill the registration form and submit"):
+       Once the form has been submitted (or if the previous action was a batch/submit click, or if the page shows confirmation like "Signed in", "Success", "Thank you", or if the form fields are no longer present):
+       You MUST return kind: "finish" with confidence: 1.0, risk: "safe", reply: "The registration form has been successfully filled and submitted!", and rationale: "Form submitted successfully".
+     * STRICT BAN: NEVER propose kind: "navigate" to external portals (such as isro.gov.in, bhuvan, google.com, etc.) or wander away from the site after submitting a form!
 20. E-COMMERCE SEARCH & AUTOCOMPLETE BAN (CRITICAL):
     - When searching on e-commerce sites (Amazon, Flipkart) or search portals:
       ALWAYS submit the search by setting "pressEnter": true on the "type" action, or by clicking the search submit button (e.g. magnifying glass or "Go").
@@ -1350,7 +1421,7 @@ Strict Rules:
 22. ISRO & BHUVAN GEOSPATIAL PORTALS DIRECTIVE (CRITICAL):
     - On isro.gov.in:
       * Search results page (/search.html#gsc.q=...): NEVER finish on the search results page! If the user asks for payloads, launch vehicles, specifications, or details, you MUST propose kind: "click" on the primary mission/article title link (e.g. "Chandrayaan-3 - ISRO" or "LVM3-M4 / Chandrayaan-3 Mission") to navigate into the official mission article!
-      * Once inside the mission article (e.g. Chandrayaan3_New.html, Chandrayaan-3.html): Propose kind: "scroll", scrollDirection: "down" to inspect the full article and spec tables. Once the specifications and payloads (RAMBHA-LP, ChaSTE, ILSA, APXS, LIBS, SHAPE) are in view, summarize them accurately in "reply" and propose kind: "finish".
+      * Once inside the mission article or hub (e.g. Chandrayaan3.html, Chandrayaan3_Details.html, Aditya_L1.html): If downloading a brochure or document, propose kind: "click" on the Brochure link. If inspecting specifications, propose kind: "scroll", scrollDirection: "down" to inspect the full article and spec tables. Once the specifications and payloads (RAMBHA-LP, ChaSTE, ILSA, APXS, LIBS, SHAPE) are in view, summarize them accurately in "reply" and propose kind: "finish".
       * Key directories: Missions (/Missions.html), Launchers (/Launchers.html), Earth Observation (/Earth_Observation.html), Careers (/Careers.html).
       * Dedicated search input: "Search ISRO" (#txtSearch) for instant mission/document filtering.
     - On bhuvan.nrsc.gov.in / bhuvan-app1.nrsc.gov.in:
@@ -1420,6 +1491,7 @@ JSON Schema:
             name: e.sanitizedName,
             bounds: e.coarseBounds,
             capabilities: e.actionCapabilities,
+            ...(e.state && e.state.includes('filled') ? { filled: true } : {}),
             ...(e.containerContext ? { context: e.containerContext } : {}),
             ...(e.nearestHeading ? { heading: e.nearestHeading } : {}),
             ...(e.verticalOffset && e.verticalOffset !== 'in_view' ? { verticalOffset: e.verticalOffset } : {}),

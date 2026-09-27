@@ -13,7 +13,7 @@ export class ApiKeyManager {
     rateLimitCounters = new Map();
     requestLogs = [];
     totalRequests = 0;
-    static DEFAULT_DEMO_KEY = 'privapilot_live_sih2026_demo_key';
+    static DEFAULT_DEMO_KEY = 'comet_live_sih2026_demo_key';
     constructor() {
         this.seedDefaultTenants();
     }
@@ -24,7 +24,7 @@ export class ApiKeyManager {
         return ApiKeyManager.instance;
     }
     seedDefaultTenants() {
-        // 1. Default SIH Evaluation & Dev Demo Key
+        // 1. Default Comet SIH Evaluation & Dev Demo Key
         this.tenants.set(ApiKeyManager.DEFAULT_DEMO_KEY, {
             tenantId: 'tenant_sih_demo_01',
             name: 'ISRO / SIH Evaluation Demo Tenant',
@@ -35,10 +35,31 @@ export class ApiKeyManager {
             active: true,
             createdAt: Date.now()
         });
+        // 1b. Legacy Demo Key backwards compatibility
+        this.tenants.set('privapilot_live_sih2026_demo_key', {
+            tenantId: 'tenant_sih_demo_01',
+            name: 'ISRO / SIH Evaluation Demo Tenant (Legacy)',
+            tier: 'enterprise',
+            rateLimitPerMinute: 120,
+            monthlyQuotaSteps: 50_000,
+            remainingSteps: 49_800,
+            active: true,
+            createdAt: Date.now()
+        });
         // 2. Default Sandbox Test Key
-        this.tenants.set('privapilot_test_sandbox_key', {
+        this.tenants.set('comet_test_sandbox_key', {
             tenantId: 'tenant_sandbox_test',
             name: 'Developer Sandbox Environment',
+            tier: 'developer',
+            rateLimitPerMinute: 60,
+            monthlyQuotaSteps: 5_000,
+            remainingSteps: 5_000,
+            active: true,
+            createdAt: Date.now()
+        });
+        this.tenants.set('privapilot_test_sandbox_key', {
+            tenantId: 'tenant_sandbox_test',
+            name: 'Developer Sandbox Environment (Legacy)',
             tier: 'developer',
             rateLimitPerMinute: 60,
             monthlyQuotaSteps: 5_000,
@@ -71,15 +92,17 @@ export class ApiKeyManager {
         if (!rawKey || typeof rawKey !== 'string') {
             return {
                 valid: false,
-                error: 'Missing API key. Provide Authorization: Bearer <privapilot_key> or x-api-key header.',
+                error: 'Missing API key. Provide Authorization: Bearer <comet_key> or x-api-key header.',
                 statusCode: 401
             };
         }
         const key = rawKey.trim();
         let tenant = this.tenants.get(key);
-        if (!tenant && /^privapilot_live_[a-f0-9]{32}$/i.test(key)) {
+        if (!tenant && /^(?:comet|privapilot)_live_[a-f0-9]{32}$/i.test(key)) {
+            const livePrefixIdx = key.indexOf('_live_');
+            const hexStart = livePrefixIdx !== -1 ? livePrefixIdx + 6 : 11;
             tenant = {
-                tenantId: `tenant_${key.slice(16, 26)}`,
+                tenantId: `tenant_${key.slice(hexStart, hexStart + 10)}`,
                 name: 'Production Workspace Tenant',
                 tier: 'enterprise',
                 rateLimitPerMinute: 120,
@@ -93,7 +116,7 @@ export class ApiKeyManager {
         if (!tenant) {
             return {
                 valid: false,
-                error: 'Invalid API key. Check your PrivaPilot API key or issue a new key at POST /api/v1/platform/keys.',
+                error: 'Invalid API key. Check your Comet API key or issue a new key at POST /api/v1/platform/keys.',
                 statusCode: 401
             };
         }
@@ -147,7 +170,7 @@ export class ApiKeyManager {
      */
     createKey(name, tier = 'developer') {
         const randomBytes = crypto.randomBytes(16).toString('hex');
-        const apiKey = `privapilot_live_${randomBytes}`;
+        const apiKey = `comet_live_${randomBytes}`;
         const tenantId = `tenant_${crypto.randomBytes(8).toString('hex')}`;
         const tenant = {
             tenantId,
@@ -179,7 +202,7 @@ export class ApiKeyManager {
         this.totalRequests++;
         const apiKeyMasked = entry.apiKey.length > 18
             ? `${entry.apiKey.slice(0, 15)}...${entry.apiKey.slice(-4)}`
-            : 'privapilot_***';
+            : 'comet_***';
         const log = {
             id: `req_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
             timestamp: Date.now(),

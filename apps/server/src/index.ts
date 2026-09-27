@@ -335,7 +335,8 @@ export function createServer(): http.Server {
               title: r.title,
               url: r.url,
               content: r.content,
-              score: r.score
+              score: r.score,
+              favicon: r.favicon
             }))
           }));
         } catch (err: any) {
@@ -374,8 +375,8 @@ export function createServer(): http.Server {
       });
     };
 
-    // 4. Platform API Key Management
-    if (url === '/api/v1/platform/keys') {
+    // 4. Platform API Key Management & Telemetry
+    if (url === '/api/v1/platform/keys' || url === '/api/v1/platform/telemetry') {
       if (req.method === 'GET') {
         const telemetry = apiKeyManager.getPlatformTelemetry();
         res.writeHead(200, { 'Content-Type': 'application/json' });

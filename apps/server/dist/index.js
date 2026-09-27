@@ -297,7 +297,8 @@ export function createServer() {
                             title: r.title,
                             url: r.url,
                             content: r.content,
-                            score: r.score
+                            score: r.score,
+                            favicon: r.favicon
                         }))
                     }));
                 }
@@ -338,8 +339,8 @@ export function createServer() {
                 });
             });
         };
-        // 4. Platform API Key Management
-        if (url === '/api/v1/platform/keys') {
+        // 4. Platform API Key Management & Telemetry
+        if (url === '/api/v1/platform/keys' || url === '/api/v1/platform/telemetry') {
             if (req.method === 'GET') {
                 const telemetry = apiKeyManager.getPlatformTelemetry();
                 res.writeHead(200, { 'Content-Type': 'application/json' });

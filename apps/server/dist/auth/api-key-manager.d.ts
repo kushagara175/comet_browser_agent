@@ -41,7 +41,7 @@ export declare class ApiKeyManager {
     private readonly rateLimitCounters;
     private readonly requestLogs;
     private totalRequests;
-    static readonly DEFAULT_DEMO_KEY = "privapilot_live_sih2026_demo_key";
+    static readonly DEFAULT_DEMO_KEY = "comet_live_sih2026_demo_key";
     constructor();
     static getInstance(): ApiKeyManager;
     private seedDefaultTenants;

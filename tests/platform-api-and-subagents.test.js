@@ -26,12 +26,20 @@ describe('PrivaPilot Platform API & Sub-Agent Swarm', () => {
   describe('API Key Authentication & Tenant Quota Manager', () => {
     const keyManager = new ApiKeyManager();
 
-    test('Validates default SIH evaluation demo key with enterprise tier', () => {
+    test('Validates default Comet SIH evaluation demo key with enterprise tier', () => {
       const res = keyManager.validate(ApiKeyManager.DEFAULT_DEMO_KEY);
       assert.strictEqual(res.valid, true);
       assert.ok(res.tenant);
       assert.strictEqual(res.tenant.tier, 'enterprise');
       assert.ok(res.tenant.remainingSteps > 0);
+      assert.strictEqual(ApiKeyManager.DEFAULT_DEMO_KEY, 'comet_live_sih2026_demo_key');
+    });
+
+    test('Validates legacy privapilot demo key for backwards compatibility', () => {
+      const res = keyManager.validate('privapilot_live_sih2026_demo_key');
+      assert.strictEqual(res.valid, true);
+      assert.ok(res.tenant);
+      assert.strictEqual(res.tenant.tier, 'enterprise');
     });
 
     test('Rejects missing or empty API keys with HTTP 401', () => {
@@ -42,26 +50,26 @@ describe('PrivaPilot Platform API & Sub-Agent Swarm', () => {
     });
 
     test('Rejects invalid or unregistered API keys', () => {
-      const res = keyManager.validate('privapilot_live_invalid_nonexistent_key_123');
+      const res = keyManager.validate('comet_live_invalid_nonexistent_key_123');
       assert.strictEqual(res.valid, false);
       assert.strictEqual(res.statusCode, 401);
     });
 
     test('Extracts API key from Authorization header with Bearer prefix', () => {
-      const headers = { authorization: 'Bearer privapilot_live_test_sample_token' };
+      const headers = { authorization: 'Bearer comet_live_test_sample_token' };
       const extracted = keyManager.extractKey(headers);
-      assert.strictEqual(extracted, 'privapilot_live_test_sample_token');
+      assert.strictEqual(extracted, 'comet_live_test_sample_token');
     });
 
     test('Extracts API key from x-api-key header', () => {
-      const headers = { 'x-api-key': 'privapilot_live_custom_header_key' };
+      const headers = { 'x-api-key': 'comet_live_custom_header_key' };
       const extracted = keyManager.extractKey(headers);
-      assert.strictEqual(extracted, 'privapilot_live_custom_header_key');
+      assert.strictEqual(extracted, 'comet_live_custom_header_key');
     });
 
-    test('Issues new developer API key and records step usage', () => {
+    test('Issues new developer API key with comet_live_ prefix and records step usage', () => {
       const { apiKey, tenant } = keyManager.createKey('Fintech Partner Alpha', 'developer');
-      assert.ok(apiKey.startsWith('privapilot_live_'));
+      assert.ok(apiKey.startsWith('comet_live_'));
       assert.strictEqual(tenant.tier, 'developer');
       assert.strictEqual(tenant.name, 'Fintech Partner Alpha');
 
