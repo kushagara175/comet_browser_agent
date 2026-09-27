@@ -178,7 +178,7 @@ export function resolveTaskContract(goal) {
         .replace(/\bopn\b/g, 'open')
         .replace(/\bfnd\b/g, 'find');
     // Strip leading navigation clauses (e.g. "open bhuvan and explore earth observation" -> "explore earth observation")
-    const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
+    const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:the\s+)?(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+(?:\s+(?:website|portal|site|page|web))?)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
     if (navPrefixMatch && navPrefixMatch[1]) {
         g = navPrefixMatch[1].trim();
     }
@@ -204,7 +204,8 @@ export function resolveTaskContract(goal) {
         };
     }
     const isMultiStep = /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|and\s+download|and\s+get|and\s+open|and\s+view|and\s+explore|and\s+save)\b/i.test(g) ||
-        (/(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b|to)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many|download|get|open|view|explore|save)/i.test(g));
+        (/(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b|to)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many|download|get|open|view|explore|save)/i.test(g)) ||
+        /\b(?:download|brochure|pdf|document|report|dataset|circular)\b/i.test(g);
     // Explicit conversational / out-of-domain query handling - pass to LLM as answer goal
     if (/(?:poem|story|recipe|joke|capital of|calculate|solve math|2\+2|weather|song|quantum)/i.test(g)) {
         return {
@@ -571,9 +572,10 @@ export function resolveTaskContract(goal) {
     }
     // 8. Generic clicking / interactions / navigation (button, link, item, admin, finish, sanitize, navigate, go to, show, open, tap, expand, delete, remove, download, save, export)
     // Extracts target phrase, role hints, and contextual qualifiers (e.g. "Open View Details for SIH26003", "download Chandrayaan 3 brochure")
-    const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove|download|save|export|fetch)\s+(?:on\s+)?(?:the\s+)?/i);
+    const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove|download|save|export|fetch)\s+(?:on\s+)?(?:me\s+)?(?:the\s+|a\s+|an\s+)?/i);
     const hasInteractionVerb = Boolean(verbMatch);
     let cleanStr = hasInteractionVerb ? g.replace(verbMatch[0], '').trim() : g;
+    cleanStr = cleanStr.replace(/^(?:me\s+)?(?:the\s+|a\s+|an\s+)/i, '').trim();
     cleanStr = cleanStr.replace(/\s+(?:repeatedly|again|multiple\s+times|continuously|twice|until\s+done)\b/i, '').trim();
     let roleHint;
     if (/\b(?:link)\b/i.test(cleanStr))
@@ -1384,7 +1386,7 @@ export function classifyActionRisk(proposal, elementName) {
 export function stripNavigationPrefixFromGoal(goal) {
     if (!goal || typeof goal !== 'string')
         return goal;
-    const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:(?:in|on|open)\s+(?:a\s+)?(?:new|another|fresh)\s+tab(?:,\s*|\s+and\s+)?)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s,]+|[a-zA-Z0-9_.-]+?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*)(.+)$/i);
+    const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:(?:in|on|open)\s+(?:a\s+)?(?:new|another|fresh)\s+tab(?:,\s*|\s+and\s+)?)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:the\s+)?(?:https?:\/\/[^\s,]+|[a-zA-Z0-9_.-]+?(?:\s+(?:website|portal|site|page|web))?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*)(.+)$/i);
     if (match && match[1]) {
         return match[1].trim();
     }

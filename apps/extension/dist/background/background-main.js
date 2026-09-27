@@ -16436,7 +16436,7 @@ function resolveTaskContract(goal) {
     g = g.replace(ACTION_PREFIX_REGEX, "").trim();
   }
   g = g.replace(/\bchekinup\b/g, "check").replace(/\bcheckin\b/g, "check").replace(/\bcheckup\b/g, "check").replace(/\bchecking\s+up\b/g, "check").replace(/\bchecking\b/g, "check").replace(/\btyoe\b/g, "type").replace(/\btpye\b/g, "type").replace(/\bclik\b/g, "click").replace(/\bcilck\b/g, "click").replace(/\bclcik\b/g, "click").replace(/\bclck\b/g, "click").replace(/\bclikc\b/g, "click").replace(/\bselet\b/g, "select").replace(/\bselct\b/g, "select").replace(/\bserach\b/g, "search").replace(/\bserch\b/g, "search").replace(/\bdown;oad\b/g, "download").replace(/\bdownlaod\b/g, "download").replace(/\bdoenmlao\b/g, "download").replace(/\bdomwloadn\b/g, "download").replace(/\bdomwload\b/g, "download").replace(/\bdowload\b/g, "download").replace(/\bdwnload\b/g, "download").replace(/\bdownld\b/g, "download").replace(/\bdownlod\b/g, "download").replace(/\bse\b(?=\s+(?:for|at|the|thr|in|to|on)\b)/g, "see").replace(/\bthr\b/g, "the").replace(/\bhre\b/g, "here").replace(/\bstrtup\b/g, "startup").replace(/\bstrt-up\b/g, "start-up").replace(/\bshw\b/g, "show").replace(/\bopn\b/g, "open").replace(/\bfnd\b/g, "find");
-  const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
+  const navPrefixMatch = g.match(/^(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:the\s+)?(?:https?:\/\/[^\s]+|[a-zA-Z0-9_.-]+(?:\s+(?:website|portal|site|page|web))?)\s+(?:and\s+then|then|after\s+that|and|,)\s+(.+)$/i);
   if (navPrefixMatch && navPrefixMatch[1]) {
     g = navPrefixMatch[1].trim();
   }
@@ -16461,7 +16461,7 @@ function resolveTaskContract(goal) {
       }
     };
   }
-  const isMultiStep = /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|and\s+download|and\s+get|and\s+open|and\s+view|and\s+explore|and\s+save)\b/i.test(g) || /(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b|to)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many|download|get|open|view|explore|save)/i.test(g);
+  const isMultiStep = /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|and\s+download|and\s+get|and\s+open|and\s+view|and\s+explore|and\s+save)\b/i.test(g) || /(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b|to)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many|download|get|open|view|explore|save)/i.test(g) || /\b(?:download|brochure|pdf|document|report|dataset|circular)\b/i.test(g);
   if (/(?:poem|story|recipe|joke|capital of|calculate|solve math|2\+2|weather|song|quantum)/i.test(g)) {
     return {
       supported: true,
@@ -16791,9 +16791,10 @@ function resolveTaskContract(goal) {
       }
     };
   }
-  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove|download|save|export|fetch)\s+(?:on\s+)?(?:the\s+)?/i);
+  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove|download|save|export|fetch)\s+(?:on\s+)?(?:me\s+)?(?:the\s+|a\s+|an\s+)?/i);
   const hasInteractionVerb = Boolean(verbMatch);
   let cleanStr = hasInteractionVerb ? g.replace(verbMatch[0], "").trim() : g;
+  cleanStr = cleanStr.replace(/^(?:me\s+)?(?:the\s+|a\s+|an\s+)/i, "").trim();
   cleanStr = cleanStr.replace(/\s+(?:repeatedly|again|multiple\s+times|continuously|twice|until\s+done)\b/i, "").trim();
   let roleHint;
   if (/\b(?:link)\b/i.test(cleanStr))
@@ -17497,7 +17498,7 @@ function classifyActionRisk(proposal, elementName) {
 function stripNavigationPrefixFromGoal(goal) {
   if (!goal || typeof goal !== "string")
     return goal;
-  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:(?:in|on|open)\s+(?:a\s+)?(?:new|another|fresh)\s+tab(?:,\s*|\s+and\s+)?)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:https?:\/\/[^\s,]+|[a-zA-Z0-9_.-]+?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*)(.+)$/i);
+  const match = goal.trim().match(/^(?:(?:please|kindly)\s+)?(?:(?:in|on|open)\s+(?:a\s+)?(?:new|another|fresh)\s+tab(?:,\s*|\s+and\s+)?)?(?:open|go\s+to|visit|launch|load|navigate\s+to)\s+(?:the\s+)?(?:https?:\/\/[^\s,]+|[a-zA-Z0-9_.-]+?(?:\s+(?:website|portal|site|page|web))?)(?:,\s*|\s+(?:and\s+then|then|after\s+that|and|to|for)\s*|\s+and\s*,\s*)(.+)$/i);
   if (match && match[1]) {
     return match[1].trim();
   }
@@ -22139,6 +22140,13 @@ function selectBestTavilyResult(results, query, goal, currentUrl = "") {
     const curHost = currentUrl ? new URL(currentUrl).hostname.toLowerCase() : "";
     const isOfficialPortal = curHost.includes("isro.gov.in") || curHost.includes("bhuvan") || curHost.includes("sih.gov.in");
     if (curHost.includes("isro.gov.in") || combined.includes("isro")) {
+      const isDocGoal = /(?:brochure|pdf|download|report|dataset)/i.test(combined);
+      if (isDocGoal) {
+        const isroPdf = results.find((r) => r.url && /isro\.gov\.in/i.test(r.url) && /\.pdf(?:\?.*)?$/i.test(r.url));
+        if (isroPdf) return isroPdf;
+        const anyGovPdf = results.find((r) => r.url && /\.gov\.in/i.test(r.url) && /\.pdf(?:\?.*)?$/i.test(r.url));
+        if (anyGovPdf) return anyGovPdf;
+      }
       const isroMatch = results.find((r) => r.url && /isro\.gov\.in/i.test(r.url));
       if (isroMatch) return isroMatch;
       const isroAffiliate = results.find((r) => r.url && /(?:iirs|nrsc|vssc|ursc|sac|isac|prl)\.gov\.in/i.test(r.url));
@@ -24338,7 +24346,10 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
             Boolean(sanitized.pageState?.visibleDialogCount && sanitized.pageState.visibleDialogCount > 0)
           );
           const isConversationalTarget = /\b(?:see|check|read|look|view|inspect|show|my\s+message|my\s+messages|latest\s+message)\b/i.test(structuredIntent.targetPhrase || "");
-          if (grounding.status === "no_match" && this.currentTaskContract?.goalPattern === "click_control" && !isConversationalTarget) {
+          const isMultiStepOrExploratory = Boolean(
+            this.currentTaskContract?.isMultiStep || /\b(?:and|then|download|brochure|pdf|report|find|explore|search|get|browse|locate)\b/i.test(this.currentGoal || "") || structuredIntent.targetTokens && structuredIntent.targetTokens.length > 3
+          );
+          if (grounding.status === "no_match" && this.currentTaskContract?.goalPattern === "click_control" && !isConversationalTarget && !isMultiStepOrExploratory) {
             if (!this.hasTavilyRecovered) {
               this.hasTavilyRecovered = true;
               const fallbackQuery = `${structuredIntent.targetPhrase || this.currentGoal}`.trim();
@@ -25179,7 +25190,7 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
               const searchRes = typeof this.httpClient?.searchWeb === "function" ? await this.httpClient.searchWeb(query, 5) : null;
               const results = searchRes?.results || [];
               const answer = searchRes?.answer || "";
-              const searchProposal = {
+              let searchProposal = {
                 ...proposal,
                 searchResults: results,
                 reply: answer || (results.length > 0 ? `Here is the verified web intelligence retrieved for "${query}":` : `No matching web results found for "${query}".`),
@@ -25205,16 +25216,29 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
                 networkRequestMade: true,
                 timings: { total: Date.now() - t0_step }
               };
-              const topResult = results[0];
-              if (topResult?.url && activeTab?.id && (this.currentTaskContract?.goalPattern === "click_control" || /click|download|navigate|open|brochure/i.test(this.currentGoal || ""))) {
+              let targetNavUrl = "";
+              const answerPdfMatch = answer ? answer.match(/https?:\/\/[^\s<>"'\)]+\.pdf/i) : null;
+              if (answerPdfMatch) {
+                targetNavUrl = answerPdfMatch[0];
+              } else {
+                const bestResult = selectBestTavilyResult(results, query, this.currentGoal || "", activeTab?.url || "");
+                targetNavUrl = bestResult?.url || results[0]?.url || "";
+              }
+              if (targetNavUrl && activeTab?.id && (this.currentTaskContract?.goalPattern === "click_control" || /click|download|navigate|open|brochure|find|get/i.test(this.currentGoal || ""))) {
                 try {
                   if (typeof this.browser.navigateTab === "function") {
-                    await this.browser.navigateTab(activeTab.id, topResult.url);
+                    await this.browser.navigateTab(activeTab.id, targetNavUrl);
                   }
                   if (typeof this.browser.waitForTabReady === "function") {
                     await this.browser.waitForTabReady(activeTab.id);
                   }
                 } catch (_) {
+                }
+                if (/download|brochure|pdf/i.test(this.currentGoal || "")) {
+                  searchProposal = {
+                    ...searchProposal,
+                    reply: `Located official resource: [${targetNavUrl}](${targetNavUrl}). Navigated browser directly to document.`
+                  };
                 }
               }
               this.stepsTrace.push(stepTrace2);

@@ -26,6 +26,15 @@ function selectBestTavilyResult(results, query, goal, currentUrl = '') {
         const curHost = currentUrl ? new URL(currentUrl).hostname.toLowerCase() : '';
         const isOfficialPortal = curHost.includes('isro.gov.in') || curHost.includes('bhuvan') || curHost.includes('sih.gov.in');
         if (curHost.includes('isro.gov.in') || combined.includes('isro')) {
+            const isDocGoal = /(?:brochure|pdf|download|report|dataset)/i.test(combined);
+            if (isDocGoal) {
+                const isroPdf = results.find(r => r.url && /isro\.gov\.in/i.test(r.url) && /\.pdf(?:\?.*)?$/i.test(r.url));
+                if (isroPdf)
+                    return isroPdf;
+                const anyGovPdf = results.find(r => r.url && /\.gov\.in/i.test(r.url) && /\.pdf(?:\?.*)?$/i.test(r.url));
+                if (anyGovPdf)
+                    return anyGovPdf;
+            }
             const isroMatch = results.find(r => r.url && /isro\.gov\.in/i.test(r.url));
             if (isroMatch)
                 return isroMatch;
@@ -2493,7 +2502,10 @@ export class RunCoordinator {
                     const grounding = groundTargetCandidates(sanitized.elements, structuredIntent, Boolean(sanitized.pageState?.visibleDialogCount && sanitized.pageState.visibleDialogCount > 0));
                     // 1. Missing target check: User commanded an explicit target (e.g. "Click SIH99999") that does not exist on page
                     const isConversationalTarget = /\b(?:see|check|read|look|view|inspect|show|my\s+message|my\s+messages|latest\s+message)\b/i.test(structuredIntent.targetPhrase || '');
-                    if (grounding.status === 'no_match' && this.currentTaskContract?.goalPattern === 'click_control' && !isConversationalTarget) {
+                    const isMultiStepOrExploratory = Boolean(this.currentTaskContract?.isMultiStep ||
+                        /\b(?:and|then|download|brochure|pdf|report|find|explore|search|get|browse|locate)\b/i.test(this.currentGoal || '') ||
+                        (structuredIntent.targetTokens && structuredIntent.targetTokens.length > 3));
+                    if (grounding.status === 'no_match' && this.currentTaskContract?.goalPattern === 'click_control' && !isConversationalTarget && !isMultiStepOrExploratory) {
                         if (!this.hasTavilyRecovered) {
                             this.hasTavilyRecovered = true;
                             const fallbackQuery = `${structuredIntent.targetPhrase || this.currentGoal}`.trim();
@@ -3413,7 +3425,7 @@ export class RunCoordinator {
                             const searchRes = typeof this.httpClient?.searchWeb === 'function' ? await this.httpClient.searchWeb(query, 5) : null;
                             const results = searchRes?.results || [];
                             const answer = searchRes?.answer || '';
-                            const searchProposal = {
+                            let searchProposal = {
                                 ...proposal,
                                 searchResults: results,
                                 reply: answer || (results.length > 0
@@ -3438,17 +3450,31 @@ export class RunCoordinator {
                                 networkRequestMade: true,
                                 timings: { total: Date.now() - t0_step }
                             };
-                            const topResult = results[0];
-                            if (topResult?.url && activeTab?.id && (this.currentTaskContract?.goalPattern === 'click_control' || /click|download|navigate|open|brochure/i.test(this.currentGoal || ''))) {
+                            let targetNavUrl = '';
+                            const answerPdfMatch = answer ? answer.match(/https?:\/\/[^\s<>"'\)]+\.pdf/i) : null;
+                            if (answerPdfMatch) {
+                                targetNavUrl = answerPdfMatch[0];
+                            }
+                            else {
+                                const bestResult = selectBestTavilyResult(results, query, this.currentGoal || '', activeTab?.url || '');
+                                targetNavUrl = bestResult?.url || results[0]?.url || '';
+                            }
+                            if (targetNavUrl && activeTab?.id && (this.currentTaskContract?.goalPattern === 'click_control' || /click|download|navigate|open|brochure|find|get/i.test(this.currentGoal || ''))) {
                                 try {
                                     if (typeof this.browser.navigateTab === 'function') {
-                                        await this.browser.navigateTab(activeTab.id, topResult.url);
+                                        await this.browser.navigateTab(activeTab.id, targetNavUrl);
                                     }
                                     if (typeof this.browser.waitForTabReady === 'function') {
                                         await this.browser.waitForTabReady(activeTab.id);
                                     }
                                 }
                                 catch (_) { }
+                                if (/download|brochure|pdf/i.test(this.currentGoal || '')) {
+                                    searchProposal = {
+                                        ...searchProposal,
+                                        reply: `Located official resource: [${targetNavUrl}](${targetNavUrl}). Navigated browser directly to document.`
+                                    };
+                                }
                             }
                             this.stepsTrace.push(stepTrace);
                             this.recordActionHistory(searchProposal);
