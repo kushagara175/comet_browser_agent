@@ -725,7 +725,7 @@ test('ActionExecutor: Executes smooth reading scroll down and up realistically',
     assert.strictEqual(res.message, 'Scrolled down');
     assert.strictEqual(scrollByCalled, true);
     assert.strictEqual(scrollByOptions?.behavior, 'smooth');
-    assert.ok(scrollByOptions?.top > 400, 'Reading delta should be proportional to viewport height');
+    assert.ok(scrollByOptions?.top >= 180 && scrollByOptions?.top <= 400, 'Exploratory scroll should be a bounded fraction of the viewport');
   } finally {
     global.window = originalWindow;
   }

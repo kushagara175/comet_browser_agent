@@ -633,6 +633,18 @@ export class WebExtensionAdapter implements BrowserAdapter {
     if (hasDocument && forceRecreate && typeof api.offscreen.closeDocument === 'function') {
       try {
         await api.offscreen.closeDocument();
+        // Allow Chrome internal thread to unregister the old offscreen context
+        for (let poll = 0; poll < 10; poll++) {
+          let alive = false;
+          if (typeof api.offscreen.hasDocument === 'function') {
+            alive = await api.offscreen.hasDocument();
+          } else if (api.runtime && typeof api.runtime.getContexts === 'function') {
+            const ctxs = await api.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+            alive = Boolean(ctxs && ctxs.length > 0);
+          }
+          if (!alive) break;
+          await new Promise((r) => setTimeout(r, 60));
+        }
       } catch (_) {}
     }
 
@@ -642,17 +654,28 @@ export class WebExtensionAdapter implements BrowserAdapter {
     }
 
     const offscreenUrl = api.runtime.getURL ? api.runtime.getURL('src/offscreen/offscreen.html') : 'src/offscreen/offscreen.html';
-    this.offscreenCreationPromise = api.offscreen.createDocument({
-      url: offscreenUrl,
-      reasons: ['BLOBS', 'DOM_PARSER'],
-      justification: 'On-device privacy mask rendering on screenshot canvas'
-    }).catch((err: any) => {
-      console.error('[PrivaPilot SW] createDocument error:', err?.message || err);
-      // Ignore error if document already exists
-      if (!err.message?.includes('Only a single offscreen document may be created')) {
-        throw err;
+    const createWithRetry = async () => {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          await api.offscreen.createDocument({
+            url: offscreenUrl,
+            reasons: ['BLOBS', 'DOM_PARSER'],
+            justification: 'On-device privacy mask rendering on screenshot canvas'
+          });
+          return;
+        } catch (err: any) {
+          if (err.message?.includes('Only a single offscreen document may be created')) {
+            if (!forceRecreate) return;
+            await new Promise((r) => setTimeout(r, 100));
+          } else {
+            console.error('[PrivaPilot SW] createDocument error:', err?.message || err);
+            throw err;
+          }
+        }
       }
-    }).finally(() => {
+    };
+
+    this.offscreenCreationPromise = createWithRetry().finally(() => {
       this.offscreenCreationPromise = null;
     });
 

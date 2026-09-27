@@ -12,6 +12,7 @@ export declare class OverlayRenderer {
     private glowWatchdogTimer;
     private cropBoxEl;
     private cropBoxTimer;
+    private scanBeamEl;
     private cursorEl;
     private cursorDismissTimer;
     private currentCursorX;
@@ -44,6 +45,11 @@ export declare class OverlayRenderer {
     }, durationMs?: number): void;
     private ensureGlowStyles;
     showAgentWorkingGlow(label?: string): void;
+    /**
+     * Refreshes the visual scanning beam whenever the page scene is scanned / DOM snapshot is taken.
+     * Keeps the ambient blue glow steady without tearing it down, providing an authentic scan pulse.
+     */
+    triggerScanSweep(): void;
     hideAgentWorkingGlow(): void;
     /**
      * Minimal SVG action icons (no tacky emojis).

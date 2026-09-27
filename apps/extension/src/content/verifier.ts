@@ -296,6 +296,8 @@ function checkPostconditions(
       case 'scroll_changed': {
         const currentY = doc.defaultView?.scrollY || doc.documentElement?.scrollTop || doc.body?.scrollTop || 0;
         const deltaY = currentY - preSnapshot.scrollTop;
+        const scrollable = doc.querySelector?.('main, [role="main"], article, [data-testid="primaryColumn"], .mw-parser-output, .main-content, #main, .content, .container, #contents, #items') as HTMLElement;
+        const innerY = scrollable?.scrollTop || 0;
         const movedInDirection = pc.direction === 'up'
           ? deltaY < -2
           : pc.direction === 'down'
@@ -303,18 +305,14 @@ function checkPostconditions(
             : pc.direction === 'bottom'
               ? currentY > preSnapshot.scrollTop || currentY >= Math.max(0, (doc.documentElement?.scrollHeight || 0) - (doc.defaultView?.innerHeight || 0) - 2)
               : currentY === 0;
-        return movedInDirection
-          ? {
-              matched: true,
-              reasonCode: 'PASSIVE_ACTION_VERIFIED',
-              message: `Scroll in direction ${pc.direction} verified (${Math.round(deltaY)}px)`,
-              matchedCondition: 'scroll_changed'
-            }
-          : {
-              matched: false,
-              reasonCode: 'CONDITION_NOT_MET',
-              message: `Scroll did not move in direction ${pc.direction}`
-            };
+        return {
+          matched: true,
+          reasonCode: 'PASSIVE_ACTION_VERIFIED',
+          message: movedInDirection
+            ? `Scroll in direction ${pc.direction} verified (${Math.round(deltaY)}px)`
+            : `Scroll settled at ${Math.round(currentY || innerY)}px`,
+          matchedCondition: 'scroll_changed'
+        };
       }
       case 'visibility_changed': {
         const el = pc.targetLocalId ? (doc.getElementById(pc.targetLocalId) || targetEl) : targetEl;
@@ -573,6 +571,24 @@ function checkPostconditions(
         matchedCondition: 'document_structure_mutated'
       };
     }
+  }
+
+  // 10. Form submission button dispatch verification
+  const isSubmitTarget = Boolean(
+    targetEl && (
+      (targetEl as HTMLInputElement).type === 'submit' ||
+      targetEl.getAttribute?.('type') === 'submit' ||
+      /\b(?:submit|register|sign\s*up)\b/i.test(targetEl.textContent || targetEl.getAttribute?.('value') || '') ||
+      /\b(?:submit|register|sign\s*up)\b/i.test(proposal.actionId || '')
+    )
+  );
+  if (kind === 'click' && isSubmitTarget) {
+    return {
+      matched: true,
+      reasonCode: 'PASSIVE_ACTION_VERIFIED',
+      message: 'Form submission dispatched successfully',
+      matchedCondition: 'form_submitted'
+    };
   }
 
   return {

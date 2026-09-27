@@ -6,7 +6,7 @@
  */
 
 import { ElementRole, ActionCapability } from '@privapilot/protocol';
-import { scanTextForPII, classifyPageZone, isFunctionalMapCanvas, isPublicMediaStream, isPrivateAccountShell } from '@privapilot/pii-rules';
+import { scanTextForPII, classifyPageZone, isFunctionalMapCanvas, isPublicMediaStream, isPrivateAccountShell, isPublicPostContent, isPrivateMessagingSurface } from '@privapilot/pii-rules';
 import { LocalDomSnapshot } from '../sanitizer/pipeline.js';
 import { RawDomElementCapture } from '../sanitizer/dom-detector.js';
 import { RawTextNodeCapture, TextRangeRect, MatchedTextRange } from '../sanitizer/text-detector.js';
@@ -29,8 +29,8 @@ function isVisibleElement(el: Element): boolean {
 }
 
 function isRedundantInteractiveWrapper(el: HTMLElement): boolean {
-  const tag = el.tagName.toLowerCase();
-  if (!['div', 'span', 'section'].includes(tag) || el.hasAttribute?.('role') || el.isContentEditable || !el.children || !el.childNodes || !el.querySelector) return false;
+  const tag = (el.tagName || '').toLowerCase();
+  if (!tag || !['div', 'span', 'section'].includes(tag) || el.hasAttribute?.('role') || el.isContentEditable || !el.children || !el.childNodes || !el.querySelector) return false;
   const children = Array.from(el.children).filter(child => child.matches?.(INTERACTIVE_SELECTOR));
   if (children.length !== 1 || el.children.length !== 1) return false;
   const ownText = Array.from(el.childNodes).some(node => node.nodeType === TEXT_NODE_TYPE && Boolean(node.nodeValue?.trim()));
@@ -133,6 +133,20 @@ export function measureTextRangeRects(
 
     return resultRects;
   } catch {
+    try {
+      const el = (nodeOrContainer as any).parentElement || nodeOrContainer;
+      if (typeof el?.getBoundingClientRect === 'function') {
+        const b = el.getBoundingClientRect();
+        if (b && b.width > 0.5 && b.height > 0.5) {
+          return [{
+            x: Math.max(0, Math.min(b.left !== undefined ? b.left : b.x, viewportWidth)),
+            y: Math.max(0, Math.min(b.top !== undefined ? b.top : b.y, viewportHeight)),
+            width: b.width,
+            height: b.height
+          }];
+        }
+      }
+    } catch (_) {}
     return [];
   }
 }
@@ -162,6 +176,10 @@ export class ElementExtractor {
       offset: { x: number; y: number } = { x: 0, y: 0 },
       depth: number = 0
     ) => {
+      const currentDocUrl = ((currentDoc as Document).defaultView?.location?.href || (doc as any).location?.href || '');
+      const pageZone = classifyPageZone(currentDocUrl);
+      const isPublicBroadcast = pageZone === 'public_broadcast';
+
       // 1. Extract interactive controls & form inputs (including custom dropdowns, comboboxes, suggestions, and tabs)
       const candidates = currentDoc.querySelectorAll(INTERACTIVE_SELECTOR);
 
@@ -261,7 +279,11 @@ export class ElementExtractor {
           const typeAttr = (typeof el.getAttribute === 'function' ? el.getAttribute('type') || '' : '').trim().toLowerCase();
           const ariaControls = (typeof el.getAttribute === 'function' ? el.getAttribute('aria-controls') || '' : '').trim();
 
-          rawName = associatedLabelText || ariaLabel || placeholder || title || (typeAttr === 'search' ? 'Search' : '') || (ariaControls.toLowerCase().includes('table') ? 'Search' : '') || nameAttr || role;
+          const buttonValue = (typeAttr === 'submit' || typeAttr === 'button' || typeAttr === 'reset')
+            ? ((typeof el.getAttribute === 'function' ? el.getAttribute('value') || '' : '').trim() || (typeAttr === 'submit' ? 'Submit' : ''))
+            : '';
+
+          rawName = buttonValue || associatedLabelText || ariaLabel || placeholder || title || (typeAttr === 'search' ? 'Search' : '') || (ariaControls.toLowerCase().includes('table') ? 'Search' : '') || nameAttr || role;
         } else {
           // For buttons, links, custom clickable controls
           const textContent = el.innerText?.trim() || (el.textContent && el.textContent.trim().length < 80 ? el.textContent.trim() : '') || '';
@@ -329,6 +351,23 @@ export class ElementExtractor {
           if (tag === 'a' && el.hasAttribute?.('download') && !rawName.toLowerCase().includes('download')) {
             rawName = `Download ${rawName}`;
           }
+
+          // Protect private account identity and conversation threads in interactive elements
+          const isAcctShell = !isPublicBroadcast && isPrivateAccountShell(el);
+          const isMsgSurface = !isPublicBroadcast && isPrivateMessagingSurface(el, currentDocUrl);
+          if (isAcctShell) {
+            rawName = 'Switch Account ([REDACTED_USER])';
+          } else if (isMsgSurface && !/^(?:messages|requests|search|send\s+message|new\s+message|direct|chats|inbox|all|unread|primary|general)$/i.test(rawName.trim())) {
+            const isThread = Boolean(
+              el.closest('[role="listitem"], [role="row"], [data-testid*="conversation" i], [class*="conversation" i], [class*="thread" i], [class*="direct" i]') ||
+              (role === 'button' || role === 'link' || role === 'menuitem')
+            );
+            if (isThread) {
+              const timeMatch = rawName.match(/\b(?:\d+\s*[hdwm]|yesterday|\d+:\d+\s*(?:am|pm)?)\b/i);
+              const timeDesc = timeMatch ? ` (${timeMatch[0]})` : '';
+              rawName = `Conversation thread: [REDACTED_USER]${timeDesc}`;
+            }
+          }
         }
 
         // Extract container / row context (e.g. table row, card, list item)
@@ -369,16 +408,27 @@ export class ElementExtractor {
         const inViewport = verticalOffset === 'in_view' && (rect.right ?? rect.x + rect.width) + offset.x > 0 && rect.x + offset.x < viewportWidth;
 
         const isPrimaryNavLink = role === 'link' && Boolean(el.closest?.('nav, header, [role="navigation"]'));
+        const inputVal = (el as HTMLInputElement).value || '';
+        const isPlaceholderLike = /^(?:enter\s+(?:your\s+)?|type\s+(?:your\s+)?|first\s*name|last\s*name|email\s*(?:address|id)?|e\.?g\.?|sample|your\s+name|name\s+here|email\s+here)/i.test(inputVal.trim());
+        const isPopulated = (tag === 'input' || tag === 'textarea') &&
+          !['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'file', 'hidden'].includes((el.getAttribute('type') || '').toLowerCase()) &&
+          Boolean(inputVal.trim().length > 0 && !isPlaceholderLike);
+        const elementStates: Array<'enabled' | 'disabled' | 'visible' | 'checked' | 'focused' | 'filled'> = [
+          'visible',
+          ((el as any).disabled && !el.querySelector?.('button:not([disabled]), a[href]')) ? 'disabled' : 'enabled'
+        ];
+        if (isPopulated) {
+          elementStates.push('filled');
+        }
+
         interactiveElements.push({
           isPrimaryNavLink,
           localId,
           role,
           rawName,
+          publicAuthorHandles: isPublicPostContent(el),
           boundingBox: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height },
-          state: [
-            'visible',
-            ((el as any).disabled && !el.querySelector?.('button:not([disabled]), a[href]')) ? 'disabled' : 'enabled'
-          ],
+          state: elementStates,
           actionCapabilities: caps,
           containerContext,
           nearestHeading,
@@ -421,32 +471,48 @@ export class ElementExtractor {
           const content = textNode.nodeValue || '';
           const trimmed = content.trim();
           const parent = textNode.parentElement;
+          if (!parent) {
+            textNode = textWalker.nextNode();
+            continue;
+          }
 
-          if (trimmed.length > 2 && parent && !parent.closest('input, textarea, select, button, [contenteditable="true"], script, style, noscript, .privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]') && isVisibleElement(parent)) {
+          const isIgnored = Boolean(
+            typeof parent.closest === 'function' &&
+            parent.closest('script, style, noscript, .privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]')
+          );
+
+          if (trimmed.length > 1 && !isIgnored && isVisibleElement(parent)) {
             const parentRect = parent.getBoundingClientRect();
             if (parentRect.width > 0.5 && parentRect.height > 0.5 && parentRect.right + offset.x > 0 && parentRect.bottom + offset.y > 0 && parentRect.left + offset.x < viewportWidth && parentRect.top + offset.y < viewportHeight) {
               textIdx++;
               const nodeId = `txt_${depth}_${textIdx}`;
 
               // Check if parent element represents user account identity (e.g. User-Name header on X, user-menu button on Claude/ChatGPT, account header on Flipkart)
-              const isAccountIdentity = Boolean(
+              const isAccountIdentity = !isPublicBroadcast && !isPublicPostContent(parent) && Boolean(
+                typeof parent.closest === 'function' &&
+                (isPrivateAccountShell(parent) ||
+                 parent.closest(
+                   '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [title*="profile" i], [title*="account" i], [class*="account-info" i], [class*="profile-info" i], [data-testid*="account" i], [data-testid*="profile" i]'
+                 ))
+              );
+
+              // Check if parent element is within a private messaging surface (Instagram Direct, X Messages, LinkedIn Messaging, Slack, WhatsApp)
+              const isMsgSurface = !isPublicPostContent(parent) && (
+                pageZone === 'private_workspace' ||
+                isPrivateMessagingSurface(parent, currentDocUrl)
+              );
+
+              // Check if parent element represents delivery address / shipping location widget on checkout forms
+              const isDeliveryAddressContainer = !isPublicBroadcast && Boolean(
                 typeof parent.closest === 'function' &&
                 parent.closest(
-                  '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [title*="profile" i], [title*="account" i], [class*="account" i], [class*="profile" i], [class*="user" i], [data-testid*="account" i], [data-testid*="profile" i]'
+                  '[class*="deliver" i], [id*="deliver" i], [class*="shipping-address" i], [id*="shipping-address" i], [class*="delivery-address" i], [id*="delivery-address" i], [class*="pincode" i], [id*="pincode" i]'
                 )
               );
 
-              // Check if parent element represents delivery address / shipping location widget or address footer
-              const isDeliveryAddressContainer = Boolean(
-                typeof parent.closest === 'function' &&
-                (parent.closest(
-                  '[class*="deliver" i], [id*="deliver" i], [class*="address" i], [id*="address" i], [class*="location" i], [id*="location" i], [class*="pincode" i], [id*="pincode" i], address'
-                ) ||
-                parent.parentElement?.textContent?.includes('Address'))
-              );
-
               // Scan text node for PII matches
-              let matches = scanTextForPII(content);
+              const isPublicAuthor = isPublicPostContent(parent);
+              let matches = scanTextForPII(content, { publicAuthorHandles: isPublicAuthor });
               if (matches.length === 0 && isDeliveryAddressContainer && trimmed.length > 2 && trimmed.length < 120 &&
                   !/^(?:address|location|pin\s*code|postal\s*code)$/i.test(trimmed) &&
                   (/\b(?:home|work|office|deliver|katra|nagar|colony|road|street|bhavan|bhawan|marg|lane|avenue|floor|block|sector|plot|post|pin|[1-9][0-9]{2}\s?[0-9]{3})\b/i.test(trimmed) ||
@@ -458,8 +524,23 @@ export class ElementExtractor {
                   matchedLength: content.length,
                   confidence: 0.95
                 }];
+              } else if (matches.length === 0 && isMsgSurface && trimmed.length > 1 &&
+                  !/^(?:messages|requests|search|send message|new message|direct|chats|inbox|all|unread|primary|general)$/i.test(trimmed)) {
+                // In private messaging surface: classify conversation text into username (contact) vs uninspectable (message snippet)
+                const isSnippet = Boolean(
+                  trimmed.includes('•') ||
+                  trimmed.length > 35 ||
+                  /\b(?:sent an attachment|replied to|seen|yesterday|\d+:\d+|\d+\s*[hdwm])\b/i.test(trimmed)
+                );
+                matches = [{
+                  category: isSnippet ? 'uninspectable' : 'username',
+                  startIndex: 0,
+                  endIndex: content.length,
+                  matchedLength: content.length,
+                  confidence: 0.95
+                }];
               } else if (matches.length === 0 && isAccountIdentity && trimmed.length > 1 && trimmed.length < 80 &&
-                  !/^(?:login|sign in|sign up|register|cart|orders|notifications|help|wishlist|explore|become a seller)$/i.test(trimmed)) {
+                  !/^(?:login|sign in|sign up|register|cart|orders|notifications|help|wishlist|explore|become a seller|messages|requests|direct|chats|home|about|about\s+us|activities|services|programmes|resources|engagements|media|missions|careers?|tenders?|faq|contact|contact\s+us|sitemap|feedback|rti|menu|navigation|search|overview|gallery|centres|facilities|launchers|satellites)$/i.test(trimmed)) {
                 matches = [{
                   category: 'username',
                   startIndex: 0,
@@ -467,6 +548,17 @@ export class ElementExtractor {
                   matchedLength: content.length,
                   confidence: 0.95
                 }];
+              }
+
+              // Optimization: If no PII/sensitive data was found, and the element is an action button/input wrapper,
+              // skip pushing static button labels to textNodes so we don't duplicate interactive controls
+              const isInsideActionControl = Boolean(
+                typeof parent.closest === 'function' &&
+                parent.closest('button, [role="button"], input, textarea, select')
+              );
+              if (matches.length === 0 && isInsideActionControl) {
+                textNode = textWalker.nextNode();
+                continue;
               }
 
               let matchedRanges: MatchedTextRange[] | undefined = undefined;
@@ -486,19 +578,21 @@ export class ElementExtractor {
               }
 
               if (matches.length > 0 && !matchedRanges?.length) {
+                // Do not pass an unmeasurable sensitive string to the fallback detector.
                 textNode = textWalker.nextNode();
-                continue; // Unmeasurable text cannot be masked by a parent container.
+                continue;
               }
               textNodes.push({
                 id: nodeId,
                 text: trimmed,
                 boundingClientRect: { x: parentRect.x + offset.x, y: parentRect.y + offset.y, width: parentRect.width, height: parentRect.height },
-                matchedRanges
+                matchedRanges,
+                publicAuthorHandles: isPublicAuthor
               });
 
               // Check if parent container has nested inline markup spanning across text nodes (only small inline wrappers, never layout blocks or cards)
               const isSmallInlineWrapper =
-                parent.children.length > 0 &&
+                Boolean(parent.children && parent.children.length > 0) &&
                 !visitedContainers.has(parent) &&
                 parentRect.height <= 50 &&
                 parentRect.width <= 600 &&
@@ -509,7 +603,7 @@ export class ElementExtractor {
               if (isSmallInlineWrapper) {
                 visitedContainers.add(parent);
                 const containerText = parent.textContent || '';
-                const containerMatches = scanTextForPII(containerText);
+                const containerMatches = scanTextForPII(containerText, { publicAuthorHandles: isPublicAuthor });
 
                 for (const cm of containerMatches) {
                   const isCovered = matchedRanges?.some(mr => mr.category === cm.category);
@@ -522,6 +616,7 @@ export class ElementExtractor {
                       id: `txt_cont_${depth}_${textIdx}`,
                       text: containerText,
                       boundingClientRect: { x: parentRect.x + offset.x, y: parentRect.y + offset.y, width: parentRect.width, height: parentRect.height },
+                      publicAuthorHandles: isPublicAuthor,
                       matchedRanges: [{
                         category: cm.category,
                         startIndex: cm.startIndex,
@@ -561,57 +656,53 @@ export class ElementExtractor {
         const ariaLabel = (el.getAttribute?.('aria-label') || '').toLowerCase();
         const src = (el.getAttribute?.('src') || el.getAttribute?.('srcset') || '').toLowerCase();
 
+        // Pure vector SVGs and UI icons in navigation or toolbars are never human faces or profile photos
+        const isInNavigation = Boolean(typeof el.closest === 'function' && el.closest('nav, [role="navigation"], header, [data-testid="sidebarColumn"], aside'));
+        const isNavAria = ariaLabel === 'profile' || ariaLabel === 'account' || ariaLabel === 'user' || ariaLabel === 'home' || ariaLabel === 'bookmarks';
+        if (tagName === 'SVG' || (isInNavigation && isNavAria)) {
+          return;
+        }
+
         const isAvatar =
           classText.includes('avatar') ||
-          classText.includes('profile') ||
           classText.includes('user-pic') ||
           classText.includes('user-img') ||
           classText.includes('user-photo') ||
-          classText.includes('user-image') ||
           classText.includes('author-img') ||
           classText.includes('gravatar') ||
           testId.includes('avatar') ||
           testId.includes('useravatar') ||
           testId.includes('profile-pic') ||
           alt.includes('avatar') ||
-          alt.includes('profile') ||
           alt.includes('user photo') ||
-          alt.includes('author') ||
-          ariaLabel.includes('avatar') ||
-          ariaLabel.includes('profile') ||
-          ariaLabel.includes('account') ||
+          (alt.includes('profile') && !alt.includes('profile link') && !alt.includes('view profile')) ||
+          (ariaLabel.includes('avatar') && !isInNavigation) ||
           src.includes('profile_images') ||
           src.includes('avatar') ||
           src.includes('gravatar.com') ||
           src.includes('avatars.githubusercontent') ||
           src.includes('googleusercontent.com') ||
-          Boolean(typeof el.closest === 'function' && el.closest('[data-testid*="UserAvatar" i], [data-testid*="avatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i], [data-testid*="user-profile" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [class*="account" i], [class*="profile" i], [class*="user-info" i], [class*="user-header" i], [class*="user-badge" i]'));
+          Boolean(typeof el.closest === 'function' && el.closest('[data-testid*="UserAvatar" i], [data-testid*="user-avatar" i], [data-testid*="user-menu" i]'));
 
         const isVisualMedia =
           tagName === 'IMG' ||
-          tagName === 'SVG' ||
           role === 'img' ||
           isAvatar;
 
         if (!isVisualMedia) return;
 
-        const isPublicCommentAvatar = Boolean(
-          typeof el.closest === 'function' &&
-          el.closest('ytd-comment-thread-renderer, #comments, .comment, [role="article"]')
-        );
-        const isUserShell = isPrivateAccountShell(el);
-        const shouldProtectAvatar = isUserShell || (!isPublicCommentAvatar && isAvatar);
+        const isPublicContent = isPublicPostContent(el);
+        const shouldProtectAvatar = isPrivateAccountShell(el) || (!isPublicContent && isAvatar && !isInNavigation);
 
         imageElements.push({
           id: `img_${depth}_${idx + 1}`,
           isProfilePhotoOrAvatar: shouldProtectAvatar,
+          isPublicPostImage: isPublicContent && !isPrivateAccountShell(el),
           boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
         });
       });
 
       // 4. Granular High-Risk & Uninspectable Surfaces
-      const currentDocUrl = ((currentDoc as Document).defaultView?.location?.href || (doc as any).location?.href || '');
-
       // 4a. Canvases (2D Canvas vs WebGL Canvas)
       const canvases = currentDoc.querySelectorAll('canvas');
       canvases.forEach((c) => {
@@ -619,14 +710,27 @@ export class ElementExtractor {
         if (rect.width > 0 && rect.height > 0) {
           surfaceCounter++;
           const isMap = isFunctionalMapCanvas(c, currentDocUrl);
-          if (isMap) {
-            // Functional interactive map canvas (Bhuvan, OpenLayers, Leaflet, Mapbox) - do NOT mask!
+          const isPublicMediaCanvas =
+            currentDocUrl.includes('youtube.com') ||
+            currentDocUrl.includes('youtu.be') ||
+            currentDocUrl.includes('vimeo.com') ||
+            currentDocUrl.includes('twitch.tv') ||
+            Boolean(c.closest('#player, ytd-player, .html5-video-player, [class*="player" i], [id*="player" i], .video-stream'));
+          const isSignature = Boolean(
+            c.closest('[class*="signature" i], [id*="signature" i], canvas[class*="sig" i], [aria-label*="signature" i]')
+          );
+          const pageZone = classifyPageZone(currentDocUrl);
+          const isPublicContent = isPublicPostContent(c);
+          const isSmallDecorative = rect.width <= 60 && rect.height <= 60;
+
+          if ((isMap || isPublicMediaCanvas || pageZone === 'public_broadcast' || isPublicContent || isSmallDecorative) && !isSignature) {
+            // Functional map, public media/broadcast canvas, public feed canvas, or small decorative ring/icon - do NOT blackout with opaque mask!
             surfaces.push({
               id: `cvs_${surfaceCounter}`,
               surfaceType: 'canvas',
               isCrossOriginOrUninspectable: false,
               inspectionStatus: 'inspected_same_origin',
-              reason: 'functional_geospatial_map',
+              reason: isMap ? 'functional_geospatial_map' : (isPublicContent ? 'public_post_canvas' : (isSmallDecorative ? 'decorative_ui_canvas' : 'public_media_canvas')),
               boundingClientRect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height }
             });
             return;
@@ -719,12 +823,14 @@ export class ElementExtractor {
         }
       });
 
-      // 4e. Images Likely to Contain Sensitive Text
+      // 4e. Images Likely to Contain Sensitive Text (Real financial and identity documents only)
       const textImages = currentDoc.querySelectorAll(
-        'img[class*="receipt"], img[class*="invoice"], img[class*="document"], img[class*="statement"], img[class*="card"], img[class*="scanned"], img[class*="id"], img[class*="doc"], [data-has-text="true"], img[alt*="scanned" i], img[alt*="document" i], img[alt*="sensitive" i]'
+        'img[class*="receipt" i], img[class*="invoice" i], img[class*="statement" i], img[class*="credit-card" i], img[class*="id-card" i], img[class*="passport" i], img[class*="national-id" i], img[class*="scanned-doc" i], [data-has-sensitive-text="true"], img[alt*="scanned document" i], img[alt*="sensitive document" i]'
       );
       textImages.forEach((img) => {
-        const rect = img.getBoundingClientRect();
+        const el = img as HTMLElement;
+        if (isPublicPostContent(el)) return;
+        const rect = el.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) {
           surfaceCounter++;
           surfaces.push({
@@ -899,6 +1005,34 @@ export class ElementExtractor {
     const counters: Array<{ label: string; value: string }> = [];
     const contentSummaries: string[] = [];
     try {
+      // Preserve reading order and attribution for visible post cards; never include controls or private shell.
+      const posts = doc.querySelectorAll('article, [role="article"]');
+      let postCount = 0;
+      for (const post of Array.from(posts)) {
+        if (postCount >= 8) break;
+        if (!isVisibleElement(post) || !isPublicPostContent(post)) continue;
+        const box = post.getBoundingClientRect();
+        if (box.width <= 0 || box.height <= 0 || box.bottom <= 0 || box.top >= viewportHeight) continue;
+        const authorNode = post.querySelector('[data-testid="User-Name"], [rel="author"], .author, [class*="author-name" i]');
+        const bodyNode = post.querySelector('[data-testid="tweetText"], [data-testid="post-text"], .post-content, .post-body, [itemprop="articleBody"]');
+        const safeText = (node: Element | null, limit: number): string => {
+          if (!node || !isVisibleElement(node) || !isPublicPostContent(node)) return '';
+          const walker = doc.createTreeWalker(node, SHOW_TEXT_FILTER);
+          const parts: string[] = [];
+          let child = walker.nextNode();
+          while (child && parts.join(' ').length < limit) {
+            if (child.parentElement && isVisibleElement(child.parentElement) && !isPrivateAccountShell(child.parentElement) &&
+                !child.parentElement.closest('button, input, textarea, select, [contenteditable="true"]')) {
+              parts.push(child.nodeValue || '');
+            }
+            child = walker.nextNode();
+          }
+          return parts.join(' ').trim().replace(/\s+/g, ' ').slice(0, limit);
+        };
+        const author = safeText(authorNode, 100).replace(/:/g, ' ');
+        const body = safeText(bodyNode, 320);
+        if (body) contentSummaries.push(`Visible post ${++postCount}${author ? ` by ${author}` : ''}: ${body}`);
+      }
       // Extract statistics cards, counters, and metrics
       const counterNodes = doc.querySelectorAll('.counter, .count, [class*="stat"], [class*="metric"], [class*="badge"], [data-count]');
       counterNodes.forEach((node) => {

@@ -55,7 +55,7 @@ export class ActionExecutor {
             const doc = typeof document !== 'undefined' ? document : null;
             const win = typeof window !== 'undefined' ? window : null;
             const vh = win?.innerHeight || 800;
-            const readingDelta = Math.max(350, Math.round(vh * 0.65));
+            const readingDelta = Math.max(180, Math.min(400, Math.round(vh * 0.35)));
             const delta = proposal.scrollDirection === 'up' ? -readingDelta : readingDelta;
             if (proposal.targetLocalId) {
                 const targetEl = elementMap?.get(proposal.targetLocalId) ||
@@ -116,8 +116,7 @@ export class ActionExecutor {
                 catch (_) { }
             }
             else {
-                const prevY = win?.scrollY || doc?.documentElement?.scrollTop || doc?.body?.scrollTop || 0;
-                if (win) {
+                if (win && typeof win.scrollBy === 'function') {
                     try {
                         win.scrollBy({ top: delta, left: 0, behavior: 'smooth' });
                     }
@@ -125,9 +124,8 @@ export class ActionExecutor {
                         win.scrollBy(0, delta);
                     }
                 }
-                const newY = win?.scrollY || doc?.documentElement?.scrollTop || doc?.body?.scrollTop || 0;
-                if (newY === prevY && doc) {
-                    const scrollable = doc.querySelector('main, [role="main"], article, .mw-parser-output, .main-content, #main, .content, .container, body');
+                else if (doc) {
+                    const scrollable = doc.querySelector('[data-testid="primaryColumn"], main, [role="main"], [data-viewportview], .feed, .timeline, #contents, #items, article, body');
                     if (scrollable && typeof scrollable.scrollBy === 'function') {
                         try {
                             scrollable.scrollBy({ top: delta, left: 0, behavior: 'smooth' });
@@ -369,31 +367,51 @@ export class ActionExecutor {
                 };
                 // For anchor links (e.g. search result links, Google Custom Search results, download links),
                 // ensure target is _self and handle downloadable file links directly.
-                const anchorEl = (targetEl.tagName.toLowerCase() === 'a' ? targetEl : targetEl.closest?.('a'));
+                const anchorEl = (targetEl.tagName.toLowerCase() === 'a'
+                    ? targetEl
+                    : targetEl.closest?.('a') || targetEl.querySelector?.('a') || targetEl.parentElement?.querySelector?.('a'));
                 if (anchorEl) {
-                    const href = anchorEl.href || anchorEl.getAttribute('href') || '';
-                    const isDownloadable = /\.(?:pdf|zip|csv|kmz|kml|tif|tiff|docx?|xlsx?)(?:\?.*)?$/i.test(href);
+                    const rawHref = anchorEl.getAttribute('href') || anchorEl.href || '';
+                    let absoluteHref = anchorEl.href || rawHref;
+                    try {
+                        absoluteHref = new URL(rawHref, win?.location?.href || document.location.href).href;
+                    }
+                    catch (_) { }
+                    const isDownloadable = /\.(?:pdf|zip|csv|kmz|kml|tif|tiff|docx?|xlsx?)(?:\?.*)?$/i.test(absoluteHref);
                     if (isDownloadable) {
-                        const filename = href.split('/').pop()?.split('?')[0] || 'document.pdf';
+                        const filename = absoluteHref.split('/').pop()?.split('?')[0] || 'document.pdf';
                         anchorEl.setAttribute('download', filename);
                         anchorEl.download = filename;
+                        anchorEl.target = '_self';
+                        anchorEl.setAttribute('target', '_self');
                         try {
                             const globalChrome = globalThis.chrome;
                             if (typeof globalChrome !== 'undefined' && globalChrome.runtime?.sendMessage) {
                                 globalChrome.runtime.sendMessage({
                                     type: 'TRIGGER_DOWNLOAD',
-                                    url: href,
+                                    url: absoluteHref,
                                     filename
                                 }).catch(() => { });
                             }
                         }
                         catch (_) { }
+                        try {
+                            if (win?.location) {
+                                win.location.href = absoluteHref;
+                            }
+                        }
+                        catch (_) {
+                            try {
+                                anchorEl.click();
+                            }
+                            catch (_) { }
+                        }
                         return {
                             actionId: proposal.actionId,
                             success: true,
                             timestamp,
                             semanticOutcomeVerified: true,
-                            message: `✓ Download initiated for "${filename}"`
+                            message: `Opened and downloaded "${filename}"`
                         };
                     }
                     else if (anchorEl.getAttribute('target') === '_blank' || anchorEl.target === '_blank') {

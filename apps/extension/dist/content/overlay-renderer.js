@@ -12,6 +12,7 @@ export class OverlayRenderer {
     glowWatchdogTimer = null;
     cropBoxEl = null;
     cropBoxTimer = null;
+    scanBeamEl = null;
     // Animated AI Ghost Cursor state
     cursorEl = null;
     cursorDismissTimer = null;
@@ -307,6 +308,36 @@ export class OverlayRenderer {
         }
       }
 
+      @keyframes privapilot-scan-sweep {
+        0% {
+          top: -6px;
+          opacity: 0;
+        }
+        8% {
+          opacity: 0.95;
+        }
+        88% {
+          opacity: 0.95;
+        }
+        100% {
+          top: 100vh;
+          opacity: 0;
+        }
+      }
+
+      .privapilot-scan-beam {
+        position: fixed !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100vw !important;
+        height: 3px !important;
+        pointer-events: none !important;
+        z-index: 2147483647 !important;
+        background: linear-gradient(90deg, transparent 0%, rgba(56, 189, 248, 0.4) 15%, #38bdf8 50%, rgba(56, 189, 248, 0.4) 85%, transparent 100%) !important;
+        box-shadow: 0 0 16px 4px rgba(56, 189, 248, 0.8), 0 0 32px 8px rgba(37, 99, 235, 0.5) !important;
+        animation: privapilot-scan-sweep 0.95s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+      }
+
       .privapilot-working-glow {
         position: fixed !important;
         top: 0 !important;
@@ -528,10 +559,46 @@ export class OverlayRenderer {
             this.glowWatchdogTimer.unref();
         }
     }
+    /**
+     * Refreshes the visual scanning beam whenever the page scene is scanned / DOM snapshot is taken.
+     * Keeps the ambient blue glow steady without tearing it down, providing an authentic scan pulse.
+     */
+    triggerScanSweep() {
+        if (typeof document === 'undefined' || !document.body)
+            return;
+        this.ensureGlowStyles();
+        // Ensure ambient working glow remains alive
+        this.showAgentWorkingGlow();
+        // Remove any previous active beam
+        if (this.scanBeamEl && document.body.contains(this.scanBeamEl)) {
+            this.scanBeamEl.remove();
+            this.scanBeamEl = null;
+        }
+        const beam = document.createElement('div');
+        beam.id = 'privapilot-scan-beam';
+        beam.className = 'privapilot-overlay privapilot-scan-beam';
+        beam.setAttribute('data-privapilot-ignore', 'true');
+        beam.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(beam);
+        this.scanBeamEl = beam;
+        setTimeout(() => {
+            if (this.scanBeamEl === beam) {
+                if (beam.parentNode)
+                    beam.parentNode.removeChild(beam);
+                this.scanBeamEl = null;
+            }
+        }, 1000);
+    }
     hideAgentWorkingGlow() {
         if (this.glowWatchdogTimer) {
             clearTimeout(this.glowWatchdogTimer);
             this.glowWatchdogTimer = null;
+        }
+        if (this.scanBeamEl) {
+            if (this.scanBeamEl.parentNode) {
+                this.scanBeamEl.parentNode.removeChild(this.scanBeamEl);
+            }
+            this.scanBeamEl = null;
         }
         if (this.workingGlowEl) {
             const el = this.workingGlowEl;
@@ -619,7 +686,7 @@ export class OverlayRenderer {
         if (caret)
             caret.style.display = type === 'caret' ? 'block' : 'none';
     }
-    updateCursorBadge(actionKind, extraText) {
+    updateCursorBadge(actionKind, extraText, targetEl) {
         if (!this.cursorEl)
             return;
         const iconEl = this.cursorEl.querySelector('.privapilot-cursor-badge-icon');
@@ -629,7 +696,17 @@ export class OverlayRenderer {
         let label = 'Click';
         if (kindUpper.includes('TYPE')) {
             svgIcon = OverlayRenderer.MINIMAL_ICONS.TYPE;
-            label = extraText ? `Type "${extraText.slice(0, 20)}${extraText.length > 20 ? '...' : ''}"` : 'Type';
+            const targetSemantics = targetEl ? `${targetEl.getAttribute?.('type') || ''} ${targetEl.getAttribute?.('name') || ''} ${targetEl.id || ''} ${targetEl.getAttribute?.('placeholder') || ''}`.toLowerCase() : '';
+            const isSensitiveField = /password|email|phone|card|cvv|pin|ssn|aadhar|aadhaar|name|secret|token/i.test(targetSemantics);
+            const isSensitiveText = extraText && (/@/i.test(extraText) ||
+                /\b(?:password|secret|token|credential|key)\b/i.test(extraText) ||
+                /^[0-9\s-]{12,}$/.test(extraText));
+            if (extraText && !isSensitiveField && !isSensitiveText) {
+                label = `Type "${extraText.slice(0, 20)}${extraText.length > 20 ? '...' : ''}"`;
+            }
+            else {
+                label = 'Type';
+            }
         }
         else if (kindUpper.includes('CLICK')) {
             svgIcon = OverlayRenderer.MINIMAL_ICONS.CLICK;
@@ -752,7 +829,7 @@ export class OverlayRenderer {
             type === 'radio';
         const pointerType = isTextInput ? 'caret' : (isClickable ? 'hand' : 'arrow');
         this.setCursorPointerType(pointerType);
-        this.updateCursorBadge(actionKind, extraText);
+        this.updateCursorBadge(actionKind, extraText, el);
         // Make cursor visible
         cursor.style.opacity = '1';
         const initialPoint = this.computeTargetPoint(el, pointerType);
