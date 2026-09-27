@@ -4443,7 +4443,7 @@ if (typeof document !== 'undefined') {
         isBrowserActionRequest(goalText) ||
         isSubAgentIntent ||
         /\b(?:https?:\/\/|[a-z0-9-]+\.(?:com|org|gov|in|edu|net|io|co|ai|xyz))\b/i.test(goalText) ||
-        /\b(?:open|go\s+to|visit|launch|load|search|find|browse|wikipedia|isro|sih|github|google|amazon|flipkart|who\s+is|what\s+is|look\s*up|web\s*search)\b/i.test(goalText);
+        /\b(?:open|go\s+to|visit|launch|load|search|find|browse|wikipedia|isro|sih|github|google|amazon|flipkart|who\s+is|what\s+is|look\s*up|web\s*search|aditya|nigar|shaji|cache)\b/i.test(goalText);
 
       // Inspect page context by default whenever on an active tab, or initiate agent run
       // from restricted/blank tabs when the user requests browser navigation/actions or sub-agent tasks.

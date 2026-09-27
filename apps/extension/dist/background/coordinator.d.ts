@@ -169,6 +169,7 @@ export declare class RunCoordinator {
     private lastExecutionResult;
     private hasTavilyRecovered;
     private autofilledTargets;
+    private sessionWebSearchCache;
     private readonly options;
     constructor(browser?: BrowserAdapter, httpClient?: ReasoningHttpClient, auditLogger?: AuditLogger, options?: {
         defaultMaxSteps?: number;
@@ -189,7 +190,7 @@ export declare class RunCoordinator {
     private isXBookmarkGoal;
     private verifyTerminalPostcondition;
     private createTelemetry;
-    private checkSemanticCache;
+    private getSemanticCacheContext;
     /**
      * Starts an automated bounded multi-step agent run for a specific user goal.
      */

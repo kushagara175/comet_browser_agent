@@ -214,11 +214,12 @@ export function createServer() {
                         res.end(JSON.stringify({ error: validation.errorMessage || 'Invalid chat request payload' }));
                         return;
                     }
-                    const { message, elements, sanitizedTitle, maskCount, history } = validation.payload;
+                    const { message, elements, sanitizedTitle, maskCount, history, customPrompt } = validation.payload;
                     const hasSanitizedContext = Array.isArray(elements) && elements.length > 0;
-                    const systemPrompt = hasSanitizedContext
+                    const baseSystemPrompt = hasSanitizedContext
                         ? `You are PrivaPilot, a privacy-first browser AI assistant. The user is asking about the current webpage. Review the sanitized elements and answer helpfully. You must ALWAYS begin your output by thinking step by step inside <think>...</think> tags, analyzing the user's intent and page context. After </think>, provide your concise final response.`
                         : `You are PrivaPilot, a smart privacy-first browser AI assistant. Answer helpfully and concisely. You must ALWAYS begin your output by thinking step by step inside <think>...</think> tags, analyzing the user's message and response plan. After </think>, provide your concise final response.`;
+                    const systemPrompt = customPrompt ? `${baseSystemPrompt}\n\n${customPrompt}` : baseSystemPrompt;
                     // Build user message from sanitized element list only (no raw DOM or URLs)
                     let fullUserMessage = message;
                     if (hasSanitizedContext) {
