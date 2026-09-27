@@ -1615,7 +1615,7 @@ Inspect current page URL and title before proposing ANY action:
   Click the relevant category card on screen: "Spacecraft Missions*" (for satellites, lunar, solar missions like Chandrayaan) or "Launch Missions**" (for rockets).
 - STAGE 3 (Directory Table e.g. /SpacecraftMissions.html or /LaunchMissions.html):
   You have ALREADY arrived at the spacecraft missions directory table!
-  STRICT FORBIDDEN ACTION: NEVER click the top navbar ("Activities", "About", "Services") or the top-right header search input! That is a backward regression ("back off")!
+  STRICT FORBIDDEN ACTION: NEVER click breadcrumb links (e.g. "Breadcrumb (Missions accomplished)", "Home", "Activities"), the top navbar ("Activities", "About", "Services"), or the top-right header search input! That is a backward regression that resets the page back to the parent hub!
   You MUST stay on the current page and interact with the table:
   * If the table rows are visible and contain the target mission link (e.g. "Chandrayaan-3", "Aditya-L1"): propose kind: "click" directly on the mission link to open the details profile page!
   * If filtering is needed to reveal the row, propose kind: "type" into the "Table Filter (Search)" input (located in the page body directly above the table) with textToType: the ROOT mission name ONLY (e.g. "Chandrayaan" or "Aditya"). NEVER include suffixes, numbers, or words like "brochure", "-3", or "mission" in the table filter, because client-side List.js filters by substring!

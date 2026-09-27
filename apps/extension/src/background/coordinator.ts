@@ -72,13 +72,12 @@ function isMissionBrochureGoal(goal: string): boolean {
 function isroMissionStage(url: string): 'home' | 'hub' | 'directory' | 'details' | null {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
-    if (!/^(?:[a-z0-9-]+\.)*isro\.gov\.in$/i.test(parsed.hostname)) return null;
+    if (!/isro\.gov\.in/i.test(parsed.hostname)) return null;
     const path = parsed.pathname.toLowerCase().replace(/\/+$/, '') || '/';
-    if (path === '/' || path === '/index.html') return 'home';
-    if (path === '/mission.html') return 'hub';
-    if (path === '/spacecraftmissions.html') return 'directory';
-    if (/^\/chandrayaan[\s_-]*3(?:[_-]details)?\.html$/.test(path)) return 'details';
+    if (path.includes('spacecraftmissions') || path.includes('launchmissions')) return 'directory';
+    if (path.includes('chandrayaan') || path.includes('details')) return 'details';
+    if (path.includes('mission.html')) return 'hub';
+    if (path === '' || path === '/' || path.includes('index.html')) return 'home';
   } catch (_) {}
   return null;
 }
@@ -95,11 +94,26 @@ export function enforceIsroMissionProgression(
   if (!isMissionBrochureGoal(goal)) return { proposal };
   const stage = isroMissionStage(url);
   if (!stage) return { proposal };
+
+  const isRegressionOrBreadcrumb = (el: SanitizedElement) => {
+    const name = (el.sanitizedName || '').toLowerCase();
+    const ctx = (el.containerContext || '').toLowerCase();
+    return ctx.includes('breadcrumb') ||
+           name.includes('breadcrumb') ||
+           /^(?:home|activities|missions accomplished|about|services|programmes|resources|engagements)$/i.test(name) ||
+           (el as any).href?.includes?.('Mission.html') ||
+           (el as any).href?.includes?.('index.html') ||
+           (el as any).id === 'searchTextD' ||
+           (el as any).id === 'searchTextM';
+  };
+
   const candidates = (role: SanitizedElement['role'], name: RegExp, capability: 'click' | 'type') =>
     elements.filter(el => el.role === role && name.test(el.sanitizedName) && eligibleMissionElement(el, capability));
+
   let target: SanitizedElement | undefined;
   let kind: 'click' | 'type' = 'click';
   let textToType: string | undefined;
+
   if (stage === 'home') {
     // 1. If Missions Accomplished is already visible in open dropdown, click it!
     target = candidates('link', /missions?\s*accomplished/i, 'click')[0] ||
@@ -109,30 +123,40 @@ export function enforceIsroMissionProgression(
              candidates('button', /activities/i, 'click')[0] ||
              elements.find(el => /activities/i.test(el.sanitizedName) && el.actionCapabilities?.includes('click'));
   } else if (stage === 'hub') {
-    target = candidates('link', /spacecraft\s*missions/i, 'click')[0] ||
-             candidates('button', /spacecraft\s*missions/i, 'click')[0] ||
-             elements.find(el => /spacecraft\s*missions/i.test(el.sanitizedName) && el.actionCapabilities?.includes('click'));
+    target = candidates('link', /spacecraft\s*missions/i, 'click').find(el => !isRegressionOrBreadcrumb(el)) ||
+             candidates('button', /spacecraft\s*missions/i, 'click').find(el => !isRegressionOrBreadcrumb(el)) ||
+             elements.find(el => !isRegressionOrBreadcrumb(el) && /spacecraft\s*missions/i.test(el.sanitizedName) && el.actionCapabilities?.includes('click'));
   } else if (stage === 'directory') {
-    target = candidates('link', /chandrayaan[\s-]*3\b/i, 'click')[0] ||
-             elements.find(el => el.role === 'link' && /chandrayaan[\s-]*3\b/i.test(el.sanitizedName));
+    // Stage 3 on SpacecraftMissions.html:
+    // Candidate 1: Target mission link in table
+    target = candidates('link', /chandrayaan[\s-]*3\b/i, 'click').find(el => !isRegressionOrBreadcrumb(el)) ||
+             elements.find(el => el.role === 'link' && !isRegressionOrBreadcrumb(el) && /chandrayaan[\s-]*3\b/i.test(el.sanitizedName));
     if (!target) {
+      // Candidate 2: Table filter search input
       kind = 'type';
-      target = candidates('input', /table\s*filter|search/i, 'type')[0] ||
-               elements.find(el => (el.role === 'input' || el.role === 'textarea') && /table\s*filter|search/i.test(el.sanitizedName));
+      target = candidates('input', /table\s*filter|search/i, 'type').find(el => !isRegressionOrBreadcrumb(el)) ||
+               elements.find(el => (el.role === 'input' || el.role === 'textarea') && !isRegressionOrBreadcrumb(el) && (/table\s*filter/i.test(el.sanitizedName) || (el as any).placeholder?.toLowerCase() === 'search' || (el as any).classList?.contains('search')));
       textToType = 'Chandrayaan';
     }
   } else {
-    target = candidates('link', /brochure/i, 'click')[0] ||
-             elements.find(el => el.role === 'link' && /brochure/i.test(el.sanitizedName));
+    target = candidates('link', /brochure/i, 'click').find(el => !isRegressionOrBreadcrumb(el)) ||
+             elements.find(el => el.role === 'link' && !isRegressionOrBreadcrumb(el) && (/brochure/i.test(el.sanitizedName) || /\.pdf\b/i.test((el as any).href || '')));
   }
+
   if (!target) return { proposal };
-  if (proposal.kind === kind && proposal.targetLocalId === target.localId &&
+
+  const incomingTargetEl = proposal.targetLocalId ? elements.find(e => e.localId === proposal.targetLocalId) : null;
+  const isIncomingRegression = incomingTargetEl ? isRegressionOrBreadcrumb(incomingTargetEl) : false;
+
+  if (!isIncomingRegression && proposal.kind === kind && proposal.targetLocalId === target.localId &&
       (kind !== 'type' || (proposal.textToType === textToType && proposal.pressEnter === false))) {
     return { proposal };
   }
+
   const rationale = kind === 'type'
     ? `Filter the spacecraft missions table for ${textToType} without submitting site search.`
     : `Open ${target.sanitizedName} to advance toward the Chandrayaan-3 brochure.`;
+
   return { proposal: {
     actionId: `act_isro_${stage}_${Date.now()}`,
     kind, targetLocalId: target.localId, textToType, pressEnter: false,

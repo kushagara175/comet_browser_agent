@@ -1171,7 +1171,13 @@
               }
             }
           }
-          let containerContext;
+          const isBreadcrumb = Boolean(
+            typeof el.closest === "function" && el.closest('.breadCrumb, [class*="breadcrumb" i], nav.breadcrumb, ol.breadcrumb, [aria-label*="breadcrumb" i]')
+          );
+          if (isBreadcrumb) {
+            rawName = `Breadcrumb (${rawName.trim()})`;
+          }
+          let containerContext = isBreadcrumb ? "breadcrumb" : void 0;
           try {
             const container = typeof el.closest === "function" ? el.closest('tr, [role="row"], li, .card, [role="article"], td, [role="gridcell"]') : null;
             if (container) {

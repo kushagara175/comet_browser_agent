@@ -15197,7 +15197,13 @@ as ORT format: ${n}`);
               }
             }
           }
-          let containerContext;
+          const isBreadcrumb = Boolean(
+            typeof el2.closest === "function" && el2.closest('.breadCrumb, [class*="breadcrumb" i], nav.breadcrumb, ol.breadcrumb, [aria-label*="breadcrumb" i]')
+          );
+          if (isBreadcrumb) {
+            rawName = `Breadcrumb (${rawName.trim()})`;
+          }
+          let containerContext = isBreadcrumb ? "breadcrumb" : void 0;
           try {
             const container = typeof el2.closest === "function" ? el2.closest('tr, [role="row"], li, .card, [role="article"], td, [role="gridcell"]') : null;
             if (container) {

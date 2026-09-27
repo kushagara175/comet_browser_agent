@@ -378,8 +378,17 @@ export class ElementExtractor {
           }
         }
 
+        // Explicitly tag breadcrumb navigation links so they are never confused with primary page cards
+        const isBreadcrumb = Boolean(
+          typeof el.closest === 'function' &&
+          el.closest('.breadCrumb, [class*="breadcrumb" i], nav.breadcrumb, ol.breadcrumb, [aria-label*="breadcrumb" i]')
+        );
+        if (isBreadcrumb) {
+          rawName = `Breadcrumb (${rawName.trim()})`;
+        }
+
         // Extract container / row context (e.g. table row, card, list item)
-        let containerContext: string | undefined;
+        let containerContext: string | undefined = isBreadcrumb ? 'breadcrumb' : undefined;
         try {
           const container = typeof el.closest === 'function' ? el.closest('tr, [role="row"], li, .card, [role="article"], td, [role="gridcell"]') : null;
           if (container) {
