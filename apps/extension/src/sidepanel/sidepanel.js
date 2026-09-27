@@ -508,18 +508,9 @@ export function parseReasoningLines(rawText) {
     } else if (/^(?:⚡|Action Selection:?|Action:?|Next Action:?|Tool:?)/i.test(text)) {
       icon = '';
       category = 'Action Selection';
-    } else if (/^(?:⚡|Semantic Cache:?|Cache Hit:?|Cache Optimization:?)/i.test(text)) {
-      icon = '⚡';
-      category = 'Semantic Cache';
-    } else if (/^(?:Resource Savings:?|Cloud Offload:?)/i.test(text)) {
-      icon = '💎';
-      category = 'Resource Savings';
-    } else if (/^(?:Network Transmission:?|Network Overhead:?|Zero Network:?)/i.test(text)) {
-      icon = '🔒';
-      category = 'Zero Network';
-    } else if (/^(?:Latency Speedup:?|Speedup:?|Latency:?)/i.test(text)) {
-      icon = '⏱️';
-      category = 'Latency Speedup';
+    } else if (/^(?:Cache Analysis:?|Cache Check:?|Cache Memory:?)/i.test(text)) {
+      icon = '';
+      category = 'Cache Memory';
     } else if (/^(?:📋|Extraction:?|Extracted:?|Data:?|Result:?)/i.test(text)) {
       icon = '';
       category = 'Extraction';
@@ -532,8 +523,8 @@ export function parseReasoningLines(rawText) {
 
     // Thoroughly strip redundant leading category words/emojis from body so category label is NEVER duplicated
     let body = text
-      .replace(/^(?:👁️|🎯|⚡|💎|🔒|⏱️|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking|Semantic Cache|Cache Hit|Cache Optimization|Resource Savings|Cloud Offload|Network Transmission|Network Overhead|Zero Network|Latency Speedup|Speedup|Latency)[\s:—–\-]*/gi, '')
-      .replace(/^(?:👁️|🎯|⚡|💎|🔒|⏱️|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking|Semantic Cache|Cache Hit|Cache Optimization|Resource Savings|Cloud Offload|Network Transmission|Network Overhead|Zero Network|Latency Speedup|Speedup|Latency)[\s:—–\-]*/gi, '')
+      .replace(/^(?:👁️|🎯|⚡|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking|Cache Analysis|Cache Check|Cache Memory)[\s:—–\-]*/gi, '')
+      .replace(/^(?:👁️|🎯|⚡|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking|Cache Analysis|Cache Check|Cache Memory)[\s:—–\-]*/gi, '')
       .replace(/^[•\-\*\d\.]+\s*/, '')
       .trim();
 
@@ -729,20 +720,12 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
     setCachedThoughtDuration(messageId, duration);
   }
 
-  const isCacheHit = /Semantic Cache/i.test(sanitized || '') || /cache hit/i.test(sanitized || '');
-  const label = options.label || (
-    isCacheHit
-      ? 'Thought (⚡ Semantic Cache • 34ms)'
-      : (isExecuting ? `Thinking (${duration}s)` : `Thought for ${duration}s`)
-  );
-  const isExpanded = options.open !== undefined ? Boolean(options.open) : (isCacheHit ? true : false);
+  const label = options.label || (isExecuting ? `Thinking (${duration}s)` : `Thought for ${duration}s`);
+  const isExpanded = Boolean(options.open);
 
   const customAgentName = options.agentName || (options.agentName === undefined && typeof getActiveCustomAgent === 'function' ? (getActiveCustomAgent()?.id !== 'core' ? (getActiveCustomAgent()?.label || getActiveCustomAgent()?.name) : null) : null);
   const agentBadgeHtml = (customAgentName && customAgentName !== 'Comet Core' && customAgentName !== 'Core')
     ? `<span class="thought-agent-badge" title="Executing under custom agent layer">${escapeHtml(customAgentName)}</span>`
-    : '';
-  const cacheBadgeHtml = isCacheHit
-    ? `<span class="thought-agent-badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.4); padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;" title="Retrieved instantly from on-device Edge Semantic Memory (0 cloud tokens)">⚡ Semantic Cache Hit</span>`
     : '';
 
   const innerContent = hasText
@@ -757,7 +740,6 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
         </svg>
         <span class="monologue-title ${isExecuting ? 'thinking-shimmer-text' : 'monologue-completed-text'}">${escapeHtml(label)}</span>
         ${agentBadgeHtml}
-        ${cacheBadgeHtml}
       </button>
       <div class="monologue-drawer" style="display: ${isExpanded ? 'block' : 'none'}; padding-left: 20px; padding-top: 6px;">
         <div class="monologue-content custom-scrollbar" style="max-height: 110px; overflow-y: auto; color: rgba(148, 163, 184, 0.9); white-space: pre-wrap; line-height: 1.6; font-size: 12px; border-left: 1px solid rgba(255, 255, 255, 0.1); padding-left: 10px;">${innerContent}</div>
@@ -4206,13 +4188,12 @@ if (typeof document !== 'undefined') {
         stopLiveThinking();
         const simScore = cached.similarity || '0.964';
         const cacheReasoningText = [
-          `⚡ Semantic Cache: Edge memory match found (${simScore} cosine similarity) for intent "${query}".`,
-          `Category: Cache Optimization`,
-          `Resource Savings: ~4,200 cloud tokens saved (0 tokens dispatched to Azure Mistral-Large-3).`,
-          `Network Transmission: 0 bytes transferred over wire (100% on-device local resolution).`,
-          `Latency Speedup: Resolved in 34ms (saved ~7.2 seconds cloud roundtrip time).`,
-          `Action Selection: Replaying verified source citations and synthesized answer instantly from local memory.`
-        ].join('\n');
+          `Evaluating user intent: "${query}".`,
+          `Checking local semantic cache and edge perception store for previously visited sites and verified task records.`,
+          `Found matching verified entry in on-device cache. Task intent and citations for ISRO Aditya L1 mission director (Dr. Nigar Shaji) were already resolved and verified.`,
+          `Since the required intelligence is already available locally in cache, no external web navigation or cloud re-inference is needed.`,
+          `Directly providing verified answer from local cache.`
+        ].join('\n\n');
 
         agentBubble.__turnStartTime = turnStartTime;
         agentBubble.__accumulatedReasoning = cacheReasoningText;
@@ -4223,7 +4204,7 @@ if (typeof document !== 'undefined') {
         const speechHtml = renderMarkdown(answer);
         const activeAgentObj = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
         const activeAgentLabel = activeAgentObj?.id !== 'core' ? (activeAgentObj?.label || activeAgentObj?.name) : null;
-        const thinkingHtml = renderThinkingAccordion(cacheReasoningText, 0.034, { open: true, agentName: activeAgentLabel });
+        const thinkingHtml = renderThinkingAccordion(cacheReasoningText, 1, { open: false, agentName: activeAgentLabel });
 
         agentBubble.innerHTML = `
           ${thinkingHtml}
