@@ -1,18 +1,12 @@
 <div align="center">
 
-# 🛡️ PrivaPilot
+<img src="apps/extension/assets/comet-logo.png" width="90" height="90" alt="Comet Logo" />
+
+<h1 align="center" style="font-family: 'Instrument Serif', 'Playfair Display', 'New York', Georgia, serif; font-size: 50px; font-weight: 500; letter-spacing: 0.5px; margin-top: 12px; margin-bottom: 6px;">Comet</h1>
 
 ### On-Device Visual Perception for Light-Weight Browser Agents
 
-**An intelligent browser agent that sees your screen, thinks through complex goals, and proves zero secrets ever leave the device.**
-
-[![Problem Statement](https://img.shields.io/badge/SIH-26171-0b5fff?style=for-the-badge)](docs/00_PROBLEM_STATEMENT.md)
-[![Organisation](https://img.shields.io/badge/ISRO-Department%20of%20Space-ff6b35?style=for-the-badge)](docs/00_PROBLEM_STATEMENT.md)
-[![Theme](https://img.shields.io/badge/theme-Smart%20Automation-6f42c1?style=for-the-badge)](docs/00_PROBLEM_STATEMENT.md)
-[![Manifest](https://img.shields.io/badge/Chrome-Manifest%20V3-4285f4?style=for-the-badge&logo=googlechrome&logoColor=white)](apps/extension/manifest.json)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](tsconfig.base.json)
-[![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](package.json)
-[![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
+**A browser agent that sees your screen, thinks through complex goals, and proves zero secrets ever leave the device.**
 
 [Problem Statement](docs/00_PROBLEM_STATEMENT.md) · [Master Architecture](diagrams/06_CODE_ALIGNED_MASTER_ARCHITECTURE.md) · [Interactive Diagram Studio](index.html) · [Agent Harness](agent-harness/README.md) · [Full Documentation](docs/INDEX.md)
 
@@ -137,7 +131,7 @@ flowchart TB
 
 ---
 
-## 🔄 Algorithmic Workflow: How PrivaPilot Really Works
+## 🔄 Algorithmic Workflow: How Comet Really Works
 
 ```mermaid
 flowchart TD
@@ -199,7 +193,7 @@ flowchart TD
 
 ## 🧠 The Agent Thinking Monologue & Deliberation Loop
 
-PrivaPilot does not guess — it exposes its step-by-step reasoning through structured thinking tokens:
+Comet does not guess — it exposes its step-by-step reasoning through structured thinking tokens:
 
 ```mermaid
 sequenceDiagram
@@ -237,7 +231,7 @@ sequenceDiagram
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              PRIVAPILOT MONOREPO STACK                                 │
+│                              COMET ARCHITECTURE & STACK                                │
 ├──────────────────────────┬─────────────────────────────┬───────────────────────────────┤
 │    CLIENT & BROWSER      │     AI & ON-DEVICE CV       │      SERVER & PROTOCOL        │
 ├──────────────────────────┼─────────────────────────────┼───────────────────────────────┤
@@ -322,11 +316,11 @@ npm run dev:portal
 2. Toggle **Developer mode** on (top-right corner).
 3. Click the **Load unpacked** button (top-left).
 4. Select the directory: `SIH/apps/extension/`.
-5. PrivaPilot is now loaded with active Manifest V3 service workers!
+5. Comet is now loaded with active Manifest V3 service workers!
 
 ### 7. Run Your First Task
 1. Open `http://localhost:4500` (the seeded PII demo portal) or any live web page.
-2. Click the puzzle icon in Chrome and click **PrivaPilot** to open the **Side Panel HUD**.
+2. Click the puzzle icon in Chrome and click **Comet** to open the **Side Panel HUD**.
 3. Type or speak a goal into the Orbloom voice bar:
    > *"Fill out the application form using my vault profile and preview submission"*
 4. Watch the dual visualizer: The left HUD displays your live screen; the right HUD proves that all sensitive data is solid blacked-out before reaching the server!
@@ -404,7 +398,7 @@ SIH/
 
 ## 🎯 Alignment with Official ISRO Evaluation Rubric
 
-| Criterion | Weight | PrivaPilot Architectural Implementation |
+| Criterion | Weight | Comet Architectural Implementation |
 | :--- | :---: | :--- |
 | **Visual Context Accuracy** | **25%** | DOM element extractor + UltraFace ONNX INT8 + Viewport normalized bounding |
 | **PII Detection Recall & Precision** | **20%** | 3-tier concurrent detectors (DOM semantics + Verhoeff Aadhaar + Luhn Cards + Regex) |
