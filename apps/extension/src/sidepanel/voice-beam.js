@@ -294,9 +294,9 @@ ${voiceLobes.map((l, i) => `  --vb-x${i}-${id}: ${l.x}px;\n  --vb-l${i}-${id}: 1
   border-radius: ${rad}px;
   background: ${innerGradients};
   box-shadow: inset 0 0 9px 1px rgba(255, 255, 255, 0.08);
-  -webkit-mask-image: ${isMobile ? maskRadial(180, 64, 40) : maskRadial(170, 64, 45, 0.3)}${isMobile ? '' : `, linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white)`};
+  -webkit-mask-image: ${isMobile ? maskRadial(180, 64, 40) : maskRadial(170, 64, 45, 0.3)}, linear-gradient(to top, white 0%, rgba(255, 255, 255, 0.85) 16px, rgba(255, 255, 255, 0.3) 32px, transparent 52px);
   -webkit-mask-composite: source-in;
-  mask-image: ${isMobile ? maskRadial(180, 64, 40) : maskRadial(170, 64, 45, 0.3)}${isMobile ? '' : `, linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white)`};
+  mask-image: ${isMobile ? maskRadial(180, 64, 40) : maskRadial(170, 64, 45, 0.3)}, linear-gradient(to top, white 0%, rgba(255, 255, 255, 0.85) 16px, rgba(255, 255, 255, 0.3) 32px, transparent 52px);
   mask-composite: intersect;
   pointer-events: none;
   will-change: transform;
