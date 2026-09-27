@@ -6780,59 +6780,7 @@ html, body {
   color: #ffffff;
 }
 
-/* =========================================================================
-   Sub-Agent Swarm Minimal Timeline & Status Styles
-   ========================================================================= */
-.subagent-live-timeline {
-  margin: 4px 0 6px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
 
-.subagent-live-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #38bdf8;
-  margin-bottom: 2px;
-}
-
-.subagent-header-title {
-  font-size: 12.5px;
-  font-weight: 500;
-}
-
-.subagent-live-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding-left: 8px;
-}
-
-.subagent-live-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #94a3b8;
-  margin: 2px 0;
-}
-
-.subagent-live-row .subagent-row-num {
-  color: #38bdf8;
-  font-weight: 600;
-  min-width: 14px;
-}
-
-.subagent-live-row .subagent-row-text {
-  color: #cbd5e1;
-}
-
-.subagent-live-row.is-done {
-  color: #cbd5e1;
-}
 
 
 
