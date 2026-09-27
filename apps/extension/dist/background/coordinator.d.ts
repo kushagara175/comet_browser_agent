@@ -189,6 +189,7 @@ export declare class RunCoordinator {
     private isXBookmarkGoal;
     private verifyTerminalPostcondition;
     private createTelemetry;
+    private checkSemanticCache;
     /**
      * Starts an automated bounded multi-step agent run for a specific user goal.
      */
