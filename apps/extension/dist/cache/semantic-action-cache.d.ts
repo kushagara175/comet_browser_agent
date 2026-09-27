@@ -55,6 +55,10 @@ export declare class SemanticActionCache {
      */
     clear(): void;
     /**
+     * Clears all cached actions matching a specific domain or keyword.
+     */
+    clearDomain(domainPattern: string): void;
+    /**
      * Returns live performance metrics for presentation and UI telemetry.
      */
     getMetrics(): SemanticCacheMetrics & {

@@ -4143,45 +4143,25 @@ if (typeof document !== 'undefined') {
 
     const WEBSEARCH_CACHE_STORAGE_KEY = 'comet_semantic_websearch_cache_v1';
 
-    // Seeded cache with verified ISRO Aditya L1 mission intelligence
-    const SEEDED_WEBSEARCH_CACHE = [
-      {
-        query: "who is isro mission director for aditya l1 dr nigar shaji",
-        keywords: ["isro", "mission", "director", "aditya", "l1", "nigar", "shaji", "solar"],
-        results: [
-          {
-            title: "Nigar SHAJI",
-            url: "https://iafastro.org/biographie/nigar-shaji.html",
-            content: "Ms. NIGAR SHAJI, is currently Associate Director, Projects responsible for steering all the ISRO developed spacecrafts. Before this assignment, she was Programme Director, Low Earth Orbit & Planetary missions is responsible for the development all the ISRO developed low earth orbiting spacecraft and interplanetary missions. She is also Project Director for Aditya-L1 spacecraft, the first Indian Space Solar Observatory at Sun-Earth Lagrangian point for solar studies."
-          },
-          {
-            title: "Nigar Shaji Talks About Her Journey And Role In Aditya L1 ...",
-            url: "https://www.etvbharat.com/english/national/bharat/meet-nigar-shaji-isro-woman-scientist-behind-aditya-l1-solar-mission/na20230903173748283",
-            content: "Choose ETV Bharat Bengaluru: Nigar Shaji, a senior scientist at the Indian Space Research Organisation (ISRO), who led the Aditya-L1 mission, says that it was an extraordinary experience for her and her team."
-          },
-          {
-            title: "Project Director of Aditya-L1, Nigar Shaji leads India's solar ...",
-            url: "https://www.instagram.com/reel/CwxL_o8vN3b/",
-            content: "Project Director of Aditya-L1, Nigar Shaji leads India's solar mission with dedication. Inspiring journey of a trailblazing woman scientist at ISRO."
-          },
-          {
-            title: "Nigar Shaji",
-            url: "https://en.wikipedia.org/wiki/Nigar_Shaji",
-            content: "Nigar Shaji (born 1964) is an Indian aerospace engineer who works at the Indian Space Research Organisation (ISRO). She is the project director of the Aditya-L1 mission, India's first solar mission, which was launched on 2 September 2023."
-          },
-          {
-            title: "Trailblazing Scientist Who Led India's first Solar Mission",
-            url: "https://www.undp.org/india/stories/trailblazing-scientist-who-led-indias-first-solar-mission",
-            content: "Nigar Shaji, Project Director for India's first solar observatory mission Aditya L1, shares her journey as a woman in space science and ISRO's milestone achievement."
-          }
-        ],
-        answer: "Nigar Shaji is the project director for India's Aditya L1 solar mission. She is a senior scientist at ISRO. Her role involves leading the mission's development and launch, overseeing the spacecraft design, payload integration, and trajectory to the Sun-Earth L1 Lagrange point."
+    // Clear seeded cache to guarantee 100% authentic live browsing
+    const SEEDED_WEBSEARCH_CACHE = [];
+
+    // Purge any stored ISRO cache records from localStorage and background storage
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem(WEBSEARCH_CACHE_STORAGE_KEY);
       }
-    ];
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ target: 'privapilot-background', type: 'CLEAR_CACHE', domain: 'isro' }).catch(() => {});
+      }
+    } catch (_) {}
 
     function getCachedWebSearch(query) {
       if (!query) return null;
       const norm = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (norm.includes('isro') || norm.includes('chandrayaan') || norm.includes('aditya')) {
+        return null;
+      }
       const queryTokens = new Set(norm.split(' ').filter(t => t.length > 2));
 
       let allEntries = [...SEEDED_WEBSEARCH_CACHE];
@@ -4205,7 +4185,7 @@ if (typeof document !== 'undefined') {
         const union = new Set([...queryTokens, ...entryTokens]).size;
         const similarity = union > 0 ? intersection / union : 0;
 
-        if (similarity >= 0.35 || norm.includes('nigar shaji') || norm.includes('aditya l1')) {
+        if (similarity >= 0.35) {
           return {
             ...entry,
             similarity: Math.min(0.985, Math.max(0.912, 0.86 + similarity * 0.14)).toFixed(3)
@@ -4217,8 +4197,11 @@ if (typeof document !== 'undefined') {
 
     function saveWebSearchToCache(query, results, answer) {
       if (!query || !Array.isArray(results) || results.length === 0) return;
+      const norm = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (norm.includes('isro') || norm.includes('chandrayaan') || norm.includes('aditya')) {
+        return;
+      }
       try {
-        const norm = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
         const entry = {
           query: norm,
           keywords: norm.split(' ').filter(t => t.length > 2),

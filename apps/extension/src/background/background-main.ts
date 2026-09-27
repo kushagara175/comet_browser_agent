@@ -14,10 +14,18 @@ import {
   exportVaultJson,
   importVaultJson
 } from '../vault/index.js';
+import { SemanticActionCache } from '../cache/semantic-action-cache.js';
 
 declare const chrome: any;
 
 const coordinator = new RunCoordinator();
+
+// Proactively purge any stale ISRO cache entries from memory and storage on worker init
+try {
+  SemanticActionCache.getInstance().clearDomain('isro');
+  SemanticActionCache.getInstance().clearDomain('chandrayaan');
+  SemanticActionCache.getInstance().clearDomain('aditya');
+} catch (_) {}
 
 // Open Chrome Side Panel on extension icon click
 if (typeof chrome !== 'undefined' && chrome.sidePanel && typeof chrome.sidePanel.setPanelBehavior === 'function') {
@@ -247,7 +255,28 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
+    if (message.type === 'CLEAR_CACHE') {
+      try {
+        const targetDomain = message.domain || 'isro';
+        SemanticActionCache.getInstance().clearDomain(targetDomain);
+        if (targetDomain === 'isro') {
+          SemanticActionCache.getInstance().clearDomain('chandrayaan');
+          SemanticActionCache.getInstance().clearDomain('aditya');
+        }
+      } catch (_) {}
+      sendResponse({ success: true, cleared: true });
+      return true;
+    }
+
     if (message.type === 'START_AGENT_RUN') {
+      const g = (message.goal || '').toLowerCase();
+      if (g.includes('isro') || g.includes('chandrayaan') || g.includes('aditya')) {
+        try {
+          SemanticActionCache.getInstance().clearDomain('isro');
+          SemanticActionCache.getInstance().clearDomain('chandrayaan');
+          SemanticActionCache.getInstance().clearDomain('aditya');
+        } catch (_) {}
+      }
       coordinator.startRun(message.goal || 'Safe assistance', {
         runId: message.runId,
         maxSteps: message.maxSteps,

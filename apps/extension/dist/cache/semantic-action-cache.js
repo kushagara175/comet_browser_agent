@@ -61,8 +61,12 @@ export class SemanticActionCache {
      * Look up a cached action plan for the current page context and goal.
      */
     get(goal, sanitized) {
-        // Explicit bypass check: if user asked for deep or fresh thinking
-        if (/\b(?:fresh|re-think|rethink|deep\s*think|no\s*cache|nocache|clear\s*cache)\b/i.test(goal)) {
+        // Explicit bypass check: if user asked for deep/fresh thinking, or ISRO domain
+        const domain = (sanitized.pageState?.domain || '').toLowerCase();
+        const url = (sanitized.pageState?.url || '').toLowerCase();
+        if (domain.includes('isro') || url.includes('isro.gov.in') ||
+            /chandrayaan|aditya|isro/i.test(goal) ||
+            /\b(?:fresh|re-think|rethink|deep\s*think|no\s*cache|nocache|clear\s*cache)\b/i.test(goal)) {
             this.metrics.totalMisses++;
             return null;
         }
@@ -109,8 +113,13 @@ export class SemanticActionCache {
             proposal.actionId?.startsWith('act_local_autofill_')) {
             return;
         }
+        const domain = (sanitized.pageState?.domain || 'active').toLowerCase();
+        const url = (sanitized.pageState?.url || '').toLowerCase();
+        // Never cache actions on ISRO to ensure completely dynamic, live natural browsing
+        if (domain.includes('isro') || url.includes('isro.gov.in') || /chandrayaan|aditya|isro/i.test(goal)) {
+            return;
+        }
         const key = this.computeKey(goal, sanitized);
-        const domain = sanitized.pageState?.domain || 'active';
         const topology = this.computeTopologySignature(sanitized);
         console.log(`%c[Comet Semantic Cache] 💾 RECORDED verified action into Edge Memory | Goal: "${goal}" | Domain: ${domain}`, 'background: #1e3a8a; color: #60a5fa; font-weight: bold; padding: 2px 6px; border-radius: 4px;');
         const entry = {
@@ -140,6 +149,33 @@ export class SemanticActionCache {
         this.persistToStorage();
     }
     /**
+     * Clears all cached actions matching a specific domain or keyword.
+     */
+    clearDomain(domainPattern) {
+        const norm = domainPattern.toLowerCase();
+        for (const [key, entry] of this.memoryCache.entries()) {
+            if (key.toLowerCase().includes(norm) || (entry.domain && entry.domain.toLowerCase().includes(norm)) || (entry.goal && entry.goal.toLowerCase().includes(norm))) {
+                this.memoryCache.delete(key);
+            }
+        }
+        this.persistToStorage();
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            try {
+                chrome.storage.local.get('privapilot_semantic_cache').then((data) => {
+                    if (data && Array.isArray(data.privapilot_semantic_cache)) {
+                        const filtered = data.privapilot_semantic_cache.filter(([k, v]) => {
+                            return !k.toLowerCase().includes(norm) &&
+                                !(v?.domain && v.domain.toLowerCase().includes(norm)) &&
+                                !(v?.goal && v.goal.toLowerCase().includes(norm));
+                        });
+                        chrome.storage.local.set({ privapilot_semantic_cache: filtered }).catch(() => { });
+                    }
+                }).catch(() => { });
+            }
+            catch (_) { }
+        }
+    }
+    /**
      * Returns live performance metrics for presentation and UI telemetry.
      */
     getMetrics() {
@@ -162,11 +198,21 @@ export class SemanticActionCache {
             try {
                 const data = await chrome.storage.local.get('privapilot_semantic_cache');
                 if (data && Array.isArray(data.privapilot_semantic_cache)) {
+                    let hasPruned = false;
                     for (const [k, v] of data.privapilot_semantic_cache) {
                         if (v && v.proposal && v.proposal.actionId?.startsWith('act_local_autofill_')) {
                             continue;
                         }
+                        // Actively purge any ISRO or Chandrayaan cache entries
+                        const isISRO = k.toLowerCase().includes('isro') || (v?.domain && v.domain.toLowerCase().includes('isro')) || (v?.goal && /chandrayaan|aditya|isro/i.test(v.goal));
+                        if (isISRO) {
+                            hasPruned = true;
+                            continue;
+                        }
                         this.memoryCache.set(k, v);
+                    }
+                    if (hasPruned) {
+                        this.persistToStorage();
                     }
                 }
             }

@@ -782,31 +782,10 @@ export class RunCoordinator {
         if (!goal || typeof goal !== 'string')
             return null;
         const norm = goal.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-        if (/\b(?:fresh|re-think|rethink|deep\s*think|no\s*cache|nocache|clear\s*cache)\b/i.test(norm)) {
+        if (norm.includes('isro') ||
+            norm.includes('chandrayaan') ||
+            /\b(?:fresh|re-think|rethink|deep\s*think|no\s*cache|nocache|clear\s*cache)\b/i.test(norm)) {
             return null;
-        }
-        const isISROAdityaNigar = (norm.includes('nigar') && norm.includes('shaji')) ||
-            (norm.includes('aditya') && norm.includes('l1')) ||
-            (norm.includes('aditya') && (norm.includes('director') || norm.includes('isro') || norm.includes('who')));
-        if (isISROAdityaNigar) {
-            return [
-                `[ON-DEVICE EDGE SEMANTIC CACHE HIT NOTICE]`,
-                `Active Query Intent: "${goal}"`,
-                `Comparing intent vector against on-device semantic cache and session history: Cache hit confirmed for ISRO Aditya L1 mission director (Dr. Nigar Shaji).`,
-                `Verified facts and source citations (iafastro.org, etvbharat.com, thehindu.com) are already stored in local edge memory from prior execution in this active session.`,
-                `Because this query was previously resolved and cached locally on-device, external web search, browser navigation, and network re-scraping are completely bypassed (0 cloud tokens, 0 network requests).`,
-                ``,
-                `DIRECTIVE FOR REASONING & OUTPUT:`,
-                `In your reasoning monologue (<think> tags or thought/reasoning field), explain step-by-step:`,
-                `1. Evaluating user prompt: "${goal}".`,
-                `2. Comparing intent vector against on-device semantic cache and session history.`,
-                `3. Cache hit confirmed: The user previously executed this web search query in the active session for ISRO Aditya L1 mission director (Dr. Nigar Shaji).`,
-                `4. Verified facts and source citations (iafastro.org, etvbharat.com, thehindu.com) are already stored in local edge memory.`,
-                `5. Because this query was previously resolved and cached, external web search, browser navigation, and cloud LLM re-inference are completely bypassed (0 cloud tokens, 0 network requests).`,
-                `6. Delivering verified answer directly from on-device cache without network overhead.`,
-                ``,
-                `Return kind: "answer" directly with the complete verified answer and citations. Do NOT propose kind: "web_search" or kind: "navigate".`
-            ].join('\n');
         }
         // Dynamic session web search cache check
         for (const [cachedNorm, entry] of this.sessionWebSearchCache.entries()) {
@@ -890,6 +869,20 @@ export class RunCoordinator {
         }
         else if (effectiveGoal) {
             this.lastGoal = effectiveGoal;
+        }
+        const normGoalForCache = effectiveGoal.toLowerCase();
+        if (normGoalForCache.includes('isro') || normGoalForCache.includes('chandrayaan') || normGoalForCache.includes('aditya')) {
+            for (const [k] of this.sessionWebSearchCache.entries()) {
+                if (k.includes('isro') || k.includes('chandrayaan') || k.includes('aditya')) {
+                    this.sessionWebSearchCache.delete(k);
+                }
+            }
+            try {
+                SemanticActionCache.getInstance().clearDomain('isro');
+                SemanticActionCache.getInstance().clearDomain('chandrayaan');
+                SemanticActionCache.getInstance().clearDomain('aditya');
+            }
+            catch (_) { }
         }
         this.pendingInputRequest = null;
         this.currentRunId = requestedRunId;
@@ -1174,7 +1167,10 @@ export class RunCoordinator {
                                 rationale: proposal.rationale || `Web search executed for "${searchQuery}"`
                             };
                             this.actionHistory.push(searchProposal);
-                            this.sessionWebSearchCache.set(searchQuery.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(), { query: searchQuery, results, answer: searchProposal.reply || '', timestamp: Date.now() });
+                            const normSearchQuery = searchQuery.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+                            if (!normSearchQuery.includes('isro') && !normSearchQuery.includes('chandrayaan') && !normSearchQuery.includes('aditya')) {
+                                this.sessionWebSearchCache.set(normSearchQuery, { query: searchQuery, results, answer: searchProposal.reply || '', timestamp: Date.now() });
+                            }
                             this.listeners.onActionProposed?.(searchProposal, this.currentRunId);
                             this.transition('complete', `Web search completed for "${searchQuery}"`);
                             return this.completeWithResult({
@@ -3656,7 +3652,10 @@ export class RunCoordinator {
                                     : `No matching web results found for "${query}".`),
                                 rationale: proposal.rationale || `Web search executed for "${query}"`
                             };
-                            this.sessionWebSearchCache.set(query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(), { query, results, answer: searchProposal.reply || '', timestamp: Date.now() });
+                            const normQuery = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+                            if (!normQuery.includes('isro') && !normQuery.includes('chandrayaan') && !normQuery.includes('aditya')) {
+                                this.sessionWebSearchCache.set(normQuery, { query, results, answer: searchProposal.reply || '', timestamp: Date.now() });
+                            }
                             const stepTrace = {
                                 step,
                                 captureId: sanitized.captureId,

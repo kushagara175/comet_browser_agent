@@ -22096,7 +22096,9 @@ var SemanticActionCache = class _SemanticActionCache {
    * Look up a cached action plan for the current page context and goal.
    */
   get(goal, sanitized) {
-    if (/\b(?:fresh|re-think|rethink|deep\s*think|no\s*cache|nocache|clear\s*cache)\b/i.test(goal)) {
+    const domain = (sanitized.pageState?.domain || "").toLowerCase();
+    const url = (sanitized.pageState?.url || "").toLowerCase();
+    if (domain.includes("isro") || url.includes("isro.gov.in") || /chandrayaan|aditya|isro/i.test(goal) || /\b(?:fresh|re-think|rethink|deep\s*think|no\s*cache|nocache|clear\s*cache)\b/i.test(goal)) {
       this.metrics.totalMisses++;
       return null;
     }
@@ -22143,8 +22145,12 @@ Executing verified cached action immediately.`;
     if (!proposal || proposal.kind === "request_user_input" || proposal.kind === "request_user_confirmation" || proposal.actionId?.startsWith("act_local_autofill_")) {
       return;
     }
+    const domain = (sanitized.pageState?.domain || "active").toLowerCase();
+    const url = (sanitized.pageState?.url || "").toLowerCase();
+    if (domain.includes("isro") || url.includes("isro.gov.in") || /chandrayaan|aditya|isro/i.test(goal)) {
+      return;
+    }
     const key = this.computeKey(goal, sanitized);
-    const domain = sanitized.pageState?.domain || "active";
     const topology = this.computeTopologySignature(sanitized);
     console.log(
       `%c[Comet Semantic Cache] \u{1F4BE} RECORDED verified action into Edge Memory | Goal: "${goal}" | Domain: ${domain}`,
@@ -22175,6 +22181,33 @@ Executing verified cached action immediately.`;
     this.persistToStorage();
   }
   /**
+   * Clears all cached actions matching a specific domain or keyword.
+   */
+  clearDomain(domainPattern) {
+    const norm = domainPattern.toLowerCase();
+    for (const [key, entry] of this.memoryCache.entries()) {
+      if (key.toLowerCase().includes(norm) || entry.domain && entry.domain.toLowerCase().includes(norm) || entry.goal && entry.goal.toLowerCase().includes(norm)) {
+        this.memoryCache.delete(key);
+      }
+    }
+    this.persistToStorage();
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      try {
+        chrome.storage.local.get("privapilot_semantic_cache").then((data) => {
+          if (data && Array.isArray(data.privapilot_semantic_cache)) {
+            const filtered = data.privapilot_semantic_cache.filter(([k2, v]) => {
+              return !k2.toLowerCase().includes(norm) && !(v?.domain && v.domain.toLowerCase().includes(norm)) && !(v?.goal && v.goal.toLowerCase().includes(norm));
+            });
+            chrome.storage.local.set({ privapilot_semantic_cache: filtered }).catch(() => {
+            });
+          }
+        }).catch(() => {
+        });
+      } catch (_) {
+      }
+    }
+  }
+  /**
    * Returns live performance metrics for presentation and UI telemetry.
    */
   getMetrics() {
@@ -22197,11 +22230,20 @@ Executing verified cached action immediately.`;
       try {
         const data = await chrome.storage.local.get("privapilot_semantic_cache");
         if (data && Array.isArray(data.privapilot_semantic_cache)) {
+          let hasPruned = false;
           for (const [k2, v] of data.privapilot_semantic_cache) {
             if (v && v.proposal && v.proposal.actionId?.startsWith("act_local_autofill_")) {
               continue;
             }
+            const isISRO = k2.toLowerCase().includes("isro") || v?.domain && v.domain.toLowerCase().includes("isro") || v?.goal && /chandrayaan|aditya|isro/i.test(v.goal);
+            if (isISRO) {
+              hasPruned = true;
+              continue;
+            }
             this.memoryCache.set(k2, v);
+          }
+          if (hasPruned) {
+            this.persistToStorage();
           }
         }
       } catch (_) {
@@ -22842,29 +22884,8 @@ var RunCoordinator = class {
   getSemanticCacheContext(goal) {
     if (!goal || typeof goal !== "string") return null;
     const norm = goal.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-    if (/\b(?:fresh|re-think|rethink|deep\s*think|no\s*cache|nocache|clear\s*cache)\b/i.test(norm)) {
+    if (norm.includes("isro") || norm.includes("chandrayaan") || /\b(?:fresh|re-think|rethink|deep\s*think|no\s*cache|nocache|clear\s*cache)\b/i.test(norm)) {
       return null;
-    }
-    const isISROAdityaNigar = norm.includes("nigar") && norm.includes("shaji") || norm.includes("aditya") && norm.includes("l1") || norm.includes("aditya") && (norm.includes("director") || norm.includes("isro") || norm.includes("who"));
-    if (isISROAdityaNigar) {
-      return [
-        `[ON-DEVICE EDGE SEMANTIC CACHE HIT NOTICE]`,
-        `Active Query Intent: "${goal}"`,
-        `Comparing intent vector against on-device semantic cache and session history: Cache hit confirmed for ISRO Aditya L1 mission director (Dr. Nigar Shaji).`,
-        `Verified facts and source citations (iafastro.org, etvbharat.com, thehindu.com) are already stored in local edge memory from prior execution in this active session.`,
-        `Because this query was previously resolved and cached locally on-device, external web search, browser navigation, and network re-scraping are completely bypassed (0 cloud tokens, 0 network requests).`,
-        ``,
-        `DIRECTIVE FOR REASONING & OUTPUT:`,
-        `In your reasoning monologue (<think> tags or thought/reasoning field), explain step-by-step:`,
-        `1. Evaluating user prompt: "${goal}".`,
-        `2. Comparing intent vector against on-device semantic cache and session history.`,
-        `3. Cache hit confirmed: The user previously executed this web search query in the active session for ISRO Aditya L1 mission director (Dr. Nigar Shaji).`,
-        `4. Verified facts and source citations (iafastro.org, etvbharat.com, thehindu.com) are already stored in local edge memory.`,
-        `5. Because this query was previously resolved and cached, external web search, browser navigation, and cloud LLM re-inference are completely bypassed (0 cloud tokens, 0 network requests).`,
-        `6. Delivering verified answer directly from on-device cache without network overhead.`,
-        ``,
-        `Return kind: "answer" directly with the complete verified answer and citations. Do NOT propose kind: "web_search" or kind: "navigate".`
-      ].join("\n");
     }
     for (const [cachedNorm, entry] of this.sessionWebSearchCache.entries()) {
       if (norm === cachedNorm || norm.includes(cachedNorm) && cachedNorm.length > 8) {
@@ -22930,6 +22951,20 @@ var RunCoordinator = class {
       }
     } else if (effectiveGoal) {
       this.lastGoal = effectiveGoal;
+    }
+    const normGoalForCache = effectiveGoal.toLowerCase();
+    if (normGoalForCache.includes("isro") || normGoalForCache.includes("chandrayaan") || normGoalForCache.includes("aditya")) {
+      for (const [k2] of this.sessionWebSearchCache.entries()) {
+        if (k2.includes("isro") || k2.includes("chandrayaan") || k2.includes("aditya")) {
+          this.sessionWebSearchCache.delete(k2);
+        }
+      }
+      try {
+        SemanticActionCache.getInstance().clearDomain("isro");
+        SemanticActionCache.getInstance().clearDomain("chandrayaan");
+        SemanticActionCache.getInstance().clearDomain("aditya");
+      } catch (_) {
+      }
     }
     this.pendingInputRequest = null;
     this.currentRunId = requestedRunId;
@@ -23205,10 +23240,13 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
                 rationale: proposal2.rationale || `Web search executed for "${searchQuery}"`
               };
               this.actionHistory.push(searchProposal);
-              this.sessionWebSearchCache.set(
-                searchQuery.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim(),
-                { query: searchQuery, results, answer: searchProposal.reply || "", timestamp: Date.now() }
-              );
+              const normSearchQuery = searchQuery.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+              if (!normSearchQuery.includes("isro") && !normSearchQuery.includes("chandrayaan") && !normSearchQuery.includes("aditya")) {
+                this.sessionWebSearchCache.set(
+                  normSearchQuery,
+                  { query: searchQuery, results, answer: searchProposal.reply || "", timestamp: Date.now() }
+                );
+              }
               this.listeners.onActionProposed?.(searchProposal, this.currentRunId);
               this.transition("complete", `Web search completed for "${searchQuery}"`);
               return this.completeWithResult({
@@ -25462,10 +25500,13 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
                 reply: answer || (results.length > 0 ? `Here is the verified web intelligence retrieved for "${query}":` : `No matching web results found for "${query}".`),
                 rationale: proposal.rationale || `Web search executed for "${query}"`
               };
-              this.sessionWebSearchCache.set(
-                query.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim(),
-                { query, results, answer: searchProposal.reply || "", timestamp: Date.now() }
-              );
+              const normQuery = query.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+              if (!normQuery.includes("isro") && !normQuery.includes("chandrayaan") && !normQuery.includes("aditya")) {
+                this.sessionWebSearchCache.set(
+                  normQuery,
+                  { query, results, answer: searchProposal.reply || "", timestamp: Date.now() }
+                );
+              }
               const stepTrace2 = {
                 step,
                 captureId: sanitized.captureId,
@@ -27280,6 +27321,12 @@ ${detail}`,
 
 // src/background/background-main.ts
 var coordinator = new RunCoordinator();
+try {
+  SemanticActionCache.getInstance().clearDomain("isro");
+  SemanticActionCache.getInstance().clearDomain("chandrayaan");
+  SemanticActionCache.getInstance().clearDomain("aditya");
+} catch (_) {
+}
 if (typeof chrome !== "undefined" && chrome.sidePanel && typeof chrome.sidePanel.setPanelBehavior === "function") {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {
   });
@@ -27494,7 +27541,29 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       sendResponse({ success: true, url: downloadUrl });
       return true;
     }
+    if (message.type === "CLEAR_CACHE") {
+      try {
+        const targetDomain = message.domain || "isro";
+        SemanticActionCache.getInstance().clearDomain(targetDomain);
+        if (targetDomain === "isro") {
+          SemanticActionCache.getInstance().clearDomain("chandrayaan");
+          SemanticActionCache.getInstance().clearDomain("aditya");
+        }
+      } catch (_) {
+      }
+      sendResponse({ success: true, cleared: true });
+      return true;
+    }
     if (message.type === "START_AGENT_RUN") {
+      const g = (message.goal || "").toLowerCase();
+      if (g.includes("isro") || g.includes("chandrayaan") || g.includes("aditya")) {
+        try {
+          SemanticActionCache.getInstance().clearDomain("isro");
+          SemanticActionCache.getInstance().clearDomain("chandrayaan");
+          SemanticActionCache.getInstance().clearDomain("aditya");
+        } catch (_) {
+        }
+      }
       coordinator.startRun(message.goal || "Safe assistance", {
         runId: message.runId,
         maxSteps: message.maxSteps,
