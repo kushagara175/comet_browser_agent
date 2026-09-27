@@ -4874,7 +4874,8 @@ html, body {
 }
 
 .orb-voice-beam-footer canvas,
-[data-voice-beam="orb-footer-beam"] canvas {
+[data-voice-beam="orb-footer-beam"] canvas,
+[data-voice-beam="privapilot-beam"] canvas {
   display: none !important;
   position: absolute !important;
   inset: 0 !important;
