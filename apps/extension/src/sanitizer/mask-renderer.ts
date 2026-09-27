@@ -38,6 +38,7 @@ export interface FocusedRegion {
 
 export interface RenderResult {
   readonly sanitizedScreenshotDataUrl: string;
+  readonly inspectorScreenshotDataUrl: string;
   readonly renderedMaskCount: number;
   readonly regionRecords: ReadonlyArray<RegionRenderRecord>;
   readonly cropApplied?: boolean;
@@ -70,6 +71,22 @@ export class MaskRenderer {
     const canvasWidth = imageCanvas.width || 1280;
     const canvasHeight = imageCanvas.height || 720;
     const regionRecords: RegionRenderRecord[] = [];
+    const renderedLabelBoxes: Array<{ x: number; y: number; width: number; height: number }> = [];
+
+    const shouldDrawLabel = (targetBox: { x: number; y: number; width: number; height: number }): boolean => {
+      for (const lb of renderedLabelBoxes) {
+        const xA = Math.max(targetBox.x, lb.x);
+        const yA = Math.max(targetBox.y, lb.y);
+        const xB = Math.min(targetBox.x + targetBox.width, lb.x + lb.width);
+        const yB = Math.min(targetBox.y + targetBox.height, lb.y + lb.height);
+        const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+        const minArea = Math.min(targetBox.width * targetBox.height, lb.width * lb.height);
+        if (minArea > 0 && interArea / minArea > 0.3) {
+          return false;
+        }
+      }
+      return true;
+    };
 
     // Split regions into two passes:
     // Pass 1: Face blur / pixelation regions (applied first so opaque masks can safely overlap)
@@ -95,12 +112,14 @@ export class MaskRenderer {
         continue;
       }
 
-      // Conservative padding (minimum 8px) clamped strictly to canvas bounds
+      // Include the safety margin in both edges, then intersect with the canvas.
       const padding = 8;
-      const x = Math.max(0, Math.min(canvasWidth - 1, Math.floor(box.x - padding)));
-      const y = Math.max(0, Math.min(canvasHeight - 1, Math.floor(box.y - padding)));
-      const w = Math.max(1, Math.min(canvasWidth - x, Math.ceil(box.width + padding * 2)));
-      const h = Math.max(1, Math.min(canvasHeight - y, Math.ceil(box.height + padding * 2)));
+      const x = Math.max(0, Math.floor(box.x - padding));
+      const y = Math.max(0, Math.floor(box.y - padding));
+      const right = Math.min(canvasWidth, Math.ceil(box.x + box.width + padding));
+      const bottom = Math.min(canvasHeight, Math.ceil(box.y + box.height + padding));
+      const w = right - x;
+      const h = bottom - y;
 
       const clampedBox = { x, y, width: w, height: h };
 
@@ -159,25 +178,24 @@ export class MaskRenderer {
           // Always apply irreversible block pixelation to canvas
           ctx.putImageData(imgData, x, y);
 
-          // Draw subtle privacy badge over the blurred region
-          ctx.save();
-          ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x, y, w, h);
-          if (w >= 40 && h >= 16) {
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-            ctx.fillRect(x + 2, y + 2, Math.min(w - 4, 85), 14);
-            ctx.fillStyle = '#38bdf8';
-            ctx.font = 'bold 9px sans-serif';
-            ctx.fillText('[FACE BLUR]', x + 5, y + 12);
-          }
-          ctx.restore();
-
           // Stage B5 Check: If raw image has no high-frequency detail (e.g. flat SVG avatar where rawVariance < 5),
           // or if blur did not destroy >80% variance with residual < 150,
           // detail destruction cannot be proven, so enforce opaque fallback on top!
           if (!rawHasDetail || varianceReduction < 0.80 || residualVariance >= 150) {
             fallbackNeeded = true;
+          }
+
+          // Draw subtle privacy badge over the blurred region only if blur was verified (no fallback needed)
+          if (!fallbackNeeded && w >= 60 && h >= 20 && shouldDrawLabel({ x: x + 2, y: y + 2, width: Math.min(w - 4, 85), height: 14 })) {
+            ctx.save();
+            MaskRenderer.clipToRect(ctx, x, y, w, h);
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(x + 2, y + 2, Math.min(w - 4, 85), 14);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 9px sans-serif';
+            ctx.fillText('[FACE BLUR]', x + 5, y + 12);
+            ctx.restore();
+            renderedLabelBoxes.push({ x: x + 2, y: y + 2, width: Math.min(w - 4, 85), height: 14 });
           }
         } else {
           fallbackNeeded = true;
@@ -186,15 +204,24 @@ export class MaskRenderer {
         // Apply verified opaque fallback if blur was ineffective or unprovable
         if (fallbackNeeded) {
           ctx.save();
-          ctx.fillStyle = '#0f172a';
+          ctx.fillStyle = '#050505';
           ctx.fillRect(x, y, w, h);
-          ctx.strokeStyle = '#38bdf8';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x, y, w, h);
-          if (w > 45 && h > 12) {
-            ctx.fillStyle = '#38bdf8';
-            ctx.font = 'bold 9px sans-serif';
-            ctx.fillText('[REDACTED: FACE]', x + 3, y + Math.min(11, h - 2));
+
+          if (w >= 40 && h >= 14 && shouldDrawLabel({ x, y, width: w, height: h })) {
+            MaskRenderer.clipToRect(ctx, x, y, w, h);
+
+            const labelText = MaskRenderer.getSemanticCategoryLabel('face', w);
+            const fontSize = Math.max(8, Math.min(10, Math.floor(h * 0.55)));
+            ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+            const measured = ctx.measureText ? ctx.measureText(labelText).width : fontSize * labelText.length * 0.6;
+
+            if (measured <= w - 8) {
+              ctx.fillStyle = '#ffffff';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(labelText, x + Math.floor(w / 2), y + Math.floor(h / 2));
+              renderedLabelBoxes.push({ x, y, width: w, height: h });
+            }
           }
           ctx.restore();
         }
@@ -209,7 +236,7 @@ export class MaskRenderer {
             const overlayFrac = overlayFractionOf(finalData);
             if (overlayFrac < 0.85) {
               ctx.save();
-              ctx.fillStyle = '#0f172a';
+              ctx.fillStyle = '#050505';
               ctx.fillRect(x, y, w, h);
               ctx.restore();
               success = true;
@@ -271,24 +298,21 @@ export class MaskRenderer {
       try {
         ctx.save();
         // 1. Solid opaque blackout mask (Alpha = 1.0) - guarantees 100% pixel destruction
-        ctx.fillStyle = '#0f172a'; // Deep slate (RGB: 15, 23, 42)
+        ctx.fillStyle = '#050505'; // Pure deep black (RGB: 5, 5, 5)
         ctx.fillRect(x, y, w, h);
         ctx.restore();
 
-        // 2. Semantic Redaction Overlay: Draw crisp monospace label in #38bdf8 (MASK_CHROME_RGB)
-        // so multimodal vision models unambiguously understand the semantic slot without seeing raw PII
-        if (w >= 36 && h >= 12) {
+        // 2. Semantic Redaction Overlay: Draw crisp monospace label in pure white (#ffffff)
+        // Strictly clipped to box boundaries and deduplicated to avoid clutter or overflow
+        if (w >= 36 && h >= 14 && shouldDrawLabel({ x, y, width: w, height: h })) {
           ctx.save();
-          // Subtle border in #38bdf8 (40% opacity)
-          ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+          MaskRenderer.clipToRect(ctx, x, y, w, h);
 
           const labelText = MaskRenderer.getSemanticCategoryLabel(region.category, w);
           if (labelText) {
             const fontSize = Math.max(8, Math.min(11, Math.floor(h * 0.55)));
             ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-            ctx.fillStyle = '#38bdf8'; // Sky cyan
+            ctx.fillStyle = '#ffffff'; // High-contrast clean white
             ctx.textBaseline = 'middle';
 
             const measured = ctx.measureText ? ctx.measureText(labelText).width : fontSize * labelText.length * 0.6;
@@ -296,13 +320,17 @@ export class MaskRenderer {
               const textX = x + Math.max(3, Math.floor((w - measured) / 2));
               const textY = y + Math.floor(h / 2);
               ctx.fillText(labelText, textX, textY);
-            } else if (w >= 28) {
-              const shortLabel = `[${region.category.toUpperCase().slice(0, 4)}]`;
+              renderedLabelBoxes.push({ x, y, width: w, height: h });
+            } else if (w >= 40) {
+              const shortLabel = region.category === 'face'
+                ? '[AVATAR]'
+                : (region.category === 'high_risk_surface' || region.category === 'uninspectable' ? '[PROTECTED]' : '[MASK]');
               const shortW = ctx.measureText ? ctx.measureText(shortLabel).width : fontSize * shortLabel.length * 0.6;
-              if (shortW <= w - 4) {
+              if (shortW <= w - 6) {
                 const textX = x + Math.max(2, Math.floor((w - shortW) / 2));
                 const textY = y + Math.floor(h / 2);
                 ctx.fillText(shortLabel, textX, textY);
+                renderedLabelBoxes.push({ x, y, width: w, height: h });
               }
             }
           }
@@ -320,7 +348,7 @@ export class MaskRenderer {
             if (overlayFrac < 0.85) {
               // Secondary solid repaint: guarantee 100% opaque mask fill without borders or text interference
               ctx.save();
-              ctx.fillStyle = '#0f172a';
+              ctx.fillStyle = '#050505';
               ctx.fillRect(x, y, w, h);
               ctx.restore();
               success = true;
@@ -353,6 +381,13 @@ export class MaskRenderer {
       }
     }
 
+    // Export the masked, uncluttered preview before adding model-only action badges.
+    // A failed export must block sanitization rather than expose the raw image.
+    const previewCanvas = focusedRegion
+      ? MaskRenderer.cropCanvasToRegion(imageCanvas, focusedRegion, viewport).targetCanvas
+      : imageCanvas;
+    const inspectorScreenshotDataUrl = MaskRenderer.exportCanvas(previewCanvas);
+
     // --- PASS 3: Set-of-Marks (SOM) Visual Labeling Overlay ---
     // Draws compact, high-contrast numeric badge markers matching element localIds
     // giving multimodal vision models unambiguous visual grounding.
@@ -377,6 +412,19 @@ export class MaskRenderer {
       cropBox = cropResult.cropBox;
     }
 
+    const dataUrl = MaskRenderer.exportCanvas(exportCanvas);
+
+    return {
+      sanitizedScreenshotDataUrl: dataUrl,
+      inspectorScreenshotDataUrl,
+      renderedMaskCount: maskCount,
+      regionRecords,
+      cropApplied,
+      ...(cropBox ? { cropBox } : {})
+    };
+  }
+
+  private static exportCanvas(exportCanvas: HTMLCanvasElement | OffscreenCanvas): string {
     // Export to Data URL (fail closed if canvas export fails)
     let dataUrl: string;
     if (typeof (exportCanvas as any).toDataURL === 'function') {
@@ -416,13 +464,7 @@ export class MaskRenderer {
       throw new Error('Sanitized screenshot export failed: invalid data URL produced');
     }
 
-    return {
-      sanitizedScreenshotDataUrl: dataUrl,
-      renderedMaskCount: maskCount,
-      regionRecords,
-      cropApplied,
-      ...(cropBox ? { cropBox } : {})
-    };
+    return dataUrl;
   }
 
   /**
@@ -457,8 +499,11 @@ export class MaskRenderer {
 
     const sx = Math.max(0, Math.floor(focusedRegion.x * scaleX - padX));
     const sy = Math.max(0, Math.floor(focusedRegion.y * scaleY - padY));
-    const sw = Math.max(80, Math.min(canvasWidth - sx, Math.ceil(focusedRegion.width * scaleX + padX * 2)));
-    const sh = Math.max(60, Math.min(canvasHeight - sy, Math.ceil(focusedRegion.height * scaleY + padY * 2)));
+    const right = Math.min(canvasWidth, Math.ceil((focusedRegion.x + focusedRegion.width) * scaleX + padX));
+    const bottom = Math.min(canvasHeight, Math.ceil((focusedRegion.y + focusedRegion.height) * scaleY + padY));
+    const sw = right - sx;
+    const sh = bottom - sy;
+    if (sw < 80 || sh < 60) return { targetCanvas: imageCanvas, cropApplied: false };
 
     // If the region covers more than 96% of the viewport in both dimensions, cropping isn't isolating anything meaningful
     if (sw >= canvasWidth * 0.96 && sh >= canvasHeight * 0.96) {
@@ -592,9 +637,11 @@ export class MaskRenderer {
       case 'auth_code':
         return isNarrow ? '[OTP]' : '[OTP CODE]';
       case 'credit_card':
-      case 'cvv':
-      case 'bank_account':
         return isNarrow ? '[CARD]' : '[PAYMENT CARD]';
+      case 'cvv':
+        return isNarrow ? '[CVV]' : '[CARD SECURITY CODE]';
+      case 'bank_account':
+        return isNarrow ? '[BANK]' : '[BANK ACCOUNT]';
       case 'national_id':
         return isNarrow ? '[ID]' : '[NATIONAL ID]';
       case 'email':
@@ -603,16 +650,42 @@ export class MaskRenderer {
         return isNarrow ? '[PHONE]' : '[PHONE NUMBER]';
       case 'token':
         return isNarrow ? '[TOKEN]' : '[API TOKEN]';
+      case 'username':
+        return isNarrow ? '[USER]' : '[ACCOUNT USERNAME]';
       case 'name':
         return isNarrow ? '[NAME]' : '[FULL NAME]';
       case 'address':
         return isNarrow ? '[ADDR]' : '[POSTAL ADDRESS]';
-      case 'dob':
+      case 'date_of_birth':
         return isNarrow ? '[DOB]' : '[DATE OF BIRTH]';
       case 'face':
         return isNarrow ? '[AVATAR]' : '[USER AVATAR]';
+      case 'high_risk_surface':
+      case 'uninspectable':
+        return isNarrow ? '[MASK]' : '[PROTECTED AREA]';
       default:
-        return isNarrow ? '[REDACTED]' : `[REDACTED: ${category.toUpperCase()}]`;
+        return '[REDACTED]';
+    }
+  }
+
+  /**
+   * Safely applies canvas clipping to the bounding box if the 2D context supports it.
+   */
+  private static clipToRect(
+    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number
+  ): void {
+    if (typeof (ctx as any).beginPath === 'function') {
+      (ctx as any).beginPath();
+    }
+    if (typeof (ctx as any).rect === 'function') {
+      (ctx as any).rect(x, y, w, h);
+    }
+    if (typeof (ctx as any).clip === 'function') {
+      (ctx as any).clip();
     }
   }
 }

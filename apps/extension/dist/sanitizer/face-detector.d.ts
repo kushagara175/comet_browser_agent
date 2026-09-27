@@ -12,6 +12,7 @@ import { DetectedFace } from '../vision/face-model.js';
 export interface RawImageElementCapture {
     readonly id: string;
     readonly isProfilePhotoOrAvatar: boolean;
+    readonly isPublicPostImage?: boolean;
     readonly naturalWidth?: number;
     readonly naturalHeight?: number;
     readonly boundingClientRect: {

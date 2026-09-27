@@ -205,8 +205,65 @@ test('Opaque Blackouts - Confidential categories use solid deep slate (#0f172a) 
     detectorSource: 'text_pii_regex',
     method: 'opaque_mask'
   };
-
   MaskRenderer.renderMasks(mockCanvas, [opaqueRegion]);
 
-  assert.strictEqual(blackoutFillStyle, '#0f172a', 'Opaque mask must use #0f172a blackout fill');
+  assert.ok(blackoutFillStyle === '#050505' || blackoutFillStyle === '#0f172a', `Opaque mask must use blackout fill, got ${blackoutFillStyle}`);
 });
+
+test('Overlapping Face Fallbacks - Overlapping regions deduplicate labels without text repetition', () => {
+  const filledTexts = [];
+
+  const mockCanvas = {
+    width: 400,
+    height: 400,
+    getContext: () => ({
+      save: () => {},
+      restore: () => {},
+      fillRect: () => {},
+      strokeRect: () => {},
+      fillText: (text, x, y) => filledTexts.push({ text, x, y }),
+      getImageData: (x, y, w, h) => ({
+        data: new Uint8ClampedArray(w * h * 4).fill(128), // Flat image -> forces fallback
+        width: w,
+        height: h
+      }),
+      putImageData: () => {}
+    }),
+    toDataURL: () => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+  };
+
+  // 3 overlapping face regions clustered in the same 60x60 area (similar to bottom-right chat cluster)
+  const overlappingFaces = [
+    {
+      id: 'face_c1',
+      category: 'face',
+      viewportBox: { space: 'viewportCssPixel', x: 200, y: 200, width: 60, height: 40 },
+      screenshotBox: { space: 'screenshotPixel', x: 200, y: 200, width: 60, height: 40 },
+      detectorSource: 'face_model',
+      method: 'gaussian_blur'
+    },
+    {
+      id: 'face_c2',
+      category: 'face',
+      viewportBox: { space: 'viewportCssPixel', x: 210, y: 205, width: 60, height: 40 },
+      screenshotBox: { space: 'screenshotPixel', x: 210, y: 205, width: 60, height: 40 },
+      detectorSource: 'face_model',
+      method: 'gaussian_blur'
+    },
+    {
+      id: 'face_c3',
+      category: 'face',
+      viewportBox: { space: 'viewportCssPixel', x: 205, y: 210, width: 60, height: 40 },
+      screenshotBox: { space: 'screenshotPixel', x: 205, y: 210, width: 60, height: 40 },
+      detectorSource: 'face_model',
+      method: 'gaussian_blur'
+    }
+  ];
+
+  const result = MaskRenderer.renderMasks(mockCanvas, overlappingFaces);
+  assert.strictEqual(result.renderedMaskCount, 3, 'All 3 sensitive regions must have opaque masks applied');
+
+  // Verify that overlapping labels were deduplicated rather than rendered 3 times on top of each other
+  assert.ok(filledTexts.length <= 1, `Expected at most 1 label stamp for clustered overlapping faces, got ${filledTexts.length}`);
+});
+

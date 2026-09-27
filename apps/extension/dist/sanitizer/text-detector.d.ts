@@ -33,6 +33,7 @@ export interface RawTextNodeCapture {
         readonly height: number;
     };
     readonly matchedRanges?: ReadonlyArray<MatchedTextRange>;
+    readonly publicAuthorHandles?: boolean;
 }
 /**
  * Detects sensitive text PII regions using exact matched text-range client rects

@@ -59,12 +59,13 @@ export declare function validateRegionGeometry(box: ScreenshotPixelBox, canvasWi
 export declare function computeLuminanceVariance(data: Uint8ClampedArray): number;
 export declare const varianceOf: typeof computeLuminanceVariance;
 /**
- * Fraction of pixels matching the opaque mask fill #0f172a within tolerance.
+ * Fraction of pixels matching the opaque mask fill within tolerance.
+ * Supports pure black (#050505, #000000) and legacy deep slate (#0f172a).
  */
 export declare function opaqueFractionOf(data: Uint8ClampedArray, tolerance?: number): number;
 /**
  * Fraction of pixels belonging to the redaction overlay rather than original page content.
- * Matches fill (#0f172a), chrome border/label (#38bdf8), and their antialiased blends.
+ * Matches pure black (#050505), crisp white label text (#ffffff), legacy slate (#0f172a), chrome border (#38bdf8), and blends.
  */
 export declare function overlayFractionOf(data: Uint8ClampedArray, tolerance?: number): number;
 /**

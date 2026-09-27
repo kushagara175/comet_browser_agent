@@ -45,6 +45,7 @@ export interface RawTextNodeCapture {
     readonly height: number;
   };
   readonly matchedRanges?: ReadonlyArray<MatchedTextRange>;
+  readonly publicAuthorHandles?: boolean;
 }
 
 /**
@@ -119,7 +120,7 @@ export function detectTextSensitiveRegions(
       }
     } else {
       // 2. Direct fallback for nodes without pre-computed range rects
-      const matches = scanTextForPII(node.text);
+      const matches = scanTextForPII(node.text, { publicAuthorHandles: node.publicAuthorHandles });
       if (matches.length > 0) {
         for (let i = 0; i < matches.length; i++) {
           const match = matches[i];

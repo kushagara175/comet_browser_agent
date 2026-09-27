@@ -209,7 +209,13 @@ export function parseUltraFaceOutputs(
       const ymax = Math.min(origHeight, (cy + h / 2) * origHeight);
 
       if (xmax > xmin && ymax > ymin) {
-        candidates.push({ xmin, ymin, xmax, ymax, score: faceProb });
+        const boxW = xmax - xmin;
+        const boxH = ymax - ymin;
+        const aspect = boxW / boxH;
+        // Exclude degenerate candidate boxes and extreme aspect ratios (UI bars, dividers)
+        if (boxW >= 12 && boxH >= 12 && aspect >= 0.35 && aspect <= 2.8) {
+          candidates.push({ xmin, ymin, xmax, ymax, score: faceProb });
+        }
       }
     }
   }

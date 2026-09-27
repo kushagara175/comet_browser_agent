@@ -31,6 +31,7 @@ export interface LocalDomSnapshot {
         readonly isInsideDialog?: boolean;
         readonly verticalOffset?: 'in_view' | 'above' | 'below';
         readonly inViewport?: boolean;
+        readonly publicAuthorHandles?: boolean;
     }>;
     readonly pageTitle: string;
     readonly visibleDialogCount?: number;

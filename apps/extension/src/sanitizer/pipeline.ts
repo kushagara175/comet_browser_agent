@@ -15,7 +15,7 @@ import {
   RedactionManifest,
   ScrollMetrics
 } from '@privapilot/protocol';
-import { sanitizeElementName } from '@privapilot/pii-rules';
+import { sanitizeElementName, scanTextForPII, scrubText } from '@privapilot/pii-rules';
 import { CoordinateTransformer } from './coordinate-transformer.js';
 import { detectDomSensitiveRegions, RawDomElementCapture } from './dom-detector.js';
 import { detectTextSensitiveRegions, RawTextNodeCapture } from './text-detector.js';
@@ -43,6 +43,7 @@ export interface LocalDomSnapshot {
     readonly isInsideDialog?: boolean;
     readonly verticalOffset?: 'in_view' | 'above' | 'below';
     readonly inViewport?: boolean;
+    readonly publicAuthorHandles?: boolean;
   }>;
   readonly pageTitle: string;
   readonly visibleDialogCount?: number;
@@ -128,6 +129,7 @@ export class SanitizerPipeline {
 
     // 2. Render Redaction Masks onto Canvas (Strictly Fail-Closed: Zero 1x1 or permissive fallbacks)
     let sanitizedDataUrl: string;
+    let inspectorDataUrl: string;
     let renderedCount = 0;
     let regionRecords: ReadonlyArray<RegionRenderRecord> = [];
     let workingCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
@@ -156,6 +158,7 @@ export class SanitizerPipeline {
         snapshot.focusedRegion
       );
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
+      inspectorDataUrl = renderResult.inspectorScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
       regionRecords = renderResult.regionRecords;
     } else if (typeof document !== 'undefined' && rawCapture.rawScreenshotDataUrl && rawCapture.rawScreenshotDataUrl.startsWith('data:image')) {
@@ -194,6 +197,7 @@ export class SanitizerPipeline {
         snapshot.focusedRegion
       );
       sanitizedDataUrl = renderResult.sanitizedScreenshotDataUrl;
+      inspectorDataUrl = renderResult.inspectorScreenshotDataUrl;
       renderedCount = renderResult.renderedMaskCount;
       regionRecords = renderResult.regionRecords;
     } else {
@@ -257,7 +261,7 @@ export class SanitizerPipeline {
         // Remote server must NOT type into password, OTP, payment, token, or sensitive fields
         actionCapabilities = actionCapabilities.filter((cap) => cap !== 'type');
       } else {
-        sanitizedName = sanitizeElementName(el.rawName);
+        sanitizedName = sanitizeElementName(el.rawName, { publicAuthorHandles: el.publicAuthorHandles });
       }
 
       return {
@@ -376,6 +380,16 @@ export class SanitizerPipeline {
       durationMs: Date.now() - (rawCapture.timestamp || Date.now())
     };
 
+    const safePostSummary = (summary: string): string => {
+      if (!summary.startsWith('Visible post ')) return sanitizeElementName(summary);
+      const match = /^Visible post \d+(?: by [^:]{1,100})?: /.exec(summary);
+      if (!match) return sanitizeElementName(summary);
+      const prefix = match[0].slice(0, -2);
+      const body = summary.slice(match[0].length);
+      const text = `${scrubText(prefix, { publicAuthorHandles: true })}: ${scrubText(body)}`.trim().slice(0, 480);
+      // Verify the exceptional handle policy did not admit other sensitive fields.
+      return scanTextForPII(text, { publicAuthorHandles: true }).length === 0 ? text : sanitizeElementName(text);
+    };
     const pageStateObj = {
       title: sanitizedTitle,
       viewport: [rawCapture.metadata.viewportWidth, rawCapture.metadata.viewportHeight] as [number, number],
@@ -385,7 +399,7 @@ export class SanitizerPipeline {
       ...(snapshot.routeFingerprint ? { routeFingerprint: snapshot.routeFingerprint } : {}),
       ...(snapshot.postconditionSummary ? { postconditionSummary: snapshot.postconditionSummary } : {}),
       ...(snapshot.counters && snapshot.counters.length > 0 ? { counters: snapshot.counters.map(c => ({ label: sanitizeElementName(c.label), value: sanitizeElementName(c.value) })) } : {}),
-      ...(snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map(s => sanitizeElementName(s)) } : {}),
+      ...(snapshot.contentSummaries && snapshot.contentSummaries.length > 0 ? { contentSummaries: snapshot.contentSummaries.map(s => safePostSummary(s)) } : {}),
       ...(snapshot.domain ? { domain: sanitizeElementName(snapshot.domain) } : {}),
       ...(snapshot.scrollMetrics ? { scrollMetrics: snapshot.scrollMetrics } : {}),
       ...(snapshot.pageZone ? { pageZone: snapshot.pageZone } : {})
@@ -407,6 +421,7 @@ export class SanitizerPipeline {
       captureId: rawCapture.captureId,
       goal: sanitizeElementName(goal),
       sanitizedScreenshotDataUrl: sanitizedDataUrl,
+      inspectorScreenshotDataUrl: inspectorDataUrl,
       elements: finalSanitizedElements,
       pageState: pageStateObj,
       maskCount: visibleRegions.length,

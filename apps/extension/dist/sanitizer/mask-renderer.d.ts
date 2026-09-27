@@ -29,6 +29,7 @@ export interface FocusedRegion {
 }
 export interface RenderResult {
     readonly sanitizedScreenshotDataUrl: string;
+    readonly inspectorScreenshotDataUrl: string;
     readonly renderedMaskCount: number;
     readonly regionRecords: ReadonlyArray<RegionRenderRecord>;
     readonly cropApplied?: boolean;
@@ -54,6 +55,7 @@ export declare class MaskRenderer {
         width: number;
         height: number;
     }, focusedRegion?: FocusedRegion): RenderResult;
+    private static exportCanvas;
     /**
      * Safely crops an image canvas to a focused region of interest (e.g. active modal or form card).
      * Fallback to the full canvas if anything goes wrong or if the region is degenerate.
@@ -82,5 +84,9 @@ export declare class MaskRenderer {
      * Gives multimodal vision models unambiguous visual understanding of the data slot without exposing PII.
      */
     static getSemanticCategoryLabel(category: string, availableWidth: number): string;
+    /**
+     * Safely applies canvas clipping to the bounding box if the 2D context supports it.
+     */
+    private static clipToRect;
 }
 //# sourceMappingURL=mask-renderer.d.ts.map

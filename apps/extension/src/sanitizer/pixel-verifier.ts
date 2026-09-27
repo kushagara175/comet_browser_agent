@@ -113,18 +113,22 @@ export function computeLuminanceVariance(data: Uint8ClampedArray): number {
 export const varianceOf = computeLuminanceVariance;
 
 /**
- * Fraction of pixels matching the opaque mask fill #0f172a within tolerance.
+ * Fraction of pixels matching the opaque mask fill within tolerance.
+ * Supports pure black (#050505, #000000) and legacy deep slate (#0f172a).
  */
 export function opaqueFractionOf(data: Uint8ClampedArray, tolerance = 24): number {
   const n = data.length / 4;
   if (n === 0) return 0;
   let hits = 0;
   for (let i = 0; i < data.length; i += 4) {
-    if (
-      Math.abs(data[i] - MASK_FILL_RGB[0]) <= tolerance &&
-      Math.abs(data[i + 1] - MASK_FILL_RGB[1]) <= tolerance &&
-      Math.abs(data[i + 2] - MASK_FILL_RGB[2]) <= tolerance
-    ) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const isPureBlack = (r <= 24 && g <= 24 && b <= 24);
+    const isLegacySlate = (
+      Math.abs(r - MASK_FILL_RGB[0]) <= tolerance &&
+      Math.abs(g - MASK_FILL_RGB[1]) <= tolerance &&
+      Math.abs(b - MASK_FILL_RGB[2]) <= tolerance
+    );
+    if (isPureBlack || isLegacySlate) {
       hits++;
     }
   }
@@ -133,24 +137,49 @@ export function opaqueFractionOf(data: Uint8ClampedArray, tolerance = 24): numbe
 
 /**
  * Fraction of pixels belonging to the redaction overlay rather than original page content.
- * Matches fill (#0f172a), chrome border/label (#38bdf8), and their antialiased blends.
+ * Matches pure black (#050505), crisp white label text (#ffffff), legacy slate (#0f172a), chrome border (#38bdf8), and blends.
  */
 export function overlayFractionOf(data: Uint8ClampedArray, tolerance = 30): number {
   const n = data.length / 4;
   if (n === 0) return 0;
   const dg = MASK_CHROME_RGB[1] - MASK_FILL_RGB[1];
-  let hits = 0;
+  let fillHits = 0;
+  let textHits = 0;
 
   for (let i = 0; i < data.length; i += 4) {
-    const t = Math.max(0, Math.min(1, (data[i + 1] - MASK_FILL_RGB[1]) / dg));
-    const er = Math.abs(data[i] - (MASK_FILL_RGB[0] + t * (MASK_CHROME_RGB[0] - MASK_FILL_RGB[0])));
-    const eg = Math.abs(data[i + 1] - (MASK_FILL_RGB[1] + t * dg));
-    const eb = Math.abs(data[i + 2] - (MASK_FILL_RGB[2] + t * (MASK_CHROME_RGB[2] - MASK_FILL_RGB[2])));
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    // 1. Pure black fill (#050505 / #000000) or near-black
+    if (r <= 25 && g <= 25 && b <= 25) {
+      fillHits++;
+      continue;
+    }
+    // 2. Legacy slate (#0f172a) fill or cyan gradient
+    const t = Math.max(0, Math.min(1, (g - MASK_FILL_RGB[1]) / dg));
+    const er = Math.abs(r - (MASK_FILL_RGB[0] + t * (MASK_CHROME_RGB[0] - MASK_FILL_RGB[0])));
+    const eg = Math.abs(g - (MASK_FILL_RGB[1] + t * dg));
+    const eb = Math.abs(b - (MASK_FILL_RGB[2] + t * (MASK_CHROME_RGB[2] - MASK_FILL_RGB[2])));
     if (er <= tolerance && eg <= tolerance && eb <= tolerance) {
-      hits++;
+      fillHits++;
+      continue;
+    }
+    // 3. Crisp white label text (#ffffff) or grayscale antialiasing on dark background
+    if (r >= 200 && g >= 200 && b >= 200) {
+      textHits++;
+      continue;
+    }
+    if (Math.abs(r - g) <= 15 && Math.abs(g - b) <= 15 && r <= 180 && r >= 30) {
+      textHits++;
+      continue;
     }
   }
-  return hits / n;
+
+  // Only count white/gray text as mask overlay if the region has a verified dark fill (> 50% fill)
+  // This prevents untouched white or gray canvas backgrounds from falsely claiming to be overlays
+  const fillFraction = fillHits / n;
+  if (fillFraction >= 0.5) {
+    return (fillHits + textHits) / n;
+  }
+  return fillFraction;
 }
 
 /**

@@ -11,8 +11,24 @@
  */
 export function detectFaceRegions(images, transformer, modelFaces = []) {
     const regions = [];
-    // 1. Add ONNX Vision Model Detections
+    // Model detections inside explicitly classified public posts are public
+    // imagery; keep any overlapping private-account signal protected.
+    const publicImages = images.filter(img => img.isPublicPostImage && !img.isProfilePhotoOrAvatar);
+    const privateImages = images.filter(img => img.isProfilePhotoOrAvatar);
     for (const face of modelFaces) {
+        const containsFace = (img) => {
+            const box = img.boundingClientRect;
+            return face.viewportBox.x >= box.x && face.viewportBox.y >= box.y &&
+                face.viewportBox.x + face.viewportBox.width <= box.x + box.width &&
+                face.viewportBox.y + face.viewportBox.height <= box.y + box.height;
+        };
+        const overlapsFace = (img) => {
+            const box = img.boundingClientRect;
+            return face.viewportBox.x < box.x + box.width && face.viewportBox.x + face.viewportBox.width > box.x &&
+                face.viewportBox.y < box.y + box.height && face.viewportBox.y + face.viewportBox.height > box.y;
+        };
+        if (publicImages.some(containsFace) && !privateImages.some(overlapsFace))
+            continue;
         regions.push({
             id: face.id,
             category: 'face',
@@ -38,8 +54,8 @@ export function detectFaceRegions(images, transformer, modelFaces = []) {
             width: w,
             height: h
         };
-        // Conservative 12px padding for avatar regions
-        const screenshotBox = transformer.toScreenshotBox(viewportBox, 12);
+        // Tight clean 4px padding for avatar regions
+        const screenshotBox = transformer.toScreenshotBox(viewportBox, 4);
         if (screenshotBox.width <= 1 || screenshotBox.height <= 1)
             continue;
         // Deduplicate if already covered by an ONNX model box

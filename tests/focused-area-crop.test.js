@@ -44,6 +44,15 @@ test('Focused Area Crop: cropCanvasToRegion crops target modal with contextual p
   assert.strictEqual(result.targetCanvas.height, 368);
 });
 
+test('Focused Area Crop: clipped edge crop does not overflow or lose right-side context', () => {
+  const canvas = createMockCanvas(200, 120);
+  const result = MaskRenderer.cropCanvasToRegion(canvas, { x: 170, y: 40, width: 100, height: 65 }, { width: 200, height: 120 });
+  assert.equal(result.cropApplied, false);
+  const valid = MaskRenderer.cropCanvasToRegion(canvas, { x: 140, y: 30, width: 100, height: 70 }, { width: 200, height: 120 });
+  assert.equal(valid.cropApplied, true);
+  assert.deepEqual(valid.cropBox, { x: 116, y: 6, width: 84, height: 114 });
+});
+
 test('Focused Area Crop: degenerate or missing region falls back cleanly to full canvas', () => {
   const canvas = createMockCanvas(1280, 720);
 
