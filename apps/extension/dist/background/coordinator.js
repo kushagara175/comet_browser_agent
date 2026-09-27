@@ -4612,30 +4612,10 @@ export class RunCoordinator {
                 statusText: `Deploying in Tab 2…`
             }
         ];
-        // Query Central LLM (Mistral-Large-3) for authentic multi-agent swarm decomposition reasoning
-        const targetQueryDesc = isFlightQuery ? `flights from ${origin} to ${dest}` : cleanedQuery;
-        const orchestratorPrompt = `You are PrivaPilot's Central Multi-Agent Swarm Orchestrator.\n` +
-            `User goal: "${goal}".\n` +
-            `Decompose this goal into 2 parallel sub-agents (Sub-Agent 1: ${name1}, Sub-Agent 2: ${name2}) with assigned roles, target portals, and isolated browser tabs under strict on-device DPDP privacy rules (zero cross-tab PII leakage).\n` +
-            `Propose execution of tool: spawn_subagents.\n\n` +
-            `CRITICAL INSTRUCTION: Output your reasoning strictly following this 4-step format (do NOT use emojis):\n` +
-            `Step 1: Understand the user's goal\n` +
-            `- Analyze the user's request and identify comparison across ${name1} and ${name2}.\n\n` +
-            `Step 2: Decompose the goal into sub-agents\n` +
-            `- Sub-Agent 1: Focus on ${name1} to ${taskDesc1}.\n` +
-            `- Sub-Agent 2: Focus on ${name2} to ${taskDesc2}.\n\n` +
-            `Step 3: Assign roles and constraints\n` +
-            `- Both sub-agents must operate in isolated browser tabs to prevent cross-tab PII leakage (strict on-device DPDP compliance).\n` +
-            `- Each sub-agent will only interact with its assigned portal (${name1} or ${name2}).\n` +
-            `- No sharing of data between tabs or sub-agents until results are aggregated.\n\n` +
-            `Step 4: Propose execution\n` +
-            `- Use the tool \`spawn_subagents\` to create two parallel sub-agents with the following parameters:\n` +
-            `  - Sub-Agent 1: Target portal = ${name1}, search query = "${targetQueryDesc}".\n` +
-            `  - Sub-Agent 2: Target portal = ${name2}, search query = "${targetQueryDesc}".\n` +
-            `- Ensure both sub-agents run in isolated tabs with no cross-tab communication.`;
+        // Query Central LLM (Mistral-Large-3) for authentic raw reasoning
         let dynamicReasoning = '';
         try {
-            const orchRes = await this.httpClient.requestGeneralChat(orchestratorPrompt);
+            const orchRes = await this.httpClient.requestGeneralChat(`Goal: "${goal}". Plan the decomposition and execution across ${name1} and ${name2} using tool: spawn_subagents.`);
             if (orchRes?.reasoning) {
                 dynamicReasoning = orchRes.reasoning;
             }
@@ -4644,22 +4624,10 @@ export class RunCoordinator {
             }
         }
         catch (_) { }
-        if (!dynamicReasoning || dynamicReasoning.length < 50) {
-            dynamicReasoning = `Step 1: Understand the user's goal\n` +
-                `- The user wants a comparison for "${goal}".\n` +
-                `- The comparison should be done across two independent portals: ${name1} and ${name2}.\n\n` +
-                `Step 2: Decompose the goal into sub-agents\n` +
-                `- Sub-Agent 1: Focus on ${name1} to ${taskDesc1}.\n` +
-                `- Sub-Agent 2: Focus on ${name2} to ${taskDesc2}.\n\n` +
-                `Step 3: Assign roles and constraints\n` +
-                `- Both sub-agents must operate in isolated browser tabs to prevent cross-tab PII leakage (strict on-device DPDP compliance).\n` +
-                `- Each sub-agent will only interact with its assigned portal (${name1} or ${name2}).\n` +
-                `- No sharing of data between tabs or sub-agents until results are aggregated.\n\n` +
-                `Step 4: Propose execution\n` +
-                `- Use the tool \`spawn_subagents\` to create two parallel sub-agents with the following parameters:\n` +
-                `  - Sub-Agent 1: Target portal = ${name1}, search query = "${targetQueryDesc}".\n` +
-                `  - Sub-Agent 2: Target portal = ${name2}, search query = "${targetQueryDesc}".\n` +
-                `- Ensure both sub-agents run in isolated tabs with no cross-tab communication.`;
+        if (!dynamicReasoning) {
+            dynamicReasoning = `Decomposing "${goal}" across ${name1} and ${name2} in isolated browser tabs.\n` +
+                `Sub-Agent 1 will inspect ${name1}, while Sub-Agent 2 simultaneously inspects ${name2}.\n` +
+                `Executing tool spawn_subagents to retrieve live listings with zero cross-tab data leakage.`;
         }
         // Strip any rogue emojis from reasoning
         dynamicReasoning = dynamicReasoning.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();

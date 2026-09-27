@@ -26315,33 +26315,11 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
         statusText: `Deploying in Tab 2\u2026`
       }
     ];
-    const targetQueryDesc = isFlightQuery ? `flights from ${origin} to ${dest}` : cleanedQuery;
-    const orchestratorPrompt = `You are PrivaPilot's Central Multi-Agent Swarm Orchestrator.
-User goal: "${goal}".
-Decompose this goal into 2 parallel sub-agents (Sub-Agent 1: ${name1}, Sub-Agent 2: ${name2}) with assigned roles, target portals, and isolated browser tabs under strict on-device DPDP privacy rules (zero cross-tab PII leakage).
-Propose execution of tool: spawn_subagents.
-
-CRITICAL INSTRUCTION: Output your reasoning strictly following this 4-step format (do NOT use emojis):
-Step 1: Understand the user's goal
-- Analyze the user's request and identify comparison across ${name1} and ${name2}.
-
-Step 2: Decompose the goal into sub-agents
-- Sub-Agent 1: Focus on ${name1} to ${taskDesc1}.
-- Sub-Agent 2: Focus on ${name2} to ${taskDesc2}.
-
-Step 3: Assign roles and constraints
-- Both sub-agents must operate in isolated browser tabs to prevent cross-tab PII leakage (strict on-device DPDP compliance).
-- Each sub-agent will only interact with its assigned portal (${name1} or ${name2}).
-- No sharing of data between tabs or sub-agents until results are aggregated.
-
-Step 4: Propose execution
-- Use the tool \`spawn_subagents\` to create two parallel sub-agents with the following parameters:
-  - Sub-Agent 1: Target portal = ${name1}, search query = "${targetQueryDesc}".
-  - Sub-Agent 2: Target portal = ${name2}, search query = "${targetQueryDesc}".
-- Ensure both sub-agents run in isolated tabs with no cross-tab communication.`;
     let dynamicReasoning = "";
     try {
-      const orchRes = await this.httpClient.requestGeneralChat(orchestratorPrompt);
+      const orchRes = await this.httpClient.requestGeneralChat(
+        `Goal: "${goal}". Plan the decomposition and execution across ${name1} and ${name2} using tool: spawn_subagents.`
+      );
       if (orchRes?.reasoning) {
         dynamicReasoning = orchRes.reasoning;
       } else if (orchRes?.reply) {
@@ -26349,25 +26327,10 @@ Step 4: Propose execution
       }
     } catch (_) {
     }
-    if (!dynamicReasoning || dynamicReasoning.length < 50) {
-      dynamicReasoning = `Step 1: Understand the user's goal
-- The user wants a comparison for "${goal}".
-- The comparison should be done across two independent portals: ${name1} and ${name2}.
-
-Step 2: Decompose the goal into sub-agents
-- Sub-Agent 1: Focus on ${name1} to ${taskDesc1}.
-- Sub-Agent 2: Focus on ${name2} to ${taskDesc2}.
-
-Step 3: Assign roles and constraints
-- Both sub-agents must operate in isolated browser tabs to prevent cross-tab PII leakage (strict on-device DPDP compliance).
-- Each sub-agent will only interact with its assigned portal (${name1} or ${name2}).
-- No sharing of data between tabs or sub-agents until results are aggregated.
-
-Step 4: Propose execution
-- Use the tool \`spawn_subagents\` to create two parallel sub-agents with the following parameters:
-  - Sub-Agent 1: Target portal = ${name1}, search query = "${targetQueryDesc}".
-  - Sub-Agent 2: Target portal = ${name2}, search query = "${targetQueryDesc}".
-- Ensure both sub-agents run in isolated tabs with no cross-tab communication.`;
+    if (!dynamicReasoning) {
+      dynamicReasoning = `Decomposing "${goal}" across ${name1} and ${name2} in isolated browser tabs.
+Sub-Agent 1 will inspect ${name1}, while Sub-Agent 2 simultaneously inspects ${name2}.
+Executing tool spawn_subagents to retrieve live listings with zero cross-tab data leakage.`;
     }
     dynamicReasoning = dynamicReasoning.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
     this.listeners.onActionProposed?.({
