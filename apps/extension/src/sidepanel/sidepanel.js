@@ -5696,9 +5696,9 @@ if (typeof document !== 'undefined') {
               colorVariant: 'colorful',
               idle: 0.22,
               breatheDuration: 5.2,
-              bend: 0,
-              bandStrength: 0,
-              bandWidth: 0
+              bend: 58,
+              bandStrength: 1.6,
+              bandWidth: 2.2
             });
             window.__voiceBeamEngine = voiceBeamEngine;
           }
