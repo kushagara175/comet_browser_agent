@@ -743,10 +743,10 @@ export const ISRO_PLAYBOOK = {
         },
         {
             name: 'missions',
-            path: '/spacecraft_missions.html',
-            aliases: ['/spacecraft_missions.html', '/missions.html', '/Missions.html', '/missions', '/spacecraft.html'],
-            description: 'ISRO space missions and satellite timeline directory',
-            matchKeywords: ['mission', 'missions', 'space missions', 'all missions', 'satellites']
+            path: '/Mission.html',
+            aliases: ['/Mission.html', '/SpacecraftMissions.html', '/spacecraft_missions.html', '/missions.html', '/Missions.html', '/missions', '/spacecraft.html'],
+            description: 'ISRO space missions directory hub (/Mission.html) with Spacecraft Missions and Launch Missions cards',
+            matchKeywords: ['mission', 'missions', 'space missions', 'all missions', 'missions accomplished', 'spacecraft missions']
         },
         {
             name: 'launchers',
@@ -937,7 +937,7 @@ export const ISRO_PLAYBOOK = {
             { name: 'Contact us', path: '/contact.html', description: 'Official addresses and communication contacts' }
         ],
         'Activities': [
-            { name: 'Missions accomplished', path: '/Mission.html', description: 'Comprehensive directory of space exploration missions: Chandrayaan lunar missions, Aditya solar mission, Mangalyaan Mars mission, AstroSat' },
+            { name: 'Missions accomplished', path: '/Mission.html', description: 'Directory of all space exploration missions. Contains two primary sub-directories: (1) "Spacecraft Missions*" (/SpacecraftMissions.html) - searchable table of all satellites, lunar (Chandrayaan-1/2/3), solar (Aditya-L1), and interplanetary (Mangalyaan) missions; (2) "Launch Missions**" (/LaunchMissions.html) - searchable table of all rocket launches (LVM3, PSLV, GSLV). Each mission profile contains official downloadable brochures and technical specs.' },
             { name: 'Science', path: '/Science.html', description: 'Space science experiments, planetary science, and astronomical observations' },
             { name: 'Launchers', path: '/Launchers.html', description: 'Launch vehicles family: PSLV, GSLV, LVM3 (Chandrayaan-3 launcher), SSLV' },
             { name: 'Spacecrafts', path: '/Satellites.html', description: 'Communication, navigation, earth observation, and scientific satellites' },

@@ -1235,6 +1235,12 @@ Strict Rules:
     - When the user's goal involves checking, searching, or comparing another website (e.g. Flipkart, Amazon, Wikipedia, GitHub) that is NOT the current active page, you MUST return kind: "navigate" with "url" (or "targetUrl") set to the destination URL!
     - Set "createNewTab": true when comparing across multiple sites or deploying parallel sub-agent workflows.
     - NEVER tell the user "please open Flipkart in a new tab for me"! YOU are the browser agent: propose kind: "navigate" and the browser will open it automatically.
+    - STRICT PROHIBITION AGAINST INTERNAL URL NAVIGATION:
+      Once you are already on the target website (e.g. isro.gov.in):
+      You are STRICTLY FORBIDDEN from using kind: "navigate" to jump to internal pages, subpaths, or articles!
+      A human user navigates a website by visually clicking links, cards, tabs, and buttons on the screen.
+      You MUST propose kind: "click" on visible elements (e.g. navigation menu dropdown, category cards, target entity row, brochure link) or kind: "type" in table search filters!
+      NEVER bypass on-page interaction by proposing kind: "navigate" to an internal subpage!
 3c. MULTI-TURN CONVERSATION & AFFIRMATIVE FOLLOW-UP DIRECTIVE:
     - When recent conversation history shows you proposed an action (e.g. "To complete your request, I will need to open Flipkart.com in a separate tab... Would you like me to proceed with that?"), and the user responds affirmatively ("yeah", "yes", "sure", "proceed", "ok"):
       THIS IS A DIRECT INSTRUCTION TO EXECUTE THAT ACTION IMMEDIATELY!
@@ -1243,10 +1249,10 @@ Strict Rules:
 3d. DOCUMENT RETRIEVAL & AUTONOMOUS DISCOVERY DIRECTIVE:
     - When the user asks to find, download, or access a document, PDF, brochure, paper, or circular (e.g. "download Chandrayaan-3 brochure", "download Aditya-L1 brochure", "download Yuvika brochure"):
       * If you are on the relevant portal (such as ISRO portal, SIH portal, or official website):
-        1. FIRST, inspect the page for authentic document links matching the specific topic, "Brochure", "Download PDF", or href ending in .pdf (e.g. on Chandrayaan3.html or Aditya_L1.html). If found, propose kind: "click" on that target element to initiate the download!
-        2. If you are on a sub-article, news release, or photo gallery (e.g. Chandrayaan3_New.html) that does not contain the brochure directly:
-           - Look for a link or navigation to the canonical mission hub (e.g. "Chandrayaan-3" -> "https://www.isro.gov.in/Chandrayaan3.html" or "Chandrayaan3_Details.html") or propose kind: "navigate" to the canonical mission hub URL "https://www.isro.gov.in/Chandrayaan3.html".
-           - Alternatively, if a search input is visible in the header, propose kind: "type" into that search input with the mission brochure query and pressEnter: true.
+        1. FIRST, inspect the page for authentic document links matching the specific topic, "Brochure", "Download PDF", or href ending in .pdf (e.g. on Chandrayaan3_Details.html or Aditya_L1.html). If found, propose kind: "click" on that target element to initiate the download!
+        2. If you are on a hub page, directory, or photo gallery (e.g. Missions accomplished /Mission.html) that contains category cards:
+           - Propose kind: "click" on the relevant category card (e.g. click "Spacecraft Missions" for satellites/spacecraft or "Launch Missions" for rockets) or click the mission name link, or type into the search filter.
+           - NEVER propose kind: "navigate" to jump to an internal URL! Always click the visible elements step by step.
         3. STRICT ANTI-HALLUCINATION RULE: NEVER click unrelated footer links (such as "e-Saral Hindi Vakyakosh", "RTI", "Terms of Use", "Privacy Policy", "Copyright", "Site Map") and falsely claim they are the requested brochure! Only click a link if its title or URL genuinely matches the user's topic.
         4. ONLY when the brochure genuinely does NOT exist anywhere on the portal (e.g. an event announcement like Yuvika where guidelines are hosted externally on Antriksh Jigyasa), and repeated search/navigation yields no document:
            Propose kind: "request_user_input" to inform the user honestly and provide actionable next steps (HITL).
@@ -1577,11 +1583,25 @@ JSON Schema:
                 siteMapHierarchy = `
 Verified Master Site Map Hierarchy for ${domainPlaybook.name}:
 ${sections}
-Key Navigation Rules from Site Map:
-- Space Exploration Missions (Chandrayaan-3, Aditya-L1, Gaganyaan, Mangalyaan) live under "Activities" -> "Missions accomplished" (/Mission.html) or their dedicated mission pages (/Chandrayaan3.html, /Aditya_L1.html).
-- The official Chandrayaan-3 mission brochure PDF link is located on https://www.isro.gov.in/Chandrayaan3.html.
-- "Services" -> "Earth observation (Bhuvan & Bhoonidhi)" is strictly for 2D/3D geographic satellite mapping of India. Do NOT navigate to Bhuvan when asked for lunar or space missions.
-- To locate content: Step-by-step explore the top navigation bar matching the sitemap section (e.g. click "Activities" -> "Missions accomplished"), or use the on-page Search input.
+Autonomous Hierarchical Browsing Principles (Natural Human Traversal):
+1. Navigation Bar Grounding:
+   - On the homepage or top-level portal, inspect the site map hierarchy.
+   - For space exploration & satellite missions (Chandrayaan, Aditya-L1, Mangalyaan, AstroSat) or rocket launchers: Propose kind: "click" on "Activities" nav tab, then click the relevant section (e.g. "Missions accomplished" -> /Mission.html).
+   - For Earth observation maps & satellite imagery: Consult "Services" -> "Earth observation (Bhuvan & Bhoonidhi)".
+   - For student schemes & academic competitions: Consult "Programmes" (e.g. YUVIKA).
+2. Category Card Selection on Hub / Directory Pages:
+   - On directory hub pages (such as /Mission.html): Visually inspect the category cards (e.g. "Spacecraft Missions*", "Launch Missions**").
+   - Click the card corresponding to the user's entity type (e.g. for satellites, lunar/solar exploration like Chandrayaan or Aditya, click "Spacecraft Missions*"; for rocket launch vehicles like LVM3 or PSLV, click "Launch Missions**").
+3. Table / Directory Search & Filter Heuristic:
+   - When arriving on a directory page containing a searchable data table (e.g. /SpacecraftMissions.html or /LaunchMissions.html):
+   - Locate the search/filter input (role: "input", placeholder: "Search").
+   - Propose kind: "type" with textToType set to the mission/target keyword (e.g. "Chandrayaan", "Aditya", "LVM3") to filter the table rows immediately.
+   - In the filtered rows, propose kind: "click" on the target mission link to open its details profile page!
+4. Document Link Discovery on Mission / Entity Page:
+   - On the target profile page (e.g. /Chandrayaan3_Details.html, /Chandrayaan3.html, or /Aditya_L1.html):
+   - Visually scan the page body and resource links for the official document/brochure anchor (e.g. "Brochure", "Download PDF", or href ending in .pdf).
+   - Propose kind: "click" on that link to download the document.
+STRICT PROHIBITION: NEVER propose kind: "navigate" to jump directly to an internal subpage! You MUST propose kind: "click" or "type" on the visible elements on the screen to browse naturally step by step like a human user.
 `;
             }
             domainTopologyBlock = `\nVerified Semantic Site Topology for ${domainPlaybook.name} (${domainPlaybook.domain}):
