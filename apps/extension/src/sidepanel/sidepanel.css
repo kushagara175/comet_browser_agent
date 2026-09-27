@@ -1588,13 +1588,13 @@ html, body {
 }
 
 .thought-code {
-  background: rgba(148, 163, 184, 0.15);
-  color: #67e8f9;
-  padding: 1px 5px;
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+  padding: 1px 4px;
+  border-radius: 3px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10.5px;
-  border: 1px solid rgba(103, 232, 249, 0.2);
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 @keyframes thoughtFadeIn {
@@ -3822,6 +3822,61 @@ html, body {
   color: #f1f5f9;
 }
 
+/* Inline Secure User Input Card (Dark, Clean Minimalist UI matching Decision Card) */
+.hitl-input-card {
+  background: #141416;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid #8ab4f8;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.hitl-input-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  background: #1e1f23;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: #f1f5f9;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hitl-input-field:focus {
+  border-color: #8ab4f8;
+  box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.2);
+}
+
+.hitl-input-field::placeholder {
+  color: #64748b;
+}
+
+.hitl-vault-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  color: #94a3b8;
+  margin-top: 2px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.hitl-vault-checkbox input[type="checkbox"] {
+  accent-color: #8ab4f8;
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+}
+
 /* ==========================================================================
    PERSONAL VAULT & PASSWORDS STYLES
    ========================================================================== */
@@ -3844,18 +3899,25 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 5px;
   margin-bottom: 6px;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .vault-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: 6px;
+  font-size: 12.5px;
   font-weight: 600;
   color: #f5f5f5;
   letter-spacing: -0.2px;
+  min-width: 0;
+}
+
+.vault-title span {
+  white-space: nowrap;
 }
 
 .vault-header-svg {
@@ -3864,15 +3926,21 @@ html, body {
 }
 
 .vault-security-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
   font-size: 10px;
   font-weight: 500;
   background: rgba(39, 39, 42, 0.65);
   color: rgba(245, 245, 245, 0.65);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 3px 8px;
+  padding: 0 7px;
   border-radius: 4px;
   white-space: nowrap;
   letter-spacing: 0.2px;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .vault-desc {
@@ -4173,15 +4241,20 @@ html, body {
 .vault-back-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 9px;
+  gap: 4px;
+  height: 24px;
+  padding: 0 7px;
   background: rgba(24, 24, 27, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  color: rgba(245, 245, 245, 0.7);
-  font-size: 11px;
+  border-radius: 4px;
+  color: rgba(245, 245, 245, 0.75);
+  font-size: 10.5px;
   font-weight: 500;
   cursor: pointer;
+  white-space: nowrap;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  line-height: 1;
   transition: all 0.15s ease;
 }
 
@@ -4348,14 +4421,18 @@ html, body {
 .vault-header-badges {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .btn-vault-header-action {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 8px;
+  justify-content: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 7px;
   background: rgba(24, 24, 27, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 4px;
@@ -4364,6 +4441,15 @@ html, body {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.btn-vault-header-action span {
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .btn-vault-header-action svg {
@@ -4390,6 +4476,68 @@ html, body {
 
 .btn-vault-header-action.btn-lock:hover svg {
   stroke: #fca5a5;
+}
+
+/* Identity Profile Privacy Mask for PPT / Screenshots */
+.vault-profile-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 8px 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 10px;
+}
+
+.vault-profile-status-text {
+  font-size: 10px;
+  color: rgba(245, 245, 245, 0.45);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vault-profile-status-text svg {
+  stroke: #10b981;
+}
+
+.vault-mask-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  background: rgba(39, 39, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 11px;
+  color: rgba(245, 245, 245, 0.75);
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.vault-mask-quick-btn:hover {
+  background: rgba(63, 63, 70, 0.85);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.vault-mask-quick-btn svg {
+  stroke: rgba(245, 245, 245, 0.75);
+  flex-shrink: 0;
+}
+
+.vault-mask-quick-btn:hover svg {
+  stroke: #ffffff;
+}
+
+/* Masked Fields Styles (Zero-Knowledge Screenshot Mode) */
+.vault-masked-fields .vault-field input {
+  -webkit-text-security: disc !important;
+  font-family: text-security-disc, -apple-system, sans-serif !important;
+  letter-spacing: 2px !important;
+  color: rgba(245, 245, 245, 0.7) !important;
 }
 
 /* Change PIN Card */
@@ -6230,5 +6378,342 @@ html, body {
   line-height: 1.45;
   color: rgba(245, 245, 245, 0.85);
 }
+
+/* =========================================================================
+   Allel Web Search Component (Imported from allel/components/chat)
+   ========================================================================= */
+
+/* Executing State with Spinning Glowing Globe */
+.websearch-executing-block {
+  margin: 6px 0 10px 0;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.websearch-executing-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.globe-spinner-wrap {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.globe-spinner-icon {
+  width: 18px;
+  height: 18px;
+  color: #38bdf8;
+  animation: spinGlobe 2.8s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.55));
+}
+
+@keyframes spinGlobe {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.globe-pulse-ring {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(56, 189, 248, 0.5);
+  animation: globePulse 2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+}
+
+@keyframes globePulse {
+  0% { transform: scale(0.85); opacity: 0.9; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+.websearch-executing-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.websearch-executing-status {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #e2e8f0;
+  letter-spacing: -0.01em;
+}
+
+.websearch-executing-query {
+  font-size: 11.5px;
+  color: #94a3b8;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.websearch-chip-cloud {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-left: 28px;
+}
+
+.websearch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 2px 8px;
+  animation: chipPulse 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes chipPulse {
+  0% { opacity: 0.7; }
+  100% { opacity: 1; border-color: rgba(56, 189, 248, 0.3); color: #bae6fd; }
+}
+
+/* Web Search Timeline Node (Exact 1:1 match with allel TimelineNode & MiniResultCard) */
+.websearch-timeline-node {
+  margin: 4px 0 6px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.websearch-node-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  cursor: pointer;
+  user-select: none;
+  background: transparent;
+  border: none;
+  color: #a3a3a3;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  width: 100%;
+  transition: color 0.15s ease;
+  outline: none;
+}
+
+.websearch-node-header:hover {
+  color: #ffffff;
+}
+
+.websearch-node-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #a3a3a3;
+  transition: color 0.15s ease;
+}
+
+.websearch-node-header:hover .websearch-node-icon-wrap {
+  color: #ffffff;
+}
+
+.websearch-node-icon {
+  width: 14px;
+  height: 14px;
+  color: currentColor;
+  flex-shrink: 0;
+}
+
+.websearch-node-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: inherit;
+}
+
+.websearch-node-chevron {
+  width: 14px;
+  height: 14px;
+  color: #737373;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.15s ease;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.websearch-node-header:hover .websearch-node-chevron {
+  color: #d4d4d4;
+}
+
+.websearch-timeline-node[data-expanded="true"] .websearch-node-chevron {
+  transform: rotate(90deg);
+}
+
+.websearch-timeline-node[data-expanded="false"] .websearch-drawer {
+  display: none;
+}
+
+.websearch-drawer {
+  padding-left: 24px;
+  padding-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Result Cards matching MiniResultCard from allel */
+.websearch-result-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  text-decoration: none;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background-color 0.15s ease;
+  cursor: pointer;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 1px 0;
+}
+
+.websearch-result-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.websearch-favicon-wrap {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  background: rgba(38, 38, 38, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.websearch-favicon-img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.websearch-favicon-fallback {
+  width: 12px;
+  height: 12px;
+  color: #a3a3a3;
+}
+
+.websearch-card-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.websearch-card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e5e5e5;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.websearch-result-card:hover .websearch-card-title {
+  color: #ffffff;
+}
+
+.websearch-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #737373;
+  margin-top: 1px;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.websearch-result-card:hover .websearch-card-meta {
+  color: #a3a3a3;
+}
+
+.websearch-domain-tag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10.5px;
+  color: #a3a3a3;
+  flex-shrink: 0;
+}
+
+.websearch-snippet-text {
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+/* Expand Button matching ExpandableResultList from allel */
+.websearch-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: transparent;
+  border: none;
+  color: #a3a3a3;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  margin-top: 2px;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+  width: fit-content;
+}
+
+.websearch-expand-btn:hover {
+  color: #ffffff;
+}
+
+.websearch-expand-btn:hover .websearch-expand-label {
+  text-decoration: underline;
+}
+
+.websearch-expand-chevron {
+  width: 12px;
+  height: 12px;
+  color: #737373;
+  transform: rotate(90deg);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.15s ease;
+}
+
+.websearch-expand-btn:hover .websearch-expand-chevron {
+  color: #ffffff;
+}
+
 
 

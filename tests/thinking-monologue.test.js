@@ -6,7 +6,9 @@ import {
   formatReasoningIntoLinesHtml,
   renderThinkingAccordion,
   collectAllStepReasoning,
-  streamLiveReasoningLines
+  streamLiveReasoningLines,
+  getCachedThoughtDuration,
+  setCachedThoughtDuration
 } from '../apps/extension/src/sidepanel/sidepanel.js';
 
 test('Thinking: sanitizeReasoningText strips think tags and filters fake canned strings', () => {
@@ -39,15 +41,15 @@ test('Thinking: parseReasoningLines parses structured 3-part thinking into discr
   const parsed = parseReasoningLines(structuredText);
   assert.equal(parsed.length, 3);
 
-  assert.equal(parsed[0].icon, '👁️');
+  assert.equal(parsed[0].icon, '');
   assert.equal(parsed[0].category, 'Observation');
   assert.ok(parsed[0].body.includes('Smart India Hackathon portal'));
 
-  assert.equal(parsed[1].icon, '🎯');
+  assert.equal(parsed[1].icon, '');
   assert.equal(parsed[1].category, 'Intent & Strategy');
   assert.ok(parsed[1].body.includes('problem statement "171"'));
 
-  assert.equal(parsed[2].icon, '⚡');
+  assert.equal(parsed[2].icon, '');
   assert.equal(parsed[2].category, 'Action Selection');
   assert.ok(parsed[2].body.includes('Propose type on el_9'));
 });
@@ -61,11 +63,11 @@ test('Thinking: parseReasoningLines handles bullet points and keyword prefixes g
 
   const parsed = parseReasoningLines(bulletText);
   assert.equal(parsed.length, 3);
-  assert.equal(parsed[0].icon, '👁️');
+  assert.equal(parsed[0].icon, '');
   assert.equal(parsed[0].category, 'Observation');
-  assert.equal(parsed[1].icon, '🎯');
+  assert.equal(parsed[1].icon, '');
   assert.equal(parsed[1].category, 'Intent & Strategy');
-  assert.equal(parsed[2].icon, '⚡');
+  assert.equal(parsed[2].icon, '');
   assert.equal(parsed[2].category, 'Action Selection');
 });
 
@@ -73,9 +75,9 @@ test('Thinking: parseReasoningLines handles condensed single-line reasoning', ()
   const singleLine = '👁️ Observation: On problem table. 🎯 User Intent: Filter for statement 171. ⚡ Action Selection: Type into el_9.';
   const parsed = parseReasoningLines(singleLine);
   assert.ok(parsed.length >= 3, `Expected at least 3 lines, got ${parsed.length}`);
-  assert.equal(parsed[0].icon, '👁️');
-  assert.equal(parsed[1].icon, '🎯');
-  assert.equal(parsed[2].icon, '⚡');
+  assert.equal(parsed[0].icon, '');
+  assert.equal(parsed[1].icon, '');
+  assert.equal(parsed[2].icon, '');
 });
 
 test('Thinking: formatReasoningIntoLinesHtml formats element IDs with code chips and escapes HTML', () => {
@@ -101,9 +103,9 @@ test('Thinking: renderThinkingAccordion generates accessible collapsible monolog
   assert.ok(html.includes('aria-expanded="true"'));
   assert.ok(html.includes('Thought for 5s'));
   assert.ok(html.includes('thought-lines-container'));
-  assert.ok(html.includes('👁️'));
-  assert.ok(html.includes('🎯'));
-  assert.ok(html.includes('⚡'));
+  assert.ok(html.includes('Observation:'));
+  assert.ok(html.includes('Intent &amp; Strategy:') || html.includes('Intent & Strategy:'));
+  assert.ok(html.includes('Action Selection:'));
   assert.ok(html.includes('<code class="thought-code">el_2</code>'));
 });
 
@@ -237,5 +239,36 @@ test('Thinking: renderThinkingAccordion omits agent badge for default Core agent
   assert.ok(!htmlCore2.includes('thought-agent-badge'), 'Should not render badge for Core');
   assert.ok(!htmlNone.includes('thought-agent-badge'), 'Should not render badge when agentName is omitted');
 });
+
+test('Thinking: renderThinkingAccordion renders interactive expandable accordion from second 0', () => {
+  const html = renderThinkingAccordion('', 1, { isExecuting: true });
+  assert.ok(html.includes('monologue-block'), 'Must render monologue-block container');
+  assert.ok(html.includes('monologue-toggle-btn'), 'Must render toggle button');
+  assert.ok(html.includes('monologue-chevron'), 'Must render chevron');
+  assert.ok(html.includes('Thinking (1s)'), 'Must render shimmering Thinking timer');
+  assert.ok(html.includes('monologue-drawer'), 'Must render drawer');
+  assert.ok(html.includes('monologue-initial-placeholder'), 'Must render initial placeholder inside drawer');
+});
+
+test('Thinking: renderThinkingAccordion Phase 1 renders clean non-expandable Thinking... when nonExpandable is true', () => {
+  const html = renderThinkingAccordion('', 1, { isExecuting: true, nonExpandable: true });
+  assert.ok(html.includes('thinking-phase1'), 'Must render thinking-phase1 container');
+  assert.ok(html.includes('Thinking...'), 'Must render clean Thinking... text');
+  assert.ok(!html.includes('monologue-drawer'), 'Must NOT render any drawer');
+  assert.ok(!html.includes('monologue-toggle-btn'), 'Must NOT render any toggle button');
+  assert.ok(!html.includes('monologue-chevron'), 'Must NOT render any chevron');
+});
+
+test('Thinking: renderThinkingAccordion returns empty string when not executing and text is empty', () => {
+  const html = renderThinkingAccordion('', 0, { isExecuting: false });
+  assert.equal(html, '');
+});
+
+test('Thinking: getCachedThoughtDuration and setCachedThoughtDuration persist durations per messageId', () => {
+  setCachedThoughtDuration('msg_test_123', 11);
+  assert.equal(getCachedThoughtDuration('msg_test_123'), 11);
+  assert.equal(getCachedThoughtDuration('msg_nonexistent'), null);
+});
+
 
 

@@ -80,6 +80,7 @@ test('Navigation Contract: isPureNavigationGoal differentiates pure navigation f
   assert.equal(isPureNavigationGoal('open gmail.com and click in the snoozed'), false);
   assert.equal(isPureNavigationGoal('go to sih.gov.in and search isro'), false);
   assert.equal(isPureNavigationGoal('open github.com then click repositories'), false);
+  assert.equal(isPureNavigationGoal('open isro and download the brochure for Yuvika programme'), false);
 
   // In-page interactions are not pure navigation
   assert.equal(isPureNavigationGoal('and click in the snoozed'), false);

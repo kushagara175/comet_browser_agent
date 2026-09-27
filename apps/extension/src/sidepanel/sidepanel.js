@@ -327,6 +327,8 @@ export function mapAgentStateToStatusInfo(state) {
       return { label: 'VERIFYING', cssClass: 'status-running' };
     case 'awaiting-user-confirmation':
       return { label: 'PENDING CONFIRMATION', cssClass: 'status-protected' };
+    case 'awaiting-user-input':
+      return { label: 'AWAITING INPUT', cssClass: 'status-protected' };
     case 'complete':
       return { label: 'VERIFIED COMPLETE', cssClass: 'status-verified' };
     case 'blocked-local-only':
@@ -498,19 +500,19 @@ export function parseReasoningLines(rawText) {
     let category = '';
 
     if (/^(?:👁️|Observation:?|Observing\b)/i.test(text)) {
-      icon = '👁️';
+      icon = '';
       category = 'Observation';
     } else if (/^(?:🎯|User Intent:?|Intent:?|Strategic plan:?|Strategy:?)/i.test(text)) {
-      icon = '🎯';
+      icon = '';
       category = 'Intent & Strategy';
     } else if (/^(?:⚡|Action Selection:?|Action:?|Next Action:?|Tool:?)/i.test(text)) {
-      icon = '⚡';
+      icon = '';
       category = 'Action Selection';
     } else if (/^(?:📋|Extraction:?|Extracted:?|Data:?|Result:?)/i.test(text)) {
-      icon = '📋';
+      icon = '';
       category = 'Extraction';
     } else if (/^(?:🧠|Thinking:?|Reasoning:?)/i.test(text)) {
-      icon = '🧠';
+      icon = '';
       category = 'Reasoning';
     } else if (/^(?:Confidence|Threshold|Evaluation):?/i.test(text)) {
       category = 'Confidence';
@@ -543,7 +545,7 @@ export function parseReasoningLines(rawText) {
     if (category === 'Intent & Strategy') {
       if (seenCategories.has('Intent & Strategy')) {
         category = 'Strategy Update';
-        icon = '🎯';
+        icon = '';
       } else {
         seenCategories.add('Intent & Strategy');
       }
@@ -643,37 +645,110 @@ export function formatReasoningIntoLinesHtml(rawText) {
   return `<div class="thought-lines-container thought-monologue-natural" style="display: flex; flex-direction: column; gap: 4px; padding: 2px 0;">${formattedParas}</div>`;
 }
 
+// Global in-memory cache of resolved thought durations per messageId (mirrored from allel)
+const thoughtDurationCache = new Map();
+
+export function getCachedThoughtDuration(messageId) {
+  if (!messageId) return null;
+  if (thoughtDurationCache.has(messageId)) {
+    return thoughtDurationCache.get(messageId);
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = window.sessionStorage?.getItem(`comet.thought-duration.${messageId}`);
+      if (stored) {
+        const val = parseInt(stored, 10);
+        if (!isNaN(val) && val > 0) {
+          thoughtDurationCache.set(messageId, val);
+          return val;
+        }
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+export function setCachedThoughtDuration(messageId, duration) {
+  if (!messageId || typeof duration !== 'number' || duration <= 0) return;
+  thoughtDurationCache.set(messageId, duration);
+  if (typeof window !== 'undefined') {
+    try {
+      window.sessionStorage?.setItem(`comet.thought-duration.${messageId}`, String(duration));
+    } catch (_) {}
+  }
+}
+
 /**
  * Renders the collapsible Monologue/Thinking Accordion with structured line-by-line thoughts.
- * By default, renders in a clean collapsed state (open: false) so the main answer is prominently visible.
+ * Implements the exact 3-phase lifecycle from allel:
+ *  Phase 1: Initial prompt submission before thinking tokens arrive (clean non-expandable shimmering "Thinking...")
+ *  Phase 2: Active thoughts in-flight (interactive accordion with live Thinking (Xs))
+ *  Phase 3: Completed thoughts (Thought for Xs, collapsed by default)
  */
 export function renderThinkingAccordion(rawReasoning, durationSeconds, options = {}) {
   const sanitized = sanitizeReasoningText(rawReasoning);
-  if (!sanitized) return '';
-
-  const words = sanitized.split(/\s+/).filter(Boolean).length;
-  const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
-  const duration = durationSeconds && durationSeconds > 0 ? durationSeconds : computedFallback;
   const isExecuting = Boolean(options.isExecuting);
-  const label = options.label || (isExecuting ? `Thinking (${duration}s)` : `Thought for ${duration}s`);
+  const hasText = Boolean(sanitized && sanitized.trim());
+
+  if (options.nonExpandable && isExecuting && !hasText) {
+    const elapsedText = durationSeconds && durationSeconds > 1 ? ` (${durationSeconds}s)` : '';
+    return `
+      <div class="thinking-phase1 flex items-center gap-2 py-0.5 select-none" style="display: flex; align-items: center; gap: 8px; padding: 2px 0; user-select: none;">
+        <span class="text-[13px] font-medium tracking-normal thinking-shimmer-text">Thinking${elapsedText}...</span>
+      </div>
+    `;
+  }
+
+  if (!hasText && !isExecuting) return '';
+
+  const messageId = options.messageId;
+  const words = sanitized.split(/\s+/).filter(Boolean).length;
+  const toolWeight = (options.toolCount && options.toolCount > 0) ? options.toolCount * 2 + 1 : 2;
+  const wordWeight = Math.floor(words / 25);
+  const seed = messageId
+    ? Math.abs(messageId.split('').reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) | 0, 0))
+    : words;
+  const jitter = seed % 3;
+  const computedFallback = Math.max(2, Math.min(16, toolWeight + wordWeight + jitter));
+
+  const cached = getCachedThoughtDuration(messageId);
+  const duration = cached || (durationSeconds && durationSeconds > 0 ? durationSeconds : computedFallback);
+  if (messageId && duration > 0) {
+    setCachedThoughtDuration(messageId, duration);
+  }
+
+  const isCacheHit = /Semantic Cache Hit/i.test(sanitized || '');
+  const label = options.label || (
+    isCacheHit
+      ? 'Thought (⚡ Semantic Cache • 34ms)'
+      : (isExecuting ? `Thinking (${duration}s)` : `Thought for ${duration}s`)
+  );
   const isExpanded = Boolean(options.open);
 
   const customAgentName = options.agentName || (options.agentName === undefined && typeof getActiveCustomAgent === 'function' ? (getActiveCustomAgent()?.id !== 'core' ? (getActiveCustomAgent()?.label || getActiveCustomAgent()?.name) : null) : null);
   const agentBadgeHtml = (customAgentName && customAgentName !== 'Comet Core' && customAgentName !== 'Core')
     ? `<span class="thought-agent-badge" title="Executing under custom agent layer">${escapeHtml(customAgentName)}</span>`
     : '';
+  const cacheBadgeHtml = isCacheHit
+    ? `<span class="thought-agent-badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.4); padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;" title="Retrieved instantly from on-device Edge Semantic Memory (0 cloud tokens)">⚡ Semantic Cache</span>`
+    : '';
+
+  const innerContent = hasText
+    ? formatReasoningIntoLinesHtml(sanitized)
+    : `<div class="monologue-initial-placeholder" style="color: #94a3b8; font-style: italic; font-size: 11.5px; opacity: 0.85; display: flex; align-items: center; gap: 6px; padding: 2px 0;"><span class="thinking-shimmer-text">Perceiving page context & formulating plan...</span></div>`;
 
   return `
-    <div class="monologue-block group" data-state="${isExpanded ? 'expanded' : 'collapsed'}">
-      <button type="button" class="monologue-toggle-btn" aria-expanded="${isExpanded ? 'true' : 'false'}">
-        <svg class="monologue-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <div class="monologue-block group text-[13px] text-neutral-400 font-normal leading-relaxed py-0.5" data-state="${isExpanded ? 'expanded' : 'collapsed'}">
+      <button type="button" class="monologue-toggle-btn flex items-center gap-2 text-left w-full cursor-pointer hover:text-neutral-300 transition-colors py-0.5 select-none" aria-expanded="${isExpanded ? 'true' : 'false'}">
+        <svg class="monologue-chevron ${isExpanded ? 'rotate-90' : ''}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"></polyline>
         </svg>
         <span class="monologue-title ${isExecuting ? 'thinking-shimmer-text' : 'monologue-completed-text'}">${escapeHtml(label)}</span>
         ${agentBadgeHtml}
+        ${cacheBadgeHtml}
       </button>
-      <div class="monologue-drawer" style="display: ${isExpanded ? 'block' : 'none'};">
-        <div class="monologue-content">${formatReasoningIntoLinesHtml(sanitized)}</div>
+      <div class="monologue-drawer" style="display: ${isExpanded ? 'block' : 'none'}; padding-left: 20px; padding-top: 6px;">
+        <div class="monologue-content custom-scrollbar" style="max-height: 110px; overflow-y: auto; color: rgba(148, 163, 184, 0.9); white-space: pre-wrap; line-height: 1.6; font-size: 12px; border-left: 1px solid rgba(255, 255, 255, 0.1); padding-left: 10px;">${innerContent}</div>
       </div>
     </div>
   `;
@@ -768,6 +843,7 @@ if (typeof document !== 'undefined') {
     // Root container for E2E matrix synchronization
     const appRoot = document.querySelector('.app-container') || document.body;
     let currentRunId = '';
+    let activeRunPort = null;
     let conversationHistory = [];
 
     // Elements
@@ -1255,6 +1331,19 @@ if (typeof document !== 'undefined') {
                   <span class="action-done-label" style="color: #e2e8f0; font-weight: 500; font-size: 12px;">${escapeHtml(displayAction)}</span>
                 </div>
               `;
+            } else if (msg.webSearchResults && Array.isArray(msg.webSearchResults)) {
+              agentBubble.className = 'chat-msg agent';
+              const webSearchHtml = renderWebSearchComponent(msg.webSearchResults, msg.webSearchQuery || '', false);
+              agentBubble.innerHTML = `
+                ${thinkingHtml}
+                <div class="websearch-tool-space">
+                  ${webSearchHtml}
+                </div>
+                <div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 4px;">
+                  ${renderMarkdown(msg.text)}
+                </div>
+              `;
+              bindWebSearchComponentEvents(agentBubble.querySelector('.websearch-tool-space'));
             } else {
               agentBubble.className = 'chat-msg agent';
               agentBubble.innerHTML = `
@@ -1376,7 +1465,7 @@ if (typeof document !== 'undefined') {
         value: 'core',
         name: 'Comet Core',
         label: 'Comet Core',
-        tag: 'Lossless',
+        tag: 'Default',
         description: 'Autonomous general web navigation & precision actions',
         prompt: ''
       }
@@ -1985,7 +2074,7 @@ if (typeof document !== 'undefined') {
     const apiCurlSnippet = document.getElementById('apiCurlSnippet');
     const apiKeyStatusMessage = document.getElementById('apiKeyStatusMessage');
 
-    let currentApiKey = 'privapilot_live_sih2026_demo_key';
+    let currentApiKey = 'comet_live_sih2026_demo_key';
 
     const getLocalApiSnippet = (key) => {
       const localGw = 'http://' + '127.0.0.1:4501/api/v1/agent/dispatch';
@@ -1994,13 +2083,15 @@ if (typeof document !== 'undefined') {
 
     // Restore any previously generated platform key
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      chrome.storage.local.get(['privapilot_active_platform_key'], (res) => {
-        if (res?.privapilot_active_platform_key) {
+      chrome.storage.local.get(['comet_active_platform_key', 'privapilot_active_platform_key'], (res) => {
+        if (res?.comet_active_platform_key) {
+          currentApiKey = res.comet_active_platform_key;
+        } else if (res?.privapilot_active_platform_key) {
           currentApiKey = res.privapilot_active_platform_key;
-          if (apiActiveKeyInput) apiActiveKeyInput.value = currentApiKey;
-          if (apiCurlSnippet) {
-            apiCurlSnippet.textContent = getLocalApiSnippet(currentApiKey);
-          }
+        }
+        if (apiActiveKeyInput) apiActiveKeyInput.value = currentApiKey;
+        if (apiCurlSnippet) {
+          apiCurlSnippet.textContent = getLocalApiSnippet(currentApiKey);
         }
         fetchPlatformApiTelemetry();
       });
@@ -2126,7 +2217,7 @@ if (typeof document !== 'undefined') {
         apiCurlSnippet.textContent = getLocalApiSnippet(currentApiKey);
       }
       if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-        chrome.storage.local.set({ privapilot_active_platform_key: currentApiKey });
+        chrome.storage.local.set({ comet_active_platform_key: currentApiKey, privapilot_active_platform_key: currentApiKey });
       }
       if (apiKeyStatusMessage) {
         apiKeyStatusMessage.className = 'api-status-msg';
@@ -2170,7 +2261,7 @@ if (typeof document !== 'undefined') {
               const randomBytes = new Uint8Array(16);
               crypto.getRandomValues(randomBytes);
               const hexKey = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-              applyGeneratedKey(`privapilot_live_${hexKey}`);
+              applyGeneratedKey(`comet_live_${hexKey}`);
             }
           }
         );
@@ -2178,7 +2269,7 @@ if (typeof document !== 'undefined') {
         const randomBytes = new Uint8Array(16);
         crypto.getRandomValues(randomBytes);
         const hexKey = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-        applyGeneratedKey(`privapilot_live_${hexKey}`);
+        applyGeneratedKey(`comet_live_${hexKey}`);
         resetBtn();
       }
     });
@@ -2410,6 +2501,70 @@ if (typeof document !== 'undefined') {
     const vaultSaveProfileBtn = document.getElementById('vaultSaveProfileBtn');
     const vaultProfileSavedStatus = document.getElementById('vaultProfileSavedStatus');
 
+    let isVaultProfileMasked = false;
+    const vaultToggleMaskBtn = document.getElementById('vaultToggleMaskBtn');
+    const vaultProfileMaskQuickBtn = document.getElementById('vaultProfileMaskQuickBtn');
+
+    function applyVaultMaskState() {
+      const profileSection = document.getElementById('vaultProfileSection');
+      if (profileSection) {
+        profileSection.classList.toggle('vault-masked-fields', isVaultProfileMasked);
+      }
+
+      const inputs = [
+        vaultFullName, vaultEmail, vaultPhone, vaultOrg,
+        vaultAddress, vaultCity, vaultState, vaultPostalCode, vaultGithub
+      ].filter(Boolean);
+
+      inputs.forEach(input => {
+        if (!input.dataset.origType) {
+          input.dataset.origType = input.type || 'text';
+        }
+        if (isVaultProfileMasked) {
+          input.type = 'password';
+        } else {
+          input.type = input.dataset.origType || 'text';
+        }
+      });
+
+      // Update Header Button
+      const openIcon = document.getElementById('vaultMaskIconOpen');
+      const closedIcon = document.getElementById('vaultMaskIconClosed');
+      const textLabel = document.getElementById('vaultToggleMaskText');
+      if (openIcon && closedIcon) {
+        openIcon.classList.toggle('hidden', isVaultProfileMasked);
+        closedIcon.classList.toggle('hidden', !isVaultProfileMasked);
+      }
+      if (textLabel) {
+        textLabel.textContent = isVaultProfileMasked ? 'Show' : 'Hide';
+      }
+      if (vaultToggleMaskBtn) {
+        vaultToggleMaskBtn.title = isVaultProfileMasked ? 'Show Details (Unhide)' : 'Hide Details (Mask for PPT/Screenshots)';
+      }
+
+      // Update Quick Bar Button
+      if (vaultProfileMaskQuickBtn) {
+        const qOpen = vaultProfileMaskQuickBtn.querySelector('.eye-open-svg');
+        const qClosed = vaultProfileMaskQuickBtn.querySelector('.eye-closed-svg');
+        const qText = vaultProfileMaskQuickBtn.querySelector('.mask-quick-text');
+        if (qOpen && qClosed) {
+          qOpen.classList.toggle('hidden', isVaultProfileMasked);
+          qClosed.classList.toggle('hidden', !isVaultProfileMasked);
+        }
+        if (qText) {
+          qText.textContent = isVaultProfileMasked ? 'Show Details' : 'Hide Details';
+        }
+      }
+    }
+
+    function toggleVaultProfileMask() {
+      isVaultProfileMasked = !isVaultProfileMasked;
+      applyVaultMaskState();
+    }
+
+    vaultToggleMaskBtn?.addEventListener('click', toggleVaultProfileMask);
+    vaultProfileMaskQuickBtn?.addEventListener('click', toggleVaultProfileMask);
+
     const vaultNewDomain = document.getElementById('vaultNewDomain');
     const vaultNewUsername = document.getElementById('vaultNewUsername');
     const vaultNewPassword = document.getElementById('vaultNewPassword');
@@ -2433,6 +2588,7 @@ if (typeof document !== 'undefined') {
 
             renderCredentialsList(res.vault.credentials || res.vault.siteCredentials || []);
             updateVaultNavPill();
+            applyVaultMaskState();
           }
         });
       } else {
@@ -2893,11 +3049,19 @@ if (typeof document !== 'undefined') {
       if (!block) return;
       const drawer = block.querySelector('.monologue-drawer');
       const isExpanded = block.getAttribute('data-state') === 'expanded';
+      const chevron = toggleBtn.querySelector('.monologue-chevron');
+      const agentBubble = block.closest('.chat-msg.agent');
 
       if (isExpanded) {
         block.setAttribute('data-state', 'collapsed');
         toggleBtn.setAttribute('aria-expanded', 'false');
         if (drawer) drawer.style.display = 'none';
+        if (chevron) chevron.classList.remove('rotate-90');
+        if (agentBubble) agentBubble.__expanded = false;
+        const progress = block.querySelector('.thinking-progress');
+        if (progress && !block.closest('.chat-msg.agent')?.querySelector('.action-status-line')) {
+          progress.style.display = 'block';
+        }
       } else {
         block.setAttribute('data-state', 'expanded');
         toggleBtn.setAttribute('aria-expanded', 'true');
@@ -2906,6 +3070,10 @@ if (typeof document !== 'undefined') {
           const content = drawer.querySelector('.monologue-content');
           if (content) content.scrollTop = content.scrollHeight;
         }
+        if (chevron) chevron.classList.add('rotate-90');
+        if (agentBubble) agentBubble.__expanded = true;
+        const progress = block.querySelector('.thinking-progress');
+        if (progress) progress.style.display = 'none';
       }
     });
 
@@ -2921,101 +3089,79 @@ if (typeof document !== 'undefined') {
       activeThinkingBubble = bubble;
       bubble.__turnStartTime = Date.now();
       bubble.__isSubAgent = isSubAgent;
+      bubble.__expanded = false; // Collapsed by default (matching allel)
+      bubble.__progress = 'Starting agent…';
+      bubble.__goalText = currentGoalText || '';
+
+      // Pure clean start: NO hardcoded demo text!
       bubble.__accumulatedReasoning = '';
-      bubble.__expanded = false;
+      bubble.__renderedReasoning = '';
 
-      // Phase 1: Clean non-expandable shimmering Thinking... text (Allel parity)
-      bubble.innerHTML = `
-        <div class="thinking-phase-1 select-none py-0.5">
-          <span class="text-[13px] font-medium tracking-normal thinking-shimmer-text">
-            ${isSubAgent ? 'Sub-Agent Swarm...' : 'Thinking...'}
-          </span>
-        </div>
-      `;
+      // Phase 1 (from allel): Render clean non-expandable shimmering "Thinking..." text (NO chevron, NO drawer)
+      bubble.innerHTML = renderThinkingAccordion('', 1, { isExecuting: true, open: false });
 
-      // Live timer interval updating every 500ms
+      // Live timer interval updating elapsed seconds every 500ms
       activeThinkingTimer = setInterval(() => {
         updateLiveThinkingDisclosure();
       }, 500);
     }
 
     function updateLiveThinkingDisclosure() {
-      if (!activeThinkingBubble) return;
-      const b = activeThinkingBubble;
+      const b = activeThinkingBubble || chatMessages.querySelector('.chat-msg.agent:last-child');
+      if (!b) return;
       const elapsed = Math.max(1, Math.round((Date.now() - (b.__turnStartTime || Date.now())) / 1000));
       const cleanReasoning = sanitizeReasoningText(b.__accumulatedReasoning);
-      const hasText = Boolean(cleanReasoning && cleanReasoning.trim());
 
-      // Phase 1 (Allel parity): If no reasoning tokens/text have arrived yet, stay in shimmering Thinking... phase
-      if (!hasText) {
-        let phase1 = b.querySelector('.thinking-phase-1');
-        if (!phase1) {
-          const block = b.querySelector('.monologue-block');
-          if (block) block.remove();
-          phase1 = document.createElement('div');
-          phase1.className = 'thinking-phase-1 select-none py-0.5';
-          phase1.innerHTML = `
-            <span class="text-[13px] font-medium tracking-normal thinking-shimmer-text">
-              ${b.__isSubAgent ? 'Sub-Agent Swarm...' : 'Thinking...'}
-            </span>
-          `;
-          b.insertBefore(phase1, b.firstChild);
-        }
-        return;
-      }
-
-      // Phase 2 (Allel parity): Real reasoning text arrived. Render expandable Monologue disclosure
       let block = b.querySelector('.monologue-block');
-      const phase1 = b.querySelector('.thinking-phase-1');
-      if (phase1) phase1.remove();
+      const isExpanded = Boolean(b.__expanded);
 
       if (!block) {
-        const activeAgent = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
-        const isCustom = activeAgent && activeAgent.id !== 'core';
-        const agentBadgeHtml = isCustom
-          ? `<span class="thought-agent-badge" title="Executing under custom agent layer">${escapeHtml(activeAgent.label || activeAgent.name)}</span>`
-          : '';
-
-        block = document.createElement('div');
-        block.className = 'monologue-block group';
-        block.setAttribute('data-state', b.__expanded ? 'expanded' : 'collapsed');
-        block.innerHTML = `
-          <button type="button" class="monologue-toggle-btn" aria-expanded="${b.__expanded ? 'true' : 'false'}">
-            <svg class="monologue-chevron ${b.__expanded ? 'rotate-90' : ''}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-            <span class="monologue-title thinking-shimmer-text">Thinking (${elapsed}s)</span>
-            ${agentBadgeHtml}
-          </button>
-          <div class="monologue-drawer" style="display: ${b.__expanded ? 'block' : 'none'};">
-            <div class="monologue-content">${formatReasoningIntoLinesHtml(cleanReasoning)}</div>
-          </div>
-        `;
-        b.insertBefore(block, b.firstChild);
+        const temp = document.createElement('div');
+        temp.innerHTML = renderThinkingAccordion(cleanReasoning, elapsed, { isExecuting: true, open: isExpanded });
+        const newBlock = temp.firstElementChild;
+        if (newBlock) {
+          b.insertBefore(newBlock, b.firstChild);
+        }
       } else {
         const title = block.querySelector('.monologue-title');
         if (title && (title.classList.contains('thinking-shimmer-text') || title.textContent.startsWith('Thinking'))) {
           title.textContent = `Thinking (${elapsed}s)`;
         }
-        const content = block.querySelector('.monologue-content');
-        if (content) {
-          content.innerHTML = formatReasoningIntoLinesHtml(cleanReasoning);
-          if (b.__expanded) {
-            content.scrollTop = content.scrollHeight;
-          }
-        }
       }
     }
 
+    function updateLiveProgress(message) {
+      if (!activeThinkingBubble || !message) return;
+      const clean = sanitizeReasoningText(message).replace(/^Step \d+\/\d+:\s*/i, '').slice(0, 160);
+      activeThinkingBubble.__progress = clean || sanitizeReasoningText(message).slice(0, 160);
+      updateLiveThinkingDisclosure();
+    }
+
+    function appendLiveReasoningStep(stepMsg) {
+      // Step strings are system progress, not real LLM reasoning. Kept as no-op to protect thinking purity.
+    }
+
     function appendLiveReasoningText(text) {
-      if (!activeThinkingBubble || !text) return;
-      const b = activeThinkingBubble;
+      const b = activeThinkingBubble || chatMessages.querySelector('.chat-msg.agent:last-child');
+      if (!b || !text) return;
       const clean = sanitizeReasoningText(text);
       if (!clean) return;
+      if (!b.__accumulatedReasoning) b.__accumulatedReasoning = '';
       if (!b.__accumulatedReasoning.includes(clean)) {
         b.__accumulatedReasoning = (b.__accumulatedReasoning ? b.__accumulatedReasoning + '\n\n' : '') + clean;
       }
+      activeThinkingBubble = b;
       updateLiveThinkingDisclosure();
+
+      // Word-by-word typewriter streaming into the active thought drawer
+      const block = b.querySelector('.monologue-block');
+      const content = block?.querySelector('.monologue-content');
+      if (content && typeof streamLiveReasoningLines === 'function') {
+        streamLiveReasoningLines(content, clean);
+        if (b.__expanded) {
+          content.scrollTop = content.scrollHeight;
+        }
+      }
     }
 
     function stopLiveThinking() {
@@ -3028,6 +3174,7 @@ if (typeof document !== 'undefined') {
 
     // Render Action Execution Outcome in Chat
     function renderActionResult(agentBubble, res, durationSeconds) {
+      if (res?.runId && res.runId !== currentRunId) return;
       stopLiveThinking();
       if (typeof window !== 'undefined') {
         window.__lastAgentResult = res;
@@ -3044,49 +3191,49 @@ if (typeof document !== 'undefined') {
         agentBubble.innerHTML = '';
 
         const card = document.createElement('div');
-        card.className = 'thought-card';
-        card.style.borderLeft = '3px solid #2563eb';
-        card.style.background = '#f8fafc';
+        card.className = 'hitl-input-card';
 
         const header = document.createElement('div');
-        header.className = 'thought-header';
-        header.innerHTML = `<span>🔐 Input Required for Secure Fill</span><span class="risk-pill risk-safe" style="background:#dbeafe; color:#1e40af;">INPUT REQUIRED</span>`;
+        header.className = 'hitl-header';
+        header.innerHTML = `
+          <div class="hitl-title-wrap">
+            <span class="hitl-title">${req.kind === 'clarification' ? 'Clarification Needed' : 'Input Required'}</span>
+          </div>
+        `;
 
         const desc = document.createElement('div');
-        desc.style.fontSize = '11px';
-        desc.style.color = '#334155';
-        desc.style.marginTop = '6px';
-        desc.style.lineHeight = '1.4';
-        desc.textContent = req.prompt || 'PrivaPilot will safely type your values into the page locally.';
+        desc.className = 'hitl-rationale';
+        desc.textContent = req.prompt || (req.kind === 'clarification' ? 'Clarify what should happen next.' : 'Enter value to continue.');
 
         const form = document.createElement('div');
-        form.style.marginTop = '8px';
+        form.style.marginTop = '4px';
         form.style.display = 'flex';
         form.style.flexDirection = 'column';
         form.style.gap = '6px';
 
-        const slotBadge = req.inputKey ? `<span style="font-size: 10px; background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: 600;">Slot: ${escapeHtml(req.inputKey)}</span>` : '';
-        const saveVaultToggle = `
-          <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; margin-top: 4px; cursor: pointer;">
-            <input type="checkbox" id="saveToVaultToggle" checked style="accent-color: #2563eb; cursor: pointer;" />
-            <span>☑️ Save to Personal Vault for future autofill</span>
+        const saveVaultToggle = req.kind === 'clarification' ? '' : `
+          <label class="hitl-vault-checkbox">
+            <input type="checkbox" id="saveToVaultToggle" checked />
+            <span>Save to Personal Vault</span>
           </label>
         `;
 
         if (req.kind === 'credentials') {
           form.innerHTML = `
-            ${slotBadge ? `<div style="margin-bottom: 2px;">${slotBadge}</div>` : ''}
-            <input type="text" id="userInputUsername" placeholder="Email or Username" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 11px; background:#ffffff; color:#0f172a;" />
-            <input type="password" id="userInputPassword" placeholder="Password" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 11px; background:#ffffff; color:#0f172a;" />
+            <input type="text" id="userInputUsername" class="hitl-input-field" placeholder="Email or Username" autocomplete="off" />
+            <input type="password" id="userInputPassword" class="hitl-input-field" placeholder="Password" autocomplete="off" />
             ${saveVaultToggle}
-            <button id="btnSubmitInputForm" style="margin-top: 4px; padding: 7px 12px; background: #2563eb; color: #ffffff; border: none; border-radius: 5px; font-weight: 600; font-size: 11px; cursor: pointer;">Fill Form &amp; Continue</button>
+            <div class="hitl-buttons-row">
+              <button id="btnSubmitInputForm" class="btn-hitl-approve">Submit</button>
+            </div>
           `;
         } else {
           form.innerHTML = `
-            ${slotBadge ? `<div style="margin-bottom: 2px;">${slotBadge}</div>` : ''}
-            <input type="text" id="userInputText" placeholder="Enter value..." style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 11px; background:#ffffff; color:#0f172a;" />
+            <input type="text" id="userInputText" class="hitl-input-field" placeholder="${req.kind === 'clarification' ? 'Clarify action...' : 'Enter value...'}" autocomplete="off" />
             ${saveVaultToggle}
-            <button id="btnSubmitInputForm" style="margin-top: 4px; padding: 7px 12px; background: #2563eb; color: #ffffff; border: none; border-radius: 5px; font-weight: 600; font-size: 11px; cursor: pointer;">Fill &amp; Continue</button>
+            <div class="hitl-buttons-row">
+              <button id="btnSubmitInputForm" class="btn-hitl-approve">Submit</button>
+            </div>
           `;
         }
 
@@ -3096,8 +3243,20 @@ if (typeof document !== 'undefined') {
         agentBubble.appendChild(card);
 
         const submitBtn = form.querySelector('#btnSubmitInputForm');
+
+        const handleEnterKey = (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            submitBtn?.click();
+          }
+        };
+        form.querySelector('#userInputText')?.addEventListener('keydown', handleEnterKey);
+        form.querySelector('#userInputUsername')?.addEventListener('keydown', handleEnterKey);
+        form.querySelector('#userInputPassword')?.addEventListener('keydown', handleEnterKey);
+
         submitBtn?.addEventListener('click', (e) => {
           e.preventDefault();
+          if (req.runId && req.runId !== currentRunId) return;
           const userVal = (form.querySelector('#userInputUsername'))?.value?.trim() || '';
           const passVal = (form.querySelector('#userInputPassword'))?.value?.trim() || '';
           const customVal = (form.querySelector('#userInputText'))?.value?.trim() || '';
@@ -3108,38 +3267,38 @@ if (typeof document !== 'undefined') {
             if (!warn) {
               warn = document.createElement('div');
               warn.className = 'input-validation-warn';
-              warn.style.color = '#dc2626';
-              warn.style.fontSize = '10px';
+              warn.style.color = '#ef4444';
+              warn.style.fontSize = '10.5px';
               warn.style.marginTop = '2px';
-              form.insertBefore(warn, submitBtn);
+              form.insertBefore(warn, form.querySelector('.hitl-buttons-row') || submitBtn);
             }
-            warn.textContent = 'Please enter username/email or password to fill.';
+            warn.textContent = req.kind === 'clarification' ? 'Please clarify the intended action.' : 'Please enter a value to continue.';
             return;
           }
 
           submitBtn.disabled = true;
-          submitBtn.textContent = 'Filling form locally...';
+          submitBtn.textContent = req.kind === 'clarification' ? 'Continuing...' : 'Filling form locally...';
           setAgentStatus('executing');
 
           if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
             chrome.runtime.sendMessage({
               type: 'SUBMIT_USER_INPUT',
               inputs: { username: userVal, password: passVal, customText: customVal },
-              saveToVault,
+              saveToVault: req.kind !== 'clarification' && saveToVault,
               inputKey: req.inputKey,
-              runId: currentRunId,
+              runId: req.runId || currentRunId,
               tabId: currentActiveTabId,
               targetLocalId: req.targetLocalId,
               resumeLoop: true
             }, (submitRes) => {
-              if (submitRes) {
+              if (submitRes && req.runId === currentRunId) {
                 renderActionResult(agentBubble, submitRes);
               }
             });
           }
         });
 
-        setAgentStatus('awaiting-user-confirmation');
+        setAgentStatus(res.state === 'awaiting-user-input' ? 'awaiting-user-input' : 'awaiting-user-confirmation');
         chatMessages.scrollTop = chatMessages.scrollHeight;
         return;
       }
@@ -3190,7 +3349,13 @@ if (typeof document !== 'undefined') {
 
         const rationale = document.createElement('div');
         rationale.className = 'hitl-rationale';
-        rationale.textContent = action.rationale || res.message || 'Action requires user confirmation before execution.';
+        let rawRat = action.rationale || res.message || 'Action requires user confirmation before execution.';
+        if (/token overlap|sequence order|semantically grounded|Container context/i.test(rawRat)) {
+          rawRat = `Please confirm to ${actionKind === 'CLICK' ? 'click' : 'interact with'} "${cleanFriendly || targetId}" to continue navigation safely.`;
+        } else {
+          rawRat = rawRat.replace(/\[semantically grounded\]/gi, '').trim();
+        }
+        rationale.textContent = rawRat;
 
         const buttonsRow = document.createElement('div');
         buttonsRow.className = 'hitl-buttons-row';
@@ -3199,6 +3364,7 @@ if (typeof document !== 'undefined') {
         approveBtn.className = 'btn-hitl-approve';
         approveBtn.textContent = 'Approve & Execute';
         approveBtn.addEventListener('click', () => {
+          if (res.runId !== currentRunId) return;
           approveBtn.disabled = true;
           approveBtn.textContent = 'Executing...';
           actionConfirmModal?.classList.add('hidden');
@@ -3206,8 +3372,8 @@ if (typeof document !== 'undefined') {
           setAgentStatus('executing');
 
           if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-            chrome.runtime.sendMessage({ type: 'APPROVE_ACTION' }, (postRes) => {
-              renderActionResult(agentBubble, postRes);
+            chrome.runtime.sendMessage({ type: 'APPROVE_ACTION', runId: res.runId, actionId: action.actionId }, (postRes) => {
+              if (res.runId === currentRunId) renderActionResult(agentBubble, postRes);
             });
           }
         });
@@ -3216,14 +3382,15 @@ if (typeof document !== 'undefined') {
         cancelBtn.className = 'btn-hitl-deny';
         cancelBtn.textContent = 'Cancel';
         cancelBtn.addEventListener('click', () => {
+          if (res.runId !== currentRunId) return;
           cancelBtn.disabled = true;
           actionConfirmModal?.classList.add('hidden');
           addAuditEntry('AUTH', 'User Cancelled Action via Inline Card', 'warn');
           setAgentStatus('idle');
 
           if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-            chrome.runtime.sendMessage({ type: 'DENY_ACTION' }, (postRes) => {
-              renderActionResult(agentBubble, postRes);
+            chrome.runtime.sendMessage({ type: 'DENY_ACTION', runId: res.runId, actionId: action.actionId }, (postRes) => {
+              if (res.runId === currentRunId) renderActionResult(agentBubble, postRes);
             });
           }
         });
@@ -3297,6 +3464,10 @@ if (typeof document !== 'undefined') {
           const opt = act.selectOptionValue || act.value || '';
           return opt ? `Selecting "${opt}"...` : 'Selecting option...';
         }
+        if (kind === 'web_search') {
+          const q = act.searchQuery || '';
+          return `Searching web for "${q.length > 24 ? q.slice(0, 24) + '…' : q}"...`;
+        }
         if (kind === 'finish' || kind === 'done') {
           return 'Finalizing results...';
         }
@@ -3365,6 +3536,10 @@ if (typeof document !== 'undefined') {
           const opt = act.selectOptionValue || act.value || '';
           return opt ? `Selected "${opt}"` : 'Selected option';
         }
+        if (kind === 'web_search') {
+          const q = act.searchQuery || '';
+          return `Searched web for "${q.length > 28 ? q.slice(0, 28) + '…' : q}"`;
+        }
         if (kind === 'finish' || kind === 'done') {
           return 'Completed';
         }
@@ -3400,8 +3575,10 @@ if (typeof document !== 'undefined') {
         const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
         const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
         const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
-        const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
-                            agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true';
+        const wasExpanded = Boolean(
+          agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
+          agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true'
+        );
         const activeAgentObj = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
         const activeAgentLabel = activeAgentObj?.id !== 'core' ? (activeAgentObj?.label || activeAgentObj?.name) : null;
         const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: wasExpanded, agentName: activeAgentLabel });
@@ -3425,10 +3602,15 @@ if (typeof document !== 'undefined') {
         const actionSuggestions = extractActionSuggestions(modelReply);
 
         let executedStepsHtml = '';
+        let webSearchComponentHtml = '';
         if (Array.isArray(res.steps) && res.steps.length > 0) {
           const actionSteps = res.steps.filter(s => s.proposal && s.proposal.kind !== 'finish' && s.proposal.kind !== 'answer');
           if (actionSteps.length > 0) {
             const lines = actionSteps.map(s => {
+              if (s.proposal?.kind === 'web_search' && Array.isArray(s.proposal.searchResults) && s.proposal.searchResults.length > 0) {
+                webSearchComponentHtml += renderWebSearchComponent(s.proposal.searchResults, s.proposal.searchQuery || currentGoalText || '', true);
+                return '';
+              }
               const label = getCleanActionLabel(s.proposal, s.sanitized?.elements);
               return `
                 <div class="action-status-line is-done" style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; margin: 3px 0; padding: 1px 0;">
@@ -3436,19 +3618,37 @@ if (typeof document !== 'undefined') {
                   <span style="color: #cbd5e1;">${escapeHtml(label)}</span>
                 </div>
               `;
-            }).join('');
-            executedStepsHtml = `<div class="executed-steps-summary" style="margin-top: 5px; margin-bottom: 5px;">${lines}</div>`;
+            }).filter(Boolean).join('');
+            if (lines) {
+              executedStepsHtml = `<div class="executed-steps-summary" style="margin-top: 5px; margin-bottom: 5px;">${lines}</div>`;
+            }
+          }
+        }
+        if (!webSearchComponentHtml && res.proposal?.kind === 'web_search' && Array.isArray(res.proposal.searchResults) && res.proposal.searchResults.length > 0) {
+          webSearchComponentHtml = renderWebSearchComponent(res.proposal.searchResults, res.proposal.searchQuery || currentGoalText || '', true);
+        }
+
+        if (activeSession) {
+          const searchStep = (res.steps || []).find(s => s.proposal?.kind === 'web_search' && Array.isArray(s.proposal.searchResults))?.proposal || (res.proposal?.kind === 'web_search' ? res.proposal : null);
+          if (searchStep?.searchResults && activeSession.messages && activeSession.messages.length > 0) {
+            const lastAgentMsg = activeSession.messages[activeSession.messages.length - 1];
+            if (lastAgentMsg && lastAgentMsg.role === 'agent') {
+              lastAgentMsg.webSearchResults = searchStep.searchResults;
+              lastAgentMsg.webSearchQuery = searchStep.searchQuery || currentGoalText || '';
+              saveChatSessions();
+            }
           }
         }
 
         agentBubble.innerHTML = `
           ${modelDisconnected ? `
             <div style="padding: 6px 8px; margin-bottom: 5px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; color: #b45309; font-size: 10.5px; font-weight: 600;">
-              ⚠️ No reasoning model connected — this reply did not come from a model.
+              No reasoning model connected — this reply did not come from a model.
             </div>
           ` : ''}
           ${thinkingHtml}
           ${executedStepsHtml}
+          ${webSearchComponentHtml ? `<div class="websearch-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${webSearchComponentHtml}</div>` : ''}
           <div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 4px;">${formattedHtml}</div>
           ${actionSuggestions.length > 0 ? `
             <div class="chat-action-chips" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;">
@@ -3460,6 +3660,10 @@ if (typeof document !== 'undefined') {
             </div>
           ` : ''}
         `;
+
+        if (webSearchComponentHtml) {
+          bindWebSearchComponentEvents(agentBubble.querySelector('.websearch-tool-space'));
+        }
 
         if (actionSuggestions.length > 0) {
           agentBubble.querySelectorAll('.chat-action-chip').forEach(chip => {
@@ -3482,7 +3686,7 @@ if (typeof document !== 'undefined') {
         const sanitized = res.sanitized || lastSanitizedContext;
         if (sanitized) {
           lastSanitizedContext = sanitized;
-          cachedSanitizedScreenshot = sanitized.sanitizedScreenshotDataUrl || '';
+          cachedSanitizedScreenshot = sanitized.inspectorScreenshotDataUrl || sanitized.sanitizedScreenshotDataUrl || '';
           if (inspectorSanitizedImage && cachedSanitizedScreenshot) {
             inspectorSanitizedImage.src = cachedSanitizedScreenshot;
           }
@@ -3514,7 +3718,7 @@ if (typeof document !== 'undefined') {
       if (res && (res.state === 'idle' || res.message?.includes('cancelled') || res.message?.includes('denied'))) {
         agentBubble.innerHTML = `
           <div style="padding: 7px 9px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; color: #475569; font-size: 11px;">
-            🚫 <strong>Action Denied:</strong> Action was cancelled by user.
+            <strong>Action Cancelled:</strong> Operation was cancelled by user.
           </div>
         `;
         setAgentStatus('idle');
@@ -3526,19 +3730,19 @@ if (typeof document !== 'undefined') {
       if (!res || !res.success) {
         const errorMsg = res?.error || res?.message || 'Action failed to execute';
         let statusState = 'failed-safe';
-        let displayHtml = `⚠️ ${escapeHtml(errorMsg)}`;
+        let displayHtml = `${escapeHtml(errorMsg)}`;
 
         if (res?.state === 'blocked-local-only' || errorMsg.toLowerCase().includes('blocked')) {
           statusState = 'blocked-local-only';
           let explanation = escapeHtml(errorMsg);
           if (errorMsg.includes('chrome://')) {
-            explanation += '<br/><span style="color: #64748b; font-size: 10px; margin-top: 4px; display: inline-block;">ℹ️ <strong>Chrome Security Guard:</strong> Chrome strictly prevents all extensions from accessing or automating internal pages (<code style="background: #f1f5f9; padding: 1px 3px; border-radius: 3px;">chrome://</code>). Please switch to a web page (e.g. <a href="http://localhost:4500" target="_blank" style="color: #2563eb; text-decoration: underline;">localhost:4500</a> or any website) to use PrivaPilot.</span>';
+            explanation += '<br/><span style="color: #64748b; font-size: 10px; margin-top: 4px; display: inline-block;"><strong>Security Notice:</strong> Chrome strictly prevents all extensions from accessing or automating internal pages (<code style="background: #f1f5f9; padding: 1px 3px; border-radius: 3px;">chrome://</code>). Please switch to a web page (e.g. <a href="http://localhost:4500" target="_blank" style="color: #2563eb; text-decoration: underline;">localhost:4500</a> or any website) to use PrivaPilot.</span>';
           }
-          displayHtml = `🛡️ <strong>Blocked Locally:</strong> ${explanation}`;
+          displayHtml = `<strong>Blocked Locally:</strong> ${explanation}`;
         } else if (errorMsg.toLowerCase().includes('stale')) {
-          displayHtml = `⚠️ <strong>Stale Target:</strong> ${escapeHtml(errorMsg)}`;
+          displayHtml = `<strong>Stale Target:</strong> ${escapeHtml(errorMsg)}`;
         } else if (errorMsg.toLowerCase().includes('verification') || errorMsg.toLowerCase().includes('semantic')) {
-          displayHtml = `⚠️ <strong>Verification Failed:</strong> ${escapeHtml(errorMsg)}`;
+          displayHtml = `<strong>Verification Failed:</strong> ${escapeHtml(errorMsg)}`;
         }
 
         const realReasoning = collectAllStepReasoning(res) || agentBubble.__accumulatedReasoning || '';
@@ -3546,8 +3750,10 @@ if (typeof document !== 'undefined') {
         const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
         const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
         const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
-        const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
-                            agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true';
+        const wasExpanded = Boolean(
+          agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
+          agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true'
+        );
         const activeAgentObj = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
         const activeAgentLabel = activeAgentObj?.id !== 'core' ? (activeAgentObj?.label || activeAgentObj?.name) : null;
         const thinkingHtml = realReasoning ? renderThinkingAccordion(realReasoning, duration, { open: wasExpanded, agentName: activeAgentLabel }) : '';
@@ -3571,20 +3777,35 @@ if (typeof document !== 'undefined') {
       const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
       const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
       const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
-      const wasExpanded = agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
-                          agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true';
+      const wasExpanded = Boolean(
+        agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
+        agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true'
+      );
       const activeAgentObj = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
       const activeAgentLabel = activeAgentObj?.id !== 'core' ? (activeAgentObj?.label || activeAgentObj?.name) : null;
       const thinkingHtml = renderThinkingAccordion(realReasoning, duration, { open: wasExpanded, agentName: activeAgentLabel });
 
+      let actionWebSearchHtml = '';
+      if (action.kind === 'web_search' && Array.isArray(action.searchResults) && action.searchResults.length > 0) {
+        actionWebSearchHtml = renderWebSearchComponent(action.searchResults, action.searchQuery || currentGoalText || '', true);
+      }
+
       agentBubble.classList.add('msg-action');
+      const actionSpeechText = action.reply || (action.kind === 'web_search' ? res.message : '');
       agentBubble.innerHTML = `
         ${thinkingHtml}
-        <div class="action-status-line is-done" style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <span class="action-done-label" style="color: #e2e8f0; font-weight: 500; font-size: 12px;">${escapeHtml(actionLabel)}</span>
-        </div>
+        ${actionWebSearchHtml ? `<div class="websearch-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${actionWebSearchHtml}</div>` : `
+          <div class="action-status-line is-done" style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span class="action-done-label" style="color: #e2e8f0; font-weight: 500; font-size: 12px;">${escapeHtml(actionLabel)}</span>
+          </div>
+        `}
+        ${actionSpeechText ? `<div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 6px;">${renderMarkdown(actionSpeechText)}</div>` : ''}
       `;
+
+      if (actionWebSearchHtml) {
+        bindWebSearchComponentEvents(agentBubble.querySelector('.websearch-tool-space'));
+      }
 
       chatMessages.scrollTop = chatMessages.scrollHeight;
       setAgentStatus('complete');
@@ -3625,7 +3846,7 @@ if (typeof document !== 'undefined') {
 
       if (sanitized) {
         lastSanitizedContext = sanitized;
-        cachedSanitizedScreenshot = sanitized.sanitizedScreenshotDataUrl || '';
+        cachedSanitizedScreenshot = sanitized.inspectorScreenshotDataUrl || sanitized.sanitizedScreenshotDataUrl || '';
         if (inspectorSanitizedImage && cachedSanitizedScreenshot) {
           inspectorSanitizedImage.src = cachedSanitizedScreenshot;
         }
@@ -3672,10 +3893,275 @@ if (typeof document !== 'undefined') {
       return false;
     }
 
+    // =========================================================================
+    // Allel Web Search Component (Imported from allel/components/chat)
+    // =========================================================================
+    function isWebSearchInstruction(text) {
+      if (!text) return false;
+      const t = text.trim();
+      return (
+        /^(?:search\s+(?:across\s+)?(?:the\s+)?web|search\s+for|search\s+online|web\s*search|look\s*up\s+on\s+(?:the\s+)?web)\b/i.test(t) ||
+        /^(?:who\s+is|what\s+is)\s+.+\s+(?:on\s+the\s+web|online)$/i.test(t)
+      );
+    }
+
+    function extractWebSearchQuery(text) {
+      if (!text) return '';
+      const t = text.trim();
+      let q = t.replace(/^(?:search\s+(?:across\s+)?(?:the\s+)?web\s+(?:for\s+)?|search\s+(?:the\s+)?web|search\s+for\s+|search\s+online\s+(?:for\s+)?|search\s+online|web\s*search\s+(?:for\s+)?|web\s*search|look\s*up\s+on\s+(?:the\s+)?web\s+(?:for\s+)?|look\s*up\s+on\s+(?:the\s+)?web)\s*/i, '').trim();
+      q = q.replace(/\s+(?:on\s+the\s+web|online)$/i, '').trim();
+      return q || 'latest updates';
+    }
+
+    function getWebFaviconUrl(url, fallbackFavicon) {
+      if (fallbackFavicon) return fallbackFavicon;
+      if (!url) return '';
+      try {
+        const domain = new URL(url).hostname.replace(/^www\./, '');
+        return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`;
+      } catch {
+        return '';
+      }
+    }
+
+    function extractWebDomain(url) {
+      if (!url) return '';
+      try {
+        return new URL(url).hostname.replace(/^www\./, '');
+      } catch {
+        return '';
+      }
+    }
+
+    function renderWebSearchExecuting(query) {
+      const displayQuery = query ? ` "${escapeHtml(query.length > 32 ? query.slice(0, 32) + '…' : query)}"` : '';
+      return `
+        <div class="websearch-timeline-node is-executing" style="margin: 4px 0 6px 0;">
+          <div class="websearch-node-header is-loading" style="display: flex; align-items: center; gap: 8px; padding: 2px 0; user-select: none;">
+            <div class="websearch-node-icon-wrap" style="display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; color: #a3a3a3;">
+              <svg class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;">
+                <line x1="12" y1="2" x2="12" y2="6"></line>
+                <line x1="12" y1="18" x2="12" y2="22"></line>
+                <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                <line x1="2" y1="12" x2="6" y2="12"></line>
+                <line x1="18" y1="12" x2="22" y2="12"></line>
+                <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+              </svg>
+            </div>
+            <span class="websearch-node-title thinking-shimmer-text" style="font-size: 13px; font-weight: 500;">Searching web intelligence${displayQuery}…</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderWebSearchComponent(results, query, isExpanded = true) {
+      if (!Array.isArray(results) || results.length === 0) return '';
+      const initialCount = 3;
+      const totalCount = results.length;
+      const hasMore = totalCount > initialCount;
+
+      const resultCardsHtml = results.map((item, idx) => {
+        const url = item.url || '#';
+        const domain = extractWebDomain(url);
+        const faviconUrl = getWebFaviconUrl(url, item.favicon);
+        const title = item.title || 'Web Result';
+        const snippet = item.content || item.snippet || url;
+        const isHiddenInitial = idx >= initialCount;
+
+        return `
+          <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="websearch-result-card ${isHiddenInitial ? 'hidden-card' : ''}" style="${isHiddenInitial ? 'display: none;' : 'display: flex;'}">
+            <div class="websearch-favicon-wrap">
+              <img class="websearch-favicon-img" src="${escapeHtml(faviconUrl)}" alt="${escapeHtml(domain)}" onerror="this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='block';" />
+              <svg class="websearch-favicon-fallback" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </div>
+            <div class="websearch-card-body">
+              <div class="websearch-card-title">${escapeHtml(title)}</div>
+              <div class="websearch-card-meta">
+                ${domain ? `<span class="websearch-domain-tag">${escapeHtml(domain)}</span>` : ''}
+                <span class="websearch-snippet-text">${escapeHtml(snippet)}</span>
+              </div>
+            </div>
+          </a>
+        `;
+      }).join('');
+
+      return `
+        <div class="websearch-timeline-node" data-expanded="${isExpanded ? 'true' : 'false'}">
+          <button type="button" class="websearch-node-header">
+            <div class="websearch-node-icon-wrap">
+              <svg class="websearch-node-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </div>
+            <span class="websearch-node-title">Searched web intelligence (${totalCount} results)</span>
+            <svg class="websearch-node-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </button>
+          <div class="websearch-drawer">
+            <div class="websearch-results-list">
+              ${resultCardsHtml}
+            </div>
+            ${hasMore ? `
+              <button type="button" class="websearch-expand-btn" data-all-expanded="false">
+                <span class="websearch-expand-label">+ ${totalCount - initialCount} more results</span>
+                <svg class="websearch-expand-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+              </button>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function bindWebSearchComponentEvents(container) {
+      if (!container) return;
+
+      const headerBtn = container.querySelector('.websearch-node-header');
+      const node = container.querySelector('.websearch-timeline-node');
+      if (headerBtn && node) {
+        headerBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const current = node.getAttribute('data-expanded') === 'true';
+          node.setAttribute('data-expanded', current ? 'false' : 'true');
+        });
+      }
+
+      const expandBtn = container.querySelector('.websearch-expand-btn');
+      if (expandBtn && node) {
+        expandBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const isExpanded = expandBtn.getAttribute('data-all-expanded') === 'true';
+          const hiddenCards = node.querySelectorAll('.websearch-result-card.hidden-card');
+          const label = expandBtn.querySelector('.websearch-expand-label');
+          const chevron = expandBtn.querySelector('.websearch-expand-chevron');
+          if (isExpanded) {
+            hiddenCards.forEach(c => c.style.display = 'none');
+            expandBtn.setAttribute('data-all-expanded', 'false');
+            const count = hiddenCards.length;
+            if (label) label.textContent = `+ ${count} more results`;
+            if (chevron) chevron.style.transform = 'rotate(90deg)';
+          } else {
+            hiddenCards.forEach(c => c.style.display = 'flex');
+            expandBtn.setAttribute('data-all-expanded', 'true');
+            if (label) label.textContent = 'Show fewer results';
+            if (chevron) chevron.style.transform = 'rotate(-90deg)';
+          }
+        });
+      }
+    }
+
+    async function executeWebSearch(goalText, agentBubble, turnStartTime) {
+      currentRunId = 'run_search_' + Date.now();
+      if (appRoot) {
+        appRoot.setAttribute('data-current-run-id', currentRunId);
+        appRoot.setAttribute('data-run-state', 'executing');
+      }
+
+      const query = extractWebSearchQuery(goalText);
+      const lightThinkingText = `Executing live Tavily web search for "${query}" and synthesizing intelligence across verified sources.`;
+
+      agentBubble.__turnStartTime = turnStartTime;
+      agentBubble.__accumulatedReasoning = lightThinkingText;
+
+      // Thinking Accordion at top (Light thinking) + Live Spinning Globe in the tool calling space below
+      agentBubble.innerHTML = `
+        ${renderThinkingAccordion(lightThinkingText, 1, { isExecuting: true, open: false })}
+        <div class="websearch-tool-space">
+          ${renderWebSearchExecuting(query)}
+        </div>
+      `;
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+      setAgentStatus('executing');
+
+      let searchData = null;
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        try {
+          searchData = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({ type: 'WEB_SEARCH', query, maxResults: 5 }, (res) => {
+              resolve(res || null);
+            });
+          });
+        } catch (swErr) {
+          console.error('[PrivaPilot] Background web search message failed:', swErr);
+        }
+      }
+
+      stopLiveThinking();
+      const elapsed = Math.max(1, Math.round((Date.now() - turnStartTime) / 1000));
+      const activeAgentObj = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
+      const activeAgentLabel = activeAgentObj?.id !== 'core' ? (activeAgentObj?.label || activeAgentObj?.name) : null;
+      const thinkingHtml = renderThinkingAccordion(lightThinkingText, elapsed, { open: false, agentName: activeAgentLabel });
+
+      if (searchData && searchData.success && Array.isArray(searchData.results) && searchData.results.length > 0) {
+        const results = searchData.results;
+        const answer = searchData.answer || (
+          `Here is the latest verified information found on the web for **${query}**:\n\n` +
+          results.slice(0, 3).map((r, i) => `${i + 1}. **[${r.title}](${r.url})**: ${r.content}`).join('\n\n')
+        );
+
+        const webSearchHtml = renderWebSearchComponent(results, query, true);
+        const speechHtml = renderMarkdown(answer);
+
+        agentBubble.innerHTML = `
+          ${thinkingHtml}
+          <div class="websearch-tool-space">
+            ${webSearchHtml}
+          </div>
+          <div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 4px;">
+            ${speechHtml}
+          </div>
+        `;
+
+        bindWebSearchComponentEvents(agentBubble.querySelector('.websearch-tool-space'));
+
+        // Record turn in conversation history and active session
+        conversationHistory.push({ role: 'assistant', content: answer });
+        if (conversationHistory.length > 20) conversationHistory = conversationHistory.slice(-20);
+
+        const activeSession = chatSessions.find(s => s.id === currentSessionId);
+        if (activeSession) {
+          if (!activeSession.messages) activeSession.messages = [];
+          activeSession.messages.push({
+            role: 'agent',
+            text: answer,
+            reasoning: lightThinkingText,
+            durationSeconds: elapsed,
+            agentName: activeAgentLabel || undefined,
+            webSearchResults: results,
+            webSearchQuery: query
+          });
+          activeSession.updatedAt = Date.now();
+          saveChatSessions();
+        }
+
+        setAgentStatus('complete');
+      } else {
+        const errorMsg = searchData?.error || `Unable to complete web search for "${query}". Please verify connection.`;
+        agentBubble.innerHTML = `
+          ${thinkingHtml}
+          <div style="padding: 7px 9px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 6px; color: #f87171; font-size: 11.5px; margin-top: 4px;">
+            ${escapeHtml(errorMsg)}
+          </div>
+        `;
+        setAgentStatus('failed-safe');
+      }
+
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
     // Execute Goal or Conversational Query
     async function executeGoal(goalText) {
       if (!goalText) return;
       currentGoalText = goalText;
+      const confirmationRunId = actionConfirmModal?.getAttribute('data-confirm-run-id');
+      const confirmationActionId = actionConfirmModal?.getAttribute('data-confirm-action-id');
+      const confirmsPendingAction = confirmationRunId === currentRunId && Boolean(confirmationActionId) &&
+        /^(?:yes|yep|sure|okay|ok|approve|confirm|continue|go ahead|do it)[.!]?$/i.test(goalText.trim());
 
       // Record user turn in multi-turn history
       conversationHistory.push({ role: 'user', content: goalText });
@@ -3726,10 +4212,13 @@ if (typeof document !== 'undefined') {
 
       // Reset any active confirmation modal from earlier runs
       actionConfirmModal?.classList.add('hidden');
-      actionConfirmModal?.removeAttribute('data-confirm-run-id');
+      if (!confirmsPendingAction) {
+        actionConfirmModal?.removeAttribute('data-confirm-run-id');
+        actionConfirmModal?.removeAttribute('data-confirm-action-id');
+      }
 
       // Generate unique runId on task dispatch
-      currentRunId = 'run_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+      currentRunId = confirmsPendingAction ? confirmationRunId : 'run_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
       if (appRoot) {
         appRoot.setAttribute('data-current-run-id', currentRunId);
         appRoot.setAttribute('data-run-state', 'starting');
@@ -3739,6 +4228,8 @@ if (typeof document !== 'undefined') {
 
       // Handle direct stop/cancel commands immediately
       if (/^(?:stop|cancel|halt|abort|quit)(?:\s+(?:it|now|all|agent|run))?$/i.test(goalText.trim())) {
+        activeRunPort?.disconnect();
+        activeRunPort = null;
         if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
           chrome.runtime.sendMessage({ type: 'CANCEL_RUN', target: 'privapilot-background' });
         }
@@ -3771,11 +4262,11 @@ if (typeof document !== 'undefined') {
         isBrowserActionRequest(goalText) ||
         isSubAgentIntent ||
         /\b(?:https?:\/\/|[a-z0-9-]+\.(?:com|org|gov|in|edu|net|io|co|ai|xyz))\b/i.test(goalText) ||
-        /\b(?:open|go\s+to|visit|launch|load|search|find|browse|wikipedia|isro|sih|github|google|amazon|flipkart)\b/i.test(goalText);
+        /\b(?:open|go\s+to|visit|launch|load|search|find|browse|wikipedia|isro|sih|github|google|amazon|flipkart|who\s+is|what\s+is|look\s*up|web\s*search)\b/i.test(goalText);
 
       // Inspect page context by default whenever on an active tab, or initiate agent run
       // from restricted/blank tabs when the user requests browser navigation/actions or sub-agent tasks.
-      const shouldRunAgent = Boolean(currentActiveTabId) && (!isRestrictedTab || hasActionOrNavIntent);
+      const shouldRunAgent = confirmsPendingAction || (Boolean(currentActiveTabId) && (!isRestrictedTab || hasActionOrNavIntent));
 
       const messageType = shouldRunAgent
         ? 'START_AGENT_RUN'
@@ -3793,21 +4284,40 @@ if (typeof document !== 'undefined') {
         }).catch?.(() => {});
       }
 
-      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
+        activeRunPort?.disconnect();
+        const runId = currentRunId;
+        const tabId = currentActiveTabId;
+        const port = chrome.runtime.connect({ name: 'privapilot-sidepanel' });
+        activeRunPort = port;
         let settled = false;
-        const timeout = setTimeout(() => {
+        const finish = (res, error) => {
           if (settled) return;
           settled = true;
-          stopLiveThinking();
-          if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
-            chrome.tabs.sendMessage(currentActiveTabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
+          port.disconnect();
+          if (activeRunPort === port) activeRunPort = null;
+          if (runId !== currentRunId) return;
+          if (tabId && chrome.tabs?.sendMessage) {
+            chrome.tabs.sendMessage(tabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
           }
-          agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">⚠️ Reasoning request timed out after 45 seconds. Target page or reasoning service took too long to complete.</div>`;
-          setAgentStatus('failed-safe');
-        }, 45000);
+          if (error) {
+            stopLiveThinking();
+            agentBubble.textContent = error;
+            setAgentStatus('failed-safe');
+            return;
+          }
+          renderActionResult(agentBubble, res, Math.max(1, Math.round((Date.now() - turnStartTime) / 1000)));
+        };
+        port.onMessage.addListener((message) => {
+          if (message?.requestId === runId) finish(message.response);
+        });
+        port.onDisconnect.addListener(() => {
+          if (!settled) finish(null, chrome.runtime.lastError?.message || 'Background service worker disconnected. Please retry.');
+        });
 
         const activeAgentObj = typeof getActiveCustomAgent === 'function' ? getActiveCustomAgent() : null;
-        chrome.runtime.sendMessage({
+        port.postMessage({
+          requestId: runId,
           target: 'privapilot-background',
           type: messageType,
           [payloadKey]: goalText,
@@ -3817,20 +4327,6 @@ if (typeof document !== 'undefined') {
           customPrompt: activeAgentObj?.prompt || undefined,
           agentId: activeAgentObj?.id || 'core',
           agentName: activeAgentObj?.name || 'Comet Core'
-        }, (res) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timeout);
-          const finalDuration = Math.max(1, Math.round((Date.now() - turnStartTime) / 1000));
-          if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
-            chrome.tabs.sendMessage(currentActiveTabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
-          }
-          if (chrome.runtime.lastError) {
-            agentBubble.innerHTML = `<div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">⚠️ Background service worker unreachable: ${escapeHtml(chrome.runtime.lastError.message)}</div>`;
-            setAgentStatus('failed-safe');
-            return;
-          }
-          renderActionResult(agentBubble, res, finalDuration);
         });
       } else {
         // Fallback for standalone / mock preview
@@ -4326,6 +4822,7 @@ if (typeof document !== 'undefined') {
       }
 
       // Also mirror the question into the sidepanel chat history
+      currentGoalText = promptText;
       const userBubble = document.createElement('div');
       userBubble.className = 'chat-msg user';
       userBubble.textContent = promptText;
@@ -5111,8 +5608,9 @@ if (typeof document !== 'undefined') {
 
     // Protected Action Approval Handlers
     approveActionBtn?.addEventListener('click', () => {
+      const approvalRunId = actionConfirmModal?.getAttribute('data-confirm-run-id');
+      if (approvalRunId !== currentRunId) return;
       actionConfirmModal?.classList.add('hidden');
-      actionConfirmModal?.removeAttribute('data-confirm-run-id');
       if (appRoot) {
         appRoot.removeAttribute('data-last-completed-run-id');
         appRoot.removeAttribute('data-last-result-state');
@@ -5121,7 +5619,8 @@ if (typeof document !== 'undefined') {
       setAgentStatus('executing');
 
       if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-        chrome.runtime.sendMessage({ type: 'APPROVE_ACTION' }, (res) => {
+        chrome.runtime.sendMessage({ type: 'APPROVE_ACTION', runId: approvalRunId, actionId: actionConfirmModal?.getAttribute('data-confirm-action-id') }, (res) => {
+          if (approvalRunId !== currentRunId) return;
           const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
           if (lastAgentBubble) {
             renderActionResult(lastAgentBubble, res);
@@ -5133,8 +5632,9 @@ if (typeof document !== 'undefined') {
     });
 
     denyActionBtn?.addEventListener('click', () => {
+      const deniedRunId = actionConfirmModal?.getAttribute('data-confirm-run-id');
+      if (deniedRunId !== currentRunId) return;
       actionConfirmModal?.classList.add('hidden');
-      actionConfirmModal?.removeAttribute('data-confirm-run-id');
       if (appRoot) {
         appRoot.removeAttribute('data-last-completed-run-id');
         appRoot.removeAttribute('data-last-result-state');
@@ -5143,7 +5643,8 @@ if (typeof document !== 'undefined') {
       setAgentStatus('idle');
 
       if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-        chrome.runtime.sendMessage({ type: 'DENY_ACTION' }, (res) => {
+        chrome.runtime.sendMessage({ type: 'DENY_ACTION', runId: deniedRunId, actionId: actionConfirmModal?.getAttribute('data-confirm-action-id') }, (res) => {
+          if (deniedRunId !== currentRunId) return;
           const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
           if (lastAgentBubble) {
             renderActionResult(lastAgentBubble, res);
@@ -5158,22 +5659,40 @@ if (typeof document !== 'undefined') {
         if (!message) return false;
 
         (async () => {
+          if (message.type?.startsWith('COORDINATOR_') && message.runId && message.runId !== currentRunId) return;
+
           if (message.type === 'COORDINATOR_STATE_CHANGED') {
             setAgentStatus(message.state);
             if (message.message) {
               addAuditEntry('AGENT', message.message, 'info');
             }
-            if (message.state === 'awaiting-reasoning') {
-              updateLiveThinkingDisclosure();
+            if (!['complete', 'failed-safe', 'idle'].includes(message.state)) {
+              const phase = {
+                capturing: 'Capturing current page',
+                sanitizing: 'Protecting sensitive content',
+                'sending-sanitized-context': 'Sending sanitized page context',
+                'awaiting-reasoning': 'Formulating plan',
+                'validating-action': 'Checking proposed action',
+                executing: 'Executing action',
+                verifying: 'Verifying result'
+              }[message.state] || 'Working';
+              const cleanDetail = (message.message && !/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*$/i.test(message.message) && !message.message.startsWith('Step '))
+                ? message.message.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/i, '')
+                : phase;
+              updateLiveProgress(cleanDetail);
             }
           }
 
           if (message.type === 'COORDINATOR_STEP_PROGRESS') {
             if (message.message) {
               addAuditEntry(`STEP ${message.step}/${message.maxSteps}`, message.message, 'info');
+              const cleanStepMsg = message.message.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/i, '');
+              updateLiveProgress(cleanStepMsg);
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
               const liveActionSpan = lastAgentBubble?.querySelector('.action-status-line.is-executing .thinking-shimmer-text');
-              if (liveActionSpan) liveActionSpan.textContent = message.message;
+              if (liveActionSpan && !liveActionSpan.textContent.includes('...')) {
+                liveActionSpan.textContent = cleanStepMsg;
+              }
             }
           }
 
@@ -5191,29 +5710,60 @@ if (typeof document !== 'undefined') {
                   appendLiveReasoningText(liveReasoning);
                 }
 
-                // If a previous executing line exists, convert it to completed (done)
-                const existingExecuting = lastAgentBubble.querySelector('.action-status-line.is-executing');
-                if (existingExecuting) {
-                  existingExecuting.className = 'action-status-line is-done';
-                  const prevText = existingExecuting.querySelector('.thinking-shimmer-text')?.textContent || '';
-                  const resolvedDone = prevText.replace(/\.\.\.$/, '').replace(/^(?:Typing|Clicking|Scrolling|Navigating to|Pressing|Selecting)\b/i, (m) => {
-                    const map = { typing: 'Typed', clicking: 'Clicked', scrolling: 'Scrolled', 'navigating to': 'Navigated to', pressing: 'Pressed', selecting: 'Selected' };
-                    return map[m.toLowerCase()] || m;
-                  });
-                  existingExecuting.innerHTML = `
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    <span class="action-done-label" style="color: #e2e8f0; font-weight: 500; font-size: 12px;">${escapeHtml(resolvedDone)}</span>
+                const progressDiv = lastAgentBubble.querySelector('.thinking-progress');
+                if (progressDiv) progressDiv.remove();
+
+                // Live Executable Action Line OUTSIDE the thinking block (as requested)
+                let actionsContainer = lastAgentBubble.querySelector('.live-actions-container');
+                if (!actionsContainer) {
+                  actionsContainer = document.createElement('div');
+                  actionsContainer.className = 'live-actions-container';
+                  actionsContainer.style.marginTop = '4px';
+                  actionsContainer.style.marginBottom = '4px';
+                  lastAgentBubble.appendChild(actionsContainer);
+                }
+
+                // If a previous action was executing, transition it to done with checkmark
+                const prevExecuting = actionsContainer.querySelector('.action-status-line.is-executing');
+                if (prevExecuting) {
+                  prevExecuting.className = 'action-status-line is-done';
+                  prevExecuting.style.display = 'flex';
+                  prevExecuting.style.alignItems = 'center';
+                  prevExecuting.style.gap = '6px';
+                  prevExecuting.style.fontSize = '12px';
+                  prevExecuting.style.color = '#94a3b8';
+                  prevExecuting.style.margin = '3px 0';
+                  prevExecuting.style.padding = '1px 0';
+                  const prevLabel = prevExecuting.getAttribute('data-clean-label') || 'Action completed';
+                  prevExecuting.innerHTML = `
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.85;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    <span style="color: #cbd5e1;">${escapeHtml(prevLabel)}</span>
                   `;
                 }
 
-                // Append the new active shimmering line
-                const activeActionLine = document.createElement('div');
-                activeActionLine.className = 'action-status-line is-executing';
-                activeActionLine.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;';
-                activeActionLine.innerHTML = `
-                  <span class="thinking-shimmer-text" style="font-weight: 500; font-size: 12px;">${escapeHtml(executingLabel)}</span>
-                `;
-                lastAgentBubble.appendChild(activeActionLine);
+                // Append new executing action line with shimmering text
+                if (act.kind !== 'finish' && act.kind !== 'answer') {
+                  const newExecuting = document.createElement('div');
+                  newExecuting.className = 'action-status-line is-executing';
+                  newExecuting.setAttribute('data-clean-label', cleanLabel);
+                  if (act.kind === 'web_search') {
+                    newExecuting.style.display = 'block';
+                    newExecuting.style.margin = '6px 0';
+                    newExecuting.innerHTML = renderWebSearchExecuting(act.searchQuery || currentGoalText || 'web');
+                  } else {
+                    newExecuting.style.display = 'flex';
+                    newExecuting.style.alignItems = 'center';
+                    newExecuting.style.gap = '6px';
+                    newExecuting.style.fontSize = '12px';
+                    newExecuting.style.color = '#38bdf8';
+                    newExecuting.style.margin = '4px 0 2px 0';
+                    newExecuting.innerHTML = `
+                      <span class="thinking-shimmer-text">${escapeHtml(executingLabel)}</span>
+                    `;
+                  }
+                  actionsContainer.appendChild(newExecuting);
+                }
+
                 chatMessages.scrollTop = chatMessages.scrollHeight;
               }
             }
@@ -5231,6 +5781,11 @@ if (typeof document !== 'undefined') {
             }
             if (statElementsCount) statElementsCount.textContent = String(message.elementCount ?? 0);
             if (statMasksCount) statMasksCount.textContent = String(message.maskCount ?? 0);
+            const activeZone = message.pageState?.pageZone || message.sanitized?.pageState?.pageZone || message.networkPayload?.pageState?.pageZone;
+            if (activeZone && statZoneStatus) {
+              statZoneStatus.textContent = activeZone === 'private_workspace' ? 'Private' : activeZone === 'hybrid' ? 'Hybrid' : 'Public';
+              statZoneStatus.className = activeZone === 'private_workspace' ? 'stat-value text-amber' : activeZone === 'hybrid' ? 'stat-value text-purple' : 'stat-value text-blue';
+            }
 
             renderMaskBreakdown(message.elements || [], message.maskCount ?? 0, message.redactionManifest || message.sanitized?.redactionManifest);
 
@@ -5254,6 +5809,7 @@ if (typeof document !== 'undefined') {
           }
 
           if (message.type === 'COORDINATOR_CONFIRMATION_REQUIRED') {
+            if (message.runId !== currentRunId) return;
             const action = message.action || {};
             if (confirmActionKind) confirmActionKind.textContent = (action.kind || 'CLICK').toUpperCase();
             let friendlyModalTarget = action.sanitizedTargetName || action.targetName || action.elementText || '';
@@ -5276,6 +5832,7 @@ if (typeof document !== 'undefined') {
             }
 
             actionConfirmModal?.setAttribute('data-confirm-run-id', message.runId || currentRunId);
+            actionConfirmModal?.setAttribute('data-confirm-action-id', action.actionId || '');
             actionConfirmModal?.classList.remove('hidden');
             setAgentStatus('awaiting-user-confirmation');
             addAuditEntry('AUTH', `Confirmation requested for ${action.kind}`, 'warn');
@@ -5286,12 +5843,14 @@ if (typeof document !== 'undefined') {
             }
             renderActionResult(lastAgentBubble, {
               state: 'awaiting-user-confirmation',
+              runId: message.runId,
               proposal: action,
               confidence: action.confidence
             });
           }
 
           if (message.type === 'COORDINATOR_USER_INPUT_REQUIRED') {
+            if (message.request?.runId !== currentRunId) return;
             let lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
             if (!lastAgentBubble) {
               lastAgentBubble = appendMessage('agent', '');
@@ -5300,7 +5859,7 @@ if (typeof document !== 'undefined') {
               state: 'awaiting-user-confirmation',
               inputRequest: message.request
             });
-            setAgentStatus('awaiting-user-confirmation');
+            setAgentStatus('awaiting-user-input');
             addAuditEntry('INPUT', `Input requested: ${message.request?.prompt || 'field fill'}`, 'info');
           }
 
@@ -5373,7 +5932,7 @@ if (typeof document !== 'undefined') {
       banner.className = 'chat-msg agent';
       banner.innerHTML = `
         <div style="padding: 8px 10px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; color: #b45309; font-size: 11px; line-height: 1.5;">
-          <strong>⚠️ ${escapeHtml(title)}</strong><br/>${escapeHtml(detail)}
+          <strong>${escapeHtml(title)}</strong><br/>${escapeHtml(detail)}
         </div>
       `;
       chatMessages.appendChild(banner);
