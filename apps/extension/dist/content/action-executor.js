@@ -310,6 +310,21 @@ export class ActionExecutor {
                 if (parentBtn && parentBtn !== targetEl) {
                     targetEl = parentBtn;
                 }
+                else if (!targetEl.closest?.('button, a, [role="button"]')) {
+                    // If target is a card heading, paragraph, or container (e.g. Spacecraft Missions* on Mission.html),
+                    // resolve to the primary link inside that card
+                    const cardContainer = targetEl.closest?.('.member, .card, .list-element, .item, .box, [class*="card" i], [class*="member" i], [class*="tile" i]');
+                    const cardLink = cardContainer?.querySelector?.('a[href]:not([href^="#"]):not([href^="javascript:"])') || null;
+                    if (cardLink) {
+                        targetEl = cardLink;
+                    }
+                    else {
+                        const siblingLink = targetEl.parentElement?.querySelector?.('a[href]:not([href^="#"]):not([href^="javascript:"])') || null;
+                        if (siblingLink) {
+                            targetEl = siblingLink;
+                        }
+                    }
+                }
             }
         }
         // 7. Disabled target validation
@@ -444,15 +459,6 @@ export class ActionExecutor {
                 }
                 else if (EventCtor) {
                     targetEl.dispatchEvent(new (MouseEventCtor || EventCtor)('click', mouseInit));
-                }
-                // Also dispatch to parent if target is nested inside custom element
-                if (targetEl.parentElement && targetEl.parentElement !== targetEl.ownerDocument?.body) {
-                    try {
-                        if (MouseEventCtor) {
-                            targetEl.parentElement.dispatchEvent(new MouseEventCtor('click', mouseInit));
-                        }
-                    }
-                    catch (_) { }
                 }
                 if (hadDisabled) {
                     try {
@@ -743,9 +749,28 @@ export class ActionExecutor {
                         key: textToType.length === 1 ? textToType : 'Process'
                     }));
                     if (proposal.pressEnter) {
-                        targetEl.dispatchEvent(new KeyboardEventCtor('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-                        targetEl.dispatchEvent(new KeyboardEventCtor('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-                        targetEl.dispatchEvent(new KeyboardEventCtor('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+                        const dispatchKeyWithCode = (evtType) => {
+                            if (!KeyboardEventCtor)
+                                return;
+                            const ke = new KeyboardEventCtor(evtType, {
+                                key: 'Enter',
+                                code: 'Enter',
+                                bubbles: true,
+                                cancelable: true,
+                                composed: true
+                            });
+                            try {
+                                Object.defineProperty(ke, 'keyCode', { get: () => 13, configurable: true });
+                                Object.defineProperty(ke, 'which', { get: () => 13, configurable: true });
+                                Object.defineProperty(ke, 'charCode', { get: () => (evtType === 'keypress' ? 13 : 0), configurable: true });
+                            }
+                            catch (_) { }
+                            const elementToDispatch = targetEl;
+                            elementToDispatch?.dispatchEvent?.(ke);
+                        };
+                        dispatchKeyWithCode('keydown');
+                        dispatchKeyWithCode('keypress');
+                        dispatchKeyWithCode('keyup');
                         const form = targetEl.form || (typeof targetEl.closest === 'function' ? targetEl.closest('form') : null);
                         const formAction = (form?.getAttribute?.('action') || '').toLowerCase();
                         const isECommerceOrSearchForm = Boolean(form && (formAction.includes('/s') ||
@@ -807,11 +832,11 @@ export class ActionExecutor {
                             }
                         }
                         else if (!form) {
-                            const container = targetEl.parentElement?.parentElement || targetEl.parentElement;
-                            const searchBtn = container?.querySelector?.('button[aria-label*="search" i], button[title*="search" i], [role="button"][aria-label*="search" i], [aria-label="search"]');
-                            if (searchBtn && typeof searchBtn.click === 'function') {
+                            const container = targetEl.closest?.('span, div, header, nav, form') || targetEl.parentElement?.parentElement || targetEl.parentElement;
+                            const searchTrigger = container?.querySelector?.('img[onclick*="search" i], [onclick*="search" i], button[aria-label*="search" i], button[title*="search" i], [title*="Search" i], [aria-label*="Search" i], .search-btn, button, [role="button"]');
+                            if (searchTrigger && searchTrigger !== targetEl && typeof searchTrigger.click === 'function') {
                                 try {
-                                    searchBtn.click();
+                                    searchTrigger.click();
                                 }
                                 catch (_) { }
                             }

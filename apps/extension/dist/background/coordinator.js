@@ -3211,7 +3211,14 @@ export class RunCoordinator {
                     await new Promise((r) => setTimeout(r, 600));
                 }
                 const currentUrl = activeTab?.url || '';
-                if (proposal.kind === 'type' && !proposal.pressEnter && (this.currentTaskContract?.structuredIntent?.pressEnter || /(?:amazon|flipkart|google|search)/i.test(currentUrl))) {
+                const typedSearchElement = sanitized.elements.find(el => el.localId === proposal.targetLocalId);
+                const isSearchTarget = Boolean(typedSearchElement && (typedSearchElement.role === 'input' && (/search|query|find|txtsearch/i.test(typedSearchElement.sanitizedName || '') ||
+                    /search|query|find|txtsearch/i.test(typedSearchElement.name || '') ||
+                    /search|query|find|txtsearch/i.test(typedSearchElement.placeholder || '') ||
+                    /search|query|find|txtsearch/i.test(typedSearchElement.id || ''))));
+                if (proposal.kind === 'type' && !proposal.pressEnter && (this.currentTaskContract?.structuredIntent?.pressEnter ||
+                    /(?:amazon|flipkart|google|search|isro|wikipedia)/i.test(currentUrl) ||
+                    isSearchTarget)) {
                     proposal = { ...proposal, pressEnter: true };
                 }
                 // Local Zero-Knowledge Vault Enrichment for single type action

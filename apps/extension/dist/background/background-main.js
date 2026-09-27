@@ -25072,7 +25072,11 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
           await new Promise((r) => setTimeout(r, 600));
         }
         const currentUrl = activeTab?.url || "";
-        if (proposal.kind === "type" && !proposal.pressEnter && (this.currentTaskContract?.structuredIntent?.pressEnter || /(?:amazon|flipkart|google|search)/i.test(currentUrl))) {
+        const typedSearchElement = sanitized.elements.find((el2) => el2.localId === proposal.targetLocalId);
+        const isSearchTarget = Boolean(
+          typedSearchElement && (typedSearchElement.role === "input" && (/search|query|find|txtsearch/i.test(typedSearchElement.sanitizedName || "") || /search|query|find|txtsearch/i.test(typedSearchElement.name || "") || /search|query|find|txtsearch/i.test(typedSearchElement.placeholder || "") || /search|query|find|txtsearch/i.test(typedSearchElement.id || "")))
+        );
+        if (proposal.kind === "type" && !proposal.pressEnter && (this.currentTaskContract?.structuredIntent?.pressEnter || /(?:amazon|flipkart|google|search|isro|wikipedia)/i.test(currentUrl) || isSearchTarget)) {
           proposal = { ...proposal, pressEnter: true };
         }
         if (proposal.kind === "type" && proposal.targetLocalId && !proposal.actionId?.startsWith("act_autofill_")) {
