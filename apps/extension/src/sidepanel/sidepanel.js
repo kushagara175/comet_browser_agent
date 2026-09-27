@@ -721,7 +721,7 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
   }
 
   const label = options.label || (isExecuting ? `Thinking (${duration}s)` : `Thought for ${duration}s`);
-  const isExpanded = Boolean(options.open);
+  const isExpanded = options.open !== undefined ? Boolean(options.open) : Boolean(isExecuting);
 
   const customAgentName = options.agentName || (options.agentName === undefined && typeof getActiveCustomAgent === 'function' ? (getActiveCustomAgent()?.id !== 'core' ? (getActiveCustomAgent()?.label || getActiveCustomAgent()?.name) : null) : null);
   const agentBadgeHtml = (customAgentName && customAgentName !== 'Comet Core' && customAgentName !== 'Core')
@@ -4569,7 +4569,8 @@ if (typeof document !== 'undefined') {
           history: conversationHistory.slice(-10),
           customPrompt: activeAgentObj?.prompt || undefined,
           agentId: activeAgentObj?.id || 'core',
-          agentName: activeAgentObj?.name || 'Comet Core'
+          agentName: activeAgentObj?.name || 'Comet Core',
+          maxSteps: 20
         });
       } else {
         // Fallback for standalone / mock preview
@@ -5138,7 +5139,8 @@ if (typeof document !== 'undefined') {
           history: conversationHistory.slice(-10),
           customPrompt: activeAgentObj?.prompt || undefined,
           agentId: activeAgentObj?.id || 'core',
-          agentName: activeAgentObj?.name || 'Comet Core'
+          agentName: activeAgentObj?.name || 'Comet Core',
+          maxSteps: 20
         }, (res) => {
           isVoiceThinking = false;
           if (voiceThinkingIndicator) {

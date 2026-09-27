@@ -779,7 +779,8 @@ export class ActionExecutor {
                         // Detect if this input is a client-side filter / search input or inside an ASP.NET wrapper form
                         const isSearchFilterInput = !isECommerceOrSearchForm && (((targetEl.getAttribute?.('type') || '').toLowerCase() === 'search' && !form) ||
                             (targetEl.hasAttribute?.('aria-controls') && !form) ||
-                            Boolean(targetEl.closest?.('.dataTables_filter, .dataTable, .table-filter, [class*="filter" i]')));
+                            (targetEl.classList && targetEl.classList.contains('search')) ||
+                            Boolean(targetEl.closest?.('.dataTables_filter, .dataTable, .table-filter, .table-responsive, [class*="filter" i], [id*="Missions" i]')));
                         const isAspnetWrapperForm = Boolean(form && (form.id === 'aspnetForm' || form.name === 'aspnetForm' || formAction.includes('.aspx')));
                         // Dispatch HTML5 'search' event for DataTables / instant table filters
                         if (EventCtor) {
@@ -831,10 +832,10 @@ export class ActionExecutor {
                                 catch (_) { }
                             }
                         }
-                        else if (!form) {
+                        else if (!form && !isSearchFilterInput) {
                             const container = targetEl.closest?.('span, div, header, nav, form') || targetEl.parentElement?.parentElement || targetEl.parentElement;
-                            const searchTrigger = container?.querySelector?.('img[onclick*="search" i], [onclick*="search" i], button[aria-label*="search" i], button[title*="search" i], [title*="Search" i], [aria-label*="Search" i], .search-btn, button, [role="button"]');
-                            if (searchTrigger && searchTrigger !== targetEl && typeof searchTrigger.click === 'function') {
+                            const searchTrigger = container?.querySelector?.('img[onclick*="search" i], [onclick*="search" i], button[aria-label*="search" i], button[title*="search" i], [title*="Search" i], [aria-label*="Search" i], .search-btn');
+                            if (searchTrigger && searchTrigger !== targetEl && typeof searchTrigger.click === 'function' && !searchTrigger.classList.contains('sort')) {
                                 try {
                                     searchTrigger.click();
                                 }

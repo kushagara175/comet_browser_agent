@@ -832,7 +832,8 @@ export class ActionExecutor {
               !isECommerceOrSearchForm && (
                 ((targetEl.getAttribute?.('type') || '').toLowerCase() === 'search' && !form) ||
                 (targetEl.hasAttribute?.('aria-controls') && !form) ||
-                Boolean(targetEl.closest?.('.dataTables_filter, .dataTable, .table-filter, [class*="filter" i]'))
+                (targetEl.classList && targetEl.classList.contains('search')) ||
+                Boolean(targetEl.closest?.('.dataTables_filter, .dataTable, .table-filter, .table-responsive, [class*="filter" i], [id*="Missions" i]'))
               );
 
             const isAspnetWrapperForm =
@@ -870,12 +871,12 @@ export class ActionExecutor {
               } else if (typeof form.submit === 'function') {
                 try { form.submit(); } catch (_) {}
               }
-            } else if (!form) {
+            } else if (!form && !isSearchFilterInput) {
               const container = targetEl.closest?.('span, div, header, nav, form') || targetEl.parentElement?.parentElement || targetEl.parentElement;
               const searchTrigger = container?.querySelector?.(
-                'img[onclick*="search" i], [onclick*="search" i], button[aria-label*="search" i], button[title*="search" i], [title*="Search" i], [aria-label*="Search" i], .search-btn, button, [role="button"]'
+                'img[onclick*="search" i], [onclick*="search" i], button[aria-label*="search" i], button[title*="search" i], [title*="Search" i], [aria-label*="Search" i], .search-btn'
               ) as HTMLElement | null;
-              if (searchTrigger && searchTrigger !== targetEl && typeof searchTrigger.click === 'function') {
+              if (searchTrigger && searchTrigger !== targetEl && typeof searchTrigger.click === 'function' && !searchTrigger.classList.contains('sort')) {
                 try { searchTrigger.click(); } catch (_) {}
               }
             }

@@ -2515,7 +2515,7 @@
               const form = targetEl.form || (typeof targetEl.closest === "function" ? targetEl.closest("form") : null);
               const formAction = (form?.getAttribute?.("action") || "").toLowerCase();
               const isECommerceOrSearchForm = Boolean(form && (formAction.includes("/s") || formAction.includes("search") || form.id && /search|nav-search|header-search/i.test(form.id)));
-              const isSearchFilterInput = !isECommerceOrSearchForm && ((targetEl.getAttribute?.("type") || "").toLowerCase() === "search" && !form || targetEl.hasAttribute?.("aria-controls") && !form || Boolean(targetEl.closest?.('.dataTables_filter, .dataTable, .table-filter, [class*="filter" i]')));
+              const isSearchFilterInput = !isECommerceOrSearchForm && ((targetEl.getAttribute?.("type") || "").toLowerCase() === "search" && !form || targetEl.hasAttribute?.("aria-controls") && !form || targetEl.classList && targetEl.classList.contains("search") || Boolean(targetEl.closest?.('.dataTables_filter, .dataTable, .table-filter, .table-responsive, [class*="filter" i], [id*="Missions" i]')));
               const isAspnetWrapperForm = Boolean(form && (form.id === "aspnetForm" || form.name === "aspnetForm" || formAction.includes(".aspx")));
               if (EventCtor) {
                 try {
@@ -2557,12 +2557,12 @@
                   } catch (_) {
                   }
                 }
-              } else if (!form) {
+              } else if (!form && !isSearchFilterInput) {
                 const container = targetEl.closest?.("span, div, header, nav, form") || targetEl.parentElement?.parentElement || targetEl.parentElement;
                 const searchTrigger = container?.querySelector?.(
-                  'img[onclick*="search" i], [onclick*="search" i], button[aria-label*="search" i], button[title*="search" i], [title*="Search" i], [aria-label*="Search" i], .search-btn, button, [role="button"]'
+                  'img[onclick*="search" i], [onclick*="search" i], button[aria-label*="search" i], button[title*="search" i], [title*="Search" i], [aria-label*="Search" i], .search-btn'
                 );
-                if (searchTrigger && searchTrigger !== targetEl && typeof searchTrigger.click === "function") {
+                if (searchTrigger && searchTrigger !== targetEl && typeof searchTrigger.click === "function" && !searchTrigger.classList.contains("sort")) {
                   try {
                     searchTrigger.click();
                   } catch (_) {

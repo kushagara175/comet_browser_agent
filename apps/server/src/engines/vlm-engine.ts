@@ -1464,7 +1464,7 @@ Strict Rules:
     - When the user asks to "compare across", "use subagents", "call subagents", "deploy subagents", "create subagents", or asks to compare products/prices/flights across two or more websites:
       YOU MUST CALL kind: "spawn_subagents"!
     - ALWAYS begin your reasoning monologue inside <think>...</think> tags detailing your multi-agent decomposition plan and task assignments for Sub-Agent 1 and Sub-Agent 2.
-4. SEARCH / FILTER / INPUT DIRECTIVE: When the user's goal asks to search, filter, type, fill, enter, write, or set text in a search box or text input (role: "input" or "textarea"), you MUST return kind: "type", target that input's local ID, and set "textToType" to ONLY the exact search query or entity (e.g. "iPhone 16", "171", "Chandrayaan-3"). DO NOT include conversational wrapper phrases like "in the search bar" or "and analyze the price" in "textToType". When searching on web portals, Wikipedia, or search engines, set "pressEnter": true so the search is executed immediately. Do NOT propose "click", "observe", "wait", or a prose plan when the intention is to enter text or filter.
+4. SEARCH / FILTER / INPUT DIRECTIVE: When the user's goal asks to search, filter, type, fill, enter, write, or set text in a search box or text input (role: "input" or "textarea"), you MUST return kind: "type", target that input's local ID, and set "textToType" to ONLY the exact search query or entity (e.g. "iPhone 16", "171", "Chandrayaan"). On directory/table filters (such as ISRO Spacecraft Missions), use the ROOT entity name (e.g. "Chandrayaan", "Aditya") rather than specific suffixes or document types ("Chandrayaan-3" or "brochure"). DO NOT include conversational wrapper phrases like "in the search bar" or "and analyze the price" in "textToType". When searching on web portals, Wikipedia, or search engines, set "pressEnter": true so the search is executed immediately. Do NOT propose "click", "observe", "wait", or a prose plan when the intention is to enter text or filter.
 4b. FLIGHT & TRAVEL BOOKING DIRECTIVE:
     - When on an airline or flight booking portal (such as Air India, IndiGo, SpiceJet, MakeMyTrip, Google Flights) with origin ("FROM", "Origin") and destination ("TO", "Destination") inputs and a "SEARCH FLIGHTS" button:
       To search for flights from city A to city B (e.g. Delhi to Mumbai):
@@ -1774,8 +1774,8 @@ Inspect current page URL and title before proposing ANY action:
   You have ALREADY arrived at the spacecraft missions directory table!
   STRICT FORBIDDEN ACTION: NEVER click the top navbar ("Activities", "About", "Services") or the top-right header search input! That is a backward regression ("back off")!
   You MUST stay on the current page and interact with the table:
-  * Propose kind: "type" into the "Table Filter (Search)" input (located in the page body directly above the table) with textToType: "Chandrayaan" (or "Aditya").
-  * Or in the table rows, propose kind: "click" on "Chandrayaan-3" (or target mission link) to open the details profile page!
+  * If the table rows are visible and contain the target mission link (e.g. "Chandrayaan-3", "Aditya-L1"): propose kind: "click" directly on the mission link to open the details profile page!
+  * If filtering is needed to reveal the row, propose kind: "type" into the "Table Filter (Search)" input (located in the page body directly above the table) with textToType: the ROOT mission name ONLY (e.g. "Chandrayaan" or "Aditya"). NEVER include suffixes, numbers, or words like "brochure", "-3", or "mission" in the table filter, because client-side List.js filters by substring!
 - STAGE 4 (Mission Profile Page e.g. /Chandrayaan3_Details.html or /Chandrayaan3.html):
   You have arrived at the mission details!
   Scan the page for the "Brochure" or PDF download link and propose kind: "click" on it!
