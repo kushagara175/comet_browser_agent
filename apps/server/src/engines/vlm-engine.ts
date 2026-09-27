@@ -1062,7 +1062,11 @@ export class VlmReasoningEngine {
       }
 
       if (!parsed.reasoning) {
-        parsed.reasoning = extractedThinking || parsed.thought || parsed.rationale;
+        if (extractedThinking && parsed.thought && extractedThinking !== parsed.thought && !extractedThinking.includes(parsed.thought)) {
+          parsed.reasoning = `${extractedThinking}\n\n${parsed.thought}`;
+        } else {
+          parsed.reasoning = extractedThinking || parsed.thought || parsed.rationale;
+        }
       }
       if (!parsed.reasoning && parsed.kind) {
         const targetDesc = parsed.targetName || parsed.targetLocalId || 'page element';
@@ -1207,16 +1211,21 @@ export class VlmReasoningEngine {
         parsed.expectedState = parsed.kind === 'finish' ? 'Goal complete' : 'UI updates after action';
       }
 
-      const thinking = parsed.reasoning || parsed.thought || extractedThinking;
       let rawThink = '';
-      if (Array.isArray(thinking)) {
-        rawThink = thinking.filter(Boolean).map((s: any) => String(s).trim()).join('\n');
-      } else if (thinking && typeof thinking === 'string') {
-        rawThink = thinking;
+      if (extractedThinking && parsed.thought && extractedThinking !== parsed.thought && !extractedThinking.includes(parsed.thought)) {
+        rawThink = `${extractedThinking}\n\n${parsed.thought}`;
+      } else {
+        const thinking = parsed.reasoning || parsed.thought || extractedThinking;
+        if (Array.isArray(thinking)) {
+          rawThink = thinking.filter(Boolean).map((s: any) => String(s).trim()).join('\n');
+        } else if (thinking && typeof thinking === 'string') {
+          rawThink = thinking;
+        }
       }
-      const sanitizedThink = cleanServerReasoning(rawThink).slice(0, 5000);
+      const sanitizedThink = cleanServerReasoning(rawThink).slice(0, 10000);
       if (sanitizedThink.length > 0) {
         parsed.reasoning = sanitizedThink;
+        parsed.thought = sanitizedThink;
       } else {
         delete parsed.reasoning;
       }
