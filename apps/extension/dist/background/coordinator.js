@@ -3221,6 +3221,51 @@ export class RunCoordinator {
                     isSearchTarget)) {
                     proposal = { ...proposal, pressEnter: true };
                 }
+                // Progression Lock: If already on SpacecraftMissions or LaunchMissions directory table,
+                // prevent backward regression (clicking Activities nav tab or typing in header search),
+                // and redirect to table filter or direct mission link
+                if (currentUrl.includes('SpacecraftMissions') || currentUrl.includes('LaunchMissions')) {
+                    const targetElObj = sanitized.elements.find(el => el.localId === proposal.targetLocalId);
+                    const isNavbarActivitiesClick = Boolean(proposal.kind === 'click' &&
+                        targetElObj &&
+                        (/activities/i.test(targetElObj.sanitizedName || '') || /activities/i.test(targetElObj.name || '')));
+                    const isHeaderSearchType = Boolean(proposal.kind === 'type' &&
+                        targetElObj &&
+                        (/site search|header/i.test(targetElObj.sanitizedName || '') || targetElObj.id === 'searchTextD'));
+                    if (isNavbarActivitiesClick || isHeaderSearchType) {
+                        console.log('[Coordinator] Progression Lock: On directory table page; suppressing regression and targeting table filter/row');
+                        const tableFilterInput = sanitized.elements.find(el => el.role === 'input' && (el.sanitizedName?.toLowerCase().includes('table') ||
+                            el.sanitizedName?.toLowerCase() === 'search' ||
+                            el.placeholder?.toLowerCase() === 'search'));
+                        const missionGoalKeyword = this.getSearchQuery(this.currentGoal || '') || 'Chandrayaan';
+                        const directMissionRow = sanitized.elements.find(el => el.role === 'link' &&
+                            tokenizeSemanticText(missionGoalKeyword).some(t => t.length > 2 && (el.sanitizedName || '').toLowerCase().includes(t)));
+                        if (directMissionRow) {
+                            proposal = {
+                                actionId: `act_mission_row_click_${step}_${Date.now()}`,
+                                kind: 'click',
+                                targetLocalId: directMissionRow.localId,
+                                confidence: 0.98,
+                                risk: 'safe',
+                                thought: `On missions directory table, clicking directly on target mission "${directMissionRow.sanitizedName}".`,
+                                rationale: `Click target mission link "${directMissionRow.sanitizedName}" in directory table`
+                            };
+                        }
+                        else if (tableFilterInput) {
+                            proposal = {
+                                actionId: `act_table_filter_${step}_${Date.now()}`,
+                                kind: 'type',
+                                targetLocalId: tableFilterInput.localId,
+                                textToType: missionGoalKeyword,
+                                pressEnter: true,
+                                confidence: 0.98,
+                                risk: 'safe',
+                                thought: `On missions directory table, filtering table rows for "${missionGoalKeyword}".`,
+                                rationale: `Filter missions table by typing "${missionGoalKeyword}"`
+                            };
+                        }
+                    }
+                }
                 // Local Zero-Knowledge Vault Enrichment for single type action
                 if (proposal.kind === 'type' && proposal.targetLocalId && !proposal.actionId?.startsWith('act_autofill_')) {
                     try {

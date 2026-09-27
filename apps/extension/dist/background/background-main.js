@@ -25079,6 +25079,48 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
         if (proposal.kind === "type" && !proposal.pressEnter && (this.currentTaskContract?.structuredIntent?.pressEnter || /(?:amazon|flipkart|google|search|isro|wikipedia)/i.test(currentUrl) || isSearchTarget)) {
           proposal = { ...proposal, pressEnter: true };
         }
+        if (currentUrl.includes("SpacecraftMissions") || currentUrl.includes("LaunchMissions")) {
+          const targetElObj = sanitized.elements.find((el2) => el2.localId === proposal.targetLocalId);
+          const isNavbarActivitiesClick = Boolean(
+            proposal.kind === "click" && targetElObj && (/activities/i.test(targetElObj.sanitizedName || "") || /activities/i.test(targetElObj.name || ""))
+          );
+          const isHeaderSearchType = Boolean(
+            proposal.kind === "type" && targetElObj && (/site search|header/i.test(targetElObj.sanitizedName || "") || targetElObj.id === "searchTextD")
+          );
+          if (isNavbarActivitiesClick || isHeaderSearchType) {
+            console.log("[Coordinator] Progression Lock: On directory table page; suppressing regression and targeting table filter/row");
+            const tableFilterInput = sanitized.elements.find(
+              (el2) => el2.role === "input" && (el2.sanitizedName?.toLowerCase().includes("table") || el2.sanitizedName?.toLowerCase() === "search" || el2.placeholder?.toLowerCase() === "search")
+            );
+            const missionGoalKeyword = this.getSearchQuery(this.currentGoal || "") || "Chandrayaan";
+            const directMissionRow = sanitized.elements.find(
+              (el2) => el2.role === "link" && tokenizeSemanticText(missionGoalKeyword).some((t) => t.length > 2 && (el2.sanitizedName || "").toLowerCase().includes(t))
+            );
+            if (directMissionRow) {
+              proposal = {
+                actionId: `act_mission_row_click_${step}_${Date.now()}`,
+                kind: "click",
+                targetLocalId: directMissionRow.localId,
+                confidence: 0.98,
+                risk: "safe",
+                thought: `On missions directory table, clicking directly on target mission "${directMissionRow.sanitizedName}".`,
+                rationale: `Click target mission link "${directMissionRow.sanitizedName}" in directory table`
+              };
+            } else if (tableFilterInput) {
+              proposal = {
+                actionId: `act_table_filter_${step}_${Date.now()}`,
+                kind: "type",
+                targetLocalId: tableFilterInput.localId,
+                textToType: missionGoalKeyword,
+                pressEnter: true,
+                confidence: 0.98,
+                risk: "safe",
+                thought: `On missions directory table, filtering table rows for "${missionGoalKeyword}".`,
+                rationale: `Filter missions table by typing "${missionGoalKeyword}"`
+              };
+            }
+          }
+        }
         if (proposal.kind === "type" && proposal.targetLocalId && !proposal.actionId?.startsWith("act_autofill_")) {
           try {
             const prefersDemoData2 = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || "") || /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || "");

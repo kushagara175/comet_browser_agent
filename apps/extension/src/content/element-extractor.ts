@@ -284,6 +284,14 @@ export class ElementExtractor {
             : '';
 
           rawName = buttonValue || associatedLabelText || ariaLabel || placeholder || title || (typeAttr === 'search' ? 'Search' : '') || (ariaControls.toLowerCase().includes('table') ? 'Search' : '') || nameAttr || role;
+
+          const isTableFilter = Boolean(el.closest?.('table, .table-responsive, [class*="table" i], [id*="table" i], [id*="Spacecraft" i], [id*="Launch" i], [id*="Mission" i]'));
+          const isHeaderNav = Boolean(el.closest?.('header, nav, #header, #navbar, #topbar, #searchidD, #searchidM, [class*="navbar" i]'));
+          if (isTableFilter && (placeholder || /search|filter/i.test(rawName))) {
+            rawName = `Table Filter (${placeholder || 'Search'})`;
+          } else if (isHeaderNav && /search|query/i.test(rawName)) {
+            rawName = `Site Search (${placeholder || ariaLabel || 'Header'})`;
+          }
         } else {
           // For buttons, links, custom clickable controls
           const textContent = el.innerText?.trim() || (el.textContent && el.textContent.trim().length < 80 ? el.textContent.trim() : '') || '';

@@ -1763,23 +1763,22 @@ JSON Schema:
 Verified Master Site Map Hierarchy for ${domainPlaybook.name}:
 ${sections}
 Autonomous Hierarchical Browsing Principles (Natural Human Traversal):
-1. Navigation Bar Grounding:
-   - On the homepage or top-level portal, inspect the site map hierarchy.
-   - For space exploration & satellite missions (Chandrayaan, Aditya-L1, Mangalyaan, AstroSat) or rocket launchers: Propose kind: "click" on "Activities" nav tab, then click the relevant section (e.g. "Missions accomplished" -> /Mission.html).
-   - For Earth observation maps & satellite imagery: Consult "Services" -> "Earth observation (Bhuvan & Bhoonidhi)".
-   - For student schemes & academic competitions: Consult "Programmes" (e.g. YUVIKA).
-2. Category Card Selection on Hub / Directory Pages:
-   - On directory hub pages (such as /Mission.html): Visually inspect the category cards (e.g. "Spacecraft Missions*", "Launch Missions**").
-   - Click the card corresponding to the user's entity type (e.g. for satellites, lunar/solar exploration like Chandrayaan or Aditya, click "Spacecraft Missions*"; for rocket launch vehicles like LVM3 or PSLV, click "Launch Missions**").
-3. Table / Directory Search & Filter Heuristic:
-   - When arriving on a directory page containing a searchable data table (e.g. /SpacecraftMissions.html or /LaunchMissions.html):
-   - Locate the search/filter input (role: "input", placeholder: "Search").
-   - Propose kind: "type" with textToType set to the mission/target keyword (e.g. "Chandrayaan", "Aditya", "LVM3") to filter the table rows immediately.
-   - In the filtered rows, propose kind: "click" on the target mission link to open its details profile page!
-4. Document Link Discovery on Mission / Entity Page:
-   - On the target profile page (e.g. /Chandrayaan3_Details.html, /Chandrayaan3.html, or /Aditya_L1.html):
-   - Visually scan the page body and resource links for the official document/brochure anchor (e.g. "Brochure", "Download PDF", or href ending in .pdf).
-   - Propose kind: "click" on that link to download the document.
+STAGE-BASED FORWARD PROGRESS DIRECTIVE:
+Inspect current page URL and title before proposing ANY action:
+- STAGE 1 (Homepage e.g. isro.gov.in/):
+  Only while on the homepage: click "Activities" in top navbar, then click "Missions accomplished" in the dropdown.
+- STAGE 2 (Missions Hub e.g. /Mission.html):
+  You have ALREADY arrived at the missions hub! DO NOT click "Activities" or the top navbar!
+  Click the relevant category card on screen: "Spacecraft Missions*" (for satellites, lunar, solar missions like Chandrayaan) or "Launch Missions**" (for rockets).
+- STAGE 3 (Directory Table e.g. /SpacecraftMissions.html or /LaunchMissions.html):
+  You have ALREADY arrived at the spacecraft missions directory table!
+  STRICT FORBIDDEN ACTION: NEVER click the top navbar ("Activities", "About", "Services") or the top-right header search input! That is a backward regression ("back off")!
+  You MUST stay on the current page and interact with the table:
+  * Propose kind: "type" into the "Table Filter (Search)" input (located in the page body directly above the table) with textToType: "Chandrayaan" (or "Aditya").
+  * Or in the table rows, propose kind: "click" on "Chandrayaan-3" (or target mission link) to open the details profile page!
+- STAGE 4 (Mission Profile Page e.g. /Chandrayaan3_Details.html or /Chandrayaan3.html):
+  You have arrived at the mission details!
+  Scan the page for the "Brochure" or PDF download link and propose kind: "click" on it!
 STRICT PROHIBITION: NEVER propose kind: "navigate" to jump directly to an internal subpage! You MUST propose kind: "click" or "type" on the visible elements on the screen to browse naturally step by step like a human user.
 `;
       }

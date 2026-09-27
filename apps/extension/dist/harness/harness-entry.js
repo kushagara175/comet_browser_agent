@@ -15117,6 +15117,13 @@ as ORT format: ${n}`);
             const ariaControls = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-controls") || "" : "").trim();
             const buttonValue = typeAttr === "submit" || typeAttr === "button" || typeAttr === "reset" ? (typeof el2.getAttribute === "function" ? el2.getAttribute("value") || "" : "").trim() || (typeAttr === "submit" ? "Submit" : "") : "";
             rawName = buttonValue || associatedLabelText || ariaLabel || placeholder || title || (typeAttr === "search" ? "Search" : "") || (ariaControls.toLowerCase().includes("table") ? "Search" : "") || nameAttr || role;
+            const isTableFilter = Boolean(el2.closest?.('table, .table-responsive, [class*="table" i], [id*="table" i], [id*="Spacecraft" i], [id*="Launch" i], [id*="Mission" i]'));
+            const isHeaderNav = Boolean(el2.closest?.('header, nav, #header, #navbar, #topbar, #searchidD, #searchidM, [class*="navbar" i]'));
+            if (isTableFilter && (placeholder || /search|filter/i.test(rawName))) {
+              rawName = `Table Filter (${placeholder || "Search"})`;
+            } else if (isHeaderNav && /search|query/i.test(rawName)) {
+              rawName = `Site Search (${placeholder || ariaLabel || "Header"})`;
+            }
           } else {
             const textContent = el2.innerText?.trim() || (el2.textContent && el2.textContent.trim().length < 80 ? el2.textContent.trim() : "") || "";
             const aria = (typeof el2.getAttribute === "function" ? el2.getAttribute("aria-label")?.trim() || el2.getAttribute("title")?.trim() : "") || (el2.querySelector?.("[aria-label]")?.getAttribute("aria-label")?.trim() || "");
