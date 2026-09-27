@@ -1338,6 +1338,19 @@ if (typeof document !== 'undefined') {
                 </div>
               `;
               bindWebSearchComponentEvents(agentBubble.querySelector('.websearch-tool-space'));
+            } else if ((msg.isSubAgentSwarm || (msg.subTasks && Array.isArray(msg.subTasks))) && msg.subTasks) {
+              agentBubble.className = 'chat-msg agent';
+              const swarmHtml = renderSubAgentSwarmComponent(msg.subTasks, false);
+              agentBubble.innerHTML = `
+                ${thinkingHtml}
+                <div class="subagent-tool-space" style="margin-top: 6px; margin-bottom: 6px;">
+                  ${swarmHtml}
+                </div>
+                <div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 4px;">
+                  ${renderMarkdown(msg.text)}
+                </div>
+              `;
+              bindSubAgentSwarmComponentEvents(agentBubble.querySelector('.subagent-tool-space'));
             } else {
               agentBubble.className = 'chat-msg agent';
               agentBubble.innerHTML = `
@@ -3462,6 +3475,9 @@ if (typeof document !== 'undefined') {
           const q = act.searchQuery || '';
           return `Searching web for "${q.length > 24 ? q.slice(0, 24) + '…' : q}"...`;
         }
+        if (kind === 'spawn_subagents') {
+          return act.rationale || 'Deploying sub-agents in parallel...';
+        }
         if (kind === 'finish' || kind === 'done') {
           return 'Finalizing results...';
         }
@@ -3534,6 +3550,9 @@ if (typeof document !== 'undefined') {
           const q = act.searchQuery || '';
           return `Searched web for "${q.length > 28 ? q.slice(0, 28) + '…' : q}"`;
         }
+        if (kind === 'spawn_subagents') {
+          return act.rationale || 'Deployed sub-agents in parallel';
+        }
         if (kind === 'finish' || kind === 'done') {
           return 'Completed';
         }
@@ -3597,12 +3616,17 @@ if (typeof document !== 'undefined') {
 
         let executedStepsHtml = '';
         let webSearchComponentHtml = '';
+        let subAgentSwarmHtml = '';
         if (Array.isArray(res.steps) && res.steps.length > 0) {
           const actionSteps = res.steps.filter(s => s.proposal && s.proposal.kind !== 'finish' && s.proposal.kind !== 'answer');
           if (actionSteps.length > 0) {
             const lines = actionSteps.map(s => {
               if (s.proposal?.kind === 'web_search' && Array.isArray(s.proposal.searchResults) && s.proposal.searchResults.length > 0) {
                 webSearchComponentHtml += renderWebSearchComponent(s.proposal.searchResults, s.proposal.searchQuery || currentGoalText || '', true);
+                return '';
+              }
+              if (s.proposal?.kind === 'spawn_subagents' && Array.isArray(s.proposal.subTasks) && s.proposal.subTasks.length > 0) {
+                subAgentSwarmHtml += renderSubAgentSwarmComponent(s.proposal.subTasks, true);
                 return '';
               }
               const label = getCleanActionLabel(s.proposal, s.sanitized?.elements);
@@ -3621,14 +3645,24 @@ if (typeof document !== 'undefined') {
         if (!webSearchComponentHtml && res.proposal?.kind === 'web_search' && Array.isArray(res.proposal.searchResults) && res.proposal.searchResults.length > 0) {
           webSearchComponentHtml = renderWebSearchComponent(res.proposal.searchResults, res.proposal.searchQuery || currentGoalText || '', true);
         }
+        if (!subAgentSwarmHtml && (res.isSubAgentSwarm || res.proposal?.kind === 'spawn_subagents') && Array.isArray(res.subTasks || res.proposal?.subTasks) && (res.subTasks || res.proposal?.subTasks).length > 0) {
+          subAgentSwarmHtml = renderSubAgentSwarmComponent(res.subTasks || res.proposal?.subTasks, true);
+        }
 
         if (activeSession) {
           const searchStep = (res.steps || []).find(s => s.proposal?.kind === 'web_search' && Array.isArray(s.proposal.searchResults))?.proposal || (res.proposal?.kind === 'web_search' ? res.proposal : null);
-          if (searchStep?.searchResults && activeSession.messages && activeSession.messages.length > 0) {
+          const swarmSubTasks = res.subTasks || res.proposal?.subTasks;
+          if (activeSession.messages && activeSession.messages.length > 0) {
             const lastAgentMsg = activeSession.messages[activeSession.messages.length - 1];
             if (lastAgentMsg && lastAgentMsg.role === 'agent') {
-              lastAgentMsg.webSearchResults = searchStep.searchResults;
-              lastAgentMsg.webSearchQuery = searchStep.searchQuery || currentGoalText || '';
+              if (searchStep?.searchResults) {
+                lastAgentMsg.webSearchResults = searchStep.searchResults;
+                lastAgentMsg.webSearchQuery = searchStep.searchQuery || currentGoalText || '';
+              }
+              if (res.isSubAgentSwarm || swarmSubTasks) {
+                lastAgentMsg.isSubAgentSwarm = true;
+                lastAgentMsg.subTasks = swarmSubTasks;
+              }
               saveChatSessions();
             }
           }
@@ -3643,6 +3677,7 @@ if (typeof document !== 'undefined') {
           ${thinkingHtml}
           ${executedStepsHtml}
           ${webSearchComponentHtml ? `<div class="websearch-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${webSearchComponentHtml}</div>` : ''}
+          ${subAgentSwarmHtml ? `<div class="subagent-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${subAgentSwarmHtml}</div>` : ''}
           <div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 4px;">${formattedHtml}</div>
           ${actionSuggestions.length > 0 ? `
             <div class="chat-action-chips" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;">
@@ -3657,6 +3692,9 @@ if (typeof document !== 'undefined') {
 
         if (webSearchComponentHtml) {
           bindWebSearchComponentEvents(agentBubble.querySelector('.websearch-tool-space'));
+        }
+        if (subAgentSwarmHtml) {
+          bindSubAgentSwarmComponentEvents(agentBubble.querySelector('.subagent-tool-space'));
         }
 
         if (actionSuggestions.length > 0) {
@@ -3783,22 +3821,30 @@ if (typeof document !== 'undefined') {
       if (action.kind === 'web_search' && Array.isArray(action.searchResults) && action.searchResults.length > 0) {
         actionWebSearchHtml = renderWebSearchComponent(action.searchResults, action.searchQuery || currentGoalText || '', true);
       }
+      let actionSubAgentHtml = '';
+      if ((action.kind === 'spawn_subagents' || res.isSubAgentSwarm) && Array.isArray(action.subTasks || res.subTasks) && (action.subTasks || res.subTasks).length > 0) {
+        actionSubAgentHtml = renderSubAgentSwarmComponent(action.subTasks || res.subTasks, true);
+      }
 
       agentBubble.classList.add('msg-action');
-      const actionSpeechText = action.reply || (action.kind === 'web_search' ? res.message : '');
+      const actionSpeechText = action.reply || ((action.kind === 'web_search' || action.kind === 'spawn_subagents') ? res.message : '');
       agentBubble.innerHTML = `
         ${thinkingHtml}
-        ${actionWebSearchHtml ? `<div class="websearch-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${actionWebSearchHtml}</div>` : `
+        ${actionWebSearchHtml ? `<div class="websearch-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${actionWebSearchHtml}</div>` : (
+          actionSubAgentHtml ? `<div class="subagent-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${actionSubAgentHtml}</div>` : `
           <div class="action-status-line is-done" style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
             <span class="action-done-label" style="color: #e2e8f0; font-weight: 500; font-size: 12px;">${escapeHtml(actionLabel)}</span>
           </div>
-        `}
+        `)}
         ${actionSpeechText ? `<div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 6px;">${renderMarkdown(actionSpeechText)}</div>` : ''}
       `;
 
       if (actionWebSearchHtml) {
         bindWebSearchComponentEvents(agentBubble.querySelector('.websearch-tool-space'));
+      }
+      if (actionSubAgentHtml) {
+        bindSubAgentSwarmComponentEvents(agentBubble.querySelector('.subagent-tool-space'));
       }
 
       chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -3823,7 +3869,9 @@ if (typeof document !== 'undefined') {
           isAction: true,
           reasoning: realReasoning,
           durationSeconds: duration,
-          steps: res.steps
+          steps: res.steps,
+          isSubAgentSwarm: Boolean(actionSubAgentHtml),
+          subTasks: action.subTasks || res.subTasks
         });
         activeSession.updatedAt = Date.now();
         saveChatSessions();
@@ -3872,10 +3920,14 @@ if (typeof document !== 'undefined') {
     function isSubAgentIntentText(text, history) {
       if (!text || typeof text !== 'string') return false;
       const trimmed = text.trim();
-      const isComparative = /\b(?:compare|versus|vs\.?|across|both|sub-?agents?|swarm|parallel\s+agents?|simultaneously|multi-?agent)\b/i.test(trimmed);
+      if (/\b(?:without\s+sub-?agents?|no\s+sub-?agents?|single\s+agent|single\s+tab|don't\s+use\s+sub-?agents?|disable\s+sub-?agents?)\b/i.test(trimmed)) {
+        return false;
+      }
+      const isComparative = /\b(?:compare|versus|vs\.?|across|both|sub-?agents?|subagnts?|subwgrns?|subegmts?|swarm|parallel\s+agents?|simultaneously|multi-?agent|deploy\s+(?:sub-?)?agents?|create\s+(?:sub-?)?agents?|call\s+(?:sub-?)?agents?)\b/i.test(trimmed);
       const matches = trimmed.match(/(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi);
       const uniqueCount = matches ? new Set(matches.map(m => m.toLowerCase().replace(/\s+/g, ''))).size : 0;
-      if (isComparative || uniqueCount >= 2) return true;
+      const isExplicitSubagent = /\b(?:sub-?agents?|subagnts?|subwgrns?|subegmts?|swarm|parallel\s+agents?|multi-?agents?|call\s+(?:sub-?)?agents?|create\s+(?:sub-?)?agents?|deploy\s+(?:sub-?)?agents?|deploy\s+agents?)\b/i.test(trimmed);
+      if (isComparative || uniqueCount >= 2 || isExplicitSubagent) return true;
 
       // Check affirmative continuation with prior subagent query in history
       if (AFFIRMATIVE_PATTERN.test(trimmed) && Array.isArray(history) && history.length > 0) {
@@ -4075,6 +4127,163 @@ if (typeof document !== 'undefined') {
             if (label) label.textContent = 'Show fewer results';
             if (chevron) chevron.style.transform = 'rotate(-90deg)';
           }
+        });
+      }
+    }
+
+    // =========================================================================
+    // Sub-Agent Swarm Components (Multi-Agent Live Execution & Drawer)
+    // =========================================================================
+    function renderSubAgentSwarmExecuting(subTasks, statusMessage) {
+      const tasks = Array.isArray(subTasks) && subTasks.length > 0 ? subTasks : [
+        { title: 'Sub-Agent 1', taskDescription: 'Assigning task & initializing isolated tab…', statusText: 'Deploying in isolated tab…' },
+        { title: 'Sub-Agent 2', taskDescription: 'Assigning task & initializing isolated tab…', statusText: 'Deploying in isolated tab…' }
+      ];
+
+      const workersHtml = tasks.map((worker, idx) => {
+        const title = worker.title || `Sub-Agent ${idx + 1}`;
+        const desc = worker.taskDescription || 'Assigned task';
+        const status = worker.statusText || 'Deploying in isolated tab…';
+        const url = worker.targetUrl || '';
+        const domain = url ? extractWebDomain(url) : '';
+        const favicon = url ? getWebFaviconUrl(url) : '';
+
+        return `
+          <div class="subagent-worker-row" data-agent="${idx + 1}">
+            <div class="subagent-worker-main">
+              <span class="subagent-index-badge">${idx + 1}</span>
+              ${favicon ? `<img src="${escapeHtml(favicon)}" class="subagent-worker-favicon" onerror="this.style.display='none';" />` : ''}
+              <div class="subagent-worker-meta">
+                <div class="subagent-worker-title">
+                  ${escapeHtml(title)}
+                  ${domain ? `<span class="subagent-domain-pill">${escapeHtml(domain)}</span>` : ''}
+                </div>
+                <div class="subagent-worker-desc">${escapeHtml(desc)}</div>
+              </div>
+            </div>
+            <span class="subagent-worker-status thinking-shimmer-text">${escapeHtml(status)}</span>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="subagent-timeline-node is-executing">
+          <div class="subagent-node-header is-loading">
+            <div class="subagent-node-icon-wrap">
+              <svg class="subagent-node-icon swarm-pulse-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+            </div>
+            <span class="subagent-node-title thinking-shimmer-text">${escapeHtml(statusMessage || 'Deploying Sub-Agents Swarm…')}</span>
+            <span class="subagent-dpdp-pill">DPDP Isolated</span>
+          </div>
+          <div class="subagent-workers-list">
+            ${workersHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSubAgentSwarmComponent(subTasks, isExpanded = true) {
+      if (!Array.isArray(subTasks) || subTasks.length === 0) return '';
+
+      // Unique favicons for overlapping stack
+      const uniqueSources = [];
+      const seenDomains = new Set();
+      for (const st of subTasks) {
+        const url = st.targetUrl || '';
+        const domain = extractWebDomain(url);
+        if (domain && !seenDomains.has(domain)) {
+          seenDomains.add(domain);
+          uniqueSources.push({
+            domain,
+            favicon: getWebFaviconUrl(url)
+          });
+        }
+      }
+
+      const sourceStackHtml = `
+        <div class="subagent-source-stack">
+          ${uniqueSources.map((s, i) => `
+            <span class="subagent-stack-circle" style="z-index: ${uniqueSources.length - i};" title="${escapeHtml(s.domain)}">
+              <img src="${escapeHtml(s.favicon)}" alt="${escapeHtml(s.domain)}" onerror="this.style.display='none';" />
+            </span>
+          `).join('')}
+        </div>
+      `;
+
+      const cardsHtml = subTasks.map((st, idx) => {
+        const title = st.title || `Sub-Agent ${idx + 1}`;
+        const desc = st.taskDescription || '';
+        const url = st.targetUrl || '';
+        const domain = url ? extractWebDomain(url) : '';
+        const favicon = url ? getWebFaviconUrl(url) : '';
+        const summary = st.result?.summary || st.summary || '';
+
+        return `
+          <div class="subagent-result-card">
+            <div class="subagent-card-header">
+              <div class="subagent-card-identity">
+                <span class="subagent-index-badge is-done">${idx + 1}</span>
+                ${favicon ? `<img src="${escapeHtml(favicon)}" class="subagent-worker-favicon" onerror="this.style.display='none';" />` : ''}
+                <span class="subagent-worker-title">${escapeHtml(title)}</span>
+                ${st.role ? `<span class="subagent-role-pill">${escapeHtml(st.role)}</span>` : ''}
+              </div>
+              <div class="subagent-card-actions">
+                <span class="subagent-status-done-badge">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  Completed
+                </span>
+                ${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="subagent-tab-link" title="Open ${escapeHtml(domain || 'tab')}">Tab ↗</a>` : ''}
+              </div>
+            </div>
+            ${desc ? `<div class="subagent-card-task"><strong>Task:</strong> ${escapeHtml(desc)}</div>` : ''}
+            ${summary ? `<div class="subagent-card-snippet">${escapeHtml(summary)}</div>` : ''}
+            <div class="subagent-card-footer">
+              <span class="subagent-footer-item">🛡️ Isolated Tab Execution</span>
+              <span class="subagent-footer-item">DPDP: 0 PII Leakage</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="subagent-timeline-node" data-expanded="${isExpanded ? 'true' : 'false'}">
+          <button type="button" class="subagent-node-header">
+            <div class="subagent-node-icon-wrap">
+              <svg class="subagent-node-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+            </div>
+            <span class="subagent-node-title">Sub-Agent Swarm (${subTasks.length} Parallel Workers)</span>
+            ${sourceStackHtml}
+            <span class="subagent-dpdp-pill">DPDP Isolated</span>
+            <svg class="subagent-node-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </button>
+          <div class="subagent-drawer">
+            ${cardsHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    function bindSubAgentSwarmComponentEvents(container) {
+      if (!container) return;
+      const headerBtn = container.querySelector('.subagent-node-header');
+      const node = container.querySelector('.subagent-timeline-node');
+      if (headerBtn && node) {
+        headerBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const current = node.getAttribute('data-expanded') === 'true';
+          node.setAttribute('data-expanded', current ? 'false' : 'true');
         });
       }
     }
@@ -5874,6 +6083,46 @@ if (typeof document !== 'undefined') {
               if (liveActionSpan && !liveActionSpan.textContent.includes('...')) {
                 liveActionSpan.textContent = cleanStepMsg;
               }
+
+              // Update sub-agent timeline node if active
+              const executingSwarm = lastAgentBubble?.querySelector('.subagent-timeline-node.is-executing');
+              if (executingSwarm) {
+                const headerTitle = executingSwarm.querySelector('.subagent-node-title');
+                if (cleanStepMsg.toLowerCase().includes('working in parallel')) {
+                  if (headerTitle) headerTitle.textContent = 'Sub-agents working in parallel…';
+                  executingSwarm.querySelectorAll('.subagent-worker-status').forEach(s => {
+                    s.textContent = 'Working in parallel…';
+                  });
+                } else if (cleanStepMsg.toLowerCase().includes('sub-agent 1')) {
+                  const s1Row = executingSwarm.querySelector('.subagent-worker-row[data-agent="1"]');
+                  const s1Status = s1Row?.querySelector('.subagent-worker-status');
+                  if (s1Status) {
+                    if (cleanStepMsg.includes('✓') || cleanStepMsg.toLowerCase().includes('extracted')) {
+                      s1Status.innerHTML = '<span style="color: #34d399; font-weight: 600;">✓ Extracted data</span>';
+                      s1Status.classList.remove('thinking-shimmer-text');
+                    } else {
+                      s1Status.textContent = cleanStepMsg.replace(/^.*Sub-Agent 1[^:]*:\s*/i, '') || 'Extracting live page data…';
+                    }
+                  }
+                } else if (cleanStepMsg.toLowerCase().includes('sub-agent 2')) {
+                  const s2Row = executingSwarm.querySelector('.subagent-worker-row[data-agent="2"]');
+                  const s2Status = s2Row?.querySelector('.subagent-worker-status');
+                  if (s2Status) {
+                    if (cleanStepMsg.includes('✓') || cleanStepMsg.toLowerCase().includes('extracted')) {
+                      s2Status.innerHTML = '<span style="color: #34d399; font-weight: 600;">✓ Extracted data</span>';
+                      s2Status.classList.remove('thinking-shimmer-text');
+                    } else {
+                      s2Status.textContent = cleanStepMsg.replace(/^.*Sub-Agent 2[^:]*:\s*/i, '') || 'Extracting live page data…';
+                    }
+                  }
+                } else if (cleanStepMsg.toLowerCase().includes('completed')) {
+                  if (headerTitle) headerTitle.textContent = '✓ Sub-agents completed tasks';
+                  executingSwarm.querySelectorAll('.subagent-worker-status').forEach(s => {
+                    s.innerHTML = '<span style="color: #34d399; font-weight: 600;">✓ Completed</span>';
+                    s.classList.remove('thinking-shimmer-text');
+                  });
+                }
+              }
             }
           }
 
@@ -5931,6 +6180,10 @@ if (typeof document !== 'undefined') {
                     newExecuting.style.display = 'block';
                     newExecuting.style.margin = '6px 0';
                     newExecuting.innerHTML = renderWebSearchExecuting(act.searchQuery || currentGoalText || 'web');
+                  } else if (act.kind === 'spawn_subagents') {
+                    newExecuting.style.display = 'block';
+                    newExecuting.style.margin = '6px 0';
+                    newExecuting.innerHTML = renderSubAgentSwarmExecuting(act.subTasks, 'Deploying Sub-Agents Swarm…');
                   } else {
                     newExecuting.style.display = 'flex';
                     newExecuting.style.alignItems = 'center';

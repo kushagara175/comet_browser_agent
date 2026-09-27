@@ -23,6 +23,8 @@ export interface ChatOutcome {
     readonly elementCount: number;
     /** False when the gateway answered from its offline reasoner, or not at all. */
     readonly modelConnected?: boolean;
+    readonly isSubAgentSwarm?: boolean;
+    readonly subTasks?: ReadonlyArray<any>;
 }
 export interface CoordinatorRunOptions {
     readonly maxSteps?: number;
@@ -85,6 +87,8 @@ export interface CoordinatorRunResult {
     readonly reply?: string;
     readonly error?: string;
     readonly reasoning?: string;
+    readonly isSubAgentSwarm?: boolean;
+    readonly subTasks?: ReadonlyArray<any>;
     readonly sanitized?: SanitizedContext;
     readonly proposal?: ActionProposal;
     readonly telemetry?: RunTelemetry;

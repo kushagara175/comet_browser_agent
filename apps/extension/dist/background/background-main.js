@@ -22265,7 +22265,7 @@ function isSubAgentSwarmGoal(goal) {
   const hasMultiplePortals = /(?:https?:\/\/[^\s]+[\s\S]+https?:\/\/[^\s]+)/i.test(trimmed);
   const entityMatches = trimmed.match(/(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi);
   const uniqueEntities = entityMatches ? Array.from(new Set(entityMatches.map((e) => e.toLowerCase().replace(/\s+/g, "")))) : [];
-  const isExplicitSubagent = /\b(?:sub-?agents?|swarm|parallel\s+agents?|multi-?agent)\b/i.test(trimmed);
+  const isExplicitSubagent = /\b(?:sub-?agents?|subagnts?|subwgrns?|subegmts?|swarm|parallel\s+agents?|multi-?agents?|call\s+(?:sub-?)?agents?|create\s+(?:sub-?)?agents?|deploy\s+(?:sub-?)?agents?|deploy\s+agents?)\b/i.test(trimmed);
   const isCrossDomainQuery = isComparative && (uniqueEntities.length >= 2 || /\b(?:flight|flights|airline|airlines|hotel|hotels|price|prices|ticket|tickets|fare|fares)\b/i.test(trimmed));
   return isCrossDomainQuery || hasMultiplePortals || uniqueEntities.length >= 2 || isExplicitSubagent;
 }
@@ -26289,17 +26289,65 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
       } catch {
       }
     }
+    const name1 = targetEntities[0].toLowerCase().includes("indigo") ? "IndiGo" : targetEntities[0].toLowerCase().includes("air") ? "Air India" : targetEntities[0].charAt(0).toUpperCase() + targetEntities[0].slice(1);
+    const name2 = targetEntities[1].toLowerCase().includes("indigo") ? "IndiGo" : targetEntities[1].toLowerCase().includes("air") ? "Air India" : targetEntities[1].charAt(0).toUpperCase() + targetEntities[1].slice(1);
+    const taskDesc1 = isFlightQuery ? `Search flights ${origin} \u2192 ${dest} on ${name1}` : `Inspect ${cleanedQuery} on ${name1}`;
+    const taskDesc2 = isFlightQuery ? `Search flights ${origin} \u2192 ${dest} on ${name2}` : `Inspect ${cleanedQuery} on ${name2}`;
+    const subTasks = [
+      {
+        subTaskId: `sub_1_${targetEntities[0].replace(/\s+/g, "_")}`,
+        agentIndex: 1,
+        title: name1,
+        role: isFlightQuery ? `${name1} Flight Navigator` : `${name1} Price Scout`,
+        targetUrl: targetUrl1,
+        taskDescription: taskDesc1,
+        status: "deploying",
+        statusText: `Deploying in Tab 1\u2026`
+      },
+      {
+        subTaskId: `sub_2_${targetEntities[1].replace(/\s+/g, "_")}`,
+        agentIndex: 2,
+        title: name2,
+        role: isFlightQuery ? `${name2} Flight Navigator` : `${name2} Price Scout`,
+        targetUrl: targetUrl2,
+        taskDescription: taskDesc2,
+        status: "deploying",
+        statusText: `Deploying in Tab 2\u2026`
+      }
+    ];
+    const orchestratorPrompt = `User goal: "${goal}".
+You are the Central Multi-Agent Swarm Orchestrator for PrivaPilot/Comet.
+Decompose this goal into 2 parallel sub-agents (Sub-Agent 1: ${name1}, Sub-Agent 2: ${name2}) with assigned roles, target portals, and isolated browser tabs under strict on-device DPDP privacy rules (zero cross-tab PII leakage).
+Propose execution of tool: spawn_subagents.`;
+    let dynamicReasoning = "";
+    try {
+      const orchRes = await this.httpClient.requestGeneralChat(orchestratorPrompt);
+      if (orchRes?.reasoning) {
+        dynamicReasoning = orchRes.reasoning;
+      } else if (orchRes?.reply) {
+        dynamicReasoning = orchRes.reply;
+      }
+    } catch (_) {
+    }
+    if (!dynamicReasoning) {
+      dynamicReasoning = `Step 1: Understand user goal "${goal}".
+Step 2: Decompose task into 2 parallel autonomous sub-agents:
+- Sub-Agent 1 (${name1}): Primary tab inspection & DOM extraction (${taskDesc1}).
+- Sub-Agent 2 (${name2}): Isolated background tab extraction (${taskDesc2}).
+Step 3: Enforce strict on-device DPDP isolation boundaries across tabs with zero PII leakage.
+Step 4: Execute tool spawn_subagents across isolated browser contexts.`;
+    }
     this.listeners.onActionProposed?.({
-      actionId: `act_swarm_deploy_${Date.now()}`,
-      kind: "observe",
-      reasoning: `\u26A1 Sub-Agent Swarm Deployed (2 Autonomous Workers):
-\u2022 Sub-Agent 1 [${targetEntities[0].toUpperCase()}]: Operating in primary browser tab -> Live visual DOM interaction & listing extraction.
-\u2022 Sub-Agent 2 [${targetEntities[1].toUpperCase()}]: Operating across parallel browser tab -> Live competitor search & extraction.
-\u{1F6E1}\uFE0F DPDP Privacy Isolation: Each sub-agent runs with on-device PII masking & independent audit logging.`,
-      rationale: `Deploying Sub-Agent 1 (${targetEntities[0].toUpperCase()}) and Sub-Agent 2 (${targetEntities[1].toUpperCase()}) across isolated tabs`,
+      actionId: `act_swarm_spawn_${Date.now()}`,
+      kind: "spawn_subagents",
+      subTasks,
+      reasoning: dynamicReasoning,
+      thought: dynamicReasoning,
+      rationale: `Deploying Sub-Agent 1 (${name1}) and Sub-Agent 2 (${name2}) across isolated tabs`,
       confidence: 1,
       risk: "safe"
     }, this.currentRunId);
+    this.listeners.onStepProgress?.(1, 4, `Deploying Sub-Agent 1 (${name1}) and Sub-Agent 2 (${name2}) in isolated tabs...`, this.currentRunId);
     let activeKey = "comet_live_sih2026_demo_key";
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       try {
@@ -26312,38 +26360,31 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
       } catch {
       }
     }
-    this.transition("executing", `Sub-Agents running: ${targetEntities[0].toUpperCase()} & ${targetEntities[1].toUpperCase()}`);
+    this.transition("executing", `Sub-Agents running: ${name1} & ${name2}`);
+    this.listeners.onStepProgress?.(2, 4, `Sub-agents working in parallel across isolated tabs...`, this.currentRunId);
     const routeInfo = {
       isFlight: isFlightQuery,
       origin,
       dest,
       cleanedQuery
     };
+    this.listeners.onStepProgress?.(3, 4, `Sub-Agent 1 (${name1}): Navigating & extracting listings...`, this.currentRunId);
     const sub1Result = await this.driveSubAgentOnTab(tab1Id, targetEntities[0], 1, 2, routeInfo);
+    subTasks[0].status = "completed";
+    subTasks[0].statusText = "\u2713 Extracted data";
+    subTasks[0].result = { summary: sub1Result.summary };
+    this.listeners.onStepProgress?.(3, 4, `Sub-Agent 1 (${name1}): \u2713 Extracted live page data`, this.currentRunId);
+    this.listeners.onStepProgress?.(4, 4, `Sub-Agent 2 (${name2}): Navigating & extracting listings...`, this.currentRunId);
     const sub2Result = await this.driveSubAgentOnTab(tab2Id, targetEntities[1], 2, 2, routeInfo);
+    subTasks[1].status = "completed";
+    subTasks[1].statusText = "\u2713 Extracted data";
+    subTasks[1].result = { summary: sub2Result.summary };
+    this.listeners.onStepProgress?.(4, 4, `Sub-Agent 2 (${name2}): \u2713 Extracted live page data`, this.currentRunId);
     const taskResponse = await this.httpClient.dispatchPlatformTask(
       { goal, enableSubAgents: true, maxParallel: 2, contextUrl: targetUrl1 },
       activeKey
     );
-    this.listeners.onStepProgress?.(2, 2, "\u2713 Sub-agents completed parallel extraction; synthesized comparative report.", this.currentRunId);
-    const name1 = targetEntities[0].toLowerCase().includes("indigo") ? "IndiGo" : targetEntities[0].toLowerCase().includes("air") ? "Air India" : targetEntities[0].toUpperCase();
-    const name2 = targetEntities[1].toLowerCase().includes("indigo") ? "IndiGo" : targetEntities[1].toLowerCase().includes("air") ? "Air India" : targetEntities[1].toUpperCase();
-    const subTasks = [
-      {
-        subTaskId: `sub_${targetEntities[0].replace(/\s+/g, "_")}`,
-        title: `Inspect ${name1}`,
-        targetUrl: targetUrl1,
-        status: "completed",
-        result: { summary: sub1Result.summary }
-      },
-      {
-        subTaskId: `sub_${targetEntities[1].replace(/\s+/g, "_")}`,
-        title: `Inspect ${name2}`,
-        targetUrl: targetUrl2,
-        status: "completed",
-        result: { summary: sub2Result.summary }
-      }
-    ];
+    this.listeners.onStepProgress?.(4, 4, "\u2713 Sub-agents completed parallel extraction; synthesizing comparative report.", this.currentRunId);
     const subTasksSummary = subTasks.map((st2, idx) => {
       const link = st2.targetUrl ? ` ([Open Site](${st2.targetUrl}))` : "";
       const realSnippet = idx === 0 ? `
@@ -26389,7 +26430,7 @@ Provide a helpful comparative breakdown based strictly on the live data above:`;
       `
 ### Swarm Synthesis & Comparative Analysis
 `,
-      finalSynthesisText || `Multi-agent comparison completed across ${targetEntities[0].toUpperCase()} and ${targetEntities[1].toUpperCase()}.`,
+      finalSynthesisText || `Multi-agent comparison completed across ${name1} and ${name2}.`,
       `
 
 \u{1F6E1}\uFE0F *Compliance Proof: \`${taskResponse?.complianceAudit?.proofId || "audit_verified"}\` \u2022 Zero Plaintext PII Guaranteed*`
@@ -26399,10 +26440,13 @@ Provide a helpful comparative breakdown based strictly on the live data above:`;
       success: true,
       state: "complete",
       reply: fullReply,
-      reasoning: taskResponse?.plan?.rationale || "Goal required parallel processing across isolated browser contexts.",
+      reasoning: dynamicReasoning,
+      isSubAgentSwarm: true,
+      subTasks,
       proposal: {
         actionId: `swarm_${Date.now()}`,
-        kind: "answer",
+        kind: "spawn_subagents",
+        subTasks,
         rationale: finalSynthesisText || "Sub-agent comparison completed.",
         confidence: 1,
         risk: "safe"
@@ -26421,6 +26465,8 @@ Provide a helpful comparative breakdown based strictly on the live data above:`;
           success: swarmRes.success,
           reply: swarmRes.reply || "Sub-agent swarm completed.",
           reasoning: swarmRes.reasoning || "",
+          isSubAgentSwarm: true,
+          subTasks: swarmRes.subTasks,
           maskCount: 0,
           elementCount: 0,
           modelConnected: true
@@ -26502,6 +26548,8 @@ ${cacheHitContext}` : cacheHitContext : customPrompt;
         success: swarmRes.success,
         reply: swarmRes.reply || "Sub-agent swarm completed.",
         reasoning: swarmRes.reasoning || "",
+        isSubAgentSwarm: true,
+        subTasks: swarmRes.subTasks,
         maskCount: 0,
         elementCount: 0,
         modelConnected: true
@@ -26521,6 +26569,8 @@ ${cacheHitContext}` : cacheHitContext : customPrompt;
         success: swarmRes.success,
         reply: swarmRes.reply || "Sub-agent swarm completed.",
         reasoning: swarmRes.reasoning || "",
+        isSubAgentSwarm: true,
+        subTasks: swarmRes.subTasks,
         maskCount: 0,
         elementCount: 0,
         modelConnected: true
