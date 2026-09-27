@@ -25205,6 +25205,18 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
                 networkRequestMade: true,
                 timings: { total: Date.now() - t0_step }
               };
+              const topResult = results[0];
+              if (topResult?.url && activeTab?.id && (this.currentTaskContract?.goalPattern === "click_control" || /click|download|navigate|open|brochure/i.test(this.currentGoal || ""))) {
+                try {
+                  if (typeof this.browser.navigateTab === "function") {
+                    await this.browser.navigateTab(activeTab.id, topResult.url);
+                  }
+                  if (typeof this.browser.waitForTabReady === "function") {
+                    await this.browser.waitForTabReady(activeTab.id);
+                  }
+                } catch (_) {
+                }
+              }
               this.stepsTrace.push(stepTrace2);
               this.recordActionHistory(searchProposal);
               this.transition("complete", `Web search completed for "${query}"`);
