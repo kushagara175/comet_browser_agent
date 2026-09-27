@@ -42,6 +42,7 @@ export interface DomainPlaybook {
   readonly landmarks: ReadonlyArray<PlaybookLandmark>;
   readonly metricsRules: ReadonlyArray<PlaybookMetricRule>;
   readonly formFieldHints?: Record<string, ReadonlyArray<string>>;
+  readonly sitemapTree?: Record<string, ReadonlyArray<{ name: string; path: string; description?: string }>>;
 }
 
 export interface PlaybookResolution {
@@ -977,8 +978,75 @@ export const ISRO_PLAYBOOK: DomainPlaybook = {
   ],
   formFieldHints: {
     search: ['search', 'searchInput', 'q', 'query', 'txtSearch', 'Search ISRO']
+  },
+  sitemapTree: {
+    'About': [
+      { name: 'Profile', path: '/profile.html', description: 'ISRO profile and primary mandate' },
+      { name: 'Vision-Mission-Objectives', path: '/Vision-Mission-Objectives.html', description: 'Vision, mission statement, and strategic objectives' },
+      { name: 'Citizen charter', path: '/citizencharter.html', description: 'Citizen charter and public services commitment' },
+      { name: 'Organisational structure', path: '/organisation.html', description: 'Department of Space and ISRO organizational hierarchy' },
+      { name: 'DoS Centers/units/enterprises', path: '/isro_centre.html', description: 'ISRO and DoS centres, units, and facilities (VSSC, URSC, SDSC SHAR, SAC, NRSC, IPRC)' },
+      { name: 'Secretary, DoS/ Chairman, ISRO', path: '/leadership.html', description: 'Current Chairman and leadership' },
+      { name: 'Former Secretaries/Chairmen', path: '/formerchairman.html', description: 'Past leadership history' },
+      { name: 'Space Commission', path: '/whoswho.html', description: 'Space Commission members and governance' },
+      { name: 'Genesis', path: '/genesis.html', description: 'Origins and founding of the Indian space programme' },
+      { name: 'Timeline', path: '/Timeline.html', description: 'Historical milestones timeline' },
+      { name: "Who's who", path: '/whoswho.html', description: 'Key personnel directory' },
+      { name: 'Contact us', path: '/contact.html', description: 'Official addresses and communication contacts' }
+    ],
+    'Activities': [
+      { name: 'Missions accomplished', path: '/Mission.html', description: 'Comprehensive directory of space exploration missions: Chandrayaan lunar missions, Aditya solar mission, Mangalyaan Mars mission, AstroSat' },
+      { name: 'Science', path: '/Science.html', description: 'Space science experiments, planetary science, and astronomical observations' },
+      { name: 'Launchers', path: '/Launchers.html', description: 'Launch vehicles family: PSLV, GSLV, LVM3 (Chandrayaan-3 launcher), SSLV' },
+      { name: 'Spacecrafts', path: '/Satellites.html', description: 'Communication, navigation, earth observation, and scientific satellites' },
+      { name: 'Payloads', path: '/Payloads.html', description: 'Scientific instruments and satellite payloads' },
+      { name: 'Research & Development', path: '/Researchdevelopment.html', description: 'Advanced technology, propulsion, and engineering R&D' },
+      { name: 'Gaganyaan', path: '/Mission.html', description: 'Indian human spaceflight programme' },
+      { name: 'Ground Segment activities', path: '/GroundSegmentActivities.html', description: 'ISTRAC tracking stations, deep space network, and mission operations control' },
+      { name: 'Promotion & Authorisation', path: '/Authorisation.html', description: 'IN-SPACe authorization and private sector promotion' },
+      { name: 'Capacity building', path: '/CapacityBuilding.html', description: 'Human resource development, training, and educational courses' },
+      { name: 'Outreach', path: '/Outreach.html', description: 'Public exhibitions, science centres, and student visits' }
+    ],
+    'Services': [
+      { name: 'Launch service', path: '/launchservices.html', description: 'Commercial and institutional satellite launches' },
+      { name: 'Satellite Testing', path: '/SatelliteSystemBusSubSystemTesting.html', description: 'Satellite system, bus, sub-system, and environmental testing' },
+      { name: 'Mission support', path: '/missionsupport.html', description: 'Orbit determination, tracking, and telemetry support' },
+      { name: 'Satellite Communication & Lease of transponders', path: '/SatelliteCommunicationApplications.html', description: 'Transponder leasing and satellite communications' },
+      { name: 'Space based Earth observation: Bhuvan & Bhoonidhi', path: 'https://www.nrsc.gov.in/eos_gs_cal', description: 'Geospatial mapping and open earth observation satellite data (Bhuvan & Bhoonidhi)' },
+      { name: 'Satellite Navigation services', path: '/SatelliteNavigationServices.html', description: 'NavIC and GAGAN positioning services' },
+      { name: 'Meteorological & Oceanographic Satellite Data', path: '/MeteorologicalOceanographicApplications.html', description: 'Satellite weather and ocean data (MOSDAC)' },
+      { name: 'Disaster Management: National & international', path: '/DisaterManagementNationalInternational.html', description: 'Flood, cyclone, and emergency disaster mapping' },
+      { name: 'Aerial Services & Digital Mapping', path: '/AerialServicesDigitalMapping.html', description: 'Airborne remote sensing and digital mapping' },
+      { name: 'VEDAS services', path: '/VedasServices.html', description: 'Renewable energy and solar rooftop potential calculator' }
+    ],
+    'Programmes': [
+      { name: 'Sponsored Research', path: '/SponsoredResearch.html', description: 'RESPOND grants for universities and research institutes' },
+      { name: 'Academic courses', path: '/AcademicCourses.html', description: 'IIST and university academic courses' },
+      { name: 'Technology Transfer', path: '/TechnologyTransfer.html', description: 'Spin-off technology commercialisation' },
+      { name: 'UNNATI', path: '/UNNATI.html', description: 'International nanosatellite assembly training' },
+      { name: 'Student Satellite', path: 'https://www.ursc.gov.in/student-satellites/index.jsp', description: 'University and student satellite projects' },
+      { name: 'Fellowships', path: '/Fellowships.html', description: 'Post-doctoral and research fellowships' },
+      { name: 'Summer internship', path: 'https://www.prl.res.in/prl-eng/summer_internship', description: 'Undergraduate summer internship programmes' },
+      { name: 'YUVIKA', path: '/YUVIKA.html', description: 'Yuva Vigyani Karyakram young scientist programme for school students' },
+      { name: 'Space merchandise', path: '/Merchandise.html', description: 'Official ISRO merchandise and scale models' }
+    ],
+    'Resources': [
+      { name: 'Science Data', path: '/Sciencedata.html', description: 'Open scientific data archive from planetary and space science missions' },
+      { name: 'Meteorology & Oceanographic data (MOSDAC)', path: 'https://www.mosdac.gov.in/live/index_one.php?url_name=india', description: 'Satellite weather and cyclone data' },
+      { name: 'Mobile Apps', path: '/MobileApps.html', description: 'Official ISRO mobile applications' },
+      { name: 'Previous Question Papers', path: '/OldQPs.html', description: 'Past ICRB recruitment and exam question papers' },
+      { name: 'School Bhuvan - NCERT', path: 'https://bhuvan-app1.nrsc.gov.in/mhrd_ncert/', description: 'NCERT school geography mapping tool' },
+      { name: 'FEAST Tool', path: 'https://feast.vssc.gov.in/', description: 'Finite Element Analysis structural design software' }
+    ],
+    'Get involved': [
+      { name: 'Join ISRO (Careers)', path: '/Careers.html', description: 'ICRB recruitment notices and scientist vacancies' },
+      { name: 'Visit ISRO', path: '/Outreach.html', description: 'Public visits to launch centre and space exhibitions' },
+      { name: 'Do a Project', path: '/DoAProject.html', description: 'Academic project guidelines for students' },
+      { name: 'FAQ', path: '/FAQ.html', description: 'Frequently asked questions' }
+    ]
   }
 };
+
 
 /**
  * Built-in playbook for Bhuvan Indian Geo-Platform of NRSC/ISRO (bhuvan.nrsc.gov.in).

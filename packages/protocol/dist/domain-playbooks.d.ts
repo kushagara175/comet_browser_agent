@@ -35,6 +35,11 @@ export interface DomainPlaybook {
     readonly landmarks: ReadonlyArray<PlaybookLandmark>;
     readonly metricsRules: ReadonlyArray<PlaybookMetricRule>;
     readonly formFieldHints?: Record<string, ReadonlyArray<string>>;
+    readonly sitemapTree?: Record<string, ReadonlyArray<{
+        name: string;
+        path: string;
+        description?: string;
+    }>>;
 }
 export interface PlaybookResolution {
     readonly playbookName: string;

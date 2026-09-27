@@ -15797,6 +15797,72 @@ var ISRO_PLAYBOOK = {
   ],
   formFieldHints: {
     search: ["search", "searchInput", "q", "query", "txtSearch", "Search ISRO"]
+  },
+  sitemapTree: {
+    "About": [
+      { name: "Profile", path: "/profile.html", description: "ISRO profile and primary mandate" },
+      { name: "Vision-Mission-Objectives", path: "/Vision-Mission-Objectives.html", description: "Vision, mission statement, and strategic objectives" },
+      { name: "Citizen charter", path: "/citizencharter.html", description: "Citizen charter and public services commitment" },
+      { name: "Organisational structure", path: "/organisation.html", description: "Department of Space and ISRO organizational hierarchy" },
+      { name: "DoS Centers/units/enterprises", path: "/isro_centre.html", description: "ISRO and DoS centres, units, and facilities (VSSC, URSC, SDSC SHAR, SAC, NRSC, IPRC)" },
+      { name: "Secretary, DoS/ Chairman, ISRO", path: "/leadership.html", description: "Current Chairman and leadership" },
+      { name: "Former Secretaries/Chairmen", path: "/formerchairman.html", description: "Past leadership history" },
+      { name: "Space Commission", path: "/whoswho.html", description: "Space Commission members and governance" },
+      { name: "Genesis", path: "/genesis.html", description: "Origins and founding of the Indian space programme" },
+      { name: "Timeline", path: "/Timeline.html", description: "Historical milestones timeline" },
+      { name: "Who's who", path: "/whoswho.html", description: "Key personnel directory" },
+      { name: "Contact us", path: "/contact.html", description: "Official addresses and communication contacts" }
+    ],
+    "Activities": [
+      { name: "Missions accomplished", path: "/Mission.html", description: "Comprehensive directory of space exploration missions: Chandrayaan lunar missions, Aditya solar mission, Mangalyaan Mars mission, AstroSat" },
+      { name: "Science", path: "/Science.html", description: "Space science experiments, planetary science, and astronomical observations" },
+      { name: "Launchers", path: "/Launchers.html", description: "Launch vehicles family: PSLV, GSLV, LVM3 (Chandrayaan-3 launcher), SSLV" },
+      { name: "Spacecrafts", path: "/Satellites.html", description: "Communication, navigation, earth observation, and scientific satellites" },
+      { name: "Payloads", path: "/Payloads.html", description: "Scientific instruments and satellite payloads" },
+      { name: "Research & Development", path: "/Researchdevelopment.html", description: "Advanced technology, propulsion, and engineering R&D" },
+      { name: "Gaganyaan", path: "/Mission.html", description: "Indian human spaceflight programme" },
+      { name: "Ground Segment activities", path: "/GroundSegmentActivities.html", description: "ISTRAC tracking stations, deep space network, and mission operations control" },
+      { name: "Promotion & Authorisation", path: "/Authorisation.html", description: "IN-SPACe authorization and private sector promotion" },
+      { name: "Capacity building", path: "/CapacityBuilding.html", description: "Human resource development, training, and educational courses" },
+      { name: "Outreach", path: "/Outreach.html", description: "Public exhibitions, science centres, and student visits" }
+    ],
+    "Services": [
+      { name: "Launch service", path: "/launchservices.html", description: "Commercial and institutional satellite launches" },
+      { name: "Satellite Testing", path: "/SatelliteSystemBusSubSystemTesting.html", description: "Satellite system, bus, sub-system, and environmental testing" },
+      { name: "Mission support", path: "/missionsupport.html", description: "Orbit determination, tracking, and telemetry support" },
+      { name: "Satellite Communication & Lease of transponders", path: "/SatelliteCommunicationApplications.html", description: "Transponder leasing and satellite communications" },
+      { name: "Space based Earth observation: Bhuvan & Bhoonidhi", path: "https://www.nrsc.gov.in/eos_gs_cal", description: "Geospatial mapping and open earth observation satellite data (Bhuvan & Bhoonidhi)" },
+      { name: "Satellite Navigation services", path: "/SatelliteNavigationServices.html", description: "NavIC and GAGAN positioning services" },
+      { name: "Meteorological & Oceanographic Satellite Data", path: "/MeteorologicalOceanographicApplications.html", description: "Satellite weather and ocean data (MOSDAC)" },
+      { name: "Disaster Management: National & international", path: "/DisaterManagementNationalInternational.html", description: "Flood, cyclone, and emergency disaster mapping" },
+      { name: "Aerial Services & Digital Mapping", path: "/AerialServicesDigitalMapping.html", description: "Airborne remote sensing and digital mapping" },
+      { name: "VEDAS services", path: "/VedasServices.html", description: "Renewable energy and solar rooftop potential calculator" }
+    ],
+    "Programmes": [
+      { name: "Sponsored Research", path: "/SponsoredResearch.html", description: "RESPOND grants for universities and research institutes" },
+      { name: "Academic courses", path: "/AcademicCourses.html", description: "IIST and university academic courses" },
+      { name: "Technology Transfer", path: "/TechnologyTransfer.html", description: "Spin-off technology commercialisation" },
+      { name: "UNNATI", path: "/UNNATI.html", description: "International nanosatellite assembly training" },
+      { name: "Student Satellite", path: "https://www.ursc.gov.in/student-satellites/index.jsp", description: "University and student satellite projects" },
+      { name: "Fellowships", path: "/Fellowships.html", description: "Post-doctoral and research fellowships" },
+      { name: "Summer internship", path: "https://www.prl.res.in/prl-eng/summer_internship", description: "Undergraduate summer internship programmes" },
+      { name: "YUVIKA", path: "/YUVIKA.html", description: "Yuva Vigyani Karyakram young scientist programme for school students" },
+      { name: "Space merchandise", path: "/Merchandise.html", description: "Official ISRO merchandise and scale models" }
+    ],
+    "Resources": [
+      { name: "Science Data", path: "/Sciencedata.html", description: "Open scientific data archive from planetary and space science missions" },
+      { name: "Meteorology & Oceanographic data (MOSDAC)", path: "https://www.mosdac.gov.in/live/index_one.php?url_name=india", description: "Satellite weather and cyclone data" },
+      { name: "Mobile Apps", path: "/MobileApps.html", description: "Official ISRO mobile applications" },
+      { name: "Previous Question Papers", path: "/OldQPs.html", description: "Past ICRB recruitment and exam question papers" },
+      { name: "School Bhuvan - NCERT", path: "https://bhuvan-app1.nrsc.gov.in/mhrd_ncert/", description: "NCERT school geography mapping tool" },
+      { name: "FEAST Tool", path: "https://feast.vssc.gov.in/", description: "Finite Element Analysis structural design software" }
+    ],
+    "Get involved": [
+      { name: "Join ISRO (Careers)", path: "/Careers.html", description: "ICRB recruitment notices and scientist vacancies" },
+      { name: "Visit ISRO", path: "/Outreach.html", description: "Public visits to launch centre and space exhibitions" },
+      { name: "Do a Project", path: "/DoAProject.html", description: "Academic project guidelines for students" },
+      { name: "FAQ", path: "/FAQ.html", description: "Frequently asked questions" }
+    ]
   }
 };
 var BHUVAN_PLAYBOOK = {
@@ -16129,188 +16195,6 @@ var REGISTERED_PLAYBOOKS = [
   FLIPKART_PLAYBOOK,
   WIKIPEDIA_PLAYBOOK
 ];
-function lookupDomainPlaybook(urlOrHostname) {
-  if (!urlOrHostname)
-    return void 0;
-  let hostname = urlOrHostname.toLowerCase().trim();
-  try {
-    if (hostname.includes("://")) {
-      hostname = new URL(hostname).hostname;
-    }
-  } catch {
-    hostname = hostname.replace(/^[a-z]+:\/\//i, "").split("/")[0].split(":")[0];
-  }
-  return REGISTERED_PLAYBOOKS.find((playbook) => {
-    if (hostname === playbook.domain || hostname.endsWith(`.${playbook.domain}`)) {
-      return true;
-    }
-    return playbook.aliases.some((alias) => hostname.includes(alias.toLowerCase()));
-  });
-}
-function isUrlMatchingRoute(url, route) {
-  if (!url)
-    return false;
-  const u = url.toLowerCase();
-  const rPath = route.path.toLowerCase();
-  if (u.includes(rPath))
-    return true;
-  if (route.aliases) {
-    for (const alias of route.aliases) {
-      if (u.includes(alias.toLowerCase()))
-        return true;
-    }
-  }
-  if (route.name === "problemStatements") {
-    if (u.includes("problem-statement") || u.includes("problemstatement") || /\/sih\d*ps/i.test(u) || u.includes("sih2026ps")) {
-      return true;
-    }
-  }
-  return false;
-}
-function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
-  const normQuery = normalizeSemanticText(userQuery);
-  const queryTokens = tokenizeSemanticText(normQuery);
-  if (!normQuery) {
-    return {
-      playbookName: playbook.name,
-      matchedIntent: "none",
-      confidence: 0,
-      rationale: "Empty user query"
-    };
-  }
-  const hasExplicitCountDirective = /\b(?:how\s+many|count\s+(?:the\s+)?|total\s+(?:number\s+of\s+)?|number\s+of)\b/i.test(userQuery);
-  const hasSpecificSearchDirective = /\b(?:search(?:\s+for)?|find|locate|lookup|filter(?:\s+by)?|query|type|bhuvan|geoportal|map|statement\s+for|theme|details)\b/i.test(userQuery);
-  const isMetricQuery = hasExplicitCountDirective && !hasSpecificSearchDirective;
-  if (isMetricQuery) {
-    for (const rule of playbook.metricsRules) {
-      const match = rule.labelKeywords.some((kw) => {
-        const kwTokens = tokenizeSemanticText(kw);
-        return kwTokens.every((kt2) => queryTokens.includes(kt2) || queryTokens.some((qt2) => isFuzzyTokenMatch(kt2, qt2)));
-      });
-      if (match) {
-        return {
-          playbookName: playbook.name,
-          matchedIntent: "extract_metric",
-          confidence: 0.95,
-          metricRule: rule,
-          targetPhrase: rule.labelKeywords[0],
-          rationale: `Matched metric extraction rule '${rule.metricId}' (${rule.description}) based on query keywords`
-        };
-      }
-    }
-  }
-  const isNavQuery = /^(?:(?:please|kindly)\s+)?(?:go\s+to|navigate\s+to|visit|open|load|take\s+me\s+to)\b/i.test(userQuery) || queryTokens.length > 0 && ["go", "navigate", "visit", "load"].includes(queryTokens[0]);
-  const extractedSearch = extractSearchQueryFromGoal(userQuery);
-  const hasSearchDirective = Boolean(extractedSearch && extractedSearch.length > 1) || /\b(?:search(?:\s+for)?|find|locate|lookup|filter(?:\s+by)?|query|type)\b/i.test(userQuery);
-  if (isNavQuery) {
-    for (const route of playbook.routes) {
-      if (route.name === "search" && hasSearchDirective) {
-        continue;
-      }
-      const match = route.matchKeywords.some((kw) => {
-        const kwNorm = normalizeSemanticText(kw);
-        if (normQuery.includes(kwNorm))
-          return true;
-        const kwTokens = tokenizeSemanticText(kwNorm);
-        return kwTokens.length > 0 && kwTokens.every((kt2) => queryTokens.includes(kt2) || queryTokens.some((qt2) => isFuzzyTokenMatch(kt2, qt2)));
-      });
-      if (match) {
-        const targetUrl = `https://${playbook.domain}${route.path}`;
-        const isAlreadyOnRoute = isUrlMatchingRoute(currentUrl, route);
-        return {
-          playbookName: playbook.name,
-          matchedIntent: isAlreadyOnRoute ? "none" : "navigate",
-          confidence: 0.95,
-          targetUrl,
-          targetPhrase: route.name === "problemStatements" ? "Problem Statements" : route.matchKeywords[0],
-          targetRole: "link",
-          rationale: isAlreadyOnRoute ? `Already on route '${route.name}' (${route.path})` : `Matched playbook route '${route.name}' (${route.path}) from user intent`
-        };
-      }
-    }
-  }
-  const mentionsProblemStatements = normQuery.includes("problem statement") || normQuery.includes("problem statements") || /\bps\s*\d+\b/i.test(userQuery) || queryTokens.includes("ps") && queryTokens.some((t) => /\d+/.test(t));
-  const psRoute = playbook.routes.find((r) => r.name === "problemStatements");
-  const alreadyOnPsRoute = psRoute ? isUrlMatchingRoute(currentUrl, psRoute) : false;
-  if (mentionsProblemStatements && currentUrl && !alreadyOnPsRoute) {
-    if (psRoute) {
-      return {
-        playbookName: playbook.name,
-        matchedIntent: "navigate",
-        confidence: 0.96,
-        targetUrl: `https://${playbook.domain}${psRoute.path}`,
-        targetPhrase: "Problem Statements",
-        targetRole: "link",
-        rationale: `Query references Problem Statements while currently on '${currentUrl}'. Navigating to Problem Statements page first.`
-      };
-    }
-  }
-  const isInputSearchIntent = hasSearchDirective || queryTokens.some((t) => ["search", "find", "locate", "query", "type", "enter", "filter", "lookup"].includes(t));
-  const sortedLandmarks = isInputSearchIntent ? [...playbook.landmarks].sort((a, b) => {
-    const aIsInput = a.role === "input" || a.intentAction === "type" ? -1 : 1;
-    const bIsInput = b.role === "input" || b.intentAction === "type" ? -1 : 1;
-    return aIsInput - bIsInput;
-  }) : playbook.landmarks;
-  for (const landmark of sortedLandmarks) {
-    const allAliases = [landmark.phrase, ...landmark.aliases];
-    const match = allAliases.some((alias) => {
-      const aliasNorm = normalizeSemanticText(alias);
-      if (normQuery.includes(aliasNorm))
-        return true;
-      const aliasTokens = tokenizeSemanticText(aliasNorm);
-      return aliasTokens.length > 0 && aliasTokens.every((at) => queryTokens.includes(at) || queryTokens.some((qt2) => isFuzzyTokenMatch(at, qt2)));
-    });
-    if (match) {
-      if (landmark.role === "input" || landmark.intentAction === "type") {
-        return {
-          playbookName: playbook.name,
-          matchedIntent: "fill_field",
-          confidence: 0.92,
-          targetPhrase: landmark.phrase,
-          targetRole: landmark.role,
-          rationale: `Matched landmark '${landmark.phrase}' (${landmark.description}) for input/search intent`
-        };
-      }
-      return {
-        playbookName: playbook.name,
-        matchedIntent: "click_landmark",
-        confidence: 0.94,
-        targetPhrase: landmark.phrase,
-        targetRole: landmark.role,
-        rationale: `Matched landmark '${landmark.phrase}' (${landmark.description}) in playbook for domain '${playbook.domain}'`
-      };
-    }
-  }
-  for (const route of playbook.routes) {
-    if (route.name === "search" && hasSearchDirective) {
-      continue;
-    }
-    const match = route.matchKeywords.some((kw) => {
-      const kwNorm = normalizeSemanticText(kw);
-      if (normQuery.includes(kwNorm))
-        return true;
-      const kwTokens = tokenizeSemanticText(kwNorm);
-      return kwTokens.length > 0 && kwTokens.every((kt2) => queryTokens.includes(kt2) || queryTokens.some((qt2) => isFuzzyTokenMatch(kt2, qt2)));
-    });
-    if (match) {
-      const targetUrl = `https://${playbook.domain}${route.path}`;
-      const isAlreadyOnRoute = currentUrl ? currentUrl.includes(route.path) : false;
-      return {
-        playbookName: playbook.name,
-        matchedIntent: isAlreadyOnRoute ? "none" : "navigate",
-        confidence: 0.85,
-        targetUrl,
-        rationale: isAlreadyOnRoute ? `Already on route '${route.name}' (${route.path})` : `Matched playbook route '${route.name}' (${route.path}) from user intent`
-      };
-    }
-  }
-  return {
-    playbookName: playbook.name,
-    matchedIntent: "none",
-    confidence: 0.2,
-    rationale: "No domain playbook route or landmark matched query tokens directly"
-  };
-}
 function extractSearchQueryFromGoal(goal) {
   let q2 = (goal || "").trim();
   if (!q2)
@@ -23458,21 +23342,7 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
           return this.completeWithResult(res2);
         }
         if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === "function") {
-          let targetUrl = extractTargetUrlFromGoal(goal);
-          const hasExplicitUrlPathInGoal = /https?:\/\/[^\s"'<>]+\/[^\s"'<>]+/i.test(goal);
-          if (targetUrl && !hasExplicitUrlPathInGoal) {
-            try {
-              const playbookForTarget = lookupDomainPlaybook(targetUrl);
-              if (playbookForTarget) {
-                const playbookResolution = resolvePlaybookIntent(playbookForTarget, goal, activeTab?.url);
-                if (playbookResolution.matchedIntent === "navigate" && playbookResolution.targetUrl && playbookResolution.confidence >= 0.8) {
-                  console.log(`[PrivaPilot Coordinator] Playbook fast-track: upgrading target from "${targetUrl}" \u2192 "${playbookResolution.targetUrl}" (${playbookResolution.rationale})`);
-                  targetUrl = playbookResolution.targetUrl;
-                }
-              }
-            } catch (_playbookErr) {
-            }
-          }
+          const targetUrl = extractTargetUrlFromGoal(goal);
           if (targetUrl && activeTab?.url) {
             try {
               const currentHost = new URL(activeTab.url).hostname.toLowerCase();
@@ -23556,42 +23426,6 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
                 this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
                 continue;
               } else if (isSubdomainOrRedirect && !hasPathChange) {
-                try {
-                  const onDomainPlaybook = lookupDomainPlaybook(activeTab.url);
-                  if (onDomainPlaybook) {
-                    const onDomainResolution = resolvePlaybookIntent(onDomainPlaybook, goal, activeTab.url);
-                    if (onDomainResolution.matchedIntent === "navigate" && onDomainResolution.targetUrl && onDomainResolution.confidence >= 0.8 && onDomainResolution.targetUrl !== targetUrl) {
-                      const upgradedUrl = onDomainResolution.targetUrl;
-                      console.log(`[PrivaPilot Coordinator] Playbook on-domain fast-track: navigating directly to "${upgradedUrl}" (${onDomainResolution.rationale})`);
-                      hasNavigatedInitially = true;
-                      const directNavAction = {
-                        actionId: `act_playbook_nav_${Date.now()}`,
-                        kind: "navigate",
-                        url: upgradedUrl,
-                        confidence: 1,
-                        risk: "safe",
-                        rationale: `Playbook fast-track: direct navigation to ${upgradedUrl}`,
-                        expectedPostcondition: { kind: "status_changed" }
-                      };
-                      this.actionHistory.push(directNavAction);
-                      this.listeners.onActionProposed?.(directNavAction, this.currentRunId);
-                      this.currentMaxSteps = Math.max(this.currentMaxSteps, 4);
-                      this.transition("executing", `Navigating directly to ${upgradedUrl}...`);
-                      const directNavRes = await this.browser.navigateTab(activeTab.id, upgradedUrl);
-                      if (directNavRes && typeof directNavRes === "object" && directNavRes.tabId) {
-                        this.currentTabId = directNavRes.tabId;
-                        activeTab.id = directNavRes.tabId;
-                      }
-                      activeTab.url = directNavRes && directNavRes.url ? directNavRes.url : upgradedUrl;
-                      this.previousUrl = activeTab.url;
-                      this.lastExecutedProposal = directNavAction;
-                      this.lastExecutionResult = { success: true, message: `Loaded ${upgradedUrl}` };
-                      this.transition("capturing", `Loaded ${upgradedUrl}. Re-perceiving...`);
-                      continue;
-                    }
-                  }
-                } catch (_pdErr) {
-                }
                 const hasFollowUpDirective = /\b(?:and\s+then|then|after\s+that|next|also|and|to|for)\s+(?:download|search|find|locate|open|get|see|check|filter|type|fill|click|select|view|explore|read|save)\b/i.test(goal);
                 if (!hasFollowUpDirective && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url")) {
                   this.transition("complete", `Already on ${targetUrl}`);
@@ -24971,36 +24805,6 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
               };
               riskLevel = "safe";
             }
-          }
-        }
-        const isIsroSpaceMissionGoal = /\b(?:isro|space)\b/i.test(this.currentGoal || "") && /\b(?:chandrayaan|aditya|gaganyaan|mangalyaan|lunar|moon|solar|rocket|launcher|mission\s+brochure|lvm3)\b/i.test(this.currentGoal || "");
-        const currentHostForDetour = (() => {
-          try {
-            return new URL(activeTab?.url || "").hostname.toLowerCase();
-          } catch {
-            return "";
-          }
-        })();
-        const isOnIsroSiteForDetour = currentHostForDetour.includes("isro.gov.in");
-        if (isOnIsroSiteForDetour && isIsroSpaceMissionGoal) {
-          const proposedTargetEl = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
-          const proposedName = ((proposedTargetEl?.sanitizedName || "") + " " + (proposal.targetName || "")).toLowerCase();
-          const proposedHref = (proposedTargetEl?.href || proposal?.url || "").toLowerCase();
-          const isDetourToBhuvanOrMosdac = proposedName.includes("bhuvan") || proposedName.includes("mosdac") || proposedName.includes("vedas") || proposedHref.includes("bhuvan.nrsc.gov.in") || proposedHref.includes("mosdac.gov.in") || proposedHref.includes("nrsc.gov.in");
-          if (isDetourToBhuvanOrMosdac) {
-            console.log(`[Coordinator] Anti-Detour Guard: Blocked hallucinated detour to "${proposedName || proposedHref}". Rerouting directly to Chandrayaan-3 mission hub!`);
-            const missionHubUrl = "https://www.isro.gov.in/Chandrayaan3.html";
-            proposal = {
-              actionId: `act_antidetour_nav_${Date.now()}`,
-              kind: "navigate",
-              url: missionHubUrl,
-              confidence: 0.99,
-              risk: "safe",
-              reasoning: "Blocked detour to Bhuvan (Earth Observation geoportal). Bhuvan is an Earth map viewer and does not host lunar missions. Navigating directly to the official Chandrayaan-3 mission page.",
-              rationale: "Navigating directly to Chandrayaan-3 mission page to access the official brochure.",
-              expectedPostcondition: { kind: "status_changed" }
-            };
-            riskLevel = "safe";
           }
         }
         if (proposal.kind === "finish" || proposal.kind === "answer") {

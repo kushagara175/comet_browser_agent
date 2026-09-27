@@ -11,7 +11,7 @@
  * 7. Semantically Verify UI Outcome
  * 8. Repeat perception cycle up to bounded step budget or until finish/failure
  */
-import { classifyActionRisk, validateActionProposal, resolveTaskContract, groundTargetCandidates, scoreCandidate, tokenizeSemanticText, lookupDomainPlaybook, resolvePlaybookIntent, extractSearchQueryFromGoal, extractTargetUrlFromGoal, stripNavigationPrefixFromGoal, isPureNavigationGoal, createInitialObjectiveProgress, getCurrentObjective, recordObjectiveEvidence, completeObjectiveWithEvidence, canFinishTask } from '@privapilot/protocol';
+import { classifyActionRisk, validateActionProposal, resolveTaskContract, groundTargetCandidates, scoreCandidate, tokenizeSemanticText, extractSearchQueryFromGoal, extractTargetUrlFromGoal, stripNavigationPrefixFromGoal, isPureNavigationGoal, createInitialObjectiveProgress, getCurrentObjective, recordObjectiveEvidence, completeObjectiveWithEvidence, canFinishTask } from '@privapilot/protocol';
 import { WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
@@ -1313,28 +1313,7 @@ export class RunCoordinator {
                 // If on step 1 and the goal contains a target domain/URL to navigate to,
                 // navigate directly to target domain/URL (in a new tab if coming from an existing different site)
                 if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === 'function') {
-                    let targetUrl = extractTargetUrlFromGoal(goal);
-                    // --- Playbook Fast-Track: upgrade to direct route/page if the domain playbook knows a specific path ---
-                    // E.g. "go to ISRO and download chandrayaan brochure" → directly navigate to Chandrayaan-3 page
-                    // instead of landing on the homepage and wandering 5 steps through menus.
-                    // NOTE: If the user explicitly supplied a full URL with a specific path (e.g. https://sih.gov.in/sih2024PS),
-                    // we respect their explicit URL path and do NOT override it.
-                    const hasExplicitUrlPathInGoal = /https?:\/\/[^\s"'<>]+\/[^\s"'<>]+/i.test(goal);
-                    if (targetUrl && !hasExplicitUrlPathInGoal) {
-                        try {
-                            const playbookForTarget = lookupDomainPlaybook(targetUrl);
-                            if (playbookForTarget) {
-                                const playbookResolution = resolvePlaybookIntent(playbookForTarget, goal, activeTab?.url);
-                                if (playbookResolution.matchedIntent === 'navigate' &&
-                                    playbookResolution.targetUrl &&
-                                    playbookResolution.confidence >= 0.8) {
-                                    console.log(`[PrivaPilot Coordinator] Playbook fast-track: upgrading target from "${targetUrl}" → "${playbookResolution.targetUrl}" (${playbookResolution.rationale})`);
-                                    targetUrl = playbookResolution.targetUrl;
-                                }
-                            }
-                        }
-                        catch (_playbookErr) { }
-                    }
+                    const targetUrl = extractTargetUrlFromGoal(goal);
                     if (targetUrl && activeTab?.url) {
                         try {
                             const currentHost = new URL(activeTab.url).hostname.toLowerCase();
@@ -1431,48 +1410,6 @@ export class RunCoordinator {
                                 continue;
                             }
                             else if (isSubdomainOrRedirect && !hasPathChange) {
-                                // --- Playbook fast-track for already-on-domain case ---
-                                // We're on the right domain but the playbook may know a direct sub-path (e.g. PDF URL).
-                                // If so, navigate directly instead of re-perceiving homepage and wandering.
-                                try {
-                                    const onDomainPlaybook = lookupDomainPlaybook(activeTab.url);
-                                    if (onDomainPlaybook) {
-                                        const onDomainResolution = resolvePlaybookIntent(onDomainPlaybook, goal, activeTab.url);
-                                        if (onDomainResolution.matchedIntent === 'navigate' &&
-                                            onDomainResolution.targetUrl &&
-                                            onDomainResolution.confidence >= 0.8 &&
-                                            onDomainResolution.targetUrl !== targetUrl) {
-                                            const upgradedUrl = onDomainResolution.targetUrl;
-                                            console.log(`[PrivaPilot Coordinator] Playbook on-domain fast-track: navigating directly to "${upgradedUrl}" (${onDomainResolution.rationale})`);
-                                            hasNavigatedInitially = true;
-                                            const directNavAction = {
-                                                actionId: `act_playbook_nav_${Date.now()}`,
-                                                kind: 'navigate',
-                                                url: upgradedUrl,
-                                                confidence: 1.0,
-                                                risk: 'safe',
-                                                rationale: `Playbook fast-track: direct navigation to ${upgradedUrl}`,
-                                                expectedPostcondition: { kind: 'status_changed' }
-                                            };
-                                            this.actionHistory.push(directNavAction);
-                                            this.listeners.onActionProposed?.(directNavAction, this.currentRunId);
-                                            this.currentMaxSteps = Math.max(this.currentMaxSteps, 4);
-                                            this.transition('executing', `Navigating directly to ${upgradedUrl}...`);
-                                            const directNavRes = await this.browser.navigateTab(activeTab.id, upgradedUrl);
-                                            if (directNavRes && typeof directNavRes === 'object' && directNavRes.tabId) {
-                                                this.currentTabId = directNavRes.tabId;
-                                                activeTab.id = directNavRes.tabId;
-                                            }
-                                            activeTab.url = (directNavRes && directNavRes.url) ? directNavRes.url : upgradedUrl;
-                                            this.previousUrl = activeTab.url;
-                                            this.lastExecutedProposal = directNavAction;
-                                            this.lastExecutionResult = { success: true, message: `Loaded ${upgradedUrl}` };
-                                            this.transition('capturing', `Loaded ${upgradedUrl}. Re-perceiving...`);
-                                            continue;
-                                        }
-                                    }
-                                }
-                                catch (_pdErr) { }
                                 const hasFollowUpDirective = /\b(?:and\s+then|then|after\s+that|next|also|and|to|for)\s+(?:download|search|find|locate|open|get|see|check|filter|type|fill|click|select|view|explore|read|save)\b/i.test(goal);
                                 if (!hasFollowUpDirective && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url')) {
                                     this.transition('complete', `Already on ${targetUrl}`);
@@ -2995,46 +2932,6 @@ export class RunCoordinator {
                             };
                             riskLevel = 'safe';
                         }
-                    }
-                }
-                // Anti-Detour Guard for ISRO Space Missions:
-                // When the user's goal is about ISRO space exploration (Chandrayaan-3, Aditya-L1, Gaganyaan, Moon/Mars missions, or mission brochures),
-                // and the proposed action mistakenly targets Bhuvan (Earth mapping) or MOSDAC (weather), intercept the detour!
-                const isIsroSpaceMissionGoal = /\b(?:isro|space)\b/i.test(this.currentGoal || '') &&
-                    /\b(?:chandrayaan|aditya|gaganyaan|mangalyaan|lunar|moon|solar|rocket|launcher|mission\s+brochure|lvm3)\b/i.test(this.currentGoal || '');
-                const currentHostForDetour = (() => {
-                    try {
-                        return new URL(activeTab?.url || '').hostname.toLowerCase();
-                    }
-                    catch {
-                        return '';
-                    }
-                })();
-                const isOnIsroSiteForDetour = currentHostForDetour.includes('isro.gov.in');
-                if (isOnIsroSiteForDetour && isIsroSpaceMissionGoal) {
-                    const proposedTargetEl = sanitized.elements.find(e => e.localId === proposal.targetLocalId);
-                    const proposedName = ((proposedTargetEl?.sanitizedName || '') + ' ' + (proposal.targetName || '')).toLowerCase();
-                    const proposedHref = (proposedTargetEl?.href || proposal?.url || '').toLowerCase();
-                    const isDetourToBhuvanOrMosdac = proposedName.includes('bhuvan') ||
-                        proposedName.includes('mosdac') ||
-                        proposedName.includes('vedas') ||
-                        proposedHref.includes('bhuvan.nrsc.gov.in') ||
-                        proposedHref.includes('mosdac.gov.in') ||
-                        proposedHref.includes('nrsc.gov.in');
-                    if (isDetourToBhuvanOrMosdac) {
-                        console.log(`[Coordinator] Anti-Detour Guard: Blocked hallucinated detour to "${proposedName || proposedHref}". Rerouting directly to Chandrayaan-3 mission hub!`);
-                        const missionHubUrl = 'https://www.isro.gov.in/Chandrayaan3.html';
-                        proposal = {
-                            actionId: `act_antidetour_nav_${Date.now()}`,
-                            kind: 'navigate',
-                            url: missionHubUrl,
-                            confidence: 0.99,
-                            risk: 'safe',
-                            reasoning: 'Blocked detour to Bhuvan (Earth Observation geoportal). Bhuvan is an Earth map viewer and does not host lunar missions. Navigating directly to the official Chandrayaan-3 mission page.',
-                            rationale: 'Navigating directly to Chandrayaan-3 mission page to access the official brochure.',
-                            expectedPostcondition: { kind: 'status_changed' }
-                        };
-                        riskLevel = 'safe';
                     }
                 }
                 if (proposal.kind === 'finish' || proposal.kind === 'answer') {

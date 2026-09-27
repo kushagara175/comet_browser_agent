@@ -1748,23 +1748,19 @@ JSON Schema:
       const landmarksList = domainPlaybook.landmarks.map(l => `  - [${l.role || 'element'}] "${l.phrase}" -> Intent: ${l.intentAction} (${l.description})`).join('\n');
 
       let siteMapHierarchy = '';
-      if (domainPlaybook.domain.includes('isro.gov.in')) {
+      if (domainPlaybook.sitemapTree) {
+        const sections = Object.entries(domainPlaybook.sitemapTree).map(([sectionName, items]) => {
+          const itemsStr = items.map(it => `    * ${it.name} (${it.path})${it.description ? `: ${it.description}` : ''}`).join('\n');
+          return `  - [${sectionName}]:\n${itemsStr}`;
+        }).join('\n');
         siteMapHierarchy = `
-ISRO Master Sitemap & Mental Map:
-- Activities -> Missions accomplished: https://www.isro.gov.in/Mission.html (Historical & active space missions)
-- Specific Space Missions:
-  * Chandrayaan-3 Moon Mission: https://www.isro.gov.in/Chandrayaan3.html (Where the official LVM3-M4 Brochure PDF link lives)
-  * Aditya-L1 Solar Mission: https://www.isro.gov.in/Aditya_L1.html (Where the official Solar Mission Brochure lives)
-  * Gaganyaan Human Spaceflight: https://www.isro.gov.in/Mission.html
-- Activities -> Launchers: https://www.isro.gov.in/Launchers.html (PSLV, GSLV, LVM3, SSLV)
-- Activities -> Spacecrafts: https://www.isro.gov.in/Satellites.html
-- Programmes -> YUVIKA: https://www.isro.gov.in/YUVIKA.html
-- Services -> Space based Earth observation (Bhuvan & Bhoonidhi): nrsc.gov.in / bhuvan.nrsc.gov.in (ONLY for 2D/3D Earth geographic maps of India, NEVER for Moon or space missions)
-- Resources -> Meteorology & Oceanographic: mosdac.gov.in (Weather & cyclones ONLY)
-CRITICAL BOUNDARY DIRECTIVE FOR ISRO:
-- When the user asks for Chandrayaan-3, Aditya-L1, Gaganyaan, or space mission brochures:
-  DO NOT NAVIGATE TO BHUVAN! Bhuvan is an Earth Observation mapping tool and DOES NOT contain lunar or space mission brochures!
-  Target https://www.isro.gov.in/Chandrayaan3.html directly or click "Activities" -> "Missions accomplished" -> Chandrayaan-3!
+Verified Master Site Map Hierarchy for ${domainPlaybook.name}:
+${sections}
+Key Navigation Rules from Site Map:
+- Space Exploration Missions (Chandrayaan-3, Aditya-L1, Gaganyaan, Mangalyaan) live under "Activities" -> "Missions accomplished" (/Mission.html) or their dedicated mission pages (/Chandrayaan3.html, /Aditya_L1.html).
+- The official Chandrayaan-3 mission brochure PDF link is located on https://www.isro.gov.in/Chandrayaan3.html.
+- "Services" -> "Earth observation (Bhuvan & Bhoonidhi)" is strictly for 2D/3D geographic satellite mapping of India. Do NOT navigate to Bhuvan when asked for lunar or space missions.
+- To locate content: Step-by-step explore the top navigation bar matching the sitemap section (e.g. click "Activities" -> "Missions accomplished"), or use the on-page Search input.
 `;
       }
 
@@ -1774,7 +1770,8 @@ ${routesList}
 Verified Landmarks & Action Anchors:
 ${landmarksList}${siteMapHierarchy}
 Topological Directives:
-- Use verified canonical routes and landmark identifiers when navigating or acting.
+- Use verified canonical routes, sitemap sections, and landmark identifiers when navigating or acting.
+- Step-by-step browse and navigate the page hierarchy like a human user: open dropdowns, click the relevant section, inspect elements, and locate the document.
 - For search: Type into verified search landmark (e.g. #txtSearch on ISRO, Search Location on Bhuvan). On Bhuvan, click the autocomplete suggestion to center the map.
 - For downloads: Only target authentic file links (.pdf, .zip, .tif, .shp) or verified download buttons. Never click external ad links or decoy download buttons.
 - In "thought", explicitly calculate action confidence and compare it to the safe threshold (0.85). Do not use emojis in thought.\n`;
