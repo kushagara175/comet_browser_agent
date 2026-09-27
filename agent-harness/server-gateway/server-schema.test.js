@@ -363,6 +363,13 @@ test('Server Payload Validator - Rejects Invalid, Duplicate, and Contradictory E
   const res3 = validateSanitizedPayload(contradictoryState);
   assert.strictEqual(res3.isValid, false);
   assert.ok(res3.errorMessage?.includes('Contradictory element state at index 0'));
+
+  // Valid states including 'filled'
+  const validFilled = createValidPayload({
+    elements: [{ localId: 'el_1', role: 'input', state: ['visible', 'enabled', 'filled'] }]
+  });
+  const resValid = validateSanitizedPayload(validFilled);
+  assert.strictEqual(resValid.isValid, true);
 });
 
 test('Server Payload Validator - Rejects Invalid and Duplicate Action Capabilities', () => {

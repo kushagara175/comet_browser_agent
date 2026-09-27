@@ -156,7 +156,8 @@ const VALID_ELEMENT_STATES = new Set([
   'disabled',
   'visible',
   'checked',
-  'focused'
+  'focused',
+  'filled'
 ]);
 
 const VALID_ACTION_CAPABILITIES = new Set([
