@@ -11,7 +11,7 @@
  * 7. Semantically Verify UI Outcome
  * 8. Repeat perception cycle up to bounded step budget or until finish/failure
  */
-import { classifyActionRisk, validateActionProposal, resolveTaskContract, groundTargetCandidates, scoreCandidate, tokenizeSemanticText, extractSearchQueryFromGoal, extractTargetUrlFromGoal, stripNavigationPrefixFromGoal, isPureNavigationGoal, createInitialObjectiveProgress, getCurrentObjective, recordObjectiveEvidence, completeObjectiveWithEvidence, canFinishTask } from '@privapilot/protocol';
+import { classifyActionRisk, validateActionProposal, resolveTaskContract, groundTargetCandidates, scoreCandidate, tokenizeSemanticText, lookupDomainPlaybook, resolvePlaybookIntent, extractSearchQueryFromGoal, extractTargetUrlFromGoal, stripNavigationPrefixFromGoal, isPureNavigationGoal, createInitialObjectiveProgress, getCurrentObjective, recordObjectiveEvidence, completeObjectiveWithEvidence, canFinishTask } from '@privapilot/protocol';
 import { WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient } from './http-client.js';
 import { AuditLogger } from './audit-logger.js';
@@ -1313,7 +1313,25 @@ export class RunCoordinator {
                 // If on step 1 and the goal contains a target domain/URL to navigate to,
                 // navigate directly to target domain/URL (in a new tab if coming from an existing different site)
                 if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === 'function') {
-                    const targetUrl = extractTargetUrlFromGoal(goal);
+                    let targetUrl = extractTargetUrlFromGoal(goal);
+                    // --- Playbook Fast-Track: upgrade to direct route/PDF if the domain playbook knows a specific path ---
+                    // E.g. "go to ISRO and download chandrayaan brochure" → directly navigate to the PDF URL
+                    // instead of landing on the homepage and wandering 5 steps through menus.
+                    if (targetUrl) {
+                        try {
+                            const playbookForTarget = lookupDomainPlaybook(targetUrl);
+                            if (playbookForTarget) {
+                                const playbookResolution = resolvePlaybookIntent(playbookForTarget, goal, activeTab?.url);
+                                if (playbookResolution.matchedIntent === 'navigate' &&
+                                    playbookResolution.targetUrl &&
+                                    playbookResolution.confidence >= 0.8) {
+                                    console.log(`[PrivaPilot Coordinator] Playbook fast-track: upgrading target from "${targetUrl}" → "${playbookResolution.targetUrl}" (${playbookResolution.rationale})`);
+                                    targetUrl = playbookResolution.targetUrl;
+                                }
+                            }
+                        }
+                        catch (_playbookErr) { }
+                    }
                     if (targetUrl && activeTab?.url) {
                         try {
                             const currentHost = new URL(activeTab.url).hostname.toLowerCase();
@@ -1410,6 +1428,48 @@ export class RunCoordinator {
                                 continue;
                             }
                             else if (isSubdomainOrRedirect && !hasPathChange) {
+                                // --- Playbook fast-track for already-on-domain case ---
+                                // We're on the right domain but the playbook may know a direct sub-path (e.g. PDF URL).
+                                // If so, navigate directly instead of re-perceiving homepage and wandering.
+                                try {
+                                    const onDomainPlaybook = lookupDomainPlaybook(activeTab.url);
+                                    if (onDomainPlaybook) {
+                                        const onDomainResolution = resolvePlaybookIntent(onDomainPlaybook, goal, activeTab.url);
+                                        if (onDomainResolution.matchedIntent === 'navigate' &&
+                                            onDomainResolution.targetUrl &&
+                                            onDomainResolution.confidence >= 0.8 &&
+                                            onDomainResolution.targetUrl !== targetUrl) {
+                                            const upgradedUrl = onDomainResolution.targetUrl;
+                                            console.log(`[PrivaPilot Coordinator] Playbook on-domain fast-track: navigating directly to "${upgradedUrl}" (${onDomainResolution.rationale})`);
+                                            hasNavigatedInitially = true;
+                                            const directNavAction = {
+                                                actionId: `act_playbook_nav_${Date.now()}`,
+                                                kind: 'navigate',
+                                                url: upgradedUrl,
+                                                confidence: 1.0,
+                                                risk: 'safe',
+                                                rationale: `Playbook fast-track: direct navigation to ${upgradedUrl}`,
+                                                expectedPostcondition: { kind: 'status_changed' }
+                                            };
+                                            this.actionHistory.push(directNavAction);
+                                            this.listeners.onActionProposed?.(directNavAction, this.currentRunId);
+                                            this.currentMaxSteps = Math.max(this.currentMaxSteps, 4);
+                                            this.transition('executing', `Navigating directly to ${upgradedUrl}...`);
+                                            const directNavRes = await this.browser.navigateTab(activeTab.id, upgradedUrl);
+                                            if (directNavRes && typeof directNavRes === 'object' && directNavRes.tabId) {
+                                                this.currentTabId = directNavRes.tabId;
+                                                activeTab.id = directNavRes.tabId;
+                                            }
+                                            activeTab.url = (directNavRes && directNavRes.url) ? directNavRes.url : upgradedUrl;
+                                            this.previousUrl = activeTab.url;
+                                            this.lastExecutedProposal = directNavAction;
+                                            this.lastExecutionResult = { success: true, message: `Loaded ${upgradedUrl}` };
+                                            this.transition('capturing', `Loaded ${upgradedUrl}. Re-perceiving...`);
+                                            continue;
+                                        }
+                                    }
+                                }
+                                catch (_pdErr) { }
                                 const hasFollowUpDirective = /\b(?:and\s+then|then|after\s+that|next|also|and|to|for)\s+(?:download|search|find|locate|open|get|see|check|filter|type|fill|click|select|view|explore|read|save)\b/i.test(goal);
                                 if (!hasFollowUpDirective && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === 'navigate_url')) {
                                     this.transition('complete', `Already on ${targetUrl}`);
@@ -1473,12 +1533,15 @@ export class RunCoordinator {
                         }
                         catch (_) { }
                     }
+                    const pdfDisplayName = pdfFilename.replace(/_/g, ' ').replace(/\.pdf$/i, '');
+                    const pdfReply = `✅ Successfully opened **${pdfDisplayName}** — the official document is now displayed in your browser.\n\nYou can save or print it using the PDF viewer controls (top-right corner of the page). The direct link is:\n${currentTabUrl}`;
                     this.transition('complete', `Document successfully opened and retrieved: ${pdfFilename}`);
                     return this.completeWithResult({
                         success: true,
                         state: 'complete',
                         stepCount: step,
                         message: `Brochure successfully opened and downloaded: ${pdfFilename}`,
+                        reply: pdfReply,
                         proposal: this.lastExecutedProposal || undefined
                     });
                 }
@@ -1522,12 +1585,15 @@ export class RunCoordinator {
                     if (!domResponse || !domResponse.success) {
                         if (isPdfUrl && isDocRetrievalGoal) {
                             const pdfFilename = currentTabUrl.split('/').pop()?.split('?')[0] || 'document.pdf';
+                            const pdfDisplayName2 = pdfFilename.replace(/_/g, ' ').replace(/\.pdf$/i, '');
+                            const pdfReply2 = `✅ Successfully opened **${pdfDisplayName2}** — the official document is now displayed in your browser.\n\nYou can save or print it using the PDF viewer controls (top-right corner of the page). The direct link is:\n${currentTabUrl}`;
                             this.transition('complete', `Document successfully opened and retrieved: ${pdfFilename}`);
                             return this.completeWithResult({
                                 success: true,
                                 state: 'complete',
                                 stepCount: step,
                                 message: `Brochure successfully opened and downloaded: ${pdfFilename}`,
+                                reply: pdfReply2,
                                 proposal: this.lastExecutedProposal || undefined
                             });
                         }
@@ -3882,11 +3948,15 @@ export class RunCoordinator {
                             this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
                         }
                         const targetName = targetElement?.sanitizedName || proposal.targetLocalId || 'Brochure';
+                        const docHref = targetElement?.href || (isPdfTabUrl ? activeTab?.url : '');
+                        const docDisplayName = docHref ? docHref.split('/').pop()?.split('?')[0]?.replace(/_/g, ' ').replace(/\.pdf$/i, '') : targetName;
+                        const docReply = `✅ Successfully opened **${docDisplayName || targetName}** — the official document is now displayed in your browser.\n\nYou can save or print it using the PDF viewer controls (top-right of the page).${docHref ? `\n\nDirect link: ${docHref}` : ''}`;
                         this.transition('complete', `Downloaded "${targetName}" successfully: document retrieved`);
                         const res = {
                             success: true,
                             state: 'complete',
                             message: `Brochure download initiated successfully for "${targetName}"`,
+                            reply: docReply,
                             sanitized,
                             proposal,
                             telemetry,

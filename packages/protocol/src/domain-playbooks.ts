@@ -863,17 +863,22 @@ export const ISRO_PLAYBOOK: DomainPlaybook = {
     },
     {
       name: 'chandrayaan3_brochure',
-      path: '/media_isro/pdf/Missions/LVM3/LVM3M4_Chandrayaan3_brochure.pdf',
-      aliases: ['/media_isro/pdf/Missions/LVM3/LVM3M4_Chandrayaan3_brochure.pdf', '/Chandrayaan3.html'],
-      description: 'Direct PDF download for Chandrayaan-3 (LVM3-M4) official mission brochure',
-      matchKeywords: ['chandrayaan-3 brochure', 'chandrayaan 3 brochure', 'chandrayaan brochure', 'chandrayaan-3 pdf', 'chandrayaan 3 pdf']
+      path: '/Chandrayaan3.html',
+      aliases: ['/Chandrayaan3.html', '/media_isro/pdf/Missions/LVM3/LVM3M4_Chandrayaan3_brochure.pdf'],
+      description: 'Chandrayaan-3 mission page — contains the official Brochure link to the LVM3-M4 PDF',
+      matchKeywords: [
+        'chandrayaan-3 brochure', 'chandrayaan 3 brochure', 'chandrayaan brochure',
+        'chandrayaan-3 pdf', 'chandrayaan 3 pdf', 'chandrayaan mission brochure',
+        'download chandrayaan brochure', 'download chandrayaan', 'chandrayaan pdf download',
+        'chandrayaan brochure download', 'chandrayaan mission pdf'
+      ]
     },
     {
       name: 'aditya_l1_brochure',
-      path: '/media_isro/pdf/AdityaL1_Mission_Brochure.pdf',
-      aliases: ['/media_isro/pdf/AdityaL1_Mission_Brochure.pdf', '/Aditya_L1.html'],
-      description: 'Direct PDF download for Aditya-L1 official solar mission brochure',
-      matchKeywords: ['aditya-l1 brochure', 'aditya l1 brochure', 'aditya brochure', 'aditya-l1 pdf']
+      path: '/Aditya_L1.html',
+      aliases: ['/Aditya_L1.html', '/media_isro/pdf/AdityaL1_Mission_Brochure.pdf'],
+      description: 'Aditya-L1 mission page — contains the official Brochure link to the solar mission PDF',
+      matchKeywords: ['aditya-l1 brochure', 'aditya l1 brochure', 'aditya brochure', 'aditya-l1 pdf', 'aditya l1 pdf', 'solar mission brochure', 'aditya mission brochure']
     },
     {
       name: 'yuvika',

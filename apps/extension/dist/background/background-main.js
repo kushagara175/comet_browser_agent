@@ -15676,17 +15676,29 @@ var ISRO_PLAYBOOK = {
     },
     {
       name: "chandrayaan3_brochure",
-      path: "/media_isro/pdf/Missions/LVM3/LVM3M4_Chandrayaan3_brochure.pdf",
-      aliases: ["/media_isro/pdf/Missions/LVM3/LVM3M4_Chandrayaan3_brochure.pdf", "/Chandrayaan3.html"],
-      description: "Direct PDF download for Chandrayaan-3 (LVM3-M4) official mission brochure",
-      matchKeywords: ["chandrayaan-3 brochure", "chandrayaan 3 brochure", "chandrayaan brochure", "chandrayaan-3 pdf", "chandrayaan 3 pdf"]
+      path: "/Chandrayaan3.html",
+      aliases: ["/Chandrayaan3.html", "/media_isro/pdf/Missions/LVM3/LVM3M4_Chandrayaan3_brochure.pdf"],
+      description: "Chandrayaan-3 mission page \u2014 contains the official Brochure link to the LVM3-M4 PDF",
+      matchKeywords: [
+        "chandrayaan-3 brochure",
+        "chandrayaan 3 brochure",
+        "chandrayaan brochure",
+        "chandrayaan-3 pdf",
+        "chandrayaan 3 pdf",
+        "chandrayaan mission brochure",
+        "download chandrayaan brochure",
+        "download chandrayaan",
+        "chandrayaan pdf download",
+        "chandrayaan brochure download",
+        "chandrayaan mission pdf"
+      ]
     },
     {
       name: "aditya_l1_brochure",
-      path: "/media_isro/pdf/AdityaL1_Mission_Brochure.pdf",
-      aliases: ["/media_isro/pdf/AdityaL1_Mission_Brochure.pdf", "/Aditya_L1.html"],
-      description: "Direct PDF download for Aditya-L1 official solar mission brochure",
-      matchKeywords: ["aditya-l1 brochure", "aditya l1 brochure", "aditya brochure", "aditya-l1 pdf"]
+      path: "/Aditya_L1.html",
+      aliases: ["/Aditya_L1.html", "/media_isro/pdf/AdityaL1_Mission_Brochure.pdf"],
+      description: "Aditya-L1 mission page \u2014 contains the official Brochure link to the solar mission PDF",
+      matchKeywords: ["aditya-l1 brochure", "aditya l1 brochure", "aditya brochure", "aditya-l1 pdf", "aditya l1 pdf", "solar mission brochure", "aditya mission brochure"]
     },
     {
       name: "yuvika",
@@ -16117,6 +16129,188 @@ var REGISTERED_PLAYBOOKS = [
   FLIPKART_PLAYBOOK,
   WIKIPEDIA_PLAYBOOK
 ];
+function lookupDomainPlaybook(urlOrHostname) {
+  if (!urlOrHostname)
+    return void 0;
+  let hostname = urlOrHostname.toLowerCase().trim();
+  try {
+    if (hostname.includes("://")) {
+      hostname = new URL(hostname).hostname;
+    }
+  } catch {
+    hostname = hostname.replace(/^[a-z]+:\/\//i, "").split("/")[0].split(":")[0];
+  }
+  return REGISTERED_PLAYBOOKS.find((playbook) => {
+    if (hostname === playbook.domain || hostname.endsWith(`.${playbook.domain}`)) {
+      return true;
+    }
+    return playbook.aliases.some((alias) => hostname.includes(alias.toLowerCase()));
+  });
+}
+function isUrlMatchingRoute(url, route) {
+  if (!url)
+    return false;
+  const u = url.toLowerCase();
+  const rPath = route.path.toLowerCase();
+  if (u.includes(rPath))
+    return true;
+  if (route.aliases) {
+    for (const alias of route.aliases) {
+      if (u.includes(alias.toLowerCase()))
+        return true;
+    }
+  }
+  if (route.name === "problemStatements") {
+    if (u.includes("problem-statement") || u.includes("problemstatement") || /\/sih\d*ps/i.test(u) || u.includes("sih2026ps")) {
+      return true;
+    }
+  }
+  return false;
+}
+function resolvePlaybookIntent(playbook, userQuery, currentUrl) {
+  const normQuery = normalizeSemanticText(userQuery);
+  const queryTokens = tokenizeSemanticText(normQuery);
+  if (!normQuery) {
+    return {
+      playbookName: playbook.name,
+      matchedIntent: "none",
+      confidence: 0,
+      rationale: "Empty user query"
+    };
+  }
+  const hasExplicitCountDirective = /\b(?:how\s+many|count\s+(?:the\s+)?|total\s+(?:number\s+of\s+)?|number\s+of)\b/i.test(userQuery);
+  const hasSpecificSearchDirective = /\b(?:search(?:\s+for)?|find|locate|lookup|filter(?:\s+by)?|query|type|bhuvan|geoportal|map|statement\s+for|theme|details)\b/i.test(userQuery);
+  const isMetricQuery = hasExplicitCountDirective && !hasSpecificSearchDirective;
+  if (isMetricQuery) {
+    for (const rule of playbook.metricsRules) {
+      const match = rule.labelKeywords.some((kw) => {
+        const kwTokens = tokenizeSemanticText(kw);
+        return kwTokens.every((kt2) => queryTokens.includes(kt2) || queryTokens.some((qt2) => isFuzzyTokenMatch(kt2, qt2)));
+      });
+      if (match) {
+        return {
+          playbookName: playbook.name,
+          matchedIntent: "extract_metric",
+          confidence: 0.95,
+          metricRule: rule,
+          targetPhrase: rule.labelKeywords[0],
+          rationale: `Matched metric extraction rule '${rule.metricId}' (${rule.description}) based on query keywords`
+        };
+      }
+    }
+  }
+  const isNavQuery = /^(?:(?:please|kindly)\s+)?(?:go\s+to|navigate\s+to|visit|open|load|take\s+me\s+to)\b/i.test(userQuery) || queryTokens.length > 0 && ["go", "navigate", "visit", "load"].includes(queryTokens[0]);
+  const extractedSearch = extractSearchQueryFromGoal(userQuery);
+  const hasSearchDirective = Boolean(extractedSearch && extractedSearch.length > 1) || /\b(?:search(?:\s+for)?|find|locate|lookup|filter(?:\s+by)?|query|type)\b/i.test(userQuery);
+  if (isNavQuery) {
+    for (const route of playbook.routes) {
+      if (route.name === "search" && hasSearchDirective) {
+        continue;
+      }
+      const match = route.matchKeywords.some((kw) => {
+        const kwNorm = normalizeSemanticText(kw);
+        if (normQuery.includes(kwNorm))
+          return true;
+        const kwTokens = tokenizeSemanticText(kwNorm);
+        return kwTokens.length > 0 && kwTokens.every((kt2) => queryTokens.includes(kt2) || queryTokens.some((qt2) => isFuzzyTokenMatch(kt2, qt2)));
+      });
+      if (match) {
+        const targetUrl = `https://${playbook.domain}${route.path}`;
+        const isAlreadyOnRoute = isUrlMatchingRoute(currentUrl, route);
+        return {
+          playbookName: playbook.name,
+          matchedIntent: isAlreadyOnRoute ? "none" : "navigate",
+          confidence: 0.95,
+          targetUrl,
+          targetPhrase: route.name === "problemStatements" ? "Problem Statements" : route.matchKeywords[0],
+          targetRole: "link",
+          rationale: isAlreadyOnRoute ? `Already on route '${route.name}' (${route.path})` : `Matched playbook route '${route.name}' (${route.path}) from user intent`
+        };
+      }
+    }
+  }
+  const mentionsProblemStatements = normQuery.includes("problem statement") || normQuery.includes("problem statements") || /\bps\s*\d+\b/i.test(userQuery) || queryTokens.includes("ps") && queryTokens.some((t) => /\d+/.test(t));
+  const psRoute = playbook.routes.find((r) => r.name === "problemStatements");
+  const alreadyOnPsRoute = psRoute ? isUrlMatchingRoute(currentUrl, psRoute) : false;
+  if (mentionsProblemStatements && currentUrl && !alreadyOnPsRoute) {
+    if (psRoute) {
+      return {
+        playbookName: playbook.name,
+        matchedIntent: "navigate",
+        confidence: 0.96,
+        targetUrl: `https://${playbook.domain}${psRoute.path}`,
+        targetPhrase: "Problem Statements",
+        targetRole: "link",
+        rationale: `Query references Problem Statements while currently on '${currentUrl}'. Navigating to Problem Statements page first.`
+      };
+    }
+  }
+  const isInputSearchIntent = hasSearchDirective || queryTokens.some((t) => ["search", "find", "locate", "query", "type", "enter", "filter", "lookup"].includes(t));
+  const sortedLandmarks = isInputSearchIntent ? [...playbook.landmarks].sort((a, b) => {
+    const aIsInput = a.role === "input" || a.intentAction === "type" ? -1 : 1;
+    const bIsInput = b.role === "input" || b.intentAction === "type" ? -1 : 1;
+    return aIsInput - bIsInput;
+  }) : playbook.landmarks;
+  for (const landmark of sortedLandmarks) {
+    const allAliases = [landmark.phrase, ...landmark.aliases];
+    const match = allAliases.some((alias) => {
+      const aliasNorm = normalizeSemanticText(alias);
+      if (normQuery.includes(aliasNorm))
+        return true;
+      const aliasTokens = tokenizeSemanticText(aliasNorm);
+      return aliasTokens.length > 0 && aliasTokens.every((at) => queryTokens.includes(at) || queryTokens.some((qt2) => isFuzzyTokenMatch(at, qt2)));
+    });
+    if (match) {
+      if (landmark.role === "input" || landmark.intentAction === "type") {
+        return {
+          playbookName: playbook.name,
+          matchedIntent: "fill_field",
+          confidence: 0.92,
+          targetPhrase: landmark.phrase,
+          targetRole: landmark.role,
+          rationale: `Matched landmark '${landmark.phrase}' (${landmark.description}) for input/search intent`
+        };
+      }
+      return {
+        playbookName: playbook.name,
+        matchedIntent: "click_landmark",
+        confidence: 0.94,
+        targetPhrase: landmark.phrase,
+        targetRole: landmark.role,
+        rationale: `Matched landmark '${landmark.phrase}' (${landmark.description}) in playbook for domain '${playbook.domain}'`
+      };
+    }
+  }
+  for (const route of playbook.routes) {
+    if (route.name === "search" && hasSearchDirective) {
+      continue;
+    }
+    const match = route.matchKeywords.some((kw) => {
+      const kwNorm = normalizeSemanticText(kw);
+      if (normQuery.includes(kwNorm))
+        return true;
+      const kwTokens = tokenizeSemanticText(kwNorm);
+      return kwTokens.length > 0 && kwTokens.every((kt2) => queryTokens.includes(kt2) || queryTokens.some((qt2) => isFuzzyTokenMatch(kt2, qt2)));
+    });
+    if (match) {
+      const targetUrl = `https://${playbook.domain}${route.path}`;
+      const isAlreadyOnRoute = currentUrl ? currentUrl.includes(route.path) : false;
+      return {
+        playbookName: playbook.name,
+        matchedIntent: isAlreadyOnRoute ? "none" : "navigate",
+        confidence: 0.85,
+        targetUrl,
+        rationale: isAlreadyOnRoute ? `Already on route '${route.name}' (${route.path})` : `Matched playbook route '${route.name}' (${route.path}) from user intent`
+      };
+    }
+  }
+  return {
+    playbookName: playbook.name,
+    matchedIntent: "none",
+    confidence: 0.2,
+    rationale: "No domain playbook route or landmark matched query tokens directly"
+  };
+}
 function extractSearchQueryFromGoal(goal) {
   let q2 = (goal || "").trim();
   if (!q2)
@@ -23264,7 +23458,20 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
           return this.completeWithResult(res2);
         }
         if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === "function") {
-          const targetUrl = extractTargetUrlFromGoal(goal);
+          let targetUrl = extractTargetUrlFromGoal(goal);
+          if (targetUrl) {
+            try {
+              const playbookForTarget = lookupDomainPlaybook(targetUrl);
+              if (playbookForTarget) {
+                const playbookResolution = resolvePlaybookIntent(playbookForTarget, goal, activeTab?.url);
+                if (playbookResolution.matchedIntent === "navigate" && playbookResolution.targetUrl && playbookResolution.confidence >= 0.8) {
+                  console.log(`[PrivaPilot Coordinator] Playbook fast-track: upgrading target from "${targetUrl}" \u2192 "${playbookResolution.targetUrl}" (${playbookResolution.rationale})`);
+                  targetUrl = playbookResolution.targetUrl;
+                }
+              }
+            } catch (_playbookErr) {
+            }
+          }
           if (targetUrl && activeTab?.url) {
             try {
               const currentHost = new URL(activeTab.url).hostname.toLowerCase();
@@ -23348,6 +23555,42 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
                 this.transition("capturing", `Loaded ${targetUrl}. Re-perceiving page elements...`);
                 continue;
               } else if (isSubdomainOrRedirect && !hasPathChange) {
+                try {
+                  const onDomainPlaybook = lookupDomainPlaybook(activeTab.url);
+                  if (onDomainPlaybook) {
+                    const onDomainResolution = resolvePlaybookIntent(onDomainPlaybook, goal, activeTab.url);
+                    if (onDomainResolution.matchedIntent === "navigate" && onDomainResolution.targetUrl && onDomainResolution.confidence >= 0.8 && onDomainResolution.targetUrl !== targetUrl) {
+                      const upgradedUrl = onDomainResolution.targetUrl;
+                      console.log(`[PrivaPilot Coordinator] Playbook on-domain fast-track: navigating directly to "${upgradedUrl}" (${onDomainResolution.rationale})`);
+                      hasNavigatedInitially = true;
+                      const directNavAction = {
+                        actionId: `act_playbook_nav_${Date.now()}`,
+                        kind: "navigate",
+                        url: upgradedUrl,
+                        confidence: 1,
+                        risk: "safe",
+                        rationale: `Playbook fast-track: direct navigation to ${upgradedUrl}`,
+                        expectedPostcondition: { kind: "status_changed" }
+                      };
+                      this.actionHistory.push(directNavAction);
+                      this.listeners.onActionProposed?.(directNavAction, this.currentRunId);
+                      this.currentMaxSteps = Math.max(this.currentMaxSteps, 4);
+                      this.transition("executing", `Navigating directly to ${upgradedUrl}...`);
+                      const directNavRes = await this.browser.navigateTab(activeTab.id, upgradedUrl);
+                      if (directNavRes && typeof directNavRes === "object" && directNavRes.tabId) {
+                        this.currentTabId = directNavRes.tabId;
+                        activeTab.id = directNavRes.tabId;
+                      }
+                      activeTab.url = directNavRes && directNavRes.url ? directNavRes.url : upgradedUrl;
+                      this.previousUrl = activeTab.url;
+                      this.lastExecutedProposal = directNavAction;
+                      this.lastExecutionResult = { success: true, message: `Loaded ${upgradedUrl}` };
+                      this.transition("capturing", `Loaded ${upgradedUrl}. Re-perceiving...`);
+                      continue;
+                    }
+                  }
+                } catch (_pdErr) {
+                }
                 const hasFollowUpDirective = /\b(?:and\s+then|then|after\s+that|next|also|and|to|for)\s+(?:download|search|find|locate|open|get|see|check|filter|type|fill|click|select|view|explore|read|save)\b/i.test(goal);
                 if (!hasFollowUpDirective && (isPureNavigationGoal(goal) || this.currentTaskContract?.goalPattern === "navigate_url")) {
                   this.transition("complete", `Already on ${targetUrl}`);
@@ -23408,12 +23651,18 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
             } catch (_) {
             }
           }
+          const pdfDisplayName = pdfFilename.replace(/_/g, " ").replace(/\.pdf$/i, "");
+          const pdfReply = `\u2705 Successfully opened **${pdfDisplayName}** \u2014 the official document is now displayed in your browser.
+
+You can save or print it using the PDF viewer controls (top-right corner of the page). The direct link is:
+${currentTabUrl}`;
           this.transition("complete", `Document successfully opened and retrieved: ${pdfFilename}`);
           return this.completeWithResult({
             success: true,
             state: "complete",
             stepCount: step,
             message: `Brochure successfully opened and downloaded: ${pdfFilename}`,
+            reply: pdfReply,
             proposal: this.lastExecutedProposal || void 0
           });
         }
@@ -23455,12 +23704,18 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
           if (!domResponse || !domResponse.success) {
             if (isPdfUrl && isDocRetrievalGoal) {
               const pdfFilename = currentTabUrl.split("/").pop()?.split("?")[0] || "document.pdf";
+              const pdfDisplayName2 = pdfFilename.replace(/_/g, " ").replace(/\.pdf$/i, "");
+              const pdfReply2 = `\u2705 Successfully opened **${pdfDisplayName2}** \u2014 the official document is now displayed in your browser.
+
+You can save or print it using the PDF viewer controls (top-right corner of the page). The direct link is:
+${currentTabUrl}`;
               this.transition("complete", `Document successfully opened and retrieved: ${pdfFilename}`);
               return this.completeWithResult({
                 success: true,
                 state: "complete",
                 stepCount: step,
                 message: `Brochure successfully opened and downloaded: ${pdfFilename}`,
+                reply: pdfReply2,
                 proposal: this.lastExecutedProposal || void 0
               });
             }
@@ -25606,11 +25861,19 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
               this.listeners.onTelemetryUpdated(telemetry2, this.currentRunId);
             }
             const targetName = targetElement?.sanitizedName || proposal.targetLocalId || "Brochure";
+            const docHref = targetElement?.href || (isPdfTabUrl ? activeTab?.url : "");
+            const docDisplayName = docHref ? docHref.split("/").pop()?.split("?")[0]?.replace(/_/g, " ").replace(/\.pdf$/i, "") : targetName;
+            const docReply = `\u2705 Successfully opened **${docDisplayName || targetName}** \u2014 the official document is now displayed in your browser.
+
+You can save or print it using the PDF viewer controls (top-right of the page).${docHref ? `
+
+Direct link: ${docHref}` : ""}`;
             this.transition("complete", `Downloaded "${targetName}" successfully: document retrieved`);
             const res2 = {
               success: true,
               state: "complete",
               message: `Brochure download initiated successfully for "${targetName}"`,
+              reply: docReply,
               sanitized,
               proposal,
               telemetry: telemetry2,
