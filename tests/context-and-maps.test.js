@@ -13,11 +13,16 @@ import {
 import { validateSanitizedPayload } from '../apps/server/dist/schemas/payload-validator.js';
 
 test('Context Classifier: Correctly identifies private workspaces, hybrid platforms, and public broadcast', () => {
-  // 1. Private Workspaces (Mails, Chats, Banking, HRMS)
+  // 1. Private Workspaces (Mails, Chats, Banking, HRMS, Direct Messages)
   assert.strictEqual(classifyPageZone('https://mail.google.com/mail/u/0/#inbox'), 'private_workspace');
   assert.strictEqual(classifyPageZone('https://outlook.live.com/mail/0/'), 'private_workspace');
   assert.strictEqual(classifyPageZone('https://web.whatsapp.com/'), 'private_workspace');
   assert.strictEqual(classifyPageZone('https://app.slack.com/client/T123/C456'), 'private_workspace');
+  assert.strictEqual(classifyPageZone('https://www.instagram.com/direct/inbox/'), 'private_workspace');
+  assert.strictEqual(classifyPageZone('https://www.instagram.com/direct/t/17841400000000000/'), 'private_workspace');
+  assert.strictEqual(classifyPageZone('https://x.com/messages'), 'private_workspace');
+  assert.strictEqual(classifyPageZone('https://www.linkedin.com/messaging/'), 'private_workspace');
+  assert.strictEqual(classifyPageZone('https://www.messenger.com/t/12345'), 'private_workspace');
   assert.strictEqual(classifyPageZone('https://netbanking.hdfcbank.com/netbanking/'), 'private_workspace');
   assert.strictEqual(classifyPageZone('https://myworkday.com/company/d/home.htmld'), 'private_workspace');
 
@@ -102,6 +107,17 @@ test('Private Account Shell: User menu and Google account buttons on hybrid site
     }
   };
   assert.strictEqual(isPrivateAccountShell(mockPublicLink), false);
+
+  const mockNavDropdown = {
+    getAttribute(attr) {
+      if (attr === 'aria-haspopup') return 'true';
+      if (attr === 'title') return 'Engagements';
+      return null;
+    },
+    hasAttribute(attr) { return attr === 'aria-haspopup'; },
+    closest(selector) { return selector.includes('header') ? { tagName: 'HEADER' } : null; }
+  };
+  assert.strictEqual(isPrivateAccountShell(mockNavDropdown), false, 'Header navigation dropdown must NOT be classified as account shell');
 });
 
 test('Closed Schema Validator: Accepts valid pageState.pageZone and rejects invalid zone strings', () => {

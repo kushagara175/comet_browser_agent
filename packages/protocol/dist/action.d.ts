@@ -186,6 +186,7 @@ export interface ActionProposal {
     readonly reply?: string;
     readonly message?: string;
     readonly reasoning?: string;
+    readonly thought?: string;
     readonly batchActions?: ReadonlyArray<AtomicActionProposal>;
     readonly userInputPrompt?: string;
     readonly inputKey?: string;

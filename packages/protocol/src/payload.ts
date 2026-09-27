@@ -20,6 +20,7 @@ export type SensitiveCategory =
   | 'date_of_birth'
   | 'address'
   | 'username'
+  | 'name'
   | 'auth_code'
   | 'token'
   | 'face'
@@ -84,7 +85,7 @@ export interface SanitizedElement {
   readonly sanitizedName: string;
   /** Coarse normalized bounds: [normX, normY, normW, normH] between 0 and 1 */
   readonly coarseBounds: readonly [number, number, number, number];
-  readonly state: ReadonlyArray<'enabled' | 'disabled' | 'visible' | 'checked' | 'focused'>;
+  readonly state: ReadonlyArray<'enabled' | 'disabled' | 'visible' | 'checked' | 'focused' | 'filled'>;
   readonly actionCapabilities: ReadonlyArray<ActionCapability>;
   /** Safe contextual text tokens from the enclosing row, card, or container (excluding sensitive inputs) */
   readonly containerContext?: string;
@@ -192,6 +193,8 @@ export interface SanitizedContext {
   readonly goal: string;
   /** Base64 encoded sanitized image with opaque masks and face blurs applied */
   readonly sanitizedScreenshotDataUrl: string;
+  /** Local-only, masked Inspector preview without model-facing action badges. */
+  readonly inspectorScreenshotDataUrl?: string;
   readonly elements: ReadonlyArray<SanitizedElement>;
   readonly pageState: SanitizedPageState;
   readonly maskCount: number;

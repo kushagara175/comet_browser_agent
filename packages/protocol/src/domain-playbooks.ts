@@ -779,9 +779,9 @@ export const ISRO_PLAYBOOK: DomainPlaybook = {
   routes: [
     {
       name: 'chandrayaan3',
-      path: '/Chandrayaan3_New.html',
-      aliases: ['/Chandrayaan3_New.html', '/Chandrayaan-3.html', '/chandrayaan3', '/chandrayaan-3'],
-      description: 'Chandrayaan-3 lunar exploration mission official page',
+      path: '/Chandrayaan3.html',
+      aliases: ['/Chandrayaan3.html', '/Chandrayaan3_New.html', '/Chandrayaan3_Details.html', '/chandrayaan3', '/chandrayaan-3'],
+      description: 'Chandrayaan-3 lunar exploration mission official page and brochure hub',
       matchKeywords: ['chandrayaan-3', 'chandrayaan 3', 'chandrayaan3', 'chandrayaan']
     },
     {
@@ -853,6 +853,34 @@ export const ISRO_PLAYBOOK: DomainPlaybook = {
       aliases: ['/Centres.html', '/centres', '/Centres'],
       description: 'ISRO research centres and facilities (VSSC, URSC, SDSC SHAR, SAC, NRSC)',
       matchKeywords: ['centres', 'centers', 'facilities', 'vssc', 'ursc', 'sdsc', 'sac', 'nrsc']
+    },
+    {
+      name: 'sitemap',
+      path: '/Sitemap.html',
+      aliases: ['/Sitemap.html', '/sitemap', '/SiteMap.html'],
+      description: 'ISRO master site map directory containing all portal navigation links',
+      matchKeywords: ['sitemap', 'site map', 'directory']
+    },
+    {
+      name: 'chandrayaan3_brochure',
+      path: '/media_isro/pdf/Missions/LVM3/LVM3M4_Chandrayaan3_brochure.pdf',
+      aliases: ['/media_isro/pdf/Missions/LVM3/LVM3M4_Chandrayaan3_brochure.pdf', '/Chandrayaan3.html'],
+      description: 'Direct PDF download for Chandrayaan-3 (LVM3-M4) official mission brochure',
+      matchKeywords: ['chandrayaan-3 brochure', 'chandrayaan 3 brochure', 'chandrayaan brochure', 'chandrayaan-3 pdf', 'chandrayaan 3 pdf']
+    },
+    {
+      name: 'aditya_l1_brochure',
+      path: '/media_isro/pdf/AdityaL1_Mission_Brochure.pdf',
+      aliases: ['/media_isro/pdf/AdityaL1_Mission_Brochure.pdf', '/Aditya_L1.html'],
+      description: 'Direct PDF download for Aditya-L1 official solar mission brochure',
+      matchKeywords: ['aditya-l1 brochure', 'aditya l1 brochure', 'aditya brochure', 'aditya-l1 pdf']
+    },
+    {
+      name: 'yuvika',
+      path: '/YUVIKA.html',
+      aliases: ['/YUVIKA.html', '/yuvika', '/yuvika.html', '/Young_Scientist_YUVIKA2026.html'],
+      description: 'YUVIKA Young Scientist Programme official ISRO page',
+      matchKeywords: ['yuvika', 'young scientist', 'yuvika programme', 'yuva vigyani karyakram']
     },
     {
       name: 'home',
@@ -1748,14 +1776,17 @@ export function extractTargetUrlFromGoal(goal: string): string | undefined {
     return `https://${domain}${path}`;
   }
 
-  // 4. Master Web Directory & Indian Government Portals Registry lookup
-  const directoryMatch = resolvePortalFromQuery(g);
-  if (directoryMatch) {
-    return directoryMatch;
+  // 4. Master Web Directory & Indian Government Portals Registry lookup (requires navigation intent or portal keyword)
+  const hasNavIntent = /^(?:open|go\s+to|visit|launch|load|navigate\s+to)\b/i.test(g) || /\b(?:portal|website|site|homepage)\b/i.test(g) || /^(?:isro|bhuvan|sih|mosdac|vedas|bhoonidhi)$/i.test(g.trim());
+  if (hasNavIntent) {
+    const directoryMatch = resolvePortalFromQuery(g);
+    if (directoryMatch) {
+      return directoryMatch;
+    }
   }
 
-  // 5. Contextual target phrasing: "in/on/open/visit/go to [the] <name> (website|portal|site|page|org)"
-  const contextMatch = g.match(/\b(?:in|on|at|open|load|visit|go\s+to|navigate\s+to)\s+(?:the\s+)?([a-zA-Z0-9_\s.-]+?)\s+(?:website|portal|site|page|org|organisation)\b/i);
+  // 5. Contextual target phrasing: "in/on/open/visit/go to [the] <name> (website|portal|site|page|org)" or "open isro and ..."
+  const contextMatch = g.match(/\b(?:in|on|at|open|load|visit|go\s+to|navigate\s+to)\s+(?:the\s+)?([a-zA-Z0-9_\s.-]+?)(?:\s+(?:website|portal|site|page|org|organisation)|(?=\s+(?:and|to|then|for|with|,|\.|$))|$)/i);
   if (contextMatch) {
     const siteKeyword = contextMatch[1].trim().toLowerCase();
     // Guard against referring to the current or active page

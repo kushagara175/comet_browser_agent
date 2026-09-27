@@ -134,6 +134,8 @@ export function parseFormFieldAssignments(text) {
  */
 export function resolveTaskContract(goal) {
     let g = (goal || '').trim().toLowerCase().replace(/[?!.]+$/, '').trim();
+    // Normalize conversational periods and hesitation dots between words (e.g. "see. my. message" -> "see my message")
+    g = g.replace(/\b([a-zA-Z0-9]+)\.+(?=\s+[a-zA-Z0-9]+)/g, '$1').replace(/\s+/g, ' ').trim();
     let prev = '';
     const ACTION_PREFIX_REGEX = /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+|(?:i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to)\s+|(?:go\s+ahead\s+and)\s+|(?:hey|hi|ok)\s+(?:privapilot[,!]?\s+)?(?:please\s+)?|(?:do\s+(?:the\s+)?|perform\s+(?:the\s+)?|start\s+(?:the\s+)?|execute\s+(?:the\s+)?|proceed\s+with\s+(?:the\s+)?|try\s+to\s+|let's\s+|lets\s+|let\s+us\s+)|(?:help\s+me\s+(?:in\s+|with\s+|out\s+with\s+|to\s+|by\s+|on\s+)?|assist\s+me\s+(?:in\s+|with\s+|to\s+)?)|(?:and\s+then|then|after\s+that|and|also|now|next|so)\s+)+/i;
     while (g && g !== prev) {
@@ -201,8 +203,8 @@ export function resolveTaskContract(goal) {
             }
         };
     }
-    const isMultiStep = /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload)\b/i.test(g) ||
-        (/(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many)/i.test(g));
+    const isMultiStep = /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|and\s+download|and\s+get|and\s+open|and\s+view|and\s+explore|and\s+save)\b/i.test(g) ||
+        (/(?:click|go\s+to|navigate\s+to|open)\s+.+?\s+(?:and|\bthen\b|to)\s+(?:search|find|filter|type|tell|check|see|count|how\s+many|download|get|open|view|explore|save)/i.test(g));
     // Explicit conversational / out-of-domain query handling - pass to LLM as answer goal
     if (/(?:poem|story|recipe|joke|capital of|calculate|solve math|2\+2|weather|song|quantum)/i.test(g)) {
         return {
@@ -316,7 +318,26 @@ export function resolveTaskContract(goal) {
             }
         };
     }
-    // 2a. Active element search/exploration intent (e.g. "see for the startup program here", "find startup", "look for career", "explore earth observation")
+    // 2a. Direct messaging & chat inspection intent (e.g. "see my message in instagram", "see my latest message", "check my messages", "read message", "view messages")
+    if (/(?:see|check|read|view|inspect|open|look\s+at)\s+(?:.*?\s+)?(?:messages?|dms?|chats?|conversations?|inbox)\b/i.test(g) &&
+        !/\b(?:type|fill|write|send|submit)\b/i.test(g)) {
+        const contextMatch = g.match(/\b(?:in|on|at|of)\s+([a-zA-Z0-9_-]+)/i);
+        const contextPhrase = cleanContextPhrase(contextMatch ? contextMatch[1].trim() : undefined);
+        return {
+            supported: true,
+            goalPattern: 'inspect_message',
+            expectedTerminal: { kind: 'status_changed' },
+            expectedTargetNameSubstring: 'message',
+            structuredIntent: {
+                intent: 'click',
+                targetPhrase: 'message',
+                targetTokens: ['message', 'messages', 'chat', 'thread', 'inbox', 'conversation', 'direct'],
+                contextPhrase
+            },
+            isPassive: false
+        };
+    }
+    // 2b. Active element search/exploration intent (e.g. "see for the startup program here", "find startup", "look for career", "explore earth observation")
     const activeExplorationMatch = g.match(/^(?:see|se|look|find|explore)\s+(?:for\s+)?(?:the\s+)?([a-zA-Z0-9_\-\s]{2,40}?)(?:\s+here|\s+now|\s+page|\s+section)?$/i);
     if (activeExplorationMatch && activeExplorationMatch[1] && !/^(?:status|page|screen|view|details|preview|drawer)$/i.test(activeExplorationMatch[1].trim())) {
         const rawTarget = activeExplorationMatch[1].trim().replace(/^(?:to|for|at)\s+/i, '');
@@ -1384,7 +1405,7 @@ export function isPureNavigationGoal(goal) {
         g = g.replace(ACTION_PREFIX_REGEX, '').trim();
     }
     // If a compound action continuation follows, it is NOT pure navigation
-    if (/\s+(?:and\s+then|then|after\s+that|and|,)\s+(?:click|type|fill|enter|search|filter|find|select|press|check|see|tell|scroll|hover|drag|drop|upload)\b/i.test(g)) {
+    if (/\s+(?:and\s+then|then|after\s+that|and|,|to)\s+(?:click|type|fill|enter|search|filter|find|select|press|check|see|tell|scroll|hover|drag|drop|upload|download|get|open|view|explore|save)\b/i.test(g)) {
         return false;
     }
     // Check if it is directly a URL or domain
