@@ -35,13 +35,13 @@ const HOME_WORK_LOCATION_REGEX = /\b(?:HOME|WORK|OFFICE|OTHER)\s+(?:at\s+|-\s+)(
 const PINCODE_IN_CONTEXT_REGEX = /(?:[A-Za-z]+[\-,]\s*|[,\-]\s*|\b(?:pin(?:\s*code)?|postal(?:\s*code)?|zip(?:\s*code)?)[\s:\-,]*)([1-9][0-9]{2}\s?[0-9]{3})\b/gi;
 
 // Locality, Colony, Nagar, Marg, Katra street addresses
-const LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt|Sector|Block|Pocket|Street|St\.|Road|Rd\.|Cross|Main|Nagar|Colony|Enclave|Vihar|Kunj|Society|Layout|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Bhavan|Bhawan)\b[^\n\r,;]{2,60}/gi;
+const LOCALITY_ADDRESS_REGEX = /\b(?:Flat|House|H\.No|Plot|Shop|Room|Bldg|Building|Apartment|Apt)\s*(?:(?:No\.?|#)\s*[A-Za-z0-9/-]{1,10}|\d+[A-Za-z0-9/-]*)\b|\b(?:Sector|Block|Pocket)\s*(?:[-#]\s*[A-Za-z0-9/-]{1,8}|(?:No\.?|#)\s*[A-Za-z0-9/-]{1,8}|\d+[A-Za-z0-9/-]*|[A-Z]\b)|\b\d+(?:st|nd|rd|th)?\s+(?:Main|Cross)(?:\s+(?:Road|Rd))?\b|\bMain\s+(?:Road|Street)\b|\b[A-Z][a-zA-Z0-9'-]+(?:\s+[A-Z][a-zA-Z0-9'-]+){0,2}\s+(?:Nagar|Colony|Enclave|Vihar|Kunj|Mohalla|Gali|Katra|Chowk|Bazar|Bazaar|Puram|Pally|Palli|Guda|Pura)\b/gi;
 
 // Account Greeting Names (e.g. "Hello, Kushagra", "Welcome, Alice", "Hi John")
 const ACCOUNT_GREETING_REGEX = /\b(?:Hello|Hi|Welcome),\s+([A-Za-z0-9_]{2,30})\b/gi;
 
 // Standard Street Address (e.g. "123 Main St, Anytown, USA", "456 Park Avenue")
-const STREET_ADDRESS_REGEX = /\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct|Circle|Cir)\b[^\n\r,;]*/gi;
+const STREET_ADDRESS_REGEX = /\b(?<![~≈])\b\d{1,5}(?:[/-]\d{1,5})?\s+(?!(?:km|kg|m\/s|mb|gb|tb|hz|khz|mhz|ghz|cm|mm|meters?|miles?|hours?|hrs?|mins?|sec(?:onds?)?|days?|years?|percent|%|x|deg|v|w|a|k)\b)[A-Za-z0-9'.-]{1,25}(?:\s+[A-Za-z0-9'.-]{1,25}){0,2}\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Circle|Cir)\b(?:\s+(?:Apt|Suite|Unit|Flat|Floor|#)\s*[A-Za-z0-9/-]+)?/gi;
 
 // Dates are sensitive only with an explicit DOB/birth-date label in the same text.
 const DATE_OF_BIRTH_REGEX = /\b(?:\d{1,2}[\s/-](?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s/-]\d{2,4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b/gi;
@@ -82,7 +82,7 @@ const GENERIC_SECRET_KEY_REGEX = /\b(?:sk_live_|ghp_|akIA)[A-Za-z0-9_]{16,}\b/g;
  * Scans a text string and returns all detected sensitive PII ranges.
  * Strictly avoids logging or storing the actual secret strings.
  */
-export function scanTextForPII(text: string): TextMatch[] {
+export function scanTextForPII(text: string, options: { publicAuthorHandles?: boolean } = {}): TextMatch[] {
   if (!text || typeof text !== 'string') {
     return [];
   }
@@ -116,7 +116,7 @@ export function scanTextForPII(text: string): TextMatch[] {
   }
 
   // 1c. Social Media / Profile Handles (@username)
-  for (const match of text.matchAll(HANDLE_REGEX)) {
+  for (const match of options.publicAuthorHandles ? [] : text.matchAll(HANDLE_REGEX)) {
     if (match.index !== undefined && match[1]) {
       const handleOffset = match[0].indexOf(match[1]);
       const handleStart = match.index + handleOffset;

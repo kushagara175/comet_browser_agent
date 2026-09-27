@@ -14,5 +14,7 @@ export declare const CANARY_SECRET = "SECRET_CANARY_SIH26171_DO_NOT_TRANSMIT";
  * Scans a text string and returns all detected sensitive PII ranges.
  * Strictly avoids logging or storing the actual secret strings.
  */
-export declare function scanTextForPII(text: string): TextMatch[];
+export declare function scanTextForPII(text: string, options?: {
+    publicAuthorHandles?: boolean;
+}): TextMatch[];
 //# sourceMappingURL=regex-patterns.d.ts.map

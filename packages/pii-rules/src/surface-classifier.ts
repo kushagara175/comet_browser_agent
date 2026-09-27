@@ -26,6 +26,8 @@ const PRIVATE_WORKSPACE_PATTERNS = [
   /discord\.com\/channels/i,
   /teams\.microsoft\.com/i,
   /web\.telegram\.org/i,
+  /messenger\.com/i,
+  /threads\.net\/messages/i,
   // Banking & Financial
   /netbanking/i,
   /banking/i,
@@ -95,9 +97,9 @@ export function classifyPageZone(url: string = ''): PageZone {
   const cleanUrl = (url || '').toLowerCase();
 
   // 1. Generic URL path & keyword semantics (Domain-Agnostic)
-  // Paths indicating private personal workspace, webmail, banking, or payroll
+  // Paths indicating private personal workspace, direct messaging, webmail, banking, or payroll
   if (
-    /(?:\/inbox|\/mail(?:\/|$|\?)|\/compose|\/messages(?:\/|$|\?)|\/chat(?:\/|$|\?)|\/banking|\/netbanking|\/payroll|\/hrms|\/myaccount|\/statements|\/checkout)\b/i.test(cleanUrl)
+    /(?:\/(?:direct|inbox|messages?|messaging|conversations?|chat|mail|compose|banking|netbanking|payroll|hrms|myaccount|statements|checkout)(?:[/?#]|$))/i.test(cleanUrl)
   ) {
     return 'private_workspace';
   }
@@ -222,24 +224,102 @@ export function isPublicMediaStream(el: any, url: string = ''): boolean {
 }
 
 /**
- * Determines whether an element on a hybrid platform represents the user's private account shell.
- * (e.g. Account switcher, personal search bar, notification drawer)
+ * Determines whether an element is located inside a private direct message / chat / conversation surface.
+ * Domain-agnostic: applies to Instagram Direct, X Messages, LinkedIn Messaging, WhatsApp Web, Slack, etc.
  */
+export function isPrivateMessagingSurface(el: any, url: string = ''): boolean {
+  if (!el) return false;
+  const cleanUrl = (url || el.ownerDocument?.defaultView?.location?.href || el.baseURI || '').toLowerCase();
+  if (/(?:\/(?:direct|inbox|messages?|messaging|conversations?|chat)(?:[/?#]|$))/i.test(cleanUrl)) {
+    return true;
+  }
+
+  try {
+    if (typeof el.closest === 'function') {
+      const container = el.closest(
+        '[data-testid*="conversation" i], [data-testid*="message" i], [data-testid*="chat" i], [data-testid*="direct" i], [class*="conversation" i], [class*="message-list" i], [class*="chat-list" i], [class*="msg-thread" i], [class*="direct-inbox" i], [aria-label*="Direct" i], [aria-label*="Messages" i], [aria-label*="Chats" i], [aria-label*="Thread" i], [aria-label*="Inbox" i]'
+      );
+      if (container) return true;
+    }
+  } catch (_) {}
+
+  return false;
+}
+
+/**
+ * Determines whether an element on a hybrid platform represents public broadcast post content.
+ * Guarantees that private workspaces, messaging surfaces, and user account shells are NEVER treated as public posts.
+ */
+export function isPublicPostContent(el: any): boolean {
+  try {
+    if (!el || isPrivateAccountShell(el) || typeof el.closest !== 'function') return false;
+    const currentDocUrl = (el.ownerDocument?.defaultView?.location?.href || el.baseURI || '').toLowerCase();
+
+    // Private workspaces have zero public broadcast posts
+    if (classifyPageZone(currentDocUrl) === 'private_workspace') {
+      return false;
+    }
+
+    // Elements in private messaging or chat surfaces are never public posts
+    if (isPrivateMessagingSurface(el, currentDocUrl)) {
+      return false;
+    }
+
+    // On YouTube and public video streaming platforms, all video, thumbnail, and channel content is public broadcast
+    if (currentDocUrl.includes('youtube.com') || currentDocUrl.includes('youtu.be') || currentDocUrl.includes('vimeo.com') || currentDocUrl.includes('twitch.tv')) {
+      return !isPrivateAccountShell(el);
+    }
+    // On X (Twitter), only posts in the primary feed/timeline/bookmarks/history column outside /messages are public broadcast
+    if ((currentDocUrl.includes('x.com') || currentDocUrl.includes('twitter.com')) && !currentDocUrl.includes('/messages')) {
+      const inPrimaryFeed = el.closest('[data-testid="primaryColumn"], [data-testid="cellInnerDiv"], [data-testid="tweet"], [data-testid="Tweet-User-Avatar"], article, [role="article"], [aria-label*="Timeline" i], main, [role="main"]');
+      if (inPrimaryFeed && !isPrivateAccountShell(el)) {
+        return true;
+      }
+    }
+    // On Instagram, posts in the primary feed, reels, and explore outside /direct and /messages are public broadcast
+    if (currentDocUrl.includes('instagram.com') && !currentDocUrl.includes('/direct') && !currentDocUrl.includes('/messages')) {
+      const inInstagramFeed = el.closest('article, [role="article"], [role="feed"], .feed, main, [role="main"], section, [data-testid*="post" i]');
+      if (inInstagramFeed && !isPrivateAccountShell(el)) {
+        return true;
+      }
+    }
+    // On Reddit, LinkedIn, Facebook, and Threads outside messaging
+    if (
+      (currentDocUrl.includes('reddit.com') || currentDocUrl.includes('linkedin.com') || currentDocUrl.includes('threads.net')) &&
+      !currentDocUrl.includes('/messages') && !currentDocUrl.includes('/messaging')
+    ) {
+      const inSocialFeed = el.closest('article, [role="article"], [role="feed"], .feed, main, [role="main"], shreddit-post, [data-testid="post-container"]');
+      if (inSocialFeed && !isPrivateAccountShell(el)) {
+        return true;
+      }
+    }
+    const post = el.closest(
+      'article, [role="article"], [data-testid="tweet"], [data-testid="cellInnerDiv"], [data-testid="primaryColumn"], [data-testid="Tweet-User-Avatar"], [data-testid="tweetText"], [data-testid="UserCell"], [data-testid="sidebarColumn"], aside, [aria-label*="who to follow" i], [aria-label*="timeline" i], [aria-label*="trending" i], ytd-comment-thread-renderer, ytd-rich-item-renderer, ytd-rich-grid-media, ytd-rich-grid-row, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-thumbnail, ytd-channel-name, #related, #contents, #items, .comment-body, .comment, shreddit-post, shreddit-comment, [data-testid="post-container"], .TimelineItem, .repo-list, [role="feed"], .feed'
+    );
+    return Boolean(post && !isPrivateAccountShell(post));
+  } catch (_) {
+    return false;
+  }
+}
+
 export function isPrivateAccountShell(el: any): boolean {
   if (!el) return false;
   try {
     const aria = (el.getAttribute?.('aria-label') || '').toLowerCase();
     const testId = (el.getAttribute?.('data-testid') || '').toLowerCase();
     const id = (el.id || '').toLowerCase();
+    const title = (el.getAttribute?.('title') || '').toLowerCase();
+    const className = String(el.className || '').toLowerCase();
 
+    // Specific private account switcher buttons / sign out / switch account controls ONLY
     if (
       aria.includes('google account') ||
       aria.includes('account menu') ||
       aria.includes('switch account') ||
       aria.includes('sign out') ||
-      testId.includes('useravatar') ||
-      testId.includes('user-menu') ||
-      testId.includes('profile-button') ||
+      testId === 'sidenav_accountswitcher_button' ||
+      testId.includes('accountswitcher') ||
+      testId === 'user-menu' ||
       id === 'avatar-btn'
     ) {
       return true;
@@ -247,9 +327,29 @@ export function isPrivateAccountShell(el: any): boolean {
 
     if (typeof el.closest === 'function') {
       const container = el.closest(
-        '#avatar-btn, [data-testid*="user-menu" i], [aria-label*="Google Account" i], [aria-label*="Account menu" i]'
+        '#avatar-btn, [data-testid*="accountswitcher" i], [aria-label*="Google Account" i], [aria-label*="Account menu" i], [aria-label*="Switch account" i], [class*="accountswitcher" i], [data-testid*="user-menu" i]'
       );
       if (container) return true;
+
+      // In header: only classify as account button if it explicitly targets user account, profile, or avatar
+      const inHeader = el.closest('header, [role="banner"]');
+      if (inHeader) {
+        const hasPopup = Boolean(el.hasAttribute?.('aria-haspopup') || el.getAttribute?.('aria-haspopup'));
+        const isAccountSpecific =
+          aria.includes('account') ||
+          aria.includes('profile') ||
+          aria.includes('avatar') ||
+          aria.includes('user') ||
+          title.includes('account') ||
+          title.includes('profile') ||
+          testId.includes('profile') ||
+          testId.includes('user') ||
+          className.includes('user-profile') ||
+          className.includes('account-btn');
+        if (hasPopup && isAccountSpecific) {
+          return true;
+        }
+      }
     }
   } catch (_) {}
 

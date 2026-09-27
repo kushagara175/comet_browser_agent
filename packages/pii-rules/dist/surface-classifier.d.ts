@@ -26,8 +26,14 @@ export declare function isFunctionalMapCanvas(el: any, url?: string): boolean;
  */
 export declare function isPublicMediaStream(el: any, url?: string): boolean;
 /**
- * Determines whether an element on a hybrid platform represents the user's private account shell.
- * (e.g. Account switcher, personal search bar, notification drawer)
+ * Determines whether an element is located inside a private direct message / chat / conversation surface.
+ * Domain-agnostic: applies to Instagram Direct, X Messages, LinkedIn Messaging, WhatsApp Web, Slack, etc.
  */
+export declare function isPrivateMessagingSurface(el: any, url?: string): boolean;
+/**
+ * Determines whether an element on a hybrid platform represents public broadcast post content.
+ * Guarantees that private workspaces, messaging surfaces, and user account shells are NEVER treated as public posts.
+ */
+export declare function isPublicPostContent(el: any): boolean;
 export declare function isPrivateAccountShell(el: any): boolean;
 //# sourceMappingURL=surface-classifier.d.ts.map

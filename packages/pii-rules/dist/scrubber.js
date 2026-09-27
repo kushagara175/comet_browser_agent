@@ -5,11 +5,11 @@ import { scanTextForPII } from './regex-patterns.js';
 /**
  * Replaces detected PII substrings within a text string with tokenized redaction markers.
  */
-export function scrubText(text) {
+export function scrubText(text, options = {}) {
     if (!text || typeof text !== 'string') {
         return text;
     }
-    const matches = scanTextForPII(text);
+    const matches = scanTextForPII(text, options);
     if (matches.length === 0) {
         return text;
     }
@@ -32,10 +32,10 @@ export function scrubText(text) {
 /**
  * Sanitizes element labels/names by removing sensitive identifiers or replaced values.
  */
-export function sanitizeElementName(rawName) {
+export function sanitizeElementName(rawName, options = {}) {
     if (!rawName)
         return '';
-    const scrubbed = scrubText(rawName).trim();
+    const scrubbed = scrubText(rawName, options).trim();
     // Truncate excessively long names to keep element payload compact
     if (scrubbed.length > 80) {
         return scrubbed.substring(0, 77) + '...';

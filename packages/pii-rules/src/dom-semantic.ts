@@ -37,6 +37,7 @@ const COMPACT_IDENTIFIERS: ReadonlyArray<readonly [RegExp, SensitiveCategory]> =
   [/^(?:phonenumber|mobilenumber|contactnumber)\d*$/i, 'phone'],
   [/^(?:dateofbirth|birthdate|dob)\d*$/i, 'date_of_birth'],
   [/^(?:username|loginid|userid)\d*$/i, 'username'],
+  [/^(?:fullname|firstname|lastname|applicantname|candidatename|studentname|name|txtname|custname)\d*$/i, 'name'],
   [/^(?:apikey|authkey|accesskey|accesstoken|secretkey)\d*$/i, 'token'],
   [/^(?:ssn|aadhaar(?:number)?|aadhar(?:number)?|pannumber|socialsecuritynumber)\d*$/i, 'national_id']
 ];
@@ -53,6 +54,7 @@ const SENSITIVE_LABELS: ReadonlyArray<readonly [RegExp, SensitiveCategory]> = [
   [/\b(?:phone (?:number|no)|mobile (?:number|no)|telephone number|contact number|cellphone)\b/i, 'phone'],
   [/\b(?:street address|postal address|home address|permanent address|current address|pin code|pincode|postal code|zipcode)\b/i, 'address'],
   [/\b(?:username|user name|user id|login id|login name|user handle)\b/i, 'username'],
+  [/\b(?:(?:full|first|last|middle|applicant|candidate|student|user|your|person)\s*name|(?:enter|type|input|provide)\s*(?:your\s*)?name|^name\b|name\s*(?::|$))\b/i, 'name'],
   [/\b(?:api key|auth key|access token|secret key|secret canary|canary)\b/i, 'token']
 ];
 
@@ -84,7 +86,8 @@ export function analyzeDomElementSensitivity(desc: DomElementDescriptor): DomSen
     else if (token.startsWith('tel')) category = 'phone';
     else if (token === 'email') category = 'email';
     else if (token.includes('address') || token === 'postal-code') category = 'address';
-    else if (token.includes('name') || token === 'username') category = 'username';
+    else if (token === 'username') category = 'username';
+    else if (token.includes('name')) category = 'name';
     return decision(category, `autocomplete="${token}"`);
   }
 

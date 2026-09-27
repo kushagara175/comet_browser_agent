@@ -73,14 +73,22 @@ export const SENSITIVE_FIELD_KEYWORDS = [
   'dateofbirth',
   'date_of_birth',
   // Name & Identity
-  // Account login identifiers, not generic public name/user controls
   'username',
   'user_name',
   'login_id',
   'login_name',
   'user_id',
   'userid',
-  'user_handle'
+  'user_handle',
+  'name',
+  'full_name',
+  'fullname',
+  'first_name',
+  'firstname',
+  'last_name',
+  'lastname',
+  'applicant_name',
+  'candidate_name'
 ] as const;
 
 export const SENSITIVE_AUTOCOMPLETE_VALUES = [

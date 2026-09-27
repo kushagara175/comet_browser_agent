@@ -194,3 +194,26 @@ test('Text PII Scanner - Accurately Detects Indian Landlines, Obfuscated Emails,
   assert.ok(!scrubbed.includes('isropr'));
 });
 
+test('Text PII Scanner - Zero False-Positive Address Redactions on Public Portal Content', () => {
+  // 1. Navigation phrases with "main" or generic words
+  assert.equal(scanTextForPII('Skip to main content').length, 0, 'Skip to main content must not trigger address mask');
+  assert.equal(scanTextForPII('Main navigation and portal sitemap').length, 0, 'Main navigation must not trigger address mask');
+  assert.equal(scanTextForPII('Room for innovation in satellite telemetry').length, 0, 'Generic "room" must not trigger address mask');
+
+  // 2. Scientific mission texts with numerical measurements and orbital parameters
+  const missionText = `
+    Chandrayaan-3 consists of an indigenous Lander module (LM), Propulsion module (PM) and a Rover with an objective of developing and demonstrating new technologies required for Inter planetary missions.
+    The main function of PM is to carry the LM from launch vehicle injection till final lunar 100 km circular polar orbit and separate the LM from PM.
+    Apart from this, the Propulsion Module also has one scientific payload as a value addition which will be operated post separation of Lander Module.
+    The launcher identified for Chandrayaan-3 is LVM3 M4 which will place the integrated module in an Elliptic Parking Orbit (EPO) of size ~170 x 36500 km.
+  `;
+  const missionMatches = scanTextForPII(missionText);
+  assert.equal(missionMatches.length, 0, 'Chandrayaan-3 mission text must have zero false-positive address matches');
+
+  // 3. Genuine addresses MUST still be detected with high confidence
+  assert.ok(scanTextForPII('Flat 402, Building 3, Sector 62, Noida').some(m => m.category === 'address'), 'Must detect Flat / Sector');
+  assert.ok(scanTextForPII('123 Main St, Springfield').some(m => m.category === 'address'), 'Must detect street address');
+  assert.ok(scanTextForPII('Ship to 456 Park Avenue, Apt 4B').some(m => m.category === 'address'), 'Must detect Park Avenue');
+  assert.ok(scanTextForPII('Deliver to Kushagra, Indira Nagar, Lucknow').some(m => m.category === 'address'), 'Must detect Indira Nagar');
+});
+
