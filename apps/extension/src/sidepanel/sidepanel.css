@@ -6541,10 +6541,74 @@ html, body {
 }
 
 .websearch-node-title {
-  flex: 1;
   font-size: 13px;
   font-weight: 500;
   color: inherit;
+}
+
+@keyframes globe-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.websearch-globe-spin {
+  animation: globe-spin 3s linear infinite;
+}
+
+/* Claude & GPT Style Overlapping Source Favicon Stack */
+.websearch-source-stack {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+}
+
+.websearch-stack-circle {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #18181b;
+  border: 1.5px solid #09090b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin-left: -5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.websearch-stack-circle:first-child {
+  margin-left: 0;
+}
+
+.websearch-stack-circle:hover {
+  transform: translateY(-1px) scale(1.15);
+  z-index: 10 !important;
+}
+
+.websearch-stack-circle img {
+  width: 11px;
+  height: 11px;
+  object-fit: contain;
+  border-radius: 50%;
+}
+
+.websearch-stack-more {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #27272a;
+  border: 1.5px solid #09090b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8.5px;
+  font-weight: 600;
+  color: #a1a1aa;
+  margin-left: -5px;
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .websearch-node-chevron {
@@ -6553,7 +6617,7 @@ html, body {
   color: #737373;
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.15s ease;
   flex-shrink: 0;
-  margin-left: 2px;
+  margin-left: auto;
 }
 
 .websearch-node-header:hover .websearch-node-chevron {
