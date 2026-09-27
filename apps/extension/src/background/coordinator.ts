@@ -1556,10 +1556,13 @@ export class RunCoordinator {
       if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === 'function') {
         let targetUrl = extractTargetUrlFromGoal(goal);
 
-        // --- Playbook Fast-Track: upgrade to direct route/PDF if the domain playbook knows a specific path ---
-        // E.g. "go to ISRO and download chandrayaan brochure" → directly navigate to the PDF URL
+        // --- Playbook Fast-Track: upgrade to direct route/page if the domain playbook knows a specific path ---
+        // E.g. "go to ISRO and download chandrayaan brochure" → directly navigate to Chandrayaan-3 page
         // instead of landing on the homepage and wandering 5 steps through menus.
-        if (targetUrl) {
+        // NOTE: If the user explicitly supplied a full URL with a specific path (e.g. https://sih.gov.in/sih2024PS),
+        // we respect their explicit URL path and do NOT override it.
+        const hasExplicitUrlPathInGoal = /https?:\/\/[^\s"'<>]+\/[^\s"'<>]+/i.test(goal);
+        if (targetUrl && !hasExplicitUrlPathInGoal) {
           try {
             const playbookForTarget = lookupDomainPlaybook(targetUrl);
             if (playbookForTarget) {
@@ -3335,6 +3338,45 @@ export class RunCoordinator {
             };
             riskLevel = 'safe';
           }
+        }
+      }
+
+      // Anti-Detour Guard for ISRO Space Missions:
+      // When the user's goal is about ISRO space exploration (Chandrayaan-3, Aditya-L1, Gaganyaan, Moon/Mars missions, or mission brochures),
+      // and the proposed action mistakenly targets Bhuvan (Earth mapping) or MOSDAC (weather), intercept the detour!
+      const isIsroSpaceMissionGoal = /\b(?:isro|space)\b/i.test(this.currentGoal || '') &&
+        /\b(?:chandrayaan|aditya|gaganyaan|mangalyaan|lunar|moon|solar|rocket|launcher|mission\s+brochure|lvm3)\b/i.test(this.currentGoal || '');
+      const currentHostForDetour = (() => {
+        try { return new URL(activeTab?.url || '').hostname.toLowerCase(); } catch { return ''; }
+      })();
+      const isOnIsroSiteForDetour = currentHostForDetour.includes('isro.gov.in');
+
+      if (isOnIsroSiteForDetour && isIsroSpaceMissionGoal) {
+        const proposedTargetEl = sanitized.elements.find(e => e.localId === proposal.targetLocalId);
+        const proposedName = ((proposedTargetEl?.sanitizedName || '') + ' ' + (proposal.targetName || '')).toLowerCase();
+        const proposedHref = ((proposedTargetEl as any)?.href || (proposal as any)?.url || '').toLowerCase();
+        const isDetourToBhuvanOrMosdac =
+          proposedName.includes('bhuvan') ||
+          proposedName.includes('mosdac') ||
+          proposedName.includes('vedas') ||
+          proposedHref.includes('bhuvan.nrsc.gov.in') ||
+          proposedHref.includes('mosdac.gov.in') ||
+          proposedHref.includes('nrsc.gov.in');
+
+        if (isDetourToBhuvanOrMosdac) {
+          console.log(`[Coordinator] Anti-Detour Guard: Blocked hallucinated detour to "${proposedName || proposedHref}". Rerouting directly to Chandrayaan-3 mission hub!`);
+          const missionHubUrl = 'https://www.isro.gov.in/Chandrayaan3.html';
+          proposal = {
+            actionId: `act_antidetour_nav_${Date.now()}`,
+            kind: 'navigate' as any,
+            url: missionHubUrl,
+            confidence: 0.99,
+            risk: 'safe',
+            reasoning: 'Blocked detour to Bhuvan (Earth Observation geoportal). Bhuvan is an Earth map viewer and does not host lunar missions. Navigating directly to the official Chandrayaan-3 mission page.',
+            rationale: 'Navigating directly to Chandrayaan-3 mission page to access the official brochure.',
+            expectedPostcondition: { kind: 'status_changed' }
+          };
+          riskLevel = 'safe';
         }
       }
 

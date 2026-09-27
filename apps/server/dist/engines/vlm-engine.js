@@ -1568,11 +1568,31 @@ JSON Schema:
         if (domainPlaybook) {
             const routesList = domainPlaybook.routes.map(r => `  - ${r.name}: https://${domainPlaybook.domain}${r.path} (${r.description})`).join('\n');
             const landmarksList = domainPlaybook.landmarks.map(l => `  - [${l.role || 'element'}] "${l.phrase}" -> Intent: ${l.intentAction} (${l.description})`).join('\n');
+            let siteMapHierarchy = '';
+            if (domainPlaybook.domain.includes('isro.gov.in')) {
+                siteMapHierarchy = `
+ISRO Master Sitemap & Mental Map:
+- Activities -> Missions accomplished: https://www.isro.gov.in/Mission.html (Historical & active space missions)
+- Specific Space Missions:
+  * Chandrayaan-3 Moon Mission: https://www.isro.gov.in/Chandrayaan3.html (Where the official LVM3-M4 Brochure PDF link lives)
+  * Aditya-L1 Solar Mission: https://www.isro.gov.in/Aditya_L1.html (Where the official Solar Mission Brochure lives)
+  * Gaganyaan Human Spaceflight: https://www.isro.gov.in/Mission.html
+- Activities -> Launchers: https://www.isro.gov.in/Launchers.html (PSLV, GSLV, LVM3, SSLV)
+- Activities -> Spacecrafts: https://www.isro.gov.in/Satellites.html
+- Programmes -> YUVIKA: https://www.isro.gov.in/YUVIKA.html
+- Services -> Space based Earth observation (Bhuvan & Bhoonidhi): nrsc.gov.in / bhuvan.nrsc.gov.in (ONLY for 2D/3D Earth geographic maps of India, NEVER for Moon or space missions)
+- Resources -> Meteorology & Oceanographic: mosdac.gov.in (Weather & cyclones ONLY)
+CRITICAL BOUNDARY DIRECTIVE FOR ISRO:
+- When the user asks for Chandrayaan-3, Aditya-L1, Gaganyaan, or space mission brochures:
+  DO NOT NAVIGATE TO BHUVAN! Bhuvan is an Earth Observation mapping tool and DOES NOT contain lunar or space mission brochures!
+  Target https://www.isro.gov.in/Chandrayaan3.html directly or click "Activities" -> "Missions accomplished" -> Chandrayaan-3!
+`;
+            }
             domainTopologyBlock = `\nVerified Semantic Site Topology for ${domainPlaybook.name} (${domainPlaybook.domain}):
 Canonical Routes:
 ${routesList}
 Verified Landmarks & Action Anchors:
-${landmarksList}
+${landmarksList}${siteMapHierarchy}
 Topological Directives:
 - Use verified canonical routes and landmark identifiers when navigating or acting.
 - For search: Type into verified search landmark (e.g. #txtSearch on ISRO, Search Location on Bhuvan). On Bhuvan, click the autocomplete suggestion to center the map.

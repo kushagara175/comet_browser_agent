@@ -1534,7 +1534,7 @@ html, body {
 }
 
 .monologue-content {
-  max-height: 120px;
+  max-height: 450px;
   overflow-y: auto;
   padding-left: 10px !important;
   border-left: 1px solid rgba(255, 255, 255, 0.12) !important;

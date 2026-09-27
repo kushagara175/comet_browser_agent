@@ -742,7 +742,7 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
         ${agentBadgeHtml}
       </button>
       <div class="monologue-drawer" style="display: ${isExpanded ? 'block' : 'none'}; padding-left: 20px; padding-top: 6px;">
-        <div class="monologue-content custom-scrollbar" style="max-height: 110px; overflow-y: auto; color: rgba(148, 163, 184, 0.9); white-space: pre-wrap; line-height: 1.6; font-size: 12px; border-left: 1px solid rgba(255, 255, 255, 0.1); padding-left: 10px;">${innerContent}</div>
+        <div class="monologue-content custom-scrollbar" style="max-height: 450px; overflow-y: auto; color: rgba(148, 163, 184, 0.95); white-space: pre-wrap; line-height: 1.6; font-size: 12px; border-left: 1px solid rgba(255, 255, 255, 0.12); padding-left: 10px;">${innerContent}</div>
       </div>
     </div>
   `;

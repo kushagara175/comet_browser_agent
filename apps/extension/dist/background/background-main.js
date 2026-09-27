@@ -23459,7 +23459,8 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
         }
         if (step === 1 && !hasNavigatedInitially && typeof this.browser.navigateTab === "function") {
           let targetUrl = extractTargetUrlFromGoal(goal);
-          if (targetUrl) {
+          const hasExplicitUrlPathInGoal = /https?:\/\/[^\s"'<>]+\/[^\s"'<>]+/i.test(goal);
+          if (targetUrl && !hasExplicitUrlPathInGoal) {
             try {
               const playbookForTarget = lookupDomainPlaybook(targetUrl);
               if (playbookForTarget) {
@@ -24970,6 +24971,36 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
               };
               riskLevel = "safe";
             }
+          }
+        }
+        const isIsroSpaceMissionGoal = /\b(?:isro|space)\b/i.test(this.currentGoal || "") && /\b(?:chandrayaan|aditya|gaganyaan|mangalyaan|lunar|moon|solar|rocket|launcher|mission\s+brochure|lvm3)\b/i.test(this.currentGoal || "");
+        const currentHostForDetour = (() => {
+          try {
+            return new URL(activeTab?.url || "").hostname.toLowerCase();
+          } catch {
+            return "";
+          }
+        })();
+        const isOnIsroSiteForDetour = currentHostForDetour.includes("isro.gov.in");
+        if (isOnIsroSiteForDetour && isIsroSpaceMissionGoal) {
+          const proposedTargetEl = sanitized.elements.find((e) => e.localId === proposal.targetLocalId);
+          const proposedName = ((proposedTargetEl?.sanitizedName || "") + " " + (proposal.targetName || "")).toLowerCase();
+          const proposedHref = (proposedTargetEl?.href || proposal?.url || "").toLowerCase();
+          const isDetourToBhuvanOrMosdac = proposedName.includes("bhuvan") || proposedName.includes("mosdac") || proposedName.includes("vedas") || proposedHref.includes("bhuvan.nrsc.gov.in") || proposedHref.includes("mosdac.gov.in") || proposedHref.includes("nrsc.gov.in");
+          if (isDetourToBhuvanOrMosdac) {
+            console.log(`[Coordinator] Anti-Detour Guard: Blocked hallucinated detour to "${proposedName || proposedHref}". Rerouting directly to Chandrayaan-3 mission hub!`);
+            const missionHubUrl = "https://www.isro.gov.in/Chandrayaan3.html";
+            proposal = {
+              actionId: `act_antidetour_nav_${Date.now()}`,
+              kind: "navigate",
+              url: missionHubUrl,
+              confidence: 0.99,
+              risk: "safe",
+              reasoning: "Blocked detour to Bhuvan (Earth Observation geoportal). Bhuvan is an Earth map viewer and does not host lunar missions. Navigating directly to the official Chandrayaan-3 mission page.",
+              rationale: "Navigating directly to Chandrayaan-3 mission page to access the official brochure.",
+              expectedPostcondition: { kind: "status_changed" }
+            };
+            riskLevel = "safe";
           }
         }
         if (proposal.kind === "finish" || proposal.kind === "answer") {
