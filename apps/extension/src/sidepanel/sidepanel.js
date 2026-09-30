@@ -3249,6 +3249,30 @@ if (typeof document !== 'undefined') {
       }
       if (!agentBubble) return;
 
+      function updateOrPrependThinking(bubble, html) {
+        if (!html || !bubble) return;
+        const existingBlock = bubble.querySelector('.monologue-block');
+        if (existingBlock) {
+          const temp = document.createElement('div');
+          temp.innerHTML = html;
+          const newBlock = temp.querySelector('.monologue-block');
+          if (newBlock) {
+            existingBlock.replaceWith(newBlock);
+            return;
+          }
+        }
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        const block = temp.firstElementChild;
+        if (block) {
+          if (bubble.firstChild) {
+            bubble.insertBefore(block, bubble.firstChild);
+          } else {
+            bubble.appendChild(block);
+          }
+        }
+      }
+
       // 1a. Interactive User Input Required (Form / Credentials)
       if (res && res.inputRequest) {
         const req = res.inputRequest;
@@ -3258,7 +3282,7 @@ if (typeof document !== 'undefined') {
         const thinkingHtml = realReasoning
           ? renderThinkingAccordion(realReasoning, Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000)), { open: false })
           : '';
-        agentBubble.innerHTML = thinkingHtml;
+        updateOrPrependThinking(agentBubble, thinkingHtml);
 
         const card = document.createElement('div');
         card.className = 'hitl-input-card';
@@ -3355,20 +3379,22 @@ if (typeof document !== 'undefined') {
             ? 'Clarified instruction as per user input'
             : `Filled ${targetLabel} as per user input`;
 
-          // Immediately collapse the input form card into a single compact task item
-          card.innerHTML = `
-            <div class="hitl-completed-task action-status-line is-done" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: 8px; margin-top: 8px; font-size: 12.5px; color: #86efac;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span>${escapeHtml(taskText)}</span>
-            </div>
+          // Immediately collapse the input form card into a single compact clean text item
+          const completedTaskEl = document.createElement('div');
+          completedTaskEl.className = 'hitl-completed-task action-status-line is-done';
+          completedTaskEl.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
+          completedTaskEl.innerHTML = `
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span style="color: #cbd5e1; font-weight: 450;">${escapeHtml(taskText)}</span>
           `;
+          card.replaceWith(completedTaskEl);
 
-          // Add inline continuation status line below the completed card inside the same agent bubble
+          // Add inline continuation status line below the completed line inside the same agent bubble
           let continuationStatus = agentBubble.querySelector('.continuation-status');
           if (!continuationStatus) {
             continuationStatus = document.createElement('div');
             continuationStatus.className = 'continuation-status thinking-phase1 action-status-line is-executing';
-            continuationStatus.style.cssText = 'display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #cbd5e1; padding: 6px 0; margin-top: 6px;';
+            continuationStatus.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; padding: 2px 0; margin: 4px 0; background: transparent; border: none;';
             continuationStatus.innerHTML = `<span class="thinking-shimmer-text">Executing next action...</span>`;
             agentBubble.appendChild(continuationStatus);
           }
@@ -3391,6 +3417,10 @@ if (typeof document !== 'undefined') {
               return;
             }
             if (submitRes) {
+              if (submitRes.state === 'awaiting-user-confirmation' || submitRes.state === 'awaiting-user-input') {
+                renderActionResult(agentBubble, submitRes);
+                return;
+              }
               const elapsed = Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000));
               const block = agentBubble.querySelector('.monologue-block');
               if (block) {
@@ -3408,10 +3438,10 @@ if (typeof document !== 'undefined') {
                 : (submitRes.message || action.rationale || 'Action executed successfully');
               const outcomeLine = document.createElement('div');
               outcomeLine.className = 'action-status-line is-done';
-              outcomeLine.style.cssText = 'display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #cbd5e1; padding: 4px 0; margin-top: 6px;';
+              outcomeLine.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; padding: 2px 0; margin-top: 4px; background: transparent; border: none;';
               outcomeLine.innerHTML = `
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                <span>${escapeHtml(actionLabel)}</span>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span style="color: #cbd5e1; font-weight: 450;">${escapeHtml(actionLabel)}</span>
               `;
               agentBubble.appendChild(outcomeLine);
               setAgentStatus(submitRes.state === 'complete' ? 'idle' : 'executing');
@@ -3535,7 +3565,7 @@ if (typeof document !== 'undefined') {
         const thinkingHtml = realReasoning
           ? renderThinkingAccordion(realReasoning, Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000)), { open: false })
           : '';
-        agentBubble.innerHTML = thinkingHtml;
+        updateOrPrependThinking(agentBubble, thinkingHtml);
 
         const card = document.createElement('div');
         card.className = 'hitl-confirm-card';
@@ -3567,29 +3597,40 @@ if (typeof document !== 'undefined') {
 
         approveBtn?.addEventListener('click', () => {
           const targetRunId = res.runId || currentRunId;
-          card.innerHTML = `
-            <div class="action-status-line is-done" style="font-size: 12px; color: #cbd5e1; margin: 4px 0; line-height: 1.5;">
-              User approved: ${actionVerb === 'clicking' ? 'Click' : 'Execute'} "${escapeHtml(targetLabel)}". Executing approved action...
-            </div>
+          const executingLine = document.createElement('div');
+          executingLine.className = 'action-status-line is-executing';
+          executingLine.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
+          executingLine.innerHTML = `
+            <span class="thinking-shimmer-text">User approved: Executing ${actionVerb === 'clicking' ? 'click on' : 'action'} "${escapeHtml(targetLabel)}"...</span>
           `;
+          card.replaceWith(executingLine);
           actionConfirmModal?.classList.add('hidden');
           addAuditEntry('AUTH', `User Approved Action: ${targetLabel}`, 'pass');
           setAgentStatus('executing');
 
           if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
             chrome.runtime.sendMessage({ type: 'APPROVE_ACTION', runId: targetRunId, actionId: action.actionId }, (postRes) => {
-              if (postRes) renderActionResult(agentBubble, postRes);
+              if (postRes) {
+                executingLine.className = 'action-status-line is-done';
+                executingLine.innerHTML = `
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  <span style="color: #cbd5e1; font-weight: 450;">Approved and executed "${escapeHtml(targetLabel)}"</span>
+                `;
+                renderActionResult(agentBubble, postRes);
+              }
             });
           }
         });
 
         cancelBtn?.addEventListener('click', () => {
           const targetRunId = res.runId || currentRunId;
-          card.innerHTML = `
-            <div class="action-status-line" style="font-size: 12px; color: #94a3b8; margin: 4px 0; line-height: 1.5;">
-              User rejected: ${actionVerb === 'clicking' ? 'Click' : 'Execute'} "${escapeHtml(targetLabel)}"
-            </div>
+          const cancelledLine = document.createElement('div');
+          cancelledLine.className = 'action-status-line is-done';
+          cancelledLine.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #94a3b8; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
+          cancelledLine.innerHTML = `
+            <span style="color: #94a3b8;">User rejected: ${actionVerb === 'clicking' ? 'Click' : 'Execute'} "${escapeHtml(targetLabel)}"</span>
           `;
+          card.replaceWith(cancelledLine);
           actionConfirmModal?.classList.add('hidden');
           addAuditEntry('AUTH', `User Cancelled Action: ${targetLabel}`, 'warn');
           setAgentStatus('idle');

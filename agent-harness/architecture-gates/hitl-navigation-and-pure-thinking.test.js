@@ -458,5 +458,46 @@ test('HITL Recovery Gate: Blocked actions on sensitive inputs convert gracefully
   assert.ok(inputRequested, 'Must trigger onUserInputRequired listener');
 });
 
+test('Resilient Confirmation Gate: approvePendingAction handles runId and actionId drift without lock-in error', async () => {
+  const browser = createMockBrowser();
+  const mockHttp = createMockHttpClient({
+    actionId: 'act_protected_submit_456',
+    kind: 'click',
+    targetLocalId: 'el_btn_submit',
+    confidence: 0.95,
+    risk: 'protected',
+    rationale: 'Submitting feedback form'
+  });
+
+  const coordinator = new RunCoordinator(browser, mockHttp);
+  const initialResult = await coordinator.startRun('Submit feedback form', { tabId: 101, maxSteps: 2 });
+  assert.equal(initialResult.state, 'awaiting-user-confirmation');
+
+  // Approval with drifted runId from sidepanel client
+  const approveRes = await coordinator.approvePendingAction({
+    runId: 'run_sidepanel_regenerated_789',
+    actionId: 'act_1', // model generic actionId vs internal actionId
+    resumeLoop: false
+  });
+
+  assert.equal(approveRes.success, true, 'Approval must succeed despite client runId or actionId drift');
+  assert.equal(approveRes.state, 'complete', 'Action must execute and complete');
+});
+
+test('Clean Text Actions and Calm Left-to-Right Shimmer CSS Gate', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync('apps/extension/src/sidepanel/sidepanel.css', 'utf-8');
+
+  // 1. Shimmer calm left-to-right animation exists and runs from -200% to 200%
+  assert.ok(css.includes('@keyframes shimmer-calm-ltr'), 'shimmer-calm-ltr keyframe must exist');
+  assert.ok(css.includes('background-position: -200% 0;'), 'shimmer must start at -200% for left-to-right motion');
+  assert.ok(css.includes('background-position: 200% 0;'), 'shimmer must end at 200% for left-to-right motion');
+
+  // 2. Completed actions enforce clean text only without box backgrounds or borders
+  assert.ok(css.includes('.hitl-completed-task'), '.hitl-completed-task selector must be present');
+  assert.ok(css.includes('background: transparent !important;'), 'completed tasks must have transparent background');
+  assert.ok(css.includes('border: none !important;'), 'completed tasks must have no border');
+});
+
 
 

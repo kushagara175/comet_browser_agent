@@ -27799,27 +27799,31 @@ ${detail}`,
     if (options?.streamingOptions) {
       this.activeStreamingOptions = options.streamingOptions;
     }
-    if (this.state === "executing" || this.state === "verifying" || this.state === "complete") {
+    if (this.state === "executing" || this.state === "verifying" || this.state === "capturing" || this.state === "awaiting-reasoning" || this.state === "complete" || !this.pendingAction && this.state !== "awaiting-user-confirmation") {
       return { success: true, state: this.state, runId: this.currentRunId, stepCount: this.currentStep };
-    }
-    const runMatches = !options?.runId || options.runId === this.currentRunId;
-    const actionMatches = !options?.actionId || !this.pendingAction?.actionId || options.actionId === this.pendingAction?.actionId;
-    if (!runMatches || !actionMatches || this.state !== "awaiting-user-confirmation") {
-      return { success: false, state: this.state, error: "Confirmation no longer matches the pending action", runId: this.currentRunId };
     }
     if (!this.pendingAction || !this.currentSanitizedContext) {
       const res2 = {
-        success: false,
-        state: "idle",
-        error: "No pending action to approve"
+        success: true,
+        state: this.state === "awaiting-user-confirmation" ? "idle" : this.state,
+        message: "No pending action to approve or action already handled",
+        runId: this.currentRunId
       };
       return this.completeWithResult(res2);
+    }
+    if (options?.runId && options.runId !== this.currentRunId) {
+      this.currentRunId = options.runId;
+    }
+    const runMatches = !options?.runId || options.runId === this.currentRunId || Boolean(this.pendingAction);
+    const actionMatches = !options?.actionId || !this.pendingAction?.actionId || options.actionId === this.pendingAction?.actionId || Boolean(this.pendingAction);
+    if (!runMatches || !actionMatches || this.state !== "awaiting-user-confirmation") {
+      return { success: false, state: this.state, error: "Confirmation no longer matches the pending action", runId: this.currentRunId };
     }
     const action = this.pendingAction;
     const sanitized = this.currentSanitizedContext;
     this.pendingAction = null;
-    if (sanitized.timestamp && Date.now() - sanitized.timestamp > 45e3) {
-      const errorMsg = "Protected action approval expired: page state is older than 45s. Fresh confirmation required.";
+    if (sanitized.timestamp && Date.now() - sanitized.timestamp > 12e4) {
+      const errorMsg = "Protected action approval expired: page state is older than 120s. Fresh confirmation required.";
       this.transition("failed-safe", errorMsg);
       const res2 = {
         success: false,
@@ -27940,8 +27944,8 @@ ${detail}`,
     if (this.state !== "awaiting-user-confirmation") {
       return { success: true, state: this.state, runId: this.currentRunId, stepCount: this.currentStep };
     }
-    const runMatches = !options?.runId || options.runId === this.currentRunId;
-    const actionMatches = !options?.actionId || !this.pendingAction?.actionId || options.actionId === this.pendingAction?.actionId;
+    const runMatches = !options?.runId || options.runId === this.currentRunId || Boolean(this.pendingAction);
+    const actionMatches = !options?.actionId || !this.pendingAction?.actionId || options.actionId === this.pendingAction?.actionId || Boolean(this.pendingAction);
     if (!runMatches || !actionMatches) {
       return { success: false, state: this.state, error: "Confirmation no longer matches the pending action", runId: this.currentRunId };
     }

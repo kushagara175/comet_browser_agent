@@ -1330,6 +1330,9 @@ html, body {
   line-height: 1.5;
   margin: 3px 0;
   user-select: text;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .action-status-line.is-executing .executing-dot {
@@ -1346,14 +1349,30 @@ html, body {
   50% { opacity: 1; transform: scale(1.15); }
 }
 
+.hitl-completed-task,
+.action-status-line.is-done {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  padding: 2px 0 !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-size: 12.5px !important;
+  color: #cbd5e1 !important;
+  margin: 3px 0 !important;
+}
+
+.hitl-completed-task svg,
 .action-status-line.is-done svg {
-  color: #38bdf8;
-  stroke: #38bdf8;
-  flex-shrink: 0;
+  color: #38bdf8 !important;
+  stroke: #38bdf8 !important;
+  flex-shrink: 0 !important;
 }
 
 .action-status-line.is-done .action-done-label {
-  color: #e2e8f0;
+  color: #cbd5e1;
   font-weight: 450;
   font-size: 12.5px;
 }
@@ -1390,7 +1409,7 @@ html, body {
   background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: white-shimmer-ltr 2.2s linear infinite;
+  animation: white-shimmer-ltr 2.8s linear infinite;
   display: inline-block;
 }
 
@@ -1412,28 +1431,52 @@ html, body {
 /* Real LLM Thinking & Monologue (inspired by allel MonologueBlock) */
 @keyframes thinking-shimmer {
   0% {
-    background-position: 150% 0;
+    background-position: -200% 0;
   }
   100% {
-    background-position: -150% 0;
+    background-position: 200% 0;
+  }
+}
+
+@keyframes shimmer-calm-ltr {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
   }
 }
 
 .thinking-shimmer-text {
   background: linear-gradient(
     90deg,
-    rgba(163, 163, 163, 0.5) 0%,
+    rgba(148, 163, 184, 0.45) 0%,
     rgba(255, 255, 255, 0.98) 50%,
-    rgba(163, 163, 163, 0.5) 100%
+    rgba(148, 163, 184, 0.45) 100%
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: thinking-shimmer 2.2s ease-in-out infinite;
+  animation: shimmer-calm-ltr 2.8s ease-in-out infinite;
   display: inline-block;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: normal;
+}
+
+.action-status-line.is-executing span,
+.action-status-line.is-executing .thinking-shimmer-text,
+.continuation-status .thinking-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    rgba(148, 163, 184, 0.45) 0%,
+    rgba(255, 255, 255, 0.98) 50%,
+    rgba(148, 163, 184, 0.45) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-calm-ltr 2.8s ease-in-out infinite;
 }
 
 .monologue-completed-text {
