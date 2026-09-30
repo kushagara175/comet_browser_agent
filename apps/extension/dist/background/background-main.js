@@ -17533,14 +17533,14 @@ function validateActionProposal(proposal, validElements) {
 function classifyActionRisk(proposal, elementName) {
   const kind = proposal.kind;
   const name2 = (elementName || "").toLowerCase();
-  if (name2.includes("password") || name2.includes("otp") || name2.includes("captcha") || name2.includes("cvv") || name2.includes("pin") || kind === "type" && (name2.includes("payment") || name2.includes("card") || name2.includes("token") || name2.includes("secret") || name2.includes("sensitive") || name2.includes("national id") || name2.includes("aadhaar") || name2.includes("pan") || name2.includes("ssn"))) {
-    return "blocked";
-  }
   if (proposal.userApproved) {
     return "safe";
   }
   if (kind === "request_user_input") {
     return "safe";
+  }
+  if (name2.includes("password") || name2.includes("otp") || name2.includes("captcha") || name2.includes("cvv") || name2.includes("pin") || kind === "type" && (name2.includes("payment") || name2.includes("card") || name2.includes("token") || name2.includes("secret") || name2.includes("sensitive") || name2.includes("national id") || name2.includes("aadhaar") || name2.includes("pan") || name2.includes("ssn"))) {
+    return "blocked";
   }
   if (kind === "batch" && proposal.batchActions && proposal.batchActions.length > 0) {
     let hasProtected = false;
@@ -22883,7 +22883,7 @@ Executing verified cached action immediately.`;
 // src/background/coordinator.ts
 function isSafeReversibleInteraction(proposal, targetElement) {
   const kind = (proposal.kind || "").toLowerCase();
-  if (kind === "scroll" || kind === "observe" || kind === "wait" || kind === "hover" || kind === "navigate") {
+  if (kind === "scroll" || kind === "observe" || kind === "wait" || kind === "hover" || kind === "navigate" || kind === "request_user_input") {
     return true;
   }
   if (kind === "click") {
@@ -27782,6 +27782,9 @@ ${detail}`,
    * If resumeLoop is true, continues multi-step execution loop.
    */
   async approvePendingAction(options) {
+    if (options?.streamingOptions) {
+      this.activeStreamingOptions = options.streamingOptions;
+    }
     if (this.state === "executing" || this.state === "verifying" || this.state === "complete") {
       return { success: true, state: this.state, runId: this.currentRunId, stepCount: this.currentStep };
     }
@@ -27949,6 +27952,9 @@ ${detail}`,
    * without transmitting raw credentials across the network.
    */
   async submitUserInput(inputs, targetTabId, options) {
+    if (options?.streamingOptions) {
+      this.activeStreamingOptions = options.streamingOptions;
+    }
     if (options?.runId && options.runId !== this.currentRunId || !this.pendingInputRequest || this.state !== "awaiting-user-input" && !(this.state === "awaiting-user-confirmation" && this.currentTaskContract?.requiresUserInput)) {
       return { success: false, state: this.state, error: "Input no longer matches the pending run", runId: this.currentRunId, reasonCode: "RUN_MISMATCH" };
     }
@@ -28115,20 +28121,31 @@ ${detail}`,
     if (inputs.customText && !inputs.username && !inputs.password) {
       const targetInput = (options?.targetLocalId ? elements.find((e) => e.localId === options.targetLocalId) : null) || elements.find((e) => e.role === "input" || e.role === "textbox");
       if (targetInput) {
+        const customAction = {
+          actionId: `act_input_custom_${Date.now()}`,
+          kind: "type",
+          targetLocalId: targetInput.localId,
+          textToType: inputs.customText,
+          confidence: 1,
+          risk: "safe",
+          rationale: `Filled user input (${targetInput.sanitizedName || "input"}) locally`,
+          userApproved: true
+        };
         await this.browser.sendMessageToTab(activeTab.id, {
           type: "EXECUTE_ACTION",
-          proposal: {
-            actionId: `act_input_custom_${Date.now()}`,
-            kind: "type",
-            targetLocalId: targetInput.localId,
-            textToType: inputs.customText,
-            confidence: 1,
-            risk: "safe",
-            rationale: "Fill user text locally",
-            userApproved: true
-          },
+          proposal: customAction,
           captureId
         });
+        this.recordActionHistory(customAction);
+        this.recentActionHistory.push({
+          actionId: customAction.actionId,
+          kind: "type",
+          targetLocalId: targetInput.localId,
+          observedOutcome: `Filled user input (${targetInput.sanitizedName || "input"}) locally`,
+          meaningfulProgress: true
+        });
+        this.recentActionHistory = this.recentActionHistory.slice(-10);
+        this.lastExecutedProposal = customAction;
         filledCount++;
       }
     }
@@ -28305,9 +28322,18 @@ async function handleSidepanelRequest(message, streamingOptions) {
         saveToVault: message.saveToVault,
         inputKey: message.inputKey,
         runId: message.runId,
-        inputNonce: message.inputNonce
+        inputNonce: message.inputNonce,
+        streamingOptions
       }
     );
+  }
+  if (message.type === "APPROVE_ACTION") {
+    return coordinator.approvePendingAction({
+      resumeLoop: message.resumeLoop ?? true,
+      runId: message.runId,
+      actionId: message.actionId,
+      streamingOptions
+    });
   }
   if (message.type === "GET_VAULT_DATA") {
     const vault = await loadVault();

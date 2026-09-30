@@ -20,7 +20,7 @@ import { getUserProfile, saveUserProfile, getCredentialsForDomain, saveSiteCrede
 import { SemanticActionCache } from '../cache/semantic-action-cache.js';
 function isSafeReversibleInteraction(proposal, targetElement) {
     const kind = (proposal.kind || '').toLowerCase();
-    if (kind === 'scroll' || kind === 'observe' || kind === 'wait' || kind === 'hover' || kind === 'navigate') {
+    if (kind === 'scroll' || kind === 'observe' || kind === 'wait' || kind === 'hover' || kind === 'navigate' || kind === 'request_user_input') {
         return true;
     }
     if (kind === 'click') {
@@ -5379,6 +5379,9 @@ export class RunCoordinator {
      * If resumeLoop is true, continues multi-step execution loop.
      */
     async approvePendingAction(options) {
+        if (options?.streamingOptions) {
+            this.activeStreamingOptions = options.streamingOptions;
+        }
         if (this.state === 'executing' || this.state === 'verifying' || this.state === 'complete') {
             return { success: true, state: this.state, runId: this.currentRunId, stepCount: this.currentStep };
         }
@@ -5554,6 +5557,9 @@ export class RunCoordinator {
      * without transmitting raw credentials across the network.
      */
     async submitUserInput(inputs, targetTabId, options) {
+        if (options?.streamingOptions) {
+            this.activeStreamingOptions = options.streamingOptions;
+        }
         if (options?.runId && options.runId !== this.currentRunId || !this.pendingInputRequest ||
             this.state !== 'awaiting-user-input' &&
                 !(this.state === 'awaiting-user-confirmation' && this.currentTaskContract?.requiresUserInput)) {
@@ -5751,20 +5757,31 @@ export class RunCoordinator {
             const targetInput = (options?.targetLocalId ? elements.find((e) => e.localId === options.targetLocalId) : null) ||
                 elements.find((e) => e.role === 'input' || e.role === 'textbox');
             if (targetInput) {
+                const customAction = {
+                    actionId: `act_input_custom_${Date.now()}`,
+                    kind: 'type',
+                    targetLocalId: targetInput.localId,
+                    textToType: inputs.customText,
+                    confidence: 1.0,
+                    risk: 'safe',
+                    rationale: `Filled user input (${targetInput.sanitizedName || 'input'}) locally`,
+                    userApproved: true
+                };
                 await this.browser.sendMessageToTab(activeTab.id, {
                     type: 'EXECUTE_ACTION',
-                    proposal: {
-                        actionId: `act_input_custom_${Date.now()}`,
-                        kind: 'type',
-                        targetLocalId: targetInput.localId,
-                        textToType: inputs.customText,
-                        confidence: 1.0,
-                        risk: 'safe',
-                        rationale: 'Fill user text locally',
-                        userApproved: true
-                    },
+                    proposal: customAction,
                     captureId
                 });
+                this.recordActionHistory(customAction);
+                this.recentActionHistory.push({
+                    actionId: customAction.actionId,
+                    kind: 'type',
+                    targetLocalId: targetInput.localId,
+                    observedOutcome: `Filled user input (${targetInput.sanitizedName || 'input'}) locally`,
+                    meaningfulProgress: true
+                });
+                this.recentActionHistory = this.recentActionHistory.slice(-10);
+                this.lastExecutedProposal = customAction;
                 filledCount++;
             }
         }

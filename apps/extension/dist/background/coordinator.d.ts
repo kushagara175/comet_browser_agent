@@ -257,6 +257,10 @@ export declare class RunCoordinator {
         resumeLoop?: boolean;
         runId?: string;
         actionId?: string;
+        streamingOptions?: {
+            onThoughtDelta?: (text: string) => void;
+            onReplyDelta?: (text: string) => void;
+        };
     }): Promise<CoordinatorRunResult>;
     /**
      * Called when the user clicks 'Deny' on a protected action card.
@@ -280,6 +284,10 @@ export declare class RunCoordinator {
         inputKey?: string;
         runId?: string;
         inputNonce?: string;
+        streamingOptions?: {
+            onThoughtDelta?: (text: string) => void;
+            onReplyDelta?: (text: string) => void;
+        };
     }): Promise<CoordinatorRunResult>;
     /**
      * Performs an autonomous web search using the configured Tavily client.

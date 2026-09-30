@@ -119,9 +119,19 @@ async function handleSidepanelRequest(message: any, streamingOptions?: any): Pro
         saveToVault: message.saveToVault,
         inputKey: message.inputKey,
         runId: message.runId,
-        inputNonce: message.inputNonce
+        inputNonce: message.inputNonce,
+        streamingOptions
       }
     );
+  }
+
+  if (message.type === 'APPROVE_ACTION') {
+    return coordinator.approvePendingAction({
+      resumeLoop: message.resumeLoop ?? true,
+      runId: message.runId,
+      actionId: message.actionId,
+      streamingOptions
+    });
   }
 
   if (message.type === 'GET_VAULT_DATA') {

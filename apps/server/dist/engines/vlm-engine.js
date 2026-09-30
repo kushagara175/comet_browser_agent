@@ -1394,6 +1394,27 @@ export class VlmReasoningEngine {
                 if (!parsed.userInputPrompt && (parsed.prompt || parsed.question || parsed.message)) {
                     parsed.userInputPrompt = String(parsed.prompt || parsed.question || parsed.message).slice(0, 500);
                 }
+                // Guard: If the requested target element is ALREADY filled, or if all visible inputs on the form are populated,
+                // and a submit button exists on the page, DO NOT ask user again! Advance to clicking Submit!
+                const targetEl = payload.elements?.find(e => e.localId === parsed.targetLocalId);
+                const isTargetFilled = targetEl && (targetEl.state?.includes('filled') || targetEl.filled === true);
+                if (isTargetFilled) {
+                    const submitBtn = payload.elements?.find(e => {
+                        const role = (e.role || '').toLowerCase();
+                        const name = (e.sanitizedName || '').toLowerCase();
+                        return (role === 'button' || role === 'link') && /\b(?:submit|send|register|post|apply)\b/i.test(name) && !/\b(?:reset|cancel|clear)\b/i.test(name);
+                    });
+                    if (submitBtn) {
+                        console.log(`[PrivaPilot:VLM] Target ${parsed.targetLocalId} is already filled. Advancing action to click '${submitBtn.sanitizedName}' (${submitBtn.localId})`);
+                        parsed.kind = 'click';
+                        parsed.targetLocalId = submitBtn.localId;
+                        parsed.targetName = submitBtn.sanitizedName || 'Submit';
+                        parsed.risk = 'safe';
+                        parsed.confidence = 0.95;
+                        parsed.rationale = `Submitting form via ${submitBtn.sanitizedName || 'Submit'}`;
+                        delete parsed.userInputPrompt;
+                    }
+                }
             }
             // If kind is navigate or has navigation URL
             if (parsed.kind === 'navigate' || parsed.action === 'navigate' || parsed.actionType === 'navigate' || (!parsed.kind && (parsed.url || parsed.targetUrl))) {
@@ -1905,12 +1926,13 @@ Strict Rules:
 8. FILE UPLOAD DIRECTIVE: When uploading or attaching a file, return kind: "upload_file", set "targetLocalId" to the file input and "fileName" to the file name.
 9. MULTI-STEP REASONING: For compound goals (e.g. "go to X and search Y", "click tab and find Z", "scroll and check count"):
    Execute step 1 (navigation or intermediate click/scroll/hover), observe the updated page state on the next cycle, and continue with the subsequent steps (typing, extracting, or verifying) before proposing "finish". Do NOT propose "finish" prematurely after intermediate navigation clicks.
-10. TACTICAL AGENT MONOLOGUE, NATURAL THINKING & CONFIDENCE REASONING (MANDATORY):
+10. TACTICAL AGENT MONOLOGUE, NATURAL THINKING & PER-ACTION CONFIDENCE REASONING (MANDATORY):
     Always include a "reasoning" string field in your JSON response (and begin your response with <think>...</think> monologue if generating thinking tags).
     Put the "reasoning" key as the FIRST field in your JSON response so your tactical thinking streams immediately.
     Write your reasoning as a natural, continuous stream-of-consciousness monologue paragraph (like an expert human browser user speaking their mind while completing the task).
     Explain what you visually observe on the page, your tactical thoughts, and why you are calling this specific browser tool.
-    CRITICAL CONFIDENCE REASONING: Inside your thinking monologue, you MUST explicitly evaluate and reason about your confidence score (e.g. stating why you are 95% confident because the elements are clearly identified and match the user request, or explaining why your confidence is lower, such as 70%, if an element is ambiguous or could trigger an irreversible state). Reason with the confidence score naturally as part of your continuous thinking stream.
+    CRITICAL CONFIDENCE REASONING (INLINE PER-ACTION): Inside your thinking monologue, you MUST explicitly evaluate and reason about your confidence score PER ACTION directly inline as regular conversational text. For example, when filling a form: "I need to type the full name into Name input el_1; my confidence for this action is 0.98 because the label and placeholder clearly specify Name. Next, I need to type the email into Email input el_2 with 0.95 confidence. For the CAPTCHA image and input el_5, my confidence to guess is low (0.25) so I must request user input to avoid submitting an incorrect code." Or for a single action: "I need to click the Submit button to complete the submission; my confidence is 0.95 because all required inputs and the verification code are populated."
+    NEVER append a unified summary block, formula, or trailing tag like "Confidence: 0.94 >= Threshold: 0.85" or "CONFIDENCE:" at the bottom of the monologue! Always integrate confidence per action directly into the natural text flow of your thoughts.
     DO NOT use synthetic category labels, bullet headers, or tags like "Observation:", "Strategy:", or "Action Selection:".
     Express your thoughts in pure, fluent, natural conversational prose.
     Ensure your proposal's "confidence" number field (between 0.0 and 1.0) directly reflects the confidence assessment you articulated in your monologue.
@@ -2020,6 +2042,10 @@ Strict Rules:
        "rationale": "Fill registration fields from vault and submit form"
      }
    - POST-SUBMISSION / FORM COMPLETION GUARD (CRITICAL):
+     * When the form inputs (including Name, Email, Category/Message, and CAPTCHA / verification code) are already filled (marked with filled: true or containing values):
+       YOU MUST PROPOSE kind: "click" on the "Submit" or "Send" button!
+       DO NOT propose "request_user_input" again for fields or CAPTCHAs that are already filled!
+       Once all fields are populated, the ONLY logical next step is to click the Submit button.
      * When the user's goal is to fill/submit a form, register, or sign up (e.g. "Fill the registration form and submit"):
        Once the form has been submitted (or if the previous action was a batch/submit click, or if the page shows confirmation like "Signed in", "Success", "Thank you", or if the form fields are no longer present):
        You MUST return kind: "finish" with confidence: 1.0, risk: "safe", reply: "The registration form has been successfully filled and submitted!", and rationale: "Form submitted successfully".
@@ -2084,7 +2110,7 @@ JSON Schema:
   "semanticMatchReason": "Concise explanation of target-to-objective match",
   "fallbackStrategy": "reperceive" | "wait_for_hydration" | "retry_target" | "scroll_to_target" | "navigate_fallback" | "refresh_once" | "request_user_input" | "fail_safe",
   "completionEvidence": ["url" | "element" | "text" | "input_value" | "dialog" | "attribute" | "scroll" | "visual_change"],
-  "thought": "Internal reasoning monologue: step-by-step thinking analyzing the page layout and Set-of-Marks labels, grounding the exact target element to the user goal by referencing its actual visible button or field name (e.g. 'Login' [el_1] or 'Search ISRO' [el_2]), evaluating action confidence against the safe execution threshold (0.85), and stating whether confidence allows autonomous execution or requires user confirmation (e.g. Confidence: 0.94 >= Threshold: 0.85 -> Proceeding with autonomous action; or Confidence: 0.62 < Threshold: 0.85 -> Requires user confirmation). Do not use emojis in thought.",
+  "thought": "Internal reasoning monologue: step-by-step thinking analyzing the page layout and Set-of-Marks labels, grounding each target element to the user goal, evaluating action confidence for each action inline as regular conversational text (e.g. 'I will type the name into el_1 with 0.98 confidence because the placeholder matches...'). Do not append a single unified confidence block or threshold formula at the bottom.",
   "rationale": "Short user-safe explanation or summary of action/answer",
   "reply": "Optional conversational response text when kind is answer or finish",
   "expectedState": "Expected UI change"

@@ -11,6 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RunCoordinator } from '../../apps/extension/dist/background/coordinator.js';
+import { VlmReasoningEngine } from '../../apps/server/dist/engines/vlm-engine.js';
 import { validateSanitizedPayload } from '../../apps/server/dist/schemas/payload-validator.js';
 import { sanitizeOutboundUrl } from '../../packages/pii-rules/dist/url-scrubber.js';
 import {
@@ -44,15 +45,18 @@ function createMockBrowser(options = {}) {
           snapshot: {
             domElements: [
               { id: 'el_nav_students', descriptor: { tagName: 'a', role: 'link', name: 'STUDENTS', sanitizedName: 'STUDENTS' } },
+              { id: 'el_input_captcha', descriptor: { tagName: 'input', type: 'text', name: 'captcha', sanitizedName: 'Captcha' } },
               { id: 'el_btn_submit', descriptor: { tagName: 'button', type: 'submit', name: 'submit', sanitizedName: 'Submit Application' } }
             ],
             interactiveElements: [
               { localId: 'el_nav_students', role: 'link', rawName: 'STUDENTS' },
+              { localId: 'el_input_captcha', role: 'input', rawName: 'Captcha' },
               { localId: 'el_btn_submit', role: 'button', rawName: 'Submit Application' },
               { localId: 'el_nav_careers', role: 'link', rawName: 'CAREERS' }
             ],
             elements: [
               { localId: 'el_nav_students', role: 'link', sanitizedName: 'STUDENTS', state: ['visible', 'enabled'], actionCapabilities: ['click'] },
+              { localId: 'el_input_captcha', role: 'input', sanitizedName: 'Captcha', state: ['visible', 'enabled'], actionCapabilities: ['type'] },
               { localId: 'el_btn_submit', role: 'button', sanitizedName: 'Submit Application', state: ['visible', 'enabled'], actionCapabilities: ['click'] },
               { localId: 'el_nav_careers', role: 'link', sanitizedName: 'CAREERS', state: ['visible', 'enabled'], actionCapabilities: ['click'] }
             ],
@@ -82,6 +86,7 @@ function createMockBrowser(options = {}) {
       sanitizedScreenshotDataUrl: req.rawScreenshotDataUrl,
       elements: [
         { localId: 'el_nav_students', role: 'link', sanitizedName: 'STUDENTS', state: ['visible', 'enabled'], actionCapabilities: ['click'] },
+        { localId: 'el_input_captcha', role: 'input', sanitizedName: 'Captcha', state: ['visible', 'enabled'], actionCapabilities: ['type'] },
         { localId: 'el_btn_submit', role: 'button', sanitizedName: 'Submit Application', state: ['visible', 'enabled'], actionCapabilities: ['click'] }
       ],
       pageState: { title: 'ISRO Portal', url: options.tabUrl || 'https://www.isro.gov.in' },
@@ -322,4 +327,108 @@ test('Batch HITL Gate: Form batch pauses on request_user_input without failing w
   assert.equal(userInputRequiredFired, true, 'onUserInputRequired must fire');
   assert.notEqual(result.error, "Unsupported action kind 'request_user_input'", 'Must NOT fail with unsupported action kind');
 });
+
+test('HITL Input Resume Gate: Resuming after submitUserInput continues loop and records filled input', async () => {
+  const browser = createMockBrowser();
+  let lastActionProposal = null;
+
+  const mockHttp = {
+    async requestTaskSpecification(goal) {
+      return { goal, objectives: [], tasksToDo: [], tasksNotToDo: [], successCriteria: 'Done', requiresSubAgents: false, subAgentTasks: [] };
+    },
+    async requestReasoningAction(payload) {
+      if (!lastActionProposal) {
+        lastActionProposal = {
+          actionId: 'act_step1',
+          kind: 'request_user_input',
+          targetLocalId: 'el_input_captcha',
+          userInputPrompt: 'Please enter CAPTCHA',
+          confidence: 0.8,
+          risk: 'safe',
+          rationale: 'Need CAPTCHA from user'
+        };
+        return lastActionProposal;
+      }
+      return {
+        actionId: 'act_step2',
+        kind: 'click',
+        targetLocalId: 'el_btn_submit',
+        confidence: 0.98,
+        risk: 'safe',
+        rationale: 'Submitting completed form'
+      };
+    },
+    async requestReasoningActionStream(payload, options) {
+      options?.onThoughtDelta?.('Proceeding to submit the form.');
+      return this.requestReasoningAction(payload);
+    },
+    async reportExecutionFailure() {},
+    async reportExecutionSuccess() {}
+  };
+
+  const coordinator = new RunCoordinator(browser, mockHttp);
+  let pendingReq = null;
+  coordinator.setListeners({
+    onUserInputRequired: (req) => {
+      pendingReq = req;
+    }
+  });
+
+  const initRes = await coordinator.startRun('Fill feedback form and submit', { tabId: 101, maxSteps: 3 });
+  assert.equal(initRes.state, 'awaiting-user-input', `Init failed with error: ${initRes.error || initRes.message}`);
+  assert.ok(pendingReq);
+
+  let thoughtStreamed = false;
+  const submitRes = await coordinator.submitUserInput(
+    { customText: 'UAIWU8' },
+    101,
+    {
+      resumeLoop: true,
+      targetLocalId: pendingReq.targetLocalId,
+      inputNonce: pendingReq.inputNonce,
+      runId: pendingReq.runId,
+      streamingOptions: {
+        onThoughtDelta: (delta) => {
+          thoughtStreamed = true;
+        }
+      }
+    }
+  );
+
+  assert.equal(submitRes.state, 'awaiting-user-confirmation', `Resume must advance to submit confirmation: ${submitRes.error || submitRes.message}`);
+  assert.ok(thoughtStreamed, 'Streaming thought delta must fire on resumed execution');
+});
+
+test('VLM Engine Gate: Form submission guard advances request_user_input to click Submit if target element is already filled', () => {
+  const engine = new VlmReasoningEngine({ provider: 'mock' });
+  const payload = {
+    goal: 'Fill feedback form',
+    elements: [
+      { localId: 'el_captcha', role: 'input', sanitizedName: 'Captcha', state: ['visible', 'filled'], actionCapabilities: ['type'] },
+      { localId: 'el_submit', role: 'button', sanitizedName: 'Submit Form', state: ['visible', 'enabled'], actionCapabilities: ['click'] }
+    ]
+  };
+
+  // Simulate model returning request_user_input on a field that is already filled
+  const rawModelOutput = JSON.stringify({
+    actionId: 'act_dup_input',
+    kind: 'request_user_input',
+    targetLocalId: 'el_captcha',
+    userInputPrompt: 'Please enter captcha',
+    confidence: 0.9
+  });
+
+  const parsed = engine.parseActionProposal(rawModelOutput, payload);
+  assert.equal(parsed.kind, 'click', 'Must advance from request_user_input to click on submit button');
+  assert.equal(parsed.targetLocalId, 'el_submit', 'Must target submit button');
+});
+
+test('Per-Action Inline Confidence Gate: System prompt mandates per-action inline evaluation without trailing formula blocks', () => {
+  const engine = new VlmReasoningEngine({ provider: 'mock' });
+  const prompt = engine.buildSystemPrompt();
+
+  assert.ok(prompt.includes('PER-ACTION CONFIDENCE REASONING'), 'Prompt must specify PER-ACTION confidence reasoning');
+  assert.ok(prompt.includes('NEVER append a unified summary block'), 'Prompt must explicitly forbid unified summary blocks');
+});
+
 

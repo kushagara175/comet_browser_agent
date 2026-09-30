@@ -526,14 +526,12 @@ export function parseReasoningLines(rawText) {
     } else if (/^(?:🧠|Thinking:?|Reasoning:?)/i.test(text)) {
       icon = '';
       category = 'Reasoning';
-    } else if (/^(?:Confidence|Threshold|Evaluation):?/i.test(text)) {
-      category = 'Confidence';
     }
 
     // Thoroughly strip redundant leading category words/emojis from body so category label is NEVER duplicated
     let body = text
-      .replace(/^(?:👁️|🎯|⚡|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking|Cache Analysis|Cache Check|Cache Memory)[\s:—–\-]*/gi, '')
-      .replace(/^(?:👁️|🎯|⚡|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking|Cache Analysis|Cache Check|Cache Memory)[\s:—–\-]*/gi, '')
+      .replace(/^(?:👁️|🎯|⚡|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking|Cache Analysis|Cache Check|Cache Memory|Confidence|Threshold|Evaluation)[\s:—–\-]*/gi, '')
+      .replace(/^(?:👁️|🎯|⚡|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking|Cache Analysis|Cache Check|Cache Memory|Confidence|Threshold|Evaluation)[\s:—–\-]*/gi, '')
       .replace(/^[•\-\*\d\.]+\s*/, '')
       .trim();
 
@@ -3327,25 +3325,149 @@ if (typeof document !== 'undefined') {
             return;
           }
 
-          submitBtn.disabled = true;
-          submitBtn.textContent = req.kind === 'clarification' ? 'Continuing...' : 'Filling form locally...';
+          const targetLabel = req.kind === 'clarification'
+            ? 'clarification'
+            : (/captcha/i.test(req.prompt || '')
+                ? 'CAPTCHA'
+                : (resolveFriendlyElementName(req.targetLocalId) || 'field'));
+          const taskText = req.kind === 'clarification'
+            ? 'Clarified instruction as per user input'
+            : `Filled ${targetLabel} as per user input`;
+
+          // Immediately collapse the input form card into a single compact task item
+          card.innerHTML = `
+            <div class="hitl-completed-task action-status-line is-done" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: 8px; margin-top: 8px; font-size: 12.5px; color: #86efac;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span>${escapeHtml(taskText)}</span>
+            </div>
+          `;
+
+          // Create the continuation agent bubble for the agent running further actions
+          const continuationBubble = document.createElement('div');
+          continuationBubble.className = 'chat-msg agent';
+          const continuationStartTime = Date.now();
+          continuationBubble.__turnStartTime = continuationStartTime;
+          continuationBubble.innerHTML = `
+            <div class="thinking-phase1 action-status-line is-executing" style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #cbd5e1; padding: 2px 0;">
+              <span class="thinking-shimmer-text">Executing next action...</span>
+            </div>
+          `;
+          chatMessages.appendChild(continuationBubble);
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+          activeThinkingBubble = continuationBubble;
           setAgentStatus('executing');
 
-          if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+          const runId = req.runId || currentRunId;
+          const finishContinuation = (submitRes, err) => {
+            if (continuationBubble.__settled) return;
+            continuationBubble.__settled = true;
+            if (runId !== currentRunId) return;
+            if (err) {
+              continuationBubble.textContent = err;
+              setAgentStatus('failed-safe');
+              return;
+            }
+            if (submitRes) {
+              renderActionResult(continuationBubble, submitRes);
+            }
+          };
+
+          let portConnected = false;
+          if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
+            try {
+              activeRunPort?.disconnect();
+              const port = chrome.runtime.connect({ name: 'privapilot-sidepanel' });
+              activeRunPort = port;
+              portConnected = true;
+
+              port.onMessage.addListener((message) => {
+                if (message?.requestId !== runId) return;
+
+                if (message.type === 'STREAM_THOUGHT_DELTA') {
+                  const delta = message.delta;
+                  if (!delta) return;
+                  continuationBubble.__hasStreamedTokens = true;
+                  continuationBubble.__accumulatedReasoning = (continuationBubble.__accumulatedReasoning || '') + delta;
+                  activeThinkingBubble = continuationBubble;
+                  continuationBubble.__expanded = true;
+
+                  const phase1 = continuationBubble.querySelector('.thinking-phase1');
+                  if (phase1) phase1.remove();
+
+                  let block = continuationBubble.querySelector('.monologue-block');
+                  const elapsed = Math.max(1, Math.round((Date.now() - continuationStartTime) / 1000));
+                  if (!block) {
+                    const temp = document.createElement('div');
+                    temp.innerHTML = renderThinkingAccordion(
+                      continuationBubble.__accumulatedReasoning || 'Thinking...',
+                      elapsed,
+                      { isExecuting: true, open: true, forceState2: true }
+                    );
+                    block = temp.firstElementChild;
+                    if (block) continuationBubble.insertBefore(block, continuationBubble.firstChild);
+                  } else {
+                    const title = block.querySelector('.monologue-title');
+                    if (title && (title.classList.contains('thinking-shimmer-text') || title.textContent.startsWith('Thinking'))) {
+                      title.textContent = `Thinking (${elapsed}s)`;
+                    }
+                  }
+
+                  const content = block?.querySelector('.monologue-content');
+                  if (content) {
+                    const placeholder = content.querySelector('.monologue-initial-placeholder');
+                    if (placeholder) placeholder.remove();
+                    let streamSpan = content.querySelector('.live-thought-stream');
+                    if (!streamSpan) {
+                      content.innerHTML = '';
+                      streamSpan = document.createElement('span');
+                      streamSpan.className = 'live-thought-stream';
+                      streamSpan.style.whiteSpace = 'pre-wrap';
+                      streamSpan.style.fontSize = '12px';
+                      streamSpan.style.color = '#cbd5e1';
+                      streamSpan.style.lineHeight = '1.6';
+                      streamSpan.style.display = 'block';
+                      content.appendChild(streamSpan);
+                    }
+                    streamSpan.textContent = continuationBubble.__accumulatedReasoning.trimStart();
+                    content.scrollTop = content.scrollHeight;
+                  }
+                } else if (message.type === 'STREAM_FINAL') {
+                  port.disconnect();
+                  if (activeRunPort === port) activeRunPort = null;
+                  finishContinuation(message.response);
+                }
+              });
+
+              port.postMessage({
+                requestId: runId,
+                type: 'SUBMIT_USER_INPUT',
+                inputs: { username: userVal, password: passVal, customText: customVal },
+                saveToVault: req.kind !== 'clarification' && saveToVault,
+                inputKey: req.inputKey,
+                runId,
+                tabId: req.leasedTabId || currentActiveTabId,
+                inputNonce: req.inputNonce,
+                targetLocalId: req.targetLocalId,
+                resumeLoop: true
+              });
+            } catch (_) {
+              portConnected = false;
+            }
+          }
+
+          if (!portConnected && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
             chrome.runtime.sendMessage({
               type: 'SUBMIT_USER_INPUT',
               inputs: { username: userVal, password: passVal, customText: customVal },
               saveToVault: req.kind !== 'clarification' && saveToVault,
               inputKey: req.inputKey,
-              runId: req.runId || currentRunId,
+              runId,
               tabId: req.leasedTabId || currentActiveTabId,
               inputNonce: req.inputNonce,
               targetLocalId: req.targetLocalId,
               resumeLoop: true
             }, (submitRes) => {
-              if (submitRes && req.runId === currentRunId) {
-                renderActionResult(agentBubble, submitRes);
-              }
+              finishContinuation(submitRes);
             });
           }
         });

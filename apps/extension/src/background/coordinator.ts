@@ -67,7 +67,7 @@ import { SemanticActionCache } from '../cache/semantic-action-cache.js';
 
 function isSafeReversibleInteraction(proposal: ActionProposal, targetElement?: any): boolean {
   const kind = (proposal.kind || '').toLowerCase();
-  if (kind === 'scroll' || kind === 'observe' || kind === 'wait' || kind === 'hover' || kind === 'navigate') {
+  if (kind === 'scroll' || kind === 'observe' || kind === 'wait' || kind === 'hover' || kind === 'navigate' || kind === 'request_user_input') {
     return true;
   }
   if (kind === 'click') {
@@ -5944,7 +5944,10 @@ export class RunCoordinator {
    * Called when the user clicks 'Approve' on a protected action card.
    * If resumeLoop is true, continues multi-step execution loop.
    */
-  async approvePendingAction(options?: { resumeLoop?: boolean; runId?: string; actionId?: string }): Promise<CoordinatorRunResult> {
+  async approvePendingAction(options?: { resumeLoop?: boolean; runId?: string; actionId?: string; streamingOptions?: { onThoughtDelta?: (text: string) => void; onReplyDelta?: (text: string) => void } }): Promise<CoordinatorRunResult> {
+    if (options?.streamingOptions) {
+      this.activeStreamingOptions = options.streamingOptions;
+    }
     if (this.state === 'executing' || this.state === 'verifying' || this.state === 'complete') {
       return { success: true, state: this.state, runId: this.currentRunId, stepCount: this.currentStep };
     }
@@ -6133,8 +6136,11 @@ export class RunCoordinator {
   async submitUserInput(
     inputs: { username?: string; password?: string; customText?: string },
     targetTabId?: number,
-    options?: { resumeLoop?: boolean; targetLocalId?: string; saveToVault?: boolean; inputKey?: string; runId?: string; inputNonce?: string }
+    options?: { resumeLoop?: boolean; targetLocalId?: string; saveToVault?: boolean; inputKey?: string; runId?: string; inputNonce?: string; streamingOptions?: { onThoughtDelta?: (text: string) => void; onReplyDelta?: (text: string) => void } }
   ): Promise<CoordinatorRunResult> {
+    if (options?.streamingOptions) {
+      this.activeStreamingOptions = options.streamingOptions;
+    }
     if (options?.runId && options.runId !== this.currentRunId || !this.pendingInputRequest ||
         this.state !== 'awaiting-user-input' &&
         !(this.state === 'awaiting-user-confirmation' && this.currentTaskContract?.requiresUserInput)) {
@@ -6356,20 +6362,31 @@ export class RunCoordinator {
         elements.find((e) => e.role === 'input' || e.role === 'textbox');
 
       if (targetInput) {
+        const customAction: ActionProposal = {
+          actionId: `act_input_custom_${Date.now()}`,
+          kind: 'type',
+          targetLocalId: targetInput.localId,
+          textToType: inputs.customText,
+          confidence: 1.0,
+          risk: 'safe',
+          rationale: `Filled user input (${targetInput.sanitizedName || 'input'}) locally`,
+          userApproved: true
+        };
         await this.browser.sendMessageToTab(activeTab.id, {
           type: 'EXECUTE_ACTION',
-          proposal: {
-            actionId: `act_input_custom_${Date.now()}`,
-            kind: 'type',
-            targetLocalId: targetInput.localId,
-            textToType: inputs.customText,
-            confidence: 1.0,
-            risk: 'safe',
-            rationale: 'Fill user text locally',
-            userApproved: true
-          },
+          proposal: customAction,
           captureId
         });
+        this.recordActionHistory(customAction);
+        this.recentActionHistory.push({
+          actionId: customAction.actionId,
+          kind: 'type',
+          targetLocalId: targetInput.localId,
+          observedOutcome: `Filled user input (${targetInput.sanitizedName || 'input'}) locally`,
+          meaningfulProgress: true
+        });
+        this.recentActionHistory = this.recentActionHistory.slice(-10);
+        this.lastExecutedProposal = customAction;
         filledCount++;
       }
     }

@@ -1627,6 +1627,16 @@ export function classifyActionRisk(
   const kind = proposal.kind;
   const name = (elementName || '').toLowerCase();
 
+  // Explicitly user-approved actions (prompt authorized or modal confirmed)
+  if (proposal.userApproved) {
+    return 'safe';
+  }
+
+  // Request user input is safe (prompts user locally in sidepanel; never auto-executes raw secrets)
+  if (kind === 'request_user_input') {
+    return 'safe';
+  }
+
   // Hard blocked categories
   if (
     name.includes('password') ||
@@ -1647,16 +1657,6 @@ export function classifyActionRisk(
     ))
   ) {
     return 'blocked';
-  }
-
-  // Explicitly user-approved actions (prompt authorized or modal confirmed)
-  if (proposal.userApproved) {
-    return 'safe';
-  }
-
-  // Request user input is safe (local dialog prompt)
-  if (kind === 'request_user_input') {
-    return 'safe';
   }
 
   // Batch action risk: evaluated against all sub-actions
