@@ -4591,6 +4591,12 @@ if (typeof document !== 'undefined') {
             agentBubble.__hasStreamedTokens = true;
             agentBubble.__accumulatedReply = (agentBubble.__accumulatedReply || '') + delta;
 
+            // If no thoughts were emitted and we are still in State 1 thinking text, remove State 1 placeholder so speech text is clean
+            if (!agentBubble.__accumulatedReasoning) {
+              const phase1 = agentBubble.querySelector('.thinking-phase1');
+              if (phase1) phase1.remove();
+            }
+
             let speechEl = agentBubble.querySelector('.agent-speech-text');
             if (!speechEl) {
               speechEl = document.createElement('div');

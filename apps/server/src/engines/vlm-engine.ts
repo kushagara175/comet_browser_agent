@@ -596,9 +596,11 @@ export class VlmReasoningEngine {
     const reader = (res.body as any).getReader();
     const decoder = new TextDecoder();
     let lineBuffer = '';
+    let accumulatedContent = '';
     let accumulatedThinking = '';
     let accumulatedReply = '';
-    let inThinkTag = false;
+    let thinkEmittedLength = 0;
+    let replyEmittedLength = 0;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -618,52 +620,52 @@ export class VlmReasoningEngine {
             onChunk?.({ type: 'thought_delta', text: thinkText });
           } else if (chunkData.message?.content) {
             const raw = chunkData.message.content;
-            if (raw.includes('<think>')) {
-              inThinkTag = true;
-              const afterOpen = raw.split('<think>')[1] || '';
+            accumulatedContent += raw;
+
+            if (accumulatedContent.includes('<think>')) {
+              const afterOpen = accumulatedContent.split('<think>')[1] || '';
               if (afterOpen.includes('</think>')) {
-                inThinkTag = false;
-                const [thinkPart, replyPart] = afterOpen.split('</think>');
-                if (thinkPart) {
-                  accumulatedThinking += thinkPart;
-                  onChunk?.({ type: 'thought_delta', text: thinkPart });
+                const [thinkPart, afterClose] = afterOpen.split('</think>');
+                if (thinkPart.length > thinkEmittedLength) {
+                  const d = thinkPart.slice(thinkEmittedLength);
+                  thinkEmittedLength = thinkPart.length;
+                  onChunk?.({ type: 'thought_delta', text: d });
                 }
-                if (replyPart) {
-                  accumulatedReply += replyPart;
-                  onChunk?.({ type: 'reply_delta', text: replyPart });
-                }
-              } else {
-                accumulatedThinking += afterOpen;
-                if (afterOpen) onChunk?.({ type: 'thought_delta', text: afterOpen });
-              }
-            } else if (inThinkTag) {
-              if (raw.includes('</think>')) {
-                inThinkTag = false;
-                const [thinkPart, replyPart] = raw.split('</think>');
-                if (thinkPart) {
-                  accumulatedThinking += thinkPart;
-                  onChunk?.({ type: 'thought_delta', text: thinkPart });
-                }
-                if (replyPart) {
-                  accumulatedReply += replyPart;
-                  onChunk?.({ type: 'reply_delta', text: replyPart });
+                if (afterClose && afterClose.length > replyEmittedLength) {
+                  const d = afterClose.slice(replyEmittedLength);
+                  replyEmittedLength = afterClose.length;
+                  onChunk?.({ type: 'reply_delta', text: d });
                 }
               } else {
-                accumulatedThinking += raw;
-                onChunk?.({ type: 'thought_delta', text: raw });
+                const safeThinking = afterOpen.replace(/<\/?[a-z0-9]*$/i, '');
+                if (safeThinking.length > thinkEmittedLength) {
+                  const d = safeThinking.slice(thinkEmittedLength);
+                  thinkEmittedLength = safeThinking.length;
+                  onChunk?.({ type: 'thought_delta', text: d });
+                }
               }
-            } else {
-              accumulatedReply += raw;
-              onChunk?.({ type: 'reply_delta', text: raw });
+            } else if (!accumulatedContent.trimStart().startsWith('<') || accumulatedContent.length > 15) {
+              if (accumulatedContent.length > replyEmittedLength) {
+                const d = accumulatedContent.slice(replyEmittedLength);
+                replyEmittedLength = accumulatedContent.length;
+                onChunk?.({ type: 'reply_delta', text: d });
+              }
             }
           }
         } catch (_) {}
       }
     }
 
+    const finalThinking = accumulatedContent.includes('<think>')
+      ? (accumulatedContent.split('<think>')[1]?.split('</think>')[0] || '').trim()
+      : accumulatedThinking.trim() || undefined;
+    const finalReply = accumulatedContent.includes('</think>')
+      ? (accumulatedContent.split('</think>')[1] || '').trim()
+      : (accumulatedContent.includes('<think>') ? '' : (accumulatedContent.trim() || accumulatedReply.trim()));
+
     return {
-      reply: accumulatedReply.trim(),
-      reasoning: accumulatedThinking.trim() || undefined
+      reply: finalReply,
+      reasoning: finalThinking
     };
   }
 
@@ -731,9 +733,9 @@ export class VlmReasoningEngine {
     const reader = (res.body as any).getReader();
     const decoder = new TextDecoder();
     let lineBuffer = '';
-    let accumulatedThinking = '';
-    let accumulatedReply = '';
-    let inThinkTag = false;
+    let accumulatedContent = '';
+    let thinkEmittedLength = 0;
+    let replyEmittedLength = 0;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -752,57 +754,56 @@ export class VlmReasoningEngine {
           const delta = chunkData?.choices?.[0]?.delta;
           const directReasoning = delta?.reasoning || delta?.reasoning_content;
           if (directReasoning) {
-            accumulatedThinking += directReasoning;
             onChunk?.({ type: 'thought_delta', text: directReasoning });
           }
           if (delta?.content) {
             const raw = delta.content;
-            if (raw.includes('<think>')) {
-              inThinkTag = true;
-              const afterOpen = raw.split('<think>')[1] || '';
+            accumulatedContent += raw;
+
+            if (accumulatedContent.includes('<think>')) {
+              const afterOpen = accumulatedContent.split('<think>')[1] || '';
               if (afterOpen.includes('</think>')) {
-                inThinkTag = false;
-                const [thinkPart, replyPart] = afterOpen.split('</think>');
-                if (thinkPart) {
-                  accumulatedThinking += thinkPart;
-                  onChunk?.({ type: 'thought_delta', text: thinkPart });
+                const [thinkPart, afterClose] = afterOpen.split('</think>');
+                if (thinkPart.length > thinkEmittedLength) {
+                  const d = thinkPart.slice(thinkEmittedLength);
+                  thinkEmittedLength = thinkPart.length;
+                  onChunk?.({ type: 'thought_delta', text: d });
                 }
-                if (replyPart) {
-                  accumulatedReply += replyPart;
-                  onChunk?.({ type: 'reply_delta', text: replyPart });
-                }
-              } else {
-                accumulatedThinking += afterOpen;
-                if (afterOpen) onChunk?.({ type: 'thought_delta', text: afterOpen });
-              }
-            } else if (inThinkTag) {
-              if (raw.includes('</think>')) {
-                inThinkTag = false;
-                const [thinkPart, replyPart] = raw.split('</think>');
-                if (thinkPart) {
-                  accumulatedThinking += thinkPart;
-                  onChunk?.({ type: 'thought_delta', text: thinkPart });
-                }
-                if (replyPart) {
-                  accumulatedReply += replyPart;
-                  onChunk?.({ type: 'reply_delta', text: replyPart });
+                if (afterClose && afterClose.length > replyEmittedLength) {
+                  const d = afterClose.slice(replyEmittedLength);
+                  replyEmittedLength = afterClose.length;
+                  onChunk?.({ type: 'reply_delta', text: d });
                 }
               } else {
-                accumulatedThinking += raw;
-                onChunk?.({ type: 'thought_delta', text: raw });
+                const safeThinking = afterOpen.replace(/<\/?[a-z0-9]*$/i, '');
+                if (safeThinking.length > thinkEmittedLength) {
+                  const d = safeThinking.slice(thinkEmittedLength);
+                  thinkEmittedLength = safeThinking.length;
+                  onChunk?.({ type: 'thought_delta', text: d });
+                }
               }
-            } else {
-              accumulatedReply += raw;
-              onChunk?.({ type: 'reply_delta', text: raw });
+            } else if (!accumulatedContent.trimStart().startsWith('<') || accumulatedContent.length > 15) {
+              if (accumulatedContent.length > replyEmittedLength) {
+                const d = accumulatedContent.slice(replyEmittedLength);
+                replyEmittedLength = accumulatedContent.length;
+                onChunk?.({ type: 'reply_delta', text: d });
+              }
             }
           }
         } catch (_) {}
       }
     }
 
+    const finalThinking = accumulatedContent.includes('<think>')
+      ? (accumulatedContent.split('<think>')[1]?.split('</think>')[0] || '').trim()
+      : undefined;
+    const finalReply = accumulatedContent.includes('</think>')
+      ? (accumulatedContent.split('</think>')[1] || '').trim()
+      : (accumulatedContent.includes('<think>') ? '' : accumulatedContent.trim());
+
     return {
-      reply: accumulatedReply.trim(),
-      reasoning: accumulatedThinking.trim() || undefined
+      reply: finalReply,
+      reasoning: finalThinking
     };
   }
 
@@ -1320,31 +1321,24 @@ export class VlmReasoningEngine {
             const raw = chunkData.message.content;
             accumulatedContent += raw;
 
-            if (raw.includes('<think>')) {
-              inThinkTag = true;
-              const afterOpen = raw.split('<think>')[1] || '';
+            if (accumulatedContent.includes('<think>')) {
+              const afterOpen = accumulatedContent.split('<think>')[1] || '';
               if (afterOpen.includes('</think>')) {
-                inThinkTag = false;
-                const [thinkPart] = afterOpen.split('</think>');
-                if (thinkPart) {
-                  accumulatedThinking += thinkPart;
-                  onChunk?.({ type: 'thought_delta', text: thinkPart });
+                const thinkPart = afterOpen.split('</think>')[0];
+                if (thinkPart.length > reasoningFieldEmittedLength) {
+                  const d = thinkPart.slice(reasoningFieldEmittedLength);
+                  reasoningFieldEmittedLength = thinkPart.length;
+                  accumulatedThinking = thinkPart;
+                  onChunk?.({ type: 'thought_delta', text: d });
                 }
               } else {
-                accumulatedThinking += afterOpen;
-                if (afterOpen) onChunk?.({ type: 'thought_delta', text: afterOpen });
-              }
-            } else if (inThinkTag) {
-              if (raw.includes('</think>')) {
-                inThinkTag = false;
-                const [thinkPart] = raw.split('</think>');
-                if (thinkPart) {
-                  accumulatedThinking += thinkPart;
-                  onChunk?.({ type: 'thought_delta', text: thinkPart });
+                const safeThinking = afterOpen.replace(/<\/?[a-z0-9]*$/i, '');
+                if (safeThinking.length > reasoningFieldEmittedLength) {
+                  const d = safeThinking.slice(reasoningFieldEmittedLength);
+                  reasoningFieldEmittedLength = safeThinking.length;
+                  accumulatedThinking = safeThinking;
+                  onChunk?.({ type: 'thought_delta', text: d });
                 }
-              } else {
-                accumulatedThinking += raw;
-                onChunk?.({ type: 'thought_delta', text: raw });
               }
             } else if (!accumulatedThinking) {
               const match = accumulatedContent.match(/"(?:reasoning|rationale|thought|thinking)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
@@ -1495,31 +1489,24 @@ export class VlmReasoningEngine {
             const raw = delta.content;
             accumulatedContent += raw;
 
-            if (raw.includes('<think>')) {
-              inThinkTag = true;
-              const afterOpen = raw.split('<think>')[1] || '';
+            if (accumulatedContent.includes('<think>')) {
+              const afterOpen = accumulatedContent.split('<think>')[1] || '';
               if (afterOpen.includes('</think>')) {
-                inThinkTag = false;
-                const [thinkPart] = afterOpen.split('</think>');
-                if (thinkPart) {
-                  accumulatedThinking += thinkPart;
-                  onChunk?.({ type: 'thought_delta', text: thinkPart });
+                const thinkPart = afterOpen.split('</think>')[0];
+                if (thinkPart.length > reasoningFieldEmittedLength) {
+                  const d = thinkPart.slice(reasoningFieldEmittedLength);
+                  reasoningFieldEmittedLength = thinkPart.length;
+                  accumulatedThinking = thinkPart;
+                  onChunk?.({ type: 'thought_delta', text: d });
                 }
               } else {
-                accumulatedThinking += afterOpen;
-                if (afterOpen) onChunk?.({ type: 'thought_delta', text: afterOpen });
-              }
-            } else if (inThinkTag) {
-              if (raw.includes('</think>')) {
-                inThinkTag = false;
-                const [thinkPart] = raw.split('</think>');
-                if (thinkPart) {
-                  accumulatedThinking += thinkPart;
-                  onChunk?.({ type: 'thought_delta', text: thinkPart });
+                const safeThinking = afterOpen.replace(/<\/?[a-z0-9]*$/i, '');
+                if (safeThinking.length > reasoningFieldEmittedLength) {
+                  const d = safeThinking.slice(reasoningFieldEmittedLength);
+                  reasoningFieldEmittedLength = safeThinking.length;
+                  accumulatedThinking = safeThinking;
+                  onChunk?.({ type: 'thought_delta', text: d });
                 }
-              } else {
-                accumulatedThinking += raw;
-                onChunk?.({ type: 'thought_delta', text: raw });
               }
             } else if (!accumulatedThinking) {
               const match = accumulatedContent.match(/"(?:reasoning|rationale|thought|thinking)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);

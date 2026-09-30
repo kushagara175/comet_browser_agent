@@ -1310,38 +1310,8 @@ export class RunCoordinator {
       }).catch(() => {});
     }
 
-    // Query dynamic LLM task planner for Tasks To Do & Tasks Not To Do
-    try {
-      const plannedSpec = await this.httpClient.requestTaskSpecification(
-        effectiveGoal,
-        undefined,
-        this.currentCustomPrompt
-      );
-      const legacyTasks = plannedSpec.tasksToDo || [];
-      this.currentTaskSpec = plannedSpec.objectives?.length ? plannedSpec : {
-        ...plannedSpec,
-        objectives: (legacyTasks.length ? legacyTasks : ['Complete the requested goal']).map((description, index) => ({
-          id: `objective_${index + 1}`,
-          sequence: index + 1,
-          intent: index === legacyTasks.length - 1 && /verify|confirm/i.test(description) ? 'verify' as const : 'inspect' as const,
-          description,
-          expectedEvidence: ['verified semantic outcome'],
-          status: index === 0 ? 'active' as const : 'pending' as const,
-          ...(index > 0 ? { dependsOn: [`objective_${index}`] } : {})
-        }))
-      };
-      this.objectiveProgress = createInitialObjectiveProgress(this.currentTaskSpec);
-    } catch (_) {
-      this.currentTaskSpec = undefined;
-    }
-
-    // Fast-track: Sub-Agent Swarm / Comparative Multi-Portal Goals
-    if (isSubAgentSwarmGoal(effectiveGoal) || this.currentTaskSpec?.requiresSubAgents) {
-      return this.dispatchSubAgentSwarm(effectiveGoal);
-    }
-
     // Fast-track: Pure conversational greetings or direct queries bypass heavy perception and potential tab blockages
-    const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|hi\s+there|hello\s+there|greetings|good\s+(?:morning|afternoon|evening|day)|who\s+are\s+you|what\s+can\s+you\s+do)\s*[!.?]*$/i;
+    const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|hey\s+(?:bro|broo|there|man|buddy|friend)|sup|yo|what'?s\s+up|howdy|greetings|good\s+(?:morning|afternoon|evening|day)|who\s+are\s+you|what\s+can\s+you\s+do|how\s+are\s+you)\s*[!.?]*$/i;
     if (PURE_GREETING_PATTERN.test((goal || '').trim())) {
       this.transition('awaiting-reasoning', 'Synthesizing response with reasoning model...');
       const chatRes = typeof (this.httpClient as any)?.requestGeneralChatStream === 'function'
@@ -1385,12 +1355,43 @@ export class RunCoordinator {
           confidenceDecision: 'accepted',
           executed: true,
           executionResult: { success: true, staleTarget: false, reasonCode: 'EXECUTION_SUCCESS' },
-          verification: { verified: true, reasonCode: 'VERIFIED_SUCCESS', durationMs: 0 },
+          verification: { verified: true, reasonCode: 'DIRECT_ANSWER', durationMs: 0 },
           networkRequestMade: true,
-          timings: { total: 300 }
+          timings: { total: 0, reasoning: 0 }
         }]
       };
-      return this.completeWithResult(res);
+      this.completeWithResult(res);
+      return res;
+    }
+
+    // Query dynamic LLM task planner for Tasks To Do & Tasks Not To Do
+    try {
+      const plannedSpec = await this.httpClient.requestTaskSpecification(
+        effectiveGoal,
+        undefined,
+        this.currentCustomPrompt
+      );
+      const legacyTasks = plannedSpec.tasksToDo || [];
+      this.currentTaskSpec = plannedSpec.objectives?.length ? plannedSpec : {
+        ...plannedSpec,
+        objectives: (legacyTasks.length ? legacyTasks : ['Complete the requested goal']).map((description, index) => ({
+          id: `objective_${index + 1}`,
+          sequence: index + 1,
+          intent: index === legacyTasks.length - 1 && /verify|confirm/i.test(description) ? 'verify' as const : 'inspect' as const,
+          description,
+          expectedEvidence: ['verified semantic outcome'],
+          status: index === 0 ? 'active' as const : 'pending' as const,
+          ...(index > 0 ? { dependsOn: [`objective_${index}`] } : {})
+        }))
+      };
+      this.objectiveProgress = createInitialObjectiveProgress(this.currentTaskSpec);
+    } catch (_) {
+      this.currentTaskSpec = undefined;
+    }
+
+    // Fast-track: Sub-Agent Swarm / Comparative Multi-Portal Goals
+    if (isSubAgentSwarmGoal(effectiveGoal) || this.currentTaskSpec?.requiresSubAgents) {
+      return this.dispatchSubAgentSwarm(effectiveGoal);
     }
 
     if (!this.currentTaskContract.supported && this.currentTaskContract.goalPattern === 'empty') {
@@ -5711,7 +5712,7 @@ export class RunCoordinator {
 
       // Fast-track: Pure conversational greetings without any browser/page inquiry
       // bypass heavy DOM snapshot, full-screenshot capture, and ONNX initialization.
-      const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening))\s*$/i;
+      const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|hey\s+(?:bro|broo|there|man|buddy|friend)|sup|yo|what'?s\s+up|howdy|greetings|good\s+(?:morning|afternoon|evening|day)|who\s+are\s+you|what\s+can\s+you\s+do|how\s+are\s+you)\s*[!.?]*$/i;
 
       if (PURE_GREETING_PATTERN.test(userMessage.trim())) {
         return this.generalChat(userMessage, undefined, history, customPrompt, options);
