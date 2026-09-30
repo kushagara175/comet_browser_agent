@@ -1228,17 +1228,21 @@ export class RunCoordinator {
     }
 
     const RETRY_PATTERN = /^(?:do\s+again|try\s+again|retry|redo|do\s+it\s+again|again|run\s+again|repeat|one\s+more\s+time|once\s+more)[.!]?$/i;
-    const AFFIRMATIVE_PATTERN = /^(?:yeah|yeha|yea|yes|yess+|yup|sure|ok|okay|k|kk|proceed|continue|do\s+it|go\s+ahead|yep|please\s+do|yes\s+please|confirm|right|cool|fine|alright)(?:\s+(?:please|go\s+ahead|do\s+it|proceed|continue|bro|man|now|both|with\s+it|with\s+that))?[.!]?$/i;
+    const AFFIRMATIVE_PATTERN = /^(?:yeah|yeha|yea|yes|yess+|yup|sure|ok|okay|k|kk|proceed|continue|do\s+it|go\s+ahead|yep|please\s+do|yes\s+please|confirm|right|cool|fine|alright|resume|submit|finish|further\s+task|trigger|convert\s+from\s+the\s+waiting\s+state\s+to\s+running)\b/i;
     let effectiveGoal = (goal || '').trim();
 
     if (RETRY_PATTERN.test(effectiveGoal) && this.lastGoal) {
       effectiveGoal = this.lastGoal;
-    } else if (AFFIRMATIVE_PATTERN.test(effectiveGoal)) {
+    } else if (AFFIRMATIVE_PATTERN.test(effectiveGoal) || /\b(?:further\s+task|task\s+resume|agent\s+trigger|process\s+trigger|waiting\s+state\s+to\s+running|submit\s+(?:the\s+)?form|submit\s+it)\b/i.test(effectiveGoal)) {
       // Affirmative continuation: recover context and pending proposal from conversation history
       const lastAssistantMsg = [...this.conversationHistory].reverse().find(m => m.role === 'assistant')?.content || '';
       const lastUserGoal = [...this.conversationHistory].reverse().find(m => m.role === 'user' && !AFFIRMATIVE_PATTERN.test(m.content.trim()))?.content || this.lastGoal || '';
 
-      if (lastAssistantMsg) {
+      const isFormContext = /\b(?:form|feedback|registration|isro|captcha|submit|ffbf)\b/i.test(`${this.lastGoal || ''} ${lastUserGoal} ${lastAssistantMsg}`);
+
+      if (isFormContext) {
+        effectiveGoal = 'Click the Submit button to finalize the form submission';
+      } else if (lastAssistantMsg) {
         // Detect proposed sites or URLs in the assistant's previous message (e.g. "open Flipkart.com in a separate tab")
         const tabOpenMatch = lastAssistantMsg.match(/(?:open|navigate\s+to|check)\s+([a-zA-Z0-9.-]+(?:\.(?:com|in|org|net|co|io))?)\b/i);
         const proposedSite = tabOpenMatch ? tabOpenMatch[1] : '';
@@ -6563,8 +6567,9 @@ export class RunCoordinator {
     }
 
     // Interactive Slot-Filling Resume: Continue the multi-step perception loop smoothly
-    if (options?.resumeLoop === true && this.currentGoal) {
-      this.currentMaxSteps = Math.max(this.currentMaxSteps, this.currentStep + 5);
+    if (options?.resumeLoop !== false) {
+      this.currentGoal = this.currentGoal || this.lastGoal || 'Submit form and complete task';
+      this.currentMaxSteps = Math.max(this.currentMaxSteps, this.currentStep + 6);
       this.currentStaleRetries = 0;
       this.transition('capturing', `Resuming execution after user input (step ${this.currentStep + 1}/${this.currentMaxSteps})...`);
       return this.executeLoop();
