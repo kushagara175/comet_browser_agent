@@ -87,25 +87,23 @@ test('Thinking: formatReasoningIntoLinesHtml formats element IDs with code chips
   assert.ok(html.includes('<code class="thought-code">el_9</code>'), 'Element ID must be rendered in thought-code chip');
   assert.ok(!html.includes('<script>'), 'HTML injection must be neutralized');
   assert.ok(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
-  assert.ok(html.includes('thought-category'));
-  assert.ok(html.includes('Observation:'));
+  assert.ok(html.includes('thought-paragraph'), 'Must render as clean thought-paragraph');
+  assert.ok(html.includes('Found search input'), 'Must retain reasoning body');
 });
 
-test('Thinking: renderThinkingAccordion generates accessible collapsible monologue block with line-by-line thoughts', () => {
+test('Thinking: renderThinkingAccordion generates accessible collapsible monologue block with natural paragraphs', () => {
   const reasoning = [
-    '👁️ Observation: On dashboard with 4 elements.',
-    '🎯 User Intent: Review submission count for statement 171.',
-    '⚡ Action Selection: Click el_2 to open modal.'
-  ].join('\n');
+    'Observation: On dashboard with 4 elements.',
+    'User Intent: Review submission count for statement 171.',
+    'Action Selection: Click el_2 to open modal.'
+  ].join('\n\n');
 
   const html = renderThinkingAccordion(reasoning, 5, { open: true });
   assert.ok(html.includes('data-state="expanded"'));
   assert.ok(html.includes('aria-expanded="true"'));
   assert.ok(html.includes('Thought for 5s'));
   assert.ok(html.includes('thought-lines-container'));
-  assert.ok(html.includes('Observation:'));
-  assert.ok(html.includes('Intent &amp; Strategy:') || html.includes('Intent & Strategy:'));
-  assert.ok(html.includes('Action Selection:'));
+  assert.ok(html.includes('thought-paragraph'));
   assert.ok(html.includes('<code class="thought-code">el_2</code>'));
 });
 
@@ -145,23 +143,28 @@ test('Thinking: collectAllStepReasoning aggregates reasoning across multi-step r
   assert.ok(aggregated.includes('On search page'));
 });
 
-test('Thinking: completion merges partial steps and live reasoning without losing step boundaries', () => {
+test('Thinking: completion merges partial steps and live reasoning as distinct paragraphs without Step prefixes', () => {
   const result = { steps: [
     { step: 1, proposal: { reasoning: 'Observation: Opened missions hub.' } },
     { step: 2, proposal: { reasoning: 'Observation: Opened missions directory.' } }
   ], reasoning: 'Step 2: Observation: Opened missions directory.' };
   const merged = collectAllStepReasoning(result,
     'Observation: Opened missions hub.\n\nObservation: Opened missions directory.\n\nObservation: Found Chandrayaan-3 row.');
-  assert.match(merged, /Step 1:.*Opened missions hub/);
-  assert.match(merged, /Step 2:.*Opened missions directory/);
-  assert.match(merged, /Step 3:.*Found Chandrayaan-3 row/);
+  assert.ok(!merged.includes('Step 1:'), 'Merged thoughts must not have Step 1: prefix');
+  assert.ok(!merged.includes('Step 2:'), 'Merged thoughts must not have Step 2: prefix');
+  assert.ok(merged.includes('Opened missions hub'), 'Must contain first thought');
+  assert.ok(merged.includes('Opened missions directory'), 'Must contain second thought');
+  assert.ok(merged.includes('Found Chandrayaan-3 row'), 'Must contain third thought');
   assert.equal((merged.match(/Opened missions directory/g) || []).length, 1);
-  const repeated = collectAllStepReasoning({ steps: [
+  const multiSteps = collectAllStepReasoning({ steps: [
     { step: 1, proposal: { reasoning: 'Observation: Checking the page.' } },
-    { step: 2, proposal: { reasoning: 'Observation: Checking the page.' } }
+    { step: 2, proposal: { reasoning: 'Observation: Finding the submit button.' } }
   ] });
-  assert.equal((repeated.match(/Checking the page/g) || []).length, 2);
-  assert.ok(formatReasoningIntoLinesHtml(repeated).includes('Step 2:'));
+  assert.ok(multiSteps.includes('Checking the page'));
+  assert.ok(multiSteps.includes('Finding the submit button'));
+  const formatted = formatReasoningIntoLinesHtml(multiSteps);
+  assert.ok(!formatted.includes('Step 2:'), 'Formatted paragraphs must not contain Step 2:');
+  assert.ok(formatted.includes('thought-paragraph'), 'Must render as thought-paragraph');
 });
 
 test('Thinking: parseReasoningLines strips repetitive duplicate category labels', () => {
@@ -240,12 +243,11 @@ test('Thinking: streamLiveReasoningLines removes placeholder and appends live li
   }
 });
 
-test('Thinking: renderThinkingAccordion displays custom agent badge when agentName is specified', () => {
+test('Thinking: renderThinkingAccordion does not render custom agent badge (pure typography)', () => {
   const reasoning = '👁️ Observation: On NASA page.\n⚡ Action Selection: Extract specs.';
   const html = renderThinkingAccordion(reasoning, 4, { agentName: 'Space Mission Analyst' });
-  assert.ok(html.includes('class="thought-agent-badge"'), 'Should render thought-agent-badge element');
-  assert.ok(html.includes('Space Mission Analyst'), 'Should render the custom agent name');
-  assert.ok(html.includes('title="Executing under custom agent layer"'));
+  assert.ok(!html.includes('thought-agent-badge'), 'Should not render thought-agent-badge element');
+  assert.ok(!html.includes('Space Mission Analyst'), 'Should not render custom agent badge prefix');
 });
 
 test('Thinking: renderThinkingAccordion omits agent badge for default Core agent', () => {
@@ -259,14 +261,14 @@ test('Thinking: renderThinkingAccordion omits agent badge for default Core agent
   assert.ok(!htmlNone.includes('thought-agent-badge'), 'Should not render badge when agentName is omitted');
 });
 
-test('Thinking: renderThinkingAccordion renders interactive expandable accordion from second 0', () => {
-  const html = renderThinkingAccordion('', 1, { isExecuting: true });
+test('Thinking: renderThinkingAccordion renders interactive expandable accordion when tokens exist', () => {
+  const html = renderThinkingAccordion('Analyzing page structure.', 1, { isExecuting: true, open: true });
   assert.ok(html.includes('monologue-block'), 'Must render monologue-block container');
   assert.ok(html.includes('monologue-toggle-btn'), 'Must render toggle button');
   assert.ok(html.includes('monologue-chevron'), 'Must render chevron');
   assert.ok(html.includes('Thinking (1s)'), 'Must render shimmering Thinking timer');
   assert.ok(html.includes('monologue-drawer'), 'Must render drawer');
-  assert.ok(html.includes('monologue-initial-placeholder'), 'Must render initial placeholder inside drawer');
+  assert.ok(html.includes('Analyzing page structure'), 'Must render thought content');
 });
 
 test('Thinking: renderThinkingAccordion Phase 1 renders clean non-expandable Thinking... when nonExpandable is true', () => {

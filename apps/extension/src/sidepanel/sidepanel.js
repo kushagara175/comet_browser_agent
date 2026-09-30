@@ -427,14 +427,15 @@ export function collectAllStepReasoning(res, liveReasoning = '') {
   const parts = [];
   const existingLive = (typeof liveReasoning === 'string' ? liveReasoning : '').trim();
   if (existingLive) {
-    parts.push(sanitizeReasoningText(existingLive));
+    const cleanLive = sanitizeReasoningText(existingLive).replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/gim, '').trim();
+    if (cleanLive) parts.push(cleanLive);
   }
 
   const steps = Array.isArray(res?.steps) ? res.steps : [];
   const ordered = [...steps].sort((a, b) => (a.step || 0) - (b.step || 0));
   for (const s of ordered) {
     const raw = sanitizeReasoningText(s.proposal?.reasoning || s.proposal?.thought || s.reasoning || s.proposal?.rationale);
-    const text = raw.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/i, '').trim();
+    const text = raw.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/gim, '').trim();
     if (!text) continue;
     if (parts.some(p => p === text || p.includes(text))) continue;
     const smallerIndex = parts.findIndex(p => text.includes(p));
@@ -450,7 +451,7 @@ export function collectAllStepReasoning(res, liveReasoning = '') {
     if (clean) {
       const blocks = clean.split(/\n\s*\n/);
       for (const block of blocks) {
-        const text = block.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/i, '').trim();
+        const text = block.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/gim, '').trim();
         if (!text) continue;
         if (parts.some(p => p === text || p.includes(text))) continue;
         const smallerIndex = parts.findIndex(p => text.includes(p));
@@ -465,7 +466,7 @@ export function collectAllStepReasoning(res, liveReasoning = '') {
 
   if (!parts.length) {
     const fallback = sanitizeReasoningText(res?.proposal?.reasoning || res?.proposal?.thought || res?.proposal?.rationale || res?.message);
-    const text = fallback.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/i, '').trim();
+    const text = fallback.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/gim, '').trim();
     if (text) parts.push(text);
   }
   return parts.join('\n\n');
@@ -578,7 +579,7 @@ export function parseReasoningLines(rawText) {
       }
     }
 
-    parsed.push({ icon, category, body: `${stepLabel}${body}` });
+    parsed.push({ icon, category, body });
   }
 
   return parsed;
@@ -612,56 +613,40 @@ function formatTargetCodeChip(id, elementsList, precedingText = '') {
 }
 
 /**
- * Formats parsed reasoning into line-by-line HTML with semantic styling and code chip highlighting.
+ * Formats parsed reasoning into clean, distinct paragraphs with code chip highlighting.
+ * No "Step N:" prefixes or synthetic category headers are shown; thoughts are structured
+ * as comfortable separate paragraphs within the unified thinking accordion.
  */
 export function formatReasoningIntoLinesHtml(rawText) {
   const clean = sanitizeReasoningText(rawText);
   if (!clean) return '';
 
-  const parsed = parseReasoningLines(clean);
-  const hasAnyCategory = parsed && parsed.length > 0 && parsed.some(item => Boolean(item.category || (item.icon && item.icon !== '▸' && item.icon !== '•')));
+  const rawParagraphs = clean.split(/\r?\n\s*\r?\n/);
+  const cleanParagraphs = [];
 
-  if (hasAnyCategory) {
-    const linesHtml = parsed.map(item => {
-      let escapedBody = escapeHtml(item.body)
-        .replace(/(?:`)(el_\w+)(?:`)/g, (_, id) => formatTargetCodeChip(id, undefined, item.body))
-        .replace(/\b(el_[a-zA-Z0-9_-]+)\b/g, (_, id) => formatTargetCodeChip(id, undefined, item.body));
+  for (const rawP of rawParagraphs) {
+    let p = rawP
+      .replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/gim, '')
+      .replace(/^(?:👁️|🎯|⚡|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking)[\s:—–\-]*/gim, '')
+      .replace(/\[semantically grounded\]/gi, '')
+      .trim();
 
-      const categoryHtml = item.category
-        ? `<strong class="thought-category" style="color: #94a3b8; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 6px;">${escapeHtml(item.category)}:</strong>`
-        : '';
-
-      const iconHtml = (item.icon && item.icon !== '▸' && item.icon !== '•')
-        ? `<span class="thought-icon" style="flex-shrink: 0; font-size: 12px; line-height: 1;">${item.icon}</span>`
-        : '';
-
-      const contentHtml = `<span class="thought-body" style="flex: 1; word-break: break-word;">${categoryHtml}${escapedBody}</span>`;
-
-      return `<div class="thought-line" style="display: flex; align-items: baseline; gap: 7px; font-size: 12px; color: #cbd5e1; line-height: 1.6; padding: 2px 0;">${iconHtml}${contentHtml}</div>`;
-    }).join('');
-
-    return `<div class="thought-lines-container" style="display: flex; flex-direction: column; gap: 4px; padding: 2px 0;">${linesHtml}</div>`;
+    if (!p) continue;
+    p = p.charAt(0).toUpperCase() + p.slice(1);
+    cleanParagraphs.push(p);
   }
 
-  // Pure natural thought stream (Perplexity / Claude style - 100% naked uniform typography)
-  const paragraphs = clean
-    .split(/\r?\n\s*\r?\n/)
-    .map(p => p
-      .replace(/^(?:👁️|🎯|⚡|📋|🧠|Observation|User Intent|Intent|Strategic plan|Strategy|Action Selection|Action|Next Action|Tool|Extraction|Extracted|Data|Result|Reasoning|Thinking)[\s:—–\-]*/gi, '')
-      .replace(/\[semantically grounded\]/gi, '')
-      .trim()
-    )
-    .filter(Boolean);
+  const paragraphsToRender = cleanParagraphs.length > 0 ? cleanParagraphs : [clean.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/gim, '').trim()];
 
-  const formattedParas = (paragraphs.length > 0 ? paragraphs : [clean]).map(p => {
+  const formattedParas = paragraphsToRender.map(p => {
     let escaped = escapeHtml(p)
       .replace(/(?:`)(el_\w+)(?:`)/g, (_, id) => formatTargetCodeChip(id, undefined, p))
       .replace(/\b(el_[a-zA-Z0-9_-]+)\b/g, (_, id) => formatTargetCodeChip(id, undefined, p));
 
-    return `<p class="thought-paragraph" style="margin: 0 0 8px 0; font-size: 12px; color: #cbd5e1; line-height: 1.6; word-break: break-word;">${escaped}</p>`;
+    return `<p class="thought-paragraph" style="margin: 0 0 10px 0; font-size: 12px; color: #cbd5e1; line-height: 1.6; word-break: break-word;">${escaped}</p>`;
   }).join('');
 
-  return `<div class="thought-lines-container thought-monologue-natural" style="display: flex; flex-direction: column; gap: 4px; padding: 2px 0;">${formattedParas}</div>`;
+  return `<div class="thought-lines-container thought-monologue-natural" style="display: flex; flex-direction: column; gap: 0; padding: 2px 0;">${formattedParas}</div>`;
 }
 
 // Global in-memory cache of resolved thought durations per messageId (mirrored from allel)
@@ -3507,7 +3492,7 @@ if (typeof document !== 'undefined') {
                       streamSpan.style.display = 'block';
                       content.appendChild(streamSpan);
                     }
-                    streamSpan.textContent = agentBubble.__accumulatedReasoning.trimStart();
+                    streamSpan.textContent = agentBubble.__accumulatedReasoning.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/gim, '').trimStart();
                     content.scrollTop = content.scrollHeight;
                   }
                 } else if (message.type === 'STREAM_FINAL') {
@@ -4831,7 +4816,7 @@ if (typeof document !== 'undefined') {
                 streamSpan.style.display = 'block';
                 content.appendChild(streamSpan);
               }
-              streamSpan.textContent = agentBubble.__accumulatedReasoning.trimStart();
+              streamSpan.textContent = agentBubble.__accumulatedReasoning.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/gim, '').trimStart();
               if (agentBubble.__expanded) {
                 content.scrollTop = content.scrollHeight;
                 const drawer = content.closest('.monologue-drawer');
