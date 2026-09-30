@@ -1597,6 +1597,25 @@ html, body {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.thought-paragraph {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.6;
+  word-break: break-word;
+  font-family: inherit !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.thought-confidence-tag {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  font-family: inherit !important;
+  color: inherit !important;
+}
+
 @keyframes thoughtFadeIn {
   from {
     opacity: 0;
