@@ -1118,6 +1118,22 @@ export class ActionExecutor {
         }
       }
 
+      if (proposal.kind === 'request_user_input') {
+        if (targetEl) {
+          try {
+            (targetEl as any).scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+            (targetEl as any).focus?.();
+          } catch (_) {}
+        }
+        return {
+          actionId: proposal.actionId,
+          success: true,
+          timestamp,
+          semanticOutcomeVerified: true,
+          message: `Requested user input on element '${proposal.targetLocalId || 'field'}'`
+        };
+      }
+
       return {
         actionId: proposal.actionId,
         success: false,

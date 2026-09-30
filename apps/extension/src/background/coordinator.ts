@@ -4082,6 +4082,66 @@ export class RunCoordinator {
             }
           }
 
+          if ((sub as any).kind === 'request_user_input') {
+            const promptText = (sub as any).userInputPrompt || (sub as any).rationale || 'Please provide the required value (e.g. CAPTCHA) to continue.';
+            const inputNonce = this.generateInputNonce();
+            let expectedOrigin: string | undefined = undefined;
+            try {
+              if (sanitized.pageState?.url) {
+                expectedOrigin = new URL(sanitized.pageState.url).origin;
+              }
+            } catch (_) {}
+
+            // Highlight/focus the target field on the page
+            try {
+              await this.browser.sendMessageToTab(activeTab.id, {
+                type: 'EXECUTE_ACTION',
+                proposal: subProposal,
+                captureId: sanitized.captureId
+              });
+            } catch (_) {}
+
+            const inputRequest = {
+              kind: sub.targetLocalId ? 'text_input' as const : 'clarification' as const,
+              prompt: promptText,
+              targetLocalId: sub.targetLocalId,
+              inputKey: (sub as any).inputKey,
+              runId: this.currentRunId,
+              leasedTabId: this.currentTabId,
+              inputNonce,
+              expectedOrigin
+            };
+            this.pendingInputRequest = inputRequest;
+            this.transition('awaiting-user-input', promptText);
+            this.listeners.onUserInputRequired?.(inputRequest);
+            const stepTrace: E2EStepTrace = {
+              step,
+              captureId: sanitized.captureId,
+              pageGeneration: sanitized.captureId,
+              maskCount: sanitized.maskCount,
+              sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+              decisionOrigin,
+              proposal: subProposal,
+              riskDecision: 'safe',
+              confidenceDecision: 'requires_user_input',
+              executed: true,
+              networkRequestMade,
+              timings: { total: Date.now() - t0_step }
+            };
+            this.stepsTrace.push(stepTrace);
+            const res: CoordinatorRunResult = {
+              success: true,
+              state: 'awaiting-user-input',
+              message: promptText,
+              sanitized,
+              proposal,
+              inputRequest,
+              stepCount: step,
+              steps: this.stepsTrace
+            };
+            return this.completeWithResult(res);
+          }
+
           try {
             lastBatchResult = await this.browser.sendMessageToTab(activeTab.id, {
               type: 'EXECUTE_ACTION',

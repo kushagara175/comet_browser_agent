@@ -292,3 +292,34 @@ test('Two-State Thinking Lifecycle: Immediate conversion to State 2 on 1st token
   assert.ok(!completedHtml.includes('Thought for 2s'), 'Completed thought must not drop to 2s synthetic fallback');
 });
 
+test('Batch HITL Gate: Form batch pauses on request_user_input without failing with unsupported action kind', async () => {
+  const browser = createMockBrowser();
+  let userInputRequiredFired = false;
+
+  const mockHttp = createMockHttpClient({
+    actionId: 'act_batch_with_captcha',
+    kind: 'batch',
+    confidence: 0.95,
+    risk: 'safe',
+    rationale: 'Filling form fields and requesting user input for CAPTCHA',
+    batchActions: [
+      { actionId: 'sub_1', kind: 'type', targetLocalId: 'el_nav_students', textToType: 'Student Query' },
+      { actionId: 'sub_2', kind: 'request_user_input', targetLocalId: 'el_btn_submit', userInputPrompt: 'Please enter CAPTCHA characters' }
+    ]
+  });
+
+  const coordinator = new RunCoordinator(browser, mockHttp);
+  coordinator.setListeners({
+    onUserInputRequired: (req) => {
+      userInputRequiredFired = true;
+      assert.equal(req.prompt, 'Please enter CAPTCHA characters');
+    }
+  });
+
+  const result = await coordinator.startRun('Fill feedback form and submit', { tabId: 101, maxSteps: 2 });
+
+  assert.equal(result.state, 'awaiting-user-input', 'State must be awaiting-user-input when batch reaches request_user_input');
+  assert.equal(userInputRequiredFired, true, 'onUserInputRequired must fire');
+  assert.notEqual(result.error, "Unsupported action kind 'request_user_input'", 'Must NOT fail with unsupported action kind');
+});
+
