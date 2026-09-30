@@ -54,6 +54,10 @@ export declare function stripThinkingTags(raw: string): string;
 export declare function extractThinking(raw: string): string;
 export declare function cleanServerReasoning(str: string): string;
 export declare function sanitizeProhibitedText(text: string): string;
+export interface StreamChunk {
+    readonly type: 'thought_delta' | 'reply_delta';
+    readonly text: string;
+}
 export declare class VlmReasoningEngine {
     private config;
     private readonly mockFallback;
@@ -90,12 +94,26 @@ export declare class VlmReasoningEngine {
         content: string;
     }>): Promise<ChatResult>;
     private buildOfflineReply;
+    /**
+     * Genuine token streaming chat invocation. Emits thought_delta and reply_delta in real time.
+     */
+    streamChat(systemPrompt: string, userMessage: string, history?: Array<{
+        role: 'user' | 'assistant';
+        content: string;
+    }>, onChunk?: (chunk: StreamChunk) => void): Promise<ChatResult>;
+    private streamChatViaOllama;
+    private streamChatViaOpenAICompatible;
     private chatViaOllama;
     private chatViaOpenAICompatible;
     /**
+     * Genuine streaming reasoning invocation. Emits thought_delta and reply_delta in real time,
+     * parsing and returning schema-valid ActionProposal upon stream completion.
+     */
+    streamDecideNextAction(rawPayload: SanitizedNetworkPayload, onChunk?: (chunk: StreamChunk) => void): Promise<ActionProposal>;
+    /**
      * Main reasoning invocation. Returns schema-valid ActionProposal.
      */
-    decideNextAction(payload: SanitizedNetworkPayload): Promise<ActionProposal>;
+    decideNextAction(rawPayload: SanitizedNetworkPayload): Promise<ActionProposal>;
     /**
      * Deterministic offline proposal, validated against the same closed schema.
      */
@@ -108,6 +126,14 @@ export declare class VlmReasoningEngine {
      * Handles standard OpenAI-compatible format (/v1/chat/completions) with at most one schema-repair attempt.
      */
     private callOpenAICompatible;
+    /**
+     * Genuine streaming reasoning via Ollama (/api/chat with stream: true).
+     */
+    private streamCallOllama;
+    /**
+     * Genuine streaming reasoning via OpenAI-compatible API (/v1/chat/completions with stream: true).
+     */
+    private streamCallOpenAICompatible;
     /**
      * Extracts and validates an ActionProposal from raw model output string.
      */

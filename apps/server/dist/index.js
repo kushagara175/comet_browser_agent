@@ -14,6 +14,7 @@ import { ApiKeyManager } from './auth/api-key-manager.js';
 import { SubAgentOrchestrator } from './engines/subagent-orchestrator.js';
 import { CanaryScannerProxy } from './proxy/canary-scanner.js';
 import { ALLOWED_ACTION_PROPOSAL_KEYS } from '@privapilot/protocol';
+import { sanitizeOutboundUrl, scrubOptionalText, scrubHistory, sanitizeOutboundPayload } from '@privapilot/pii-rules';
 const PORT = parseInt(process.env.PORT || '4501', 10);
 const engine = new VlmReasoningEngine({
     endpoint: process.env.VLM_ENDPOINT,
@@ -109,8 +110,8 @@ export function createServer() {
             }));
             return;
         }
-        // 2. Reasoning Endpoint
-        if (req.method === 'POST' && url === '/api/v1/reason') {
+        // 2. Reasoning Endpoint (JSON & Live SSE Streaming)
+        if (req.method === 'POST' && (url === '/api/v1/reason' || url === '/api/v1/reason/stream')) {
             let bodyStr = '';
             let exceeded = false;
             const MAX_REASON_BODY_BYTES = 10 * 1024 * 1024; // 10MB (accommodates 4MB decoded screenshot + base64 overhead + DOM context)
@@ -132,6 +133,7 @@ export function createServer() {
             req.on('end', async () => {
                 if (exceeded)
                     return;
+                const isStreamRequest = url === '/api/v1/reason/stream' || Boolean(req.headers.accept?.includes('text/event-stream'));
                 try {
                     const body = JSON.parse(bodyStr);
                     // A. Security Proxy Canary Check
@@ -150,10 +152,39 @@ export function createServer() {
                         res.end(JSON.stringify({ error: validation.errorMessage || 'Invalid request payload' }));
                         return;
                     }
-                    console.log(`[PrivaPilot:Server] POST /api/v1/reason received for goal: "${validation.payload.goal}" (${validation.payload.elements?.length || 0} elements)`);
+                    const sanitizedPayload = sanitizeOutboundPayload(validation.payload);
+                    console.log(`[PrivaPilot:Server] POST /api/v1/reason received for goal: "${sanitizedPayload.goal}" (${sanitizedPayload.elements?.length || 0} elements, stream: ${isStreamRequest})`);
                     const tReasonStart = Date.now();
-                    // C. Reasoning Decision
-                    const action = await engine.decideNextAction(validation.payload);
+                    // C. Live Token Streaming Route (SSE)
+                    if (isStreamRequest) {
+                        res.writeHead(200, {
+                            'Content-Type': 'text/event-stream',
+                            'Cache-Control': 'no-cache, no-transform',
+                            'Connection': 'keep-alive',
+                            'X-Accel-Buffering': 'no'
+                        });
+                        const onChunk = (chunk) => {
+                            try {
+                                res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+                            }
+                            catch (_) { }
+                        };
+                        const action = await engine.streamDecideNextAction(sanitizedPayload, onChunk);
+                        console.log(`[PrivaPilot:Server] Action decided (streamed): ${action.kind} (took ${Date.now() - tReasonStart}ms)`);
+                        const safeAction = { ...action };
+                        if (typeof safeAction === 'object' && safeAction !== null) {
+                            for (const key of Object.keys(safeAction)) {
+                                if (!ALLOWED_ACTION_PROPOSAL_KEYS.has(key)) {
+                                    delete safeAction[key];
+                                }
+                            }
+                        }
+                        res.write(`data: ${JSON.stringify({ type: 'final', action: safeAction })}\n\n`);
+                        res.end();
+                        return;
+                    }
+                    // D. Synchronous Reasoning Decision
+                    const action = await engine.decideNextAction(sanitizedPayload);
                     console.log(`[PrivaPilot:Server] Action decided: ${action.kind} (took ${Date.now() - tReasonStart}ms)`);
                     const safeAction = { ...action };
                     if (typeof safeAction === 'object' && safeAction !== null) {
@@ -167,14 +198,22 @@ export function createServer() {
                     res.end(JSON.stringify(safeAction));
                 }
                 catch (err) {
+                    if (isStreamRequest) {
+                        try {
+                            res.write(`data: ${JSON.stringify({ type: 'error', error: 'Reasoning service temporarily unavailable' })}\n\n`);
+                            res.end();
+                            return;
+                        }
+                        catch (_) { }
+                    }
                     res.writeHead(500, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ error: 'Reasoning service temporarily unavailable' }));
                 }
             });
             return;
         }
-        // 3. Sanitized Conversational Chat Endpoint
-        if (req.method === 'POST' && url === '/api/v1/chat') {
+        // 3. Sanitized Conversational Chat Endpoint (JSON & Live SSE Streaming)
+        if (req.method === 'POST' && (url === '/api/v1/chat' || url === '/api/v1/chat/stream')) {
             let bodyStr = '';
             let exceeded = false;
             const MAX_CHAT_BODY_BYTES = 512 * 1024; // 512KB
@@ -215,24 +254,57 @@ export function createServer() {
                         return;
                     }
                     const { message, elements, sanitizedTitle, maskCount, history, customPrompt } = validation.payload;
+                    const cleanMessage = scrubOptionalText(message);
+                    const cleanTitle = sanitizedTitle ? scrubOptionalText(sanitizedTitle) : undefined;
+                    const cleanCustomPrompt = customPrompt ? scrubOptionalText(customPrompt) : undefined;
+                    const cleanHistory = scrubHistory(history);
                     const hasSanitizedContext = Array.isArray(elements) && elements.length > 0;
                     const baseSystemPrompt = hasSanitizedContext
-                        ? `You are PrivaPilot, a privacy-first browser AI assistant. The user is asking about the current webpage. Review the sanitized elements and answer helpfully. You must ALWAYS begin your output by thinking step by step inside <think>...</think> tags, analyzing the user's intent and page context. After </think>, provide your concise final response.`
-                        : `You are PrivaPilot, a smart privacy-first browser AI assistant. Answer helpfully and concisely. You must ALWAYS begin your output by thinking step by step inside <think>...</think> tags, analyzing the user's message and response plan. After </think>, provide your concise final response.`;
-                    const systemPrompt = customPrompt ? `${baseSystemPrompt}\n\n${customPrompt}` : baseSystemPrompt;
+                        ? `You are Comet, an intelligent browser agent. You observe the current webpage. Review the sanitized elements and answer helpfully. If the user asks you to fill a form, click buttons, or interact with the page, do not refuse or give preachy advice about password managers; explain concisely how you can assist using Comet's automated browser tools. You must ALWAYS begin your output by thinking step by step inside <think>...</think> tags, analyzing the user's intent and page context. After </think>, provide your concise final response.`
+                        : `You are Comet, a smart privacy-first browser AI assistant. Answer helpfully and concisely. You must ALWAYS begin your output by thinking step by step inside <think>...</think> tags, analyzing the user's message and response plan. After </think>, provide your concise final response.`;
+                    const systemPrompt = cleanCustomPrompt ? `${baseSystemPrompt}\n\n${cleanCustomPrompt}` : baseSystemPrompt;
                     // Build user message from sanitized element list only (no raw DOM or URLs)
-                    let fullUserMessage = message;
+                    let fullUserMessage = cleanMessage;
                     if (hasSanitizedContext) {
                         const elementSummary = elements
                             .slice(0, 100)
-                            .map(e => `• ${e.localId || 'el'}: ${e.role || 'element'} "${e.sanitizedName || 'unnamed'}"`)
+                            .map(e => `• ${e.localId || 'el'}: ${e.role || 'element'} "${e.sanitizedName ? scrubOptionalText(e.sanitizedName) : 'unnamed'}"`)
                             .join('\n');
-                        fullUserMessage = `Page Title: "${sanitizedTitle || 'Untitled'}" (${maskCount || 0} sensitive masks active locally)\n\nSanitized Page Elements:\n${elementSummary}\n\nUser Question: ${message}`;
+                        fullUserMessage = `Page Title: "${cleanTitle || 'Untitled'}" (${maskCount || 0} sensitive masks active locally)\n\nSanitized Page Elements:\n${elementSummary}\n\nUser Question: ${cleanMessage}`;
+                    }
+                    const isStreamRequest = url === '/api/v1/chat/stream' || Boolean(req.headers.accept?.includes('text/event-stream'));
+                    if (isStreamRequest) {
+                        res.writeHead(200, {
+                            'Content-Type': 'text/event-stream',
+                            'Cache-Control': 'no-cache, no-transform',
+                            'Connection': 'keep-alive',
+                            'X-Accel-Buffering': 'no'
+                        });
+                        const onChunk = (chunk) => {
+                            try {
+                                res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+                            }
+                            catch (_) { }
+                        };
+                        const chatResult = await engine.streamChat(systemPrompt, fullUserMessage, cleanHistory, onChunk);
+                        res.write(`data: ${JSON.stringify({
+                            type: 'final',
+                            response: {
+                                reply: chatResult.reply,
+                                reasoning: chatResult.reasoning || undefined,
+                                provider: chatResult.provider,
+                                modelName: chatResult.modelName,
+                                modelConnected: !chatResult.degraded,
+                                detail: chatResult.detail
+                            }
+                        })}\n\n`);
+                        res.end();
+                        return;
                     }
                     // Single adapter for every backend. It applies a bounded inference timeout
                     // and degrades to an explanatory offline reply instead of throwing, so a
                     // missing or slow model never becomes an opaque 500 in the extension.
-                    const chatResult = await engine.chat(systemPrompt, fullUserMessage, history);
+                    const chatResult = await engine.chat(systemPrompt, fullUserMessage, cleanHistory);
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({
                         reply: chatResult.reply,
@@ -259,12 +331,13 @@ export function createServer() {
             req.on('end', async () => {
                 try {
                     const body = JSON.parse(bodyStr || '{}');
-                    const query = String(body.query || '').trim();
-                    if (!query) {
+                    const rawQuery = String(body.query || '').trim();
+                    if (!rawQuery) {
                         res.writeHead(400, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ error: 'Query parameter is required' }));
                         return;
                     }
+                    const query = scrubOptionalText(rawQuery);
                     const apiKey = process.env.TAVILY_API_KEY;
                     if (!apiKey) {
                         res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -292,12 +365,12 @@ export function createServer() {
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({
                         success: true,
-                        query: searchData.query || query,
-                        answer: searchData.answer || null,
+                        query: scrubOptionalText(searchData.query || query),
+                        answer: searchData.answer ? scrubOptionalText(searchData.answer) : null,
                         results: (searchData.results || []).map((r) => ({
-                            title: r.title,
-                            url: r.url,
-                            content: r.content,
+                            title: scrubOptionalText(r.title || ''),
+                            url: sanitizeOutboundUrl(r.url || ''),
+                            content: scrubOptionalText(r.content || ''),
                             score: r.score,
                             favicon: r.favicon
                         }))
@@ -406,14 +479,16 @@ export function createServer() {
                 res.end(JSON.stringify({ error: validation.errorMessage || 'Invalid plan request' }));
                 return;
             }
-            const plan = await orchestrator.planTask(validation.payload.goal, validation.payload.contextUrl);
+            const cleanGoal = scrubOptionalText(validation.payload.goal);
+            const cleanContextUrl = validation.payload.contextUrl ? sanitizeOutboundUrl(validation.payload.contextUrl) : undefined;
+            const plan = await orchestrator.planTask(cleanGoal, cleanContextUrl);
             apiKeyManager.recordRequest({
                 tenantId: auth.tenant.tenantId,
                 apiKey: rawKey,
                 endpoint: '/api/v1/agent/plan',
                 method: 'POST',
                 status: 200,
-                goalSnippet: validation.payload.goal
+                goalSnippet: cleanGoal
             });
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(plan));
@@ -429,7 +504,10 @@ export function createServer() {
                 res.end(JSON.stringify({ error: 'Field "goal" is required' }));
                 return;
             }
-            const spec = await orchestrator.planTaskSpecification(body.goal, body.contextUrl, body.customPrompt);
+            const cleanGoal = scrubOptionalText(body.goal);
+            const cleanContextUrl = body.contextUrl ? sanitizeOutboundUrl(body.contextUrl) : undefined;
+            const cleanCustomPrompt = body.customPrompt ? scrubOptionalText(body.customPrompt) : undefined;
+            const spec = await orchestrator.planTaskSpecification(cleanGoal, cleanContextUrl, cleanCustomPrompt);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(spec));
             return;
@@ -457,16 +535,21 @@ export function createServer() {
                 res.end(JSON.stringify({ error: validation.errorMessage || 'Invalid dispatch request' }));
                 return;
             }
+            const cleanPayload = {
+                ...validation.payload,
+                goal: scrubOptionalText(validation.payload.goal),
+                contextUrl: validation.payload.contextUrl ? sanitizeOutboundUrl(validation.payload.contextUrl) : undefined
+            };
             // Record step usage
             apiKeyManager.recordStepUsage(rawKey, 2);
-            const taskResponse = await orchestrator.dispatchTask(validation.payload, auth.tenant.tenantId);
+            const taskResponse = await orchestrator.dispatchTask(cleanPayload, auth.tenant.tenantId);
             apiKeyManager.recordRequest({
                 tenantId: auth.tenant.tenantId,
                 apiKey: rawKey,
                 endpoint: '/api/v1/agent/dispatch',
                 method: 'POST',
                 status: 200,
-                goalSnippet: validation.payload.goal,
+                goalSnippet: cleanPayload.goal,
                 durationMs: taskResponse.durationMs
             });
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -516,7 +599,13 @@ export function createServer() {
                 res.end(JSON.stringify({ error: validation.errorMessage || 'Invalid synthesize request' }));
                 return;
             }
-            const synthesis = await orchestrator.synthesizeResults(validation.payload.originalGoal, validation.payload.subTaskResults);
+            const cleanGoal = scrubOptionalText(validation.payload.originalGoal);
+            const cleanSubTaskResults = (validation.payload.subTaskResults || []).map((r) => ({
+                ...r,
+                goal: scrubOptionalText(r.goal || ''),
+                summary: scrubOptionalText(r.summary || '')
+            }));
+            const synthesis = await orchestrator.synthesizeResults(cleanGoal, cleanSubTaskResults);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ synthesis }));
             return;

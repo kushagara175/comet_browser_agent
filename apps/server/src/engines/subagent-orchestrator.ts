@@ -20,6 +20,7 @@ import {
   TaskSpecification,
   extractSearchQueryFromGoal
 } from '@privapilot/protocol';
+import { sanitizeOutboundUrl, scrubOptionalText } from '@privapilot/pii-rules';
 import { VlmReasoningEngine } from './vlm-engine.js';
 
 export class SubAgentOrchestrator {
@@ -521,7 +522,7 @@ export function resolveEntityUrl(entity: string, goal: string): string {
 
 export function getPortalGroundedKnowledge(title: string, goal: string, url?: string): string {
   if (url) {
-    return `- Target Portal: ${url}\n- Context Query: ${goal}`;
+    return `- Target Portal: ${sanitizeOutboundUrl(url)}\n- Context Query: ${scrubOptionalText(goal)}`;
   }
   return '';
 }

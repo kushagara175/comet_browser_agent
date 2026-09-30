@@ -17,6 +17,7 @@
  *   is picked up on the next request instead of being stuck on "mock".
  */
 import { validateActionProposal, ALLOWED_ACTION_PROPOSAL_KEYS, ALLOWED_ATOMIC_ACTION_KEYS, groundTargetCandidates, tokenizeSemanticText, extractSearchQueryFromGoal, lookupDomainPlaybook } from '@privapilot/protocol';
+import { sanitizeOutboundUrl, scrubOptionalText, sanitizeOutboundPayload } from '@privapilot/pii-rules';
 import { MockReasoningEngine } from './mock-engine.js';
 const DEFAULT_MODEL_NAME = 'qwen2.5-vl';
 /** A successful probe result stays valid this long. */
@@ -413,18 +414,289 @@ export class VlmReasoningEngine {
             '  3. Or point the gateway at any OpenAI-compatible endpoint via VLM_ENDPOINT / VLM_API_KEY / VLM_MODEL.\n\n' +
             'Open http://localhost:4501/api/v1/model-status for a live diagnosis.');
     }
-    async chatViaOllama(status, systemPrompt, userMessage, history) {
+    /**
+     * Genuine token streaming chat invocation. Emits thought_delta and reply_delta in real time.
+     */
+    async streamChat(systemPrompt, userMessage, history, onChunk) {
+        const status = await this.getStatus();
+        if (status.provider === 'mock' || !status.isOnline) {
+            if (onChunk) {
+                onChunk({ type: 'thought_delta', text: 'Analyzing request and preparing response...' });
+            }
+            return this.chat(systemPrompt, userMessage, history);
+        }
+        try {
+            const outcome = status.provider === 'ollama'
+                ? await this.streamChatViaOllama(status, systemPrompt, userMessage, history, onChunk)
+                : await this.streamChatViaOpenAICompatible(status, systemPrompt, userMessage, history, onChunk);
+            if (!outcome.reply) {
+                throw new Error('Model returned an empty response');
+            }
+            return {
+                reply: outcome.reply,
+                reasoning: outcome.reasoning,
+                provider: status.provider,
+                modelName: status.modelName,
+                degraded: false,
+                detail: status.detail
+            };
+        }
+        catch (err) {
+            const reason = err?.message || 'unknown error';
+            console.warn(`[PrivaPilot:VLM] Streaming chat failed via ${status.provider} (${reason}). Degrading to offline reply.`);
+            this.invalidateStatusCache();
+            return {
+                reply: this.buildOfflineReply(status, reason),
+                provider: status.provider,
+                modelName: status.modelName,
+                degraded: true,
+                detail: `${status.detail || ''} - request failed: ${reason}`.trim()
+            };
+        }
+    }
+    async streamChatViaOllama(status, systemPrompt, userMessage, history, onChunk) {
         const messages = [
-            { role: 'system', content: systemPrompt }
+            { role: 'system', content: scrubOptionalText(systemPrompt) }
         ];
         if (Array.isArray(history) && history.length > 0) {
             for (const h of history) {
                 if (h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string') {
-                    messages.push({ role: h.role, content: h.content });
+                    messages.push({ role: h.role, content: scrubOptionalText(h.content) });
                 }
             }
         }
-        messages.push({ role: 'user', content: userMessage });
+        messages.push({ role: 'user', content: scrubOptionalText(userMessage) });
+        const res = await this.fetchWithTimeout(`${status.endpoint.replace(/\/$/, '')}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: status.modelName,
+                messages,
+                stream: true,
+                options: { temperature: 0.4, num_ctx: this.numCtx }
+            })
+        }, this.inferenceTimeoutMs);
+        if (!res.ok) {
+            throw new Error(`Ollama returned ${res.status}: ${await this.safeErrorText(res)}`);
+        }
+        if (!res.body) {
+            return this.chatViaOllama(status, systemPrompt, userMessage, history);
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let lineBuffer = '';
+        let accumulatedThinking = '';
+        let accumulatedReply = '';
+        let inThinkTag = false;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done)
+                break;
+            lineBuffer += decoder.decode(value, { stream: true });
+            const lines = lineBuffer.split('\n');
+            lineBuffer = lines.pop() || '';
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed)
+                    continue;
+                try {
+                    const chunkData = JSON.parse(trimmed);
+                    if (chunkData.message?.thinking) {
+                        const thinkText = chunkData.message.thinking;
+                        accumulatedThinking += thinkText;
+                        onChunk?.({ type: 'thought_delta', text: thinkText });
+                    }
+                    else if (chunkData.message?.content) {
+                        const raw = chunkData.message.content;
+                        if (raw.includes('<think>')) {
+                            inThinkTag = true;
+                            const afterOpen = raw.split('<think>')[1] || '';
+                            if (afterOpen.includes('</think>')) {
+                                inThinkTag = false;
+                                const [thinkPart, replyPart] = afterOpen.split('</think>');
+                                if (thinkPart) {
+                                    accumulatedThinking += thinkPart;
+                                    onChunk?.({ type: 'thought_delta', text: thinkPart });
+                                }
+                                if (replyPart) {
+                                    accumulatedReply += replyPart;
+                                    onChunk?.({ type: 'reply_delta', text: replyPart });
+                                }
+                            }
+                            else {
+                                accumulatedThinking += afterOpen;
+                                if (afterOpen)
+                                    onChunk?.({ type: 'thought_delta', text: afterOpen });
+                            }
+                        }
+                        else if (inThinkTag) {
+                            if (raw.includes('</think>')) {
+                                inThinkTag = false;
+                                const [thinkPart, replyPart] = raw.split('</think>');
+                                if (thinkPart) {
+                                    accumulatedThinking += thinkPart;
+                                    onChunk?.({ type: 'thought_delta', text: thinkPart });
+                                }
+                                if (replyPart) {
+                                    accumulatedReply += replyPart;
+                                    onChunk?.({ type: 'reply_delta', text: replyPart });
+                                }
+                            }
+                            else {
+                                accumulatedThinking += raw;
+                                onChunk?.({ type: 'thought_delta', text: raw });
+                            }
+                        }
+                        else {
+                            accumulatedReply += raw;
+                            onChunk?.({ type: 'reply_delta', text: raw });
+                        }
+                    }
+                }
+                catch (_) { }
+            }
+        }
+        return {
+            reply: accumulatedReply.trim(),
+            reasoning: accumulatedThinking.trim() || undefined
+        };
+    }
+    async streamChatViaOpenAICompatible(status, systemPrompt, userMessage, history, onChunk) {
+        const headers = {
+            'Content-Type': 'application/json',
+            ...buildProviderAuthHeaders(status.endpoint, this.config.apiKey)
+        };
+        const isOpenRouter = status.endpoint.includes('openrouter.ai');
+        const messages = [
+            { role: 'system', content: scrubOptionalText(systemPrompt) }
+        ];
+        if (Array.isArray(history) && history.length > 0) {
+            for (const h of history) {
+                if (h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string') {
+                    messages.push({ role: h.role, content: scrubOptionalText(h.content) });
+                }
+            }
+        }
+        messages.push({ role: 'user', content: scrubOptionalText(userMessage) });
+        const requestBody = {
+            model: status.modelName,
+            messages,
+            temperature: 0.4,
+            max_tokens: this.maxTokens,
+            stream: true
+        };
+        if (isOpenRouter) {
+            requestBody.route = 'fallback';
+            requestBody.models = (status.modelName && status.modelName.includes(':free'))
+                ? [status.modelName, 'meta-llama/llama-3.3-70b-instruct:free']
+                : [status.modelName, 'qwen/qwen-2.5-72b-instruct'];
+        }
+        const res = await this.fetchWithTimeout(status.endpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestBody)
+        }, this.inferenceTimeoutMs);
+        if (!res.ok) {
+            throw new Error(`Endpoint returned ${res.status}: ${await this.safeErrorText(res)}`);
+        }
+        if (!res.body) {
+            return this.chatViaOpenAICompatible(status, systemPrompt, userMessage, history);
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let lineBuffer = '';
+        let accumulatedThinking = '';
+        let accumulatedReply = '';
+        let inThinkTag = false;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done)
+                break;
+            lineBuffer += decoder.decode(value, { stream: true });
+            const lines = lineBuffer.split('\n');
+            lineBuffer = lines.pop() || '';
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('data:'))
+                    continue;
+                const payload = trimmed.slice(5).trim();
+                if (payload === '[DONE]')
+                    break;
+                try {
+                    const chunkData = JSON.parse(payload);
+                    const delta = chunkData?.choices?.[0]?.delta;
+                    const directReasoning = delta?.reasoning || delta?.reasoning_content;
+                    if (directReasoning) {
+                        accumulatedThinking += directReasoning;
+                        onChunk?.({ type: 'thought_delta', text: directReasoning });
+                    }
+                    if (delta?.content) {
+                        const raw = delta.content;
+                        if (raw.includes('<think>')) {
+                            inThinkTag = true;
+                            const afterOpen = raw.split('<think>')[1] || '';
+                            if (afterOpen.includes('</think>')) {
+                                inThinkTag = false;
+                                const [thinkPart, replyPart] = afterOpen.split('</think>');
+                                if (thinkPart) {
+                                    accumulatedThinking += thinkPart;
+                                    onChunk?.({ type: 'thought_delta', text: thinkPart });
+                                }
+                                if (replyPart) {
+                                    accumulatedReply += replyPart;
+                                    onChunk?.({ type: 'reply_delta', text: replyPart });
+                                }
+                            }
+                            else {
+                                accumulatedThinking += afterOpen;
+                                if (afterOpen)
+                                    onChunk?.({ type: 'thought_delta', text: afterOpen });
+                            }
+                        }
+                        else if (inThinkTag) {
+                            if (raw.includes('</think>')) {
+                                inThinkTag = false;
+                                const [thinkPart, replyPart] = raw.split('</think>');
+                                if (thinkPart) {
+                                    accumulatedThinking += thinkPart;
+                                    onChunk?.({ type: 'thought_delta', text: thinkPart });
+                                }
+                                if (replyPart) {
+                                    accumulatedReply += replyPart;
+                                    onChunk?.({ type: 'reply_delta', text: replyPart });
+                                }
+                            }
+                            else {
+                                accumulatedThinking += raw;
+                                onChunk?.({ type: 'thought_delta', text: raw });
+                            }
+                        }
+                        else {
+                            accumulatedReply += raw;
+                            onChunk?.({ type: 'reply_delta', text: raw });
+                        }
+                    }
+                }
+                catch (_) { }
+            }
+        }
+        return {
+            reply: accumulatedReply.trim(),
+            reasoning: accumulatedThinking.trim() || undefined
+        };
+    }
+    async chatViaOllama(status, systemPrompt, userMessage, history) {
+        const messages = [
+            { role: 'system', content: scrubOptionalText(systemPrompt) }
+        ];
+        if (Array.isArray(history) && history.length > 0) {
+            for (const h of history) {
+                if (h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string') {
+                    messages.push({ role: h.role, content: scrubOptionalText(h.content) });
+                }
+            }
+        }
+        messages.push({ role: 'user', content: scrubOptionalText(userMessage) });
         const res = await this.fetchWithTimeout(`${status.endpoint.replace(/\/$/, '')}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -454,16 +726,16 @@ export class VlmReasoningEngine {
         };
         const isOpenRouter = status.endpoint.includes('openrouter.ai');
         const messages = [
-            { role: 'system', content: systemPrompt }
+            { role: 'system', content: scrubOptionalText(systemPrompt) }
         ];
         if (Array.isArray(history) && history.length > 0) {
             for (const h of history) {
                 if (h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string') {
-                    messages.push({ role: h.role, content: h.content });
+                    messages.push({ role: h.role, content: scrubOptionalText(h.content) });
                 }
             }
         }
-        messages.push({ role: 'user', content: userMessage });
+        messages.push({ role: 'user', content: scrubOptionalText(userMessage) });
         const requestBody = {
             model: status.modelName,
             messages,
@@ -495,31 +767,49 @@ export class VlmReasoningEngine {
         };
     }
     /**
-     * Main reasoning invocation. Returns schema-valid ActionProposal.
+     * Genuine streaming reasoning invocation. Emits thought_delta and reply_delta in real time,
+     * parsing and returning schema-valid ActionProposal upon stream completion.
      */
-    async decideNextAction(payload) {
+    async streamDecideNextAction(rawPayload, onChunk) {
+        const payload = sanitizeOutboundPayload(rawPayload);
         const status = await this.getStatus();
         if (status.provider === 'mock' || !status.isOnline) {
-            return this.mockProposal(payload);
+            const mockResult = await this.mockProposal(payload);
+            if (onChunk) {
+                const thought = mockResult.reasoning || mockResult.rationale || `Perceiving page context (${payload.elements?.length || 0} elements) & formulating plan...`;
+                onChunk({ type: 'thought_delta', text: thought });
+                if (mockResult.reply) {
+                    onChunk({ type: 'reply_delta', text: mockResult.reply });
+                }
+            }
+            return mockResult;
         }
         try {
             if (status.provider === 'ollama') {
-                return await this.callOllama(payload, status.endpoint, status.modelName);
+                return await this.streamCallOllama(payload, status.endpoint, status.modelName, onChunk);
             }
             else {
-                return await this.callOpenAICompatible(payload, status.endpoint, status.modelName);
+                return await this.streamCallOpenAICompatible(payload, status.endpoint, status.modelName, onChunk);
             }
         }
         catch (err) {
-            // A model that cannot answer must not end the run. Degrade to the deterministic
-            // offline reasoner; the client still risk-classifies and confirms every action.
-            console.warn(`[PrivaPilot:VLM] Model reasoning failed (${err.message}). Falling back to offline reasoner.`);
+            console.warn(`[PrivaPilot:VLM] Streaming reasoning failed (${err.message}). Falling back to offline reasoner.`);
             if (err.message && (err.message.includes('402') || err.message.includes('credit') || err.message.includes('tokens limit') || err.message.includes('afford'))) {
                 this.cloudExhaustedUntil = Date.now() + 5000;
             }
             this.invalidateStatusCache();
-            return this.mockProposal(payload, err.message);
+            const fallback = await this.mockProposal(payload, err.message);
+            if (onChunk && fallback.rationale) {
+                onChunk({ type: 'thought_delta', text: fallback.rationale });
+            }
+            return fallback;
         }
+    }
+    /**
+     * Main reasoning invocation. Returns schema-valid ActionProposal.
+     */
+    async decideNextAction(rawPayload) {
+        return this.streamDecideNextAction(rawPayload);
     }
     /**
      * Deterministic offline proposal, validated against the same closed schema.
@@ -572,7 +862,7 @@ export class VlmReasoningEngine {
                 if ((h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string' && h.content.trim()) {
                     historyMessages.push({
                         role: h.role,
-                        content: h.content.slice(0, 2000)
+                        content: scrubOptionalText(h.content).slice(0, 2000)
                     });
                 }
             }
@@ -654,7 +944,7 @@ export class VlmReasoningEngine {
                 if ((h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string' && h.content.trim()) {
                     messages.push({
                         role: h.role,
-                        content: h.content.slice(0, 2000)
+                        content: scrubOptionalText(h.content).slice(0, 2000)
                     });
                 }
             }
@@ -721,6 +1011,303 @@ export class VlmReasoningEngine {
                 '';
             const repairThinking = extractThinking(repairContent) || (typeof repairReasoning === 'string' && repairReasoning.trim() ? repairReasoning.trim() : '');
             return this.parseActionProposal(repairContent, payload, repairThinking || extractedThinking);
+        }
+    }
+    /**
+     * Genuine streaming reasoning via Ollama (/api/chat with stream: true).
+     */
+    async streamCallOllama(payload, baseUrl, modelName, onChunk) {
+        const systemPrompt = this.buildSystemPrompt(payload.customPrompt);
+        const userPrompt = this.buildUserPrompt(payload);
+        const chatUrl = `${baseUrl.replace(/\/$/, '')}/api/chat`;
+        const base64Image = payload.screenshot?.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
+        const images = base64Image ? [base64Image] : [];
+        const userMessage = { role: 'user', content: userPrompt };
+        if (this.cachedStatus?.isMultimodal && images.length > 0) {
+            userMessage.images = images;
+        }
+        const historyMessages = [];
+        if (Array.isArray(payload.history) && payload.history.length > 0) {
+            for (const h of payload.history.slice(-8)) {
+                if ((h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string' && h.content.trim()) {
+                    historyMessages.push({
+                        role: h.role,
+                        content: scrubOptionalText(h.content).slice(0, 2000)
+                    });
+                }
+            }
+        }
+        const post = (messages, temperature) => this.fetchWithTimeout(chatUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: modelName,
+                messages,
+                format: 'json',
+                stream: true,
+                options: { temperature, num_ctx: this.numCtx }
+            })
+        }, this.inferenceTimeoutMs);
+        let res = await post([{ role: 'system', content: systemPrompt }, ...historyMessages, userMessage], 0.1);
+        if (!res.ok && userMessage.images) {
+            delete userMessage.images;
+            res = await post([{ role: 'system', content: systemPrompt }, ...historyMessages, userMessage], 0.1);
+        }
+        if (!res.ok) {
+            throw new Error(`Ollama returned status ${res.status}: ${await this.safeErrorText(res)}`);
+        }
+        if (!res.body) {
+            return this.callOllama(payload, baseUrl, modelName);
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let lineBuffer = '';
+        let accumulatedThinking = '';
+        let accumulatedContent = '';
+        let inThinkTag = false;
+        let reasoningFieldEmittedLength = 0;
+        let replyFieldEmittedLength = 0;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done)
+                break;
+            lineBuffer += decoder.decode(value, { stream: true });
+            const lines = lineBuffer.split('\n');
+            lineBuffer = lines.pop() || '';
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed)
+                    continue;
+                try {
+                    const chunkData = JSON.parse(trimmed);
+                    if (chunkData.message?.thinking) {
+                        const thinkText = chunkData.message.thinking;
+                        accumulatedThinking += thinkText;
+                        onChunk?.({ type: 'thought_delta', text: thinkText });
+                    }
+                    else if (chunkData.message?.content) {
+                        const raw = chunkData.message.content;
+                        accumulatedContent += raw;
+                        if (raw.includes('<think>')) {
+                            inThinkTag = true;
+                            const afterOpen = raw.split('<think>')[1] || '';
+                            if (afterOpen.includes('</think>')) {
+                                inThinkTag = false;
+                                const [thinkPart] = afterOpen.split('</think>');
+                                if (thinkPart) {
+                                    accumulatedThinking += thinkPart;
+                                    onChunk?.({ type: 'thought_delta', text: thinkPart });
+                                }
+                            }
+                            else {
+                                accumulatedThinking += afterOpen;
+                                if (afterOpen)
+                                    onChunk?.({ type: 'thought_delta', text: afterOpen });
+                            }
+                        }
+                        else if (inThinkTag) {
+                            if (raw.includes('</think>')) {
+                                inThinkTag = false;
+                                const [thinkPart] = raw.split('</think>');
+                                if (thinkPart) {
+                                    accumulatedThinking += thinkPart;
+                                    onChunk?.({ type: 'thought_delta', text: thinkPart });
+                                }
+                            }
+                            else {
+                                accumulatedThinking += raw;
+                                onChunk?.({ type: 'thought_delta', text: raw });
+                            }
+                        }
+                        else if (!accumulatedThinking) {
+                            const match = accumulatedContent.match(/"(?:reasoning|rationale|thought|thinking)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
+                            if (match && match[1]) {
+                                const unescaped = match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                                if (unescaped.length > reasoningFieldEmittedLength) {
+                                    const newDelta = unescaped.slice(reasoningFieldEmittedLength);
+                                    reasoningFieldEmittedLength = unescaped.length;
+                                    onChunk?.({ type: 'thought_delta', text: newDelta });
+                                }
+                            }
+                        }
+                        const replyMatch = accumulatedContent.match(/"(?:reply|message)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
+                        if (replyMatch && replyMatch[1]) {
+                            const unescapedReply = replyMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                            if (unescapedReply.length > replyFieldEmittedLength) {
+                                const newReplyDelta = unescapedReply.slice(replyFieldEmittedLength);
+                                replyFieldEmittedLength = unescapedReply.length;
+                                onChunk?.({ type: 'reply_delta', text: newReplyDelta });
+                            }
+                        }
+                    }
+                }
+                catch (_) { }
+            }
+        }
+        try {
+            return this.parseActionProposal(accumulatedContent, payload, accumulatedThinking.trim() || undefined);
+        }
+        catch (err) {
+            console.warn(`[PrivaPilot:VLM] Streaming Ollama proposal parsing failed (${err.message}). Retrying non-streaming with schema repair.`);
+            return this.callOllama(payload, baseUrl, modelName);
+        }
+    }
+    /**
+     * Genuine streaming reasoning via OpenAI-compatible API (/v1/chat/completions with stream: true).
+     */
+    async streamCallOpenAICompatible(payload, endpoint, modelName, onChunk) {
+        const systemPrompt = this.buildSystemPrompt(payload.customPrompt);
+        const userPrompt = this.buildUserPrompt(payload);
+        const headers = {
+            'Content-Type': 'application/json',
+            ...buildProviderAuthHeaders(endpoint, this.config.apiKey)
+        };
+        const contentArray = [
+            { type: 'text', text: userPrompt }
+        ];
+        if (payload.screenshot && payload.screenshot.startsWith('data:image')) {
+            if (payload.screenshot.length < 2.5 * 1024 * 1024) {
+                contentArray.push({
+                    type: 'image_url',
+                    image_url: { url: payload.screenshot }
+                });
+            }
+        }
+        const messages = [
+            { role: 'system', content: systemPrompt }
+        ];
+        if (Array.isArray(payload.history) && payload.history.length > 0) {
+            for (const h of payload.history.slice(-8)) {
+                if ((h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string' && h.content.trim()) {
+                    messages.push({
+                        role: h.role,
+                        content: scrubOptionalText(h.content).slice(0, 2000)
+                    });
+                }
+            }
+        }
+        messages.push({ role: 'user', content: contentArray });
+        const isOpenRouter = endpoint.includes('openrouter.ai');
+        const requestBody = {
+            model: modelName,
+            messages,
+            response_format: { type: 'json_object' },
+            temperature: 0.1,
+            stream: true,
+            max_tokens: this.maxTokens
+        };
+        if (isOpenRouter) {
+            requestBody.route = 'fallback';
+            requestBody.models = (modelName && modelName.includes(':free'))
+                ? [modelName, 'meta-llama/llama-3.3-70b-instruct:free']
+                : [modelName, 'qwen/qwen-2.5-72b-instruct'];
+        }
+        const res = await this.fetchWithTimeout(endpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestBody)
+        }, this.inferenceTimeoutMs);
+        if (!res.ok) {
+            throw new Error(`Endpoint returned status ${res.status}: ${await this.safeErrorText(res)}`);
+        }
+        if (!res.body) {
+            return this.callOpenAICompatible(payload, endpoint, modelName);
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let lineBuffer = '';
+        let accumulatedThinking = '';
+        let accumulatedContent = '';
+        let inThinkTag = false;
+        let reasoningFieldEmittedLength = 0;
+        let replyFieldEmittedLength = 0;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done)
+                break;
+            lineBuffer += decoder.decode(value, { stream: true });
+            const lines = lineBuffer.split('\n');
+            lineBuffer = lines.pop() || '';
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('data:'))
+                    continue;
+                const ssePayload = trimmed.slice(5).trim();
+                if (ssePayload === '[DONE]')
+                    break;
+                try {
+                    const chunkData = JSON.parse(ssePayload);
+                    const delta = chunkData?.choices?.[0]?.delta;
+                    const directReasoning = delta?.reasoning || delta?.reasoning_content;
+                    if (directReasoning) {
+                        accumulatedThinking += directReasoning;
+                        onChunk?.({ type: 'thought_delta', text: directReasoning });
+                    }
+                    if (delta?.content) {
+                        const raw = delta.content;
+                        accumulatedContent += raw;
+                        if (raw.includes('<think>')) {
+                            inThinkTag = true;
+                            const afterOpen = raw.split('<think>')[1] || '';
+                            if (afterOpen.includes('</think>')) {
+                                inThinkTag = false;
+                                const [thinkPart] = afterOpen.split('</think>');
+                                if (thinkPart) {
+                                    accumulatedThinking += thinkPart;
+                                    onChunk?.({ type: 'thought_delta', text: thinkPart });
+                                }
+                            }
+                            else {
+                                accumulatedThinking += afterOpen;
+                                if (afterOpen)
+                                    onChunk?.({ type: 'thought_delta', text: afterOpen });
+                            }
+                        }
+                        else if (inThinkTag) {
+                            if (raw.includes('</think>')) {
+                                inThinkTag = false;
+                                const [thinkPart] = raw.split('</think>');
+                                if (thinkPart) {
+                                    accumulatedThinking += thinkPart;
+                                    onChunk?.({ type: 'thought_delta', text: thinkPart });
+                                }
+                            }
+                            else {
+                                accumulatedThinking += raw;
+                                onChunk?.({ type: 'thought_delta', text: raw });
+                            }
+                        }
+                        else if (!accumulatedThinking) {
+                            const match = accumulatedContent.match(/"(?:reasoning|rationale|thought|thinking)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
+                            if (match && match[1]) {
+                                const unescaped = match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                                if (unescaped.length > reasoningFieldEmittedLength) {
+                                    const newDelta = unescaped.slice(reasoningFieldEmittedLength);
+                                    reasoningFieldEmittedLength = unescaped.length;
+                                    onChunk?.({ type: 'thought_delta', text: newDelta });
+                                }
+                            }
+                        }
+                        const replyMatch = accumulatedContent.match(/"(?:reply|message)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
+                        if (replyMatch && replyMatch[1]) {
+                            const unescapedReply = replyMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                            if (unescapedReply.length > replyFieldEmittedLength) {
+                                const newReplyDelta = unescapedReply.slice(replyFieldEmittedLength);
+                                replyFieldEmittedLength = unescapedReply.length;
+                                onChunk?.({ type: 'reply_delta', text: newReplyDelta });
+                            }
+                        }
+                    }
+                }
+                catch (_) { }
+            }
+        }
+        try {
+            return this.parseActionProposal(accumulatedContent, payload, accumulatedThinking.trim() || undefined);
+        }
+        catch (err) {
+            console.warn(`[PrivaPilot:VLM] Streaming proposal parsing failed (${err.message}). Retrying non-streaming with schema repair.`);
+            return this.callOpenAICompatible(payload, endpoint, modelName);
         }
     }
     /**
@@ -1212,7 +1799,7 @@ export class VlmReasoningEngine {
         const customBlock = customPrompt ? `
 =========================================
 ACTIVE SPECIALIZED CUSTOM AGENT PERSONA:
-${customPrompt}
+${scrubOptionalText(customPrompt)}
 You MUST adopt this specialized persona, prioritize its domain guidelines, and reflect its user story in all task planning and execution decisions.
 =========================================
 ` : '';
@@ -1347,12 +1934,15 @@ Strict Rules:
 8. FILE UPLOAD DIRECTIVE: When uploading or attaching a file, return kind: "upload_file", set "targetLocalId" to the file input and "fileName" to the file name.
 9. MULTI-STEP REASONING: For compound goals (e.g. "go to X and search Y", "click tab and find Z", "scroll and check count"):
    Execute step 1 (navigation or intermediate click/scroll/hover), observe the updated page state on the next cycle, and continue with the subsequent steps (typing, extracting, or verifying) before proposing "finish". Do NOT propose "finish" prematurely after intermediate navigation clicks.
-10. TACTICAL AGENT MONOLOGUE & NATURAL THINKING (MANDATORY):
-    Always include a "reasoning" string field in your JSON response.
-    Write your reasoning as a natural, continuous stream-of-consciousness monologue paragraph (like a human browser user speaking their mind while completing the task).
+10. TACTICAL AGENT MONOLOGUE, NATURAL THINKING & CONFIDENCE REASONING (MANDATORY):
+    Always include a "reasoning" string field in your JSON response (and begin your response with <think>...</think> monologue if generating thinking tags).
+    Put the "reasoning" key as the FIRST field in your JSON response so your tactical thinking streams immediately.
+    Write your reasoning as a natural, continuous stream-of-consciousness monologue paragraph (like an expert human browser user speaking their mind while completing the task).
     Explain what you visually observe on the page, your tactical thoughts, and why you are calling this specific browser tool.
+    CRITICAL CONFIDENCE REASONING: Inside your thinking monologue, you MUST explicitly evaluate and reason about your confidence score (e.g. stating why you are 95% confident because the elements are clearly identified and match the user request, or explaining why your confidence is lower, such as 70%, if an element is ambiguous or could trigger an irreversible state). Reason with the confidence score naturally as part of your continuous thinking stream.
     DO NOT use synthetic category labels, bullet headers, or tags like "Observation:", "Strategy:", or "Action Selection:".
     Express your thoughts in pure, fluent, natural conversational prose.
+    Ensure your proposal's "confidence" number field (between 0.0 and 1.0) directly reflects the confidence assessment you articulated in your monologue.
 11. Do not return "finish" merely because you have explained what should happen. Use "finish" only when every required objective is completed and the evidence ledger contains verified evidence for each objective.
 12. GOAL COMPLETION & PROGRESSION:
    - For QUESTION-ANSWERING & INFORMATION RETRIEVAL GOALS (e.g. "search for X and tell me Y", "find Z and tell me when it was first launched and who organizes it", "how many submissions..."):
@@ -1394,6 +1984,17 @@ Strict Rules:
               Return kind: "click" with "targetLocalId" targeting that link, menu item, or button!
               Or return kind: "navigate" with "url" targeting the destination URL!
             * Asking permission when the user explicitly told you to see/find something is a severe agent failure.
+       g) FORM-FILLING, REGISTRATION & ALWAYS-ACTION-CAPABLE DIRECTIVE (CRITICAL):
+          - YOU ARE AN ACTIVE BROWSER AUTOMATION AGENT WITH PERCEPTION AND EXECUTION TOOLS!
+          - When the user asks you to fill a form, register, enter details, log in, or interact with input fields on the current page:
+            * NEVER refuse by claiming you cannot fill forms, do not have credentials, or by lecturing the user about password managers (e.g. Bitwarden/1Password)!
+            * You ARE equipped with browser interaction tools: "type", "click", "select", and "request_user_input".
+            * Inspect the visible input elements on the page (e.g. Name, Email, Address, Username, Search fields).
+            * If the user provided the details or they can be inferred from context or safe vault attributes, propose kind: "type" with the appropriate textToType and targetLocalId.
+            * If user-specific credentials (password, OTP, or missing custom fields) are required to complete the form, propose kind: "request_user_input" with targetLocalId and a concise userInputPrompt (e.g. "Please provide your Name and Email so I can fill the registration form"). PrivaPilot's secure local dialog will capture the input safely on-device without network leakage.
+            * When all fields are filled, propose kind: "click" on the Submit button with risk: "protected" so the user can verify and approve the submission.
+            * When populating message or feedback textareas (especially on government portals like ISRO): ALWAYS use plain alphanumeric English with normal spaces and simple periods. NEVER include exclamation marks (!), hyphens (-), quotes, or special characters which trigger server validation errors like ERROR987: Invalid character in message.
+          - If the user's intent is purely conversational or an informational question about page contents (e.g. "summarize this page", "what are the registration rules?"), propose kind: "answer" with a helpful, concise answer.
    - ONLY return kind: "answer" for pure greetings ("hi", "hello", "who are you") or pure questions that have zero relation to web browsing or the current page (e.g. "what is 2 + 2").
 14. RETRY & REPEAT DIRECTIVES: If the user goal asks to "do again", "try again", "retry", "repeat", "search again", or "redo":
    - DO NOT assume the goal is already complete or that context is lacking!
@@ -1544,10 +2145,12 @@ JSON Schema:
             ...(e.inViewport !== undefined ? { inViewport: e.inViewport } : {})
         }));
         const pageState = payload.pageState || { title: 'Active Page', viewport: [1280, 800] };
-        const pageTitle = pageState.title || 'Active Page';
+        const pageTitle = pageState.title ? scrubOptionalText(pageState.title) : 'Active Page';
         const domainStr = pageState.domain ? ` [Domain: ${pageState.domain}]` : '';
         const routeStr = pageState.routeFingerprint ? ` [Route: ${pageState.routeFingerprint}]` : '';
-        const currentUrlStr = pageState.url ? ` [URL: ${pageState.url}]` : '';
+        const rawUrl = pageState.url || '';
+        const sanitizedUrl = rawUrl ? sanitizeOutboundUrl(rawUrl) : '';
+        const currentUrlStr = sanitizedUrl ? ` [URL: ${sanitizedUrl}]` : '';
         const landmarks = [];
         if (pageState.scrollMetrics) {
             const sm = pageState.scrollMetrics;
@@ -1571,25 +2174,25 @@ JSON Schema:
             landmarks.push(`Visible Dialogs/Drawers Count: ${pageState.visibleDialogCount}`);
         }
         if (pageState.dialogTitles && pageState.dialogTitles.length > 0) {
-            landmarks.push(`Visible Dialog Titles: ${pageState.dialogTitles.join(', ')}`);
+            landmarks.push(`Visible Dialog Titles: ${pageState.dialogTitles.map(scrubOptionalText).join(', ')}`);
         }
         if (pageState.statusSummaries && pageState.statusSummaries.length > 0) {
-            landmarks.push(`Status / Alerts: ${pageState.statusSummaries.join('; ')}`);
+            landmarks.push(`Status / Alerts: ${pageState.statusSummaries.map(scrubOptionalText).join('; ')}`);
         }
         if (pageState.postconditionSummary) {
-            landmarks.push(`Verified Postcondition History: ${pageState.postconditionSummary}`);
+            landmarks.push(`Verified Postcondition History: ${scrubOptionalText(pageState.postconditionSummary)}`);
         }
         if (pageState.counters && pageState.counters.length > 0) {
-            landmarks.push(`Counters & Metrics: ${pageState.counters.map((c) => `${c.label}: ${c.value}`).join(', ')}`);
+            landmarks.push(`Counters & Metrics: ${pageState.counters.map((c) => `${c.label}: ${scrubOptionalText(String(c.value))}`).join(', ')}`);
         }
         if (pageState.contentSummaries && pageState.contentSummaries.length > 0) {
-            landmarks.push(`Content Summaries: ${pageState.contentSummaries.join('; ')}`);
+            landmarks.push(`Content Summaries: ${pageState.contentSummaries.map((s) => scrubOptionalText(String(s))).join('; ')}`);
         }
         const landmarksBlock = landmarks.length > 0
             ? `\nPage State Landmarks:\n${landmarks.map(l => `- ${l}`).join('\n')}\n`
             : '';
         // Semantic Grounding: Inject verified site topology for ISRO, Bhuvan, and recognized portals
-        const activeUrl = pageState.url || '';
+        const activeUrl = sanitizedUrl || '';
         const activeDomain = pageState.domain || '';
         const domainPlaybook = lookupDomainPlaybook(activeUrl || activeDomain || payload.goal || '');
         let domainTopologyBlock = '';
@@ -1641,17 +2244,19 @@ Topological Directives:
         if (pageState.stateDelta) {
             const d = pageState.stateDelta;
             const prevActionStr = d.previousAction
-                ? `${d.previousAction.kind}${d.previousAction.targetName ? ` on "${d.previousAction.targetName}"` : ''}${d.previousAction.textToType ? ` (typed: "${d.previousAction.textToType}")` : ''}${d.previousAction.expectedState ? ` [Expected: ${d.previousAction.expectedState}]` : ''}`
+                ? `${d.previousAction.kind}${d.previousAction.targetName ? ` on "${scrubOptionalText(d.previousAction.targetName)}"` : ''}${d.previousAction.textToType ? ` (typed: "${scrubOptionalText(d.previousAction.textToType)}")` : ''}${d.previousAction.expectedState ? ` [Expected: ${scrubOptionalText(d.previousAction.expectedState)}]` : ''}`
                 : 'Initial navigation';
+            const sanitizedPrevUrl = d.previousUrl ? sanitizeOutboundUrl(d.previousUrl) : '';
+            const sanitizedCurrUrl = d.currentUrl ? sanitizeOutboundUrl(d.currentUrl) : '';
             const urlDiffStr = d.urlChanged
-                ? `CHANGED from "${d.previousUrl}" to "${d.currentUrl}"`
-                : `Unchanged ("${d.currentUrl}")`;
+                ? `CHANGED from "${sanitizedPrevUrl}" to "${sanitizedCurrUrl}"`
+                : `Unchanged ("${sanitizedCurrUrl}")`;
             stateDeltaBlock = `\nVerified Screen Transition & State Delta:
 - Previous Action Dispatched: ${prevActionStr}
 - URL Transition: ${urlDiffStr}
 - DOM Mutations: +${d.elementsAddedCount || 0} elements added, -${d.elementsRemovedCount || 0} elements removed
 - Scroll Shift: ${d.scrollDeltaY || 0}px
-- Verified Screen Outcome: ${d.observedOutcome} (Verification: ${d.verificationPassed ? 'PASSED' : 'UNCONFIRMED'})
+- Verified Screen Outcome: ${scrubOptionalText(d.observedOutcome || '')} (Verification: ${d.verificationPassed ? 'PASSED' : 'UNCONFIRMED'})
 - INSTRUCTION: Verify whether the previous action brought the target content into view. If the goal is fulfilled by the visible page state, return kind: "finish" with your answer. Otherwise, return the single minimal next action.\n`;
         }
         let redactionBlock = '';
@@ -1668,12 +2273,12 @@ IMPORTANT PRIVACY INSTRUCTION: All redacted values and blackened regions are per
         const promptSuffix = 'Return exactly one minimal schema-valid JSON action for the current objective. Never repeat a no-progress action. Use finish only when all required objectives have verified evidence.';
         let historyBlock = '';
         if (Array.isArray(payload.history) && payload.history.length > 0) {
-            const recent = payload.history.slice(-4).map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}`).join('\n');
+            const recent = payload.history.slice(-4).map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${scrubOptionalText(h.content)}`).join('\n');
             historyBlock = `\nRecent Conversation History:\n${recent}\n`;
         }
         let customPromptBlock = '';
         if (payload.customPrompt) {
-            customPromptBlock = `\nActive Custom Agent Directive / User Story:\n"${payload.customPrompt}"\n`;
+            customPromptBlock = `\nActive Custom Agent Directive / User Story:\n"${scrubOptionalText(payload.customPrompt)}"\n`;
         }
         let executionFeedbackBlock = '';
         if (payload.executionFeedback) {
@@ -1693,15 +2298,16 @@ IMPORTANT PRIVACY INSTRUCTION: All redacted values and blackened regions are per
         if (Array.isArray(payload.searchResults) && payload.searchResults.length > 0) {
             const results = payload.searchResults;
             searchResultsBlock = `\nTavily Web Search Grounded Results:
-${results.map((r, idx) => `[Result ${idx + 1}] Title: "${r.title}"\nURL: ${r.url}\nSummary: ${r.content}`).join('\n\n')}
+${results.map((r, idx) => `[Result ${idx + 1}] Title: "${scrubOptionalText(r.title || '')}"\nURL: ${sanitizeOutboundUrl(r.url || '')}\nSummary: ${scrubOptionalText(r.content || '')}`).join('\n\n')}
 INSTRUCTION FOR WEB SEARCH RESULTS:
 - You have live grounded search results from Tavily above.
 - If looking for a document, brochure, PDF, or website to navigate to, choose the most relevant URL and return kind: "navigate" with "url": "<url>".
 - If answering a question, synthesize the facts from the search results above and return kind: "finish" or kind: "answer" with your reply.\n`;
         }
-        const objectiveBlock = payload.taskSpecification ? `\nStructured Task Specification:\n${JSON.stringify(payload.taskSpecification, null, 2)}\nCurrent Objective:\n${JSON.stringify(payload.currentObjective || null, null, 2)}\nObjective Progress and Verified Evidence Ledger:\n${JSON.stringify(payload.objectiveProgress || null, null, 2)}\nPrevious Action: ${JSON.stringify(payload.previousAction || null)}\nExpected Outcome: ${JSON.stringify(payload.expectedPostcondition || null)}\nObserved Outcome: ${payload.observedOutcome || 'none'}\nMeaningful Progress: ${payload.meaningfulProgress ? 'YES' : 'NO'}\nRemaining retry budget for current objective: ${Math.max(0, 5 - (payload.currentObjective && payload.objectiveProgress ? (payload.objectiveProgress.attemptCountByObjective[payload.currentObjective.id] || 0) : 0))}\nRecent Actions: ${JSON.stringify(payload.recentActionHistory || [])}\n` : '';
+        const observedOutcomeStr = payload.observedOutcome ? scrubOptionalText(payload.observedOutcome) : 'none';
+        const objectiveBlock = payload.taskSpecification ? `\nStructured Task Specification:\n${JSON.stringify(payload.taskSpecification, null, 2)}\nCurrent Objective:\n${JSON.stringify(payload.currentObjective || null, null, 2)}\nObjective Progress and Verified Evidence Ledger:\n${JSON.stringify(payload.objectiveProgress || null, null, 2)}\nPrevious Action: ${JSON.stringify(payload.previousAction || null)}\nExpected Outcome: ${JSON.stringify(payload.expectedPostcondition || null)}\nObserved Outcome: ${observedOutcomeStr}\nMeaningful Progress: ${payload.meaningfulProgress ? 'YES' : 'NO'}\nRemaining retry budget for current objective: ${Math.max(0, 5 - (payload.currentObjective && payload.objectiveProgress ? (payload.objectiveProgress.attemptCountByObjective[payload.currentObjective.id] || 0) : 0))}\nRecent Actions: ${JSON.stringify(payload.recentActionHistory || [])}\n` : '';
         return `Active Web Page: "${pageTitle}"${domainStr}${routeStr}${currentUrlStr}
-User Goal: ${payload.goal || 'Inspect page'}
+User Goal: ${scrubOptionalText(payload.goal || 'Inspect page')}
 ${objectiveBlock}${historyBlock}${customPromptBlock}${executionFeedbackBlock}${searchResultsBlock}${redactionBlock}${stateDeltaBlock}${domainTopologyBlock}${landmarksBlock}Active Viewport Elements:
 ${JSON.stringify(compactElements, null, 2)}
 

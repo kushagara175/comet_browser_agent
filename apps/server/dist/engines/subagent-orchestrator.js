@@ -10,6 +10,7 @@
  */
 import crypto from 'node:crypto';
 import { extractSearchQueryFromGoal } from '@privapilot/protocol';
+import { sanitizeOutboundUrl, scrubOptionalText } from '@privapilot/pii-rules';
 import { VlmReasoningEngine } from './vlm-engine.js';
 export class SubAgentOrchestrator {
     static instance = null;
@@ -442,7 +443,7 @@ export function resolveEntityUrl(entity, goal) {
 }
 export function getPortalGroundedKnowledge(title, goal, url) {
     if (url) {
-        return `- Target Portal: ${url}\n- Context Query: ${goal}`;
+        return `- Target Portal: ${sanitizeOutboundUrl(url)}\n- Context Query: ${scrubOptionalText(goal)}`;
     }
     return '';
 }
