@@ -690,7 +690,8 @@ export function setCachedThoughtDuration(messageId, duration) {
 export function renderThinkingAccordion(rawReasoning, durationSeconds, options = {}) {
   const sanitized = sanitizeReasoningText(rawReasoning);
   const isExecuting = Boolean(options.isExecuting);
-  const hasText = Boolean(sanitized && sanitized.trim());
+  const forceState2 = Boolean(options.forceState2);
+  const hasText = forceState2 || Boolean(sanitized && sanitized.trim());
 
   // State 1: Pure shimmering thinking text (NO drop-down arrow, NO drawer) before any token arrives
   if (isExecuting && !hasText) {
@@ -705,7 +706,7 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
   if (!hasText && !isExecuting) return '';
 
   const messageId = options.messageId;
-  const words = sanitized.split(/\s+/).filter(Boolean).length;
+  const words = (sanitized || '').split(/\s+/).filter(Boolean).length;
   const toolWeight = (options.toolCount && options.toolCount > 0) ? options.toolCount * 2 + 1 : 2;
   const wordWeight = Math.floor(words / 25);
   const seed = messageId
@@ -715,7 +716,7 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
   const computedFallback = Math.max(2, Math.min(16, toolWeight + wordWeight + jitter));
 
   const cached = getCachedThoughtDuration(messageId);
-  const duration = cached || (durationSeconds && durationSeconds > 0 ? durationSeconds : computedFallback);
+  const duration = (durationSeconds && durationSeconds > 0) ? durationSeconds : (cached || computedFallback);
   if (messageId && duration > 0) {
     setCachedThoughtDuration(messageId, duration);
   }
@@ -724,10 +725,11 @@ export function renderThinkingAccordion(rawReasoning, durationSeconds, options =
   const isExpanded = options.open !== undefined ? Boolean(options.open) : Boolean(isExecuting);
 
   // In State 2 (isExecuting with live tokens), render a clean live stream span so tokens update smoothly
-  const innerContent = hasText
+  const displayText = sanitized || (typeof rawReasoning === 'string' ? rawReasoning.trim() : '');
+  const innerContent = (hasText || displayText)
     ? (isExecuting
-        ? `<span class="live-thought-stream" style="white-space: pre-wrap; font-size: 12px; color: #cbd5e1; line-height: 1.6; display: block;">${escapeHtml(sanitized)}</span>`
-        : formatReasoningIntoLinesHtml(sanitized))
+        ? `<span class="live-thought-stream" style="white-space: pre-wrap; font-size: 12px; color: #cbd5e1; line-height: 1.6; display: block;">${escapeHtml(displayText)}</span>`
+        : formatReasoningIntoLinesHtml(displayText))
     : '';
 
   return `
@@ -3108,8 +3110,16 @@ if (typeof document !== 'undefined') {
       if (!b) return;
       const elapsed = Math.max(1, Math.round((Date.now() - (b.__turnStartTime || Date.now())) / 1000));
       const cleanReasoning = sanitizeReasoningText(b.__accumulatedReasoning);
+      const hasTokens = Boolean(b.__hasStreamedTokens || cleanReasoning || b.__accumulatedReasoning);
 
-      if (!cleanReasoning) {
+      // If reply tokens have already started without any thinking monologue, remove State 1 placeholder completely
+      if (b.__accumulatedReply && !b.__accumulatedReasoning) {
+        const phase1 = b.querySelector('.thinking-phase1');
+        if (phase1) phase1.remove();
+        return;
+      }
+
+      if (!hasTokens) {
         // STATE 1: Pure shimmering thinking text (NO dropdown arrow, NO drawer before any token arrives)
         let phase1 = b.querySelector('.thinking-phase1');
         if (!phase1) {
@@ -3142,7 +3152,11 @@ if (typeof document !== 'undefined') {
 
       if (!block) {
         const temp = document.createElement('div');
-        temp.innerHTML = renderThinkingAccordion(cleanReasoning, elapsed, { isExecuting: true, open: isExpanded });
+        temp.innerHTML = renderThinkingAccordion(
+          cleanReasoning || b.__accumulatedReasoning || 'Thinking...',
+          elapsed,
+          { isExecuting: true, open: isExpanded, forceState2: true }
+        );
         const newBlock = temp.firstElementChild;
         if (newBlock) {
           b.insertBefore(newBlock, b.firstChild);
@@ -3150,7 +3164,14 @@ if (typeof document !== 'undefined') {
       } else {
         const title = block.querySelector('.monologue-title');
         if (title && (title.classList.contains('thinking-shimmer-text') || title.textContent.startsWith('Thinking'))) {
-          title.textContent = `Thinking (${elapsed}s)`;
+          // If thought duration has already locked (reply started), display locked duration
+          if (b.__thoughtDuration) {
+            title.classList.remove('thinking-shimmer-text');
+            title.classList.add('monologue-completed-text');
+            title.textContent = `Thought for ${b.__thoughtDuration}s`;
+          } else {
+            title.textContent = `Thinking (${elapsed}s)`;
+          }
         }
       }
     }
@@ -3580,10 +3601,11 @@ if (typeof document !== 'undefined') {
         }
 
         const realReasoning = collectAllStepReasoning(res) || agentBubble.__accumulatedReasoning || '';
-        const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || (agentBubble.__turnStartTime ? Date.now() - agentBubble.__turnStartTime : 0);
+        const liveDuration = agentBubble.__thoughtDuration || (agentBubble.__turnStartTime ? Math.max(1, Math.round((Date.now() - agentBubble.__turnStartTime) / 1000)) : 0);
+        const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs;
         const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
         const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
-        const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
+        const duration = liveDuration || (durationSeconds && durationSeconds > 0 ? durationSeconds : (reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback));
         const wasExpanded = Boolean(
           agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
           agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true'
@@ -3774,10 +3796,11 @@ if (typeof document !== 'undefined') {
         }
 
         const realReasoning = collectAllStepReasoning(res) || agentBubble.__accumulatedReasoning || '';
-        const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || (agentBubble.__turnStartTime ? Date.now() - agentBubble.__turnStartTime : 0);
+        const liveDuration = agentBubble.__thoughtDuration || (agentBubble.__turnStartTime ? Math.max(1, Math.round((Date.now() - agentBubble.__turnStartTime) / 1000)) : 0);
+        const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs;
         const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
         const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
-        const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
+        const duration = liveDuration || (durationSeconds && durationSeconds > 0 ? durationSeconds : (reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback));
         const wasExpanded = Boolean(
           agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
           agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true'
@@ -3801,10 +3824,11 @@ if (typeof document !== 'undefined') {
 
       const actionLabel = getCleanActionLabel(action, sanitized?.elements);
       const realReasoning = collectAllStepReasoning(res) || agentBubble.__accumulatedReasoning || '';
-      const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs || (agentBubble.__turnStartTime ? Date.now() - agentBubble.__turnStartTime : 0);
-      const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
-      const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
-      const duration = reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback;
+      const actionLiveDuration = agentBubble.__thoughtDuration || (agentBubble.__turnStartTime ? Math.max(1, Math.round((Date.now() - agentBubble.__turnStartTime) / 1000)) : 0);
+      const actionReasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs;
+      const actionWords = (realReasoning || '').split(/\s+/).filter(Boolean).length;
+      const actionFallback = Math.max(2, Math.min(16, 2 + Math.floor(actionWords / 25)));
+      const duration = actionLiveDuration || (durationSeconds && durationSeconds > 0 ? durationSeconds : (actionReasoningMs > 500 ? Math.max(1, Math.round(actionReasoningMs / 1000)) : actionFallback));
       const wasExpanded = Boolean(
         agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
         agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true'
@@ -4544,10 +4568,7 @@ if (typeof document !== 'undefined') {
             agentBubble.__hasStreamedTokens = true;
             agentBubble.__accumulatedReasoning = (agentBubble.__accumulatedReasoning || '') + delta;
             activeThinkingBubble = agentBubble;
-
-            if (agentBubble.__expanded === undefined) {
-              agentBubble.__expanded = true;
-            }
+            agentBubble.__expanded = true;
 
             const phase1 = agentBubble.querySelector('.thinking-phase1');
             if (phase1) {
@@ -4555,10 +4576,25 @@ if (typeof document !== 'undefined') {
             }
 
             let block = agentBubble.querySelector('.monologue-block');
+            const elapsed = Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000));
             if (!block) {
-              updateLiveThinkingDisclosure();
-              block = agentBubble.querySelector('.monologue-block');
+              const temp = document.createElement('div');
+              temp.innerHTML = renderThinkingAccordion(
+                agentBubble.__accumulatedReasoning || 'Thinking...',
+                elapsed,
+                { isExecuting: true, open: true, forceState2: true }
+              );
+              block = temp.firstElementChild;
+              if (block) {
+                agentBubble.insertBefore(block, agentBubble.firstChild);
+              }
+            } else {
+              const title = block.querySelector('.monologue-title');
+              if (title && (title.classList.contains('thinking-shimmer-text') || title.textContent.startsWith('Thinking'))) {
+                title.textContent = `Thinking (${elapsed}s)`;
+              }
             }
+
             const content = block?.querySelector('.monologue-content');
             if (content) {
               const placeholder = content.querySelector('.monologue-initial-placeholder');
@@ -4575,13 +4611,14 @@ if (typeof document !== 'undefined') {
                 streamSpan.style.display = 'block';
                 content.appendChild(streamSpan);
               }
-              streamSpan.textContent = agentBubble.__accumulatedReasoning;
+              streamSpan.textContent = agentBubble.__accumulatedReasoning.trimStart();
               if (agentBubble.__expanded) {
                 content.scrollTop = content.scrollHeight;
                 const drawer = content.closest('.monologue-drawer');
                 if (drawer) drawer.scrollTop = drawer.scrollHeight;
               }
             }
+            chatMessages.scrollTop = chatMessages.scrollHeight;
             return;
           }
 
@@ -4591,7 +4628,21 @@ if (typeof document !== 'undefined') {
             agentBubble.__hasStreamedTokens = true;
             agentBubble.__accumulatedReply = (agentBubble.__accumulatedReply || '') + delta;
 
-            // If no thoughts were emitted and we are still in State 1 thinking text, remove State 1 placeholder so speech text is clean
+            // When reply starts arriving, record the exact thought duration so it never jumps or mismatches
+            if (agentBubble.__accumulatedReasoning && !agentBubble.__thoughtDuration) {
+              agentBubble.__thoughtDuration = Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000));
+              const block = agentBubble.querySelector('.monologue-block');
+              if (block) {
+                const title = block.querySelector('.monologue-title');
+                if (title) {
+                  title.classList.remove('thinking-shimmer-text');
+                  title.classList.add('monologue-completed-text');
+                  title.textContent = `Thought for ${agentBubble.__thoughtDuration}s`;
+                }
+              }
+            }
+
+            // If no thoughts were emitted and we are still in State 1 thinking text, remove State 1 placeholder completely
             if (!agentBubble.__accumulatedReasoning) {
               const phase1 = agentBubble.querySelector('.thinking-phase1');
               if (phase1) phase1.remove();

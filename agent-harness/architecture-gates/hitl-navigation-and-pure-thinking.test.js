@@ -278,3 +278,17 @@ test('Two-State Thinking Lifecycle: State 2 becomes expandable with chevron and 
   assert.ok(state2Html.includes('I observe the ISRO portal'), 'State 2 must display the streamed tokens');
 });
 
+test('Two-State Thinking Lifecycle: Immediate conversion to State 2 on 1st token delta with exact duration lock', () => {
+  // 1. First token delta arriving (even leading newline or single word) with forceState2 immediately transitions to State 2
+  const firstTokenHtml = renderThinkingAccordion('\n', 5, { isExecuting: true, open: true, forceState2: true });
+  assert.ok(firstTokenHtml.includes('monologue-block'), '1st token must immediately render monologue-block');
+  assert.ok(firstTokenHtml.includes('rotate-90'), '1st token must have expanded chevron');
+  assert.ok(firstTokenHtml.includes('display: block'), '1st token must have open drawer');
+  assert.ok(firstTokenHtml.includes('Thinking (5s)'), '1st token must render exact live elapsed seconds');
+
+  // 2. Completed thought preserves exact live elapsed duration (zero time mismatch)
+  const completedHtml = renderThinkingAccordion('Reasoned about ISRO forms.', 5, { open: true });
+  assert.ok(completedHtml.includes('Thought for 5s'), 'Completed thought must display exact live elapsed seconds (Thought for 5s)');
+  assert.ok(!completedHtml.includes('Thought for 2s'), 'Completed thought must not drop to 2s synthetic fallback');
+});
+
