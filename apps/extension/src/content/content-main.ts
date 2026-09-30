@@ -188,9 +188,10 @@ export async function handleMessage(message: any): Promise<any> {
   }
 
   if (message.type === 'FILL_FORM_FIELDS') {
-    const { username, password } = message;
+    const { username, password, customText, targetLocalId } = message;
     let userFilled = false;
     let passFilled = false;
+    let customFilled = false;
 
     // A. Find username/email field
     if (username) {
@@ -268,13 +269,79 @@ export async function handleMessage(message: any): Promise<any> {
       }
     }
 
+    // C. Find custom text / CAPTCHA field
+    if (customText) {
+      let customEl: HTMLInputElement | null = null;
+      if (targetLocalId && currentElementMap?.has(targetLocalId)) {
+        customEl = currentElementMap.get(targetLocalId) as HTMLInputElement;
+      }
+      if (!customEl) {
+        const captchaSelectors = [
+          'input[name*="captcha" i]',
+          'input[id*="captcha" i]',
+          'input[placeholder*="captcha" i]',
+          'input[aria-label*="captcha" i]',
+          'input[class*="captcha" i]'
+        ];
+        for (const sel of captchaSelectors) {
+          customEl = document.querySelector(sel) as HTMLInputElement;
+          if (customEl && !customEl.disabled && !customEl.readOnly) break;
+        }
+      }
+      if (!customEl) {
+        const labels = Array.from(document.querySelectorAll('label'));
+        for (const l of labels) {
+          if (/captcha/i.test(l.textContent || '')) {
+            const forId = l.getAttribute('for');
+            if (forId) {
+              const el = document.getElementById(forId);
+              if (el && (el.tagName.toLowerCase() === 'input' || el.tagName.toLowerCase() === 'textarea')) {
+                customEl = el as HTMLInputElement;
+                break;
+              }
+            }
+            const nestedInput = l.querySelector('input, textarea');
+            if (nestedInput) {
+              customEl = nestedInput as HTMLInputElement;
+              break;
+            }
+          }
+        }
+      }
+      if (!customEl) {
+        const allInputs = Array.from(document.querySelectorAll('input:not([type="password"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]), textarea')) as HTMLInputElement[];
+        customEl = allInputs.find(i => !i.disabled && !i.readOnly && i.offsetParent !== null && !i.value?.trim()) || allInputs[0] || null;
+      }
+      if (customEl) {
+        try {
+          customEl.focus();
+          customEl.value = customText;
+          customEl.dispatchEvent(new Event('focus', { bubbles: true }));
+          customEl.dispatchEvent(new Event('input', { bubbles: true }));
+          customEl.dispatchEvent(new Event('change', { bubbles: true }));
+          customEl.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Process' }));
+          customEl.dispatchEvent(new Event('blur', { bubbles: true }));
+        } catch (_) {}
+        ActionExecutor.execute({
+          actionId: `act_fill_custom_${Date.now()}`,
+          kind: 'type',
+          targetLocalId: 'direct_custom_fill',
+          textToType: customText,
+          confidence: 1.0,
+          risk: 'safe',
+          userApproved: true,
+          rationale: 'Direct fill custom text / CAPTCHA'
+        }, new Map([['direct_custom_fill', customEl]]));
+        customFilled = true;
+      }
+    }
+
     return {
-      success: userFilled || passFilled,
+      success: userFilled || passFilled || customFilled,
       userFilled,
       passFilled,
-      message: userFilled && passFilled
-        ? 'Successfully filled username and password'
-        : (userFilled ? 'Filled username' : (passFilled ? 'Filled password' : 'No matching input fields found'))
+      customFilled,
+      message: 'Form fields processed'
     };
   }
 

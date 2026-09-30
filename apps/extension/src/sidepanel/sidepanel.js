@@ -1322,9 +1322,8 @@ if (typeof document !== 'undefined') {
               agentBubble.className = 'chat-msg agent msg-action';
               agentBubble.innerHTML = `
                 ${thinkingHtml}
-                <div class="action-status-line is-done" style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                  <span class="action-done-label" style="color: #e2e8f0; font-weight: 500; font-size: 12px;">${escapeHtml(displayAction)}</span>
+                <div class="action-status-line is-done" style="display: flex; align-items: center; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
+                  <span class="action-done-label" style="color: #cbd5e1; font-weight: 450; font-size: 12.5px;">${escapeHtml(displayAction)}</span>
                 </div>
               `;
             } else if (msg.webSearchResults && Array.isArray(msg.webSearchResults)) {
@@ -3290,9 +3289,9 @@ if (typeof document !== 'undefined') {
           : '';
         updateOrPrependThinking(agentBubble, thinkingHtml);
 
-        const isCredentials = req.kind === 'credentials';
         const isCaptcha = /captcha/i.test(req.prompt || '') || /captcha/i.test(req.targetLocalId || '');
         const promptText = req.prompt || (req.kind === 'clarification' ? 'Please clarify what should happen next.' : 'Please enter value to continue.');
+        const isCredentials = req.kind === 'credentials' && !isCaptcha && !/captcha|code|verification/i.test(promptText);
 
         const card = document.createElement('div');
         card.className = 'hitl-input-card';
@@ -3322,6 +3321,9 @@ if (typeof document !== 'undefined') {
           </div>
         `;
         agentBubble.appendChild(card);
+        setTimeout(() => {
+          (card.querySelector('#userInputText') || card.querySelector('#userInputUsername'))?.focus();
+        }, 50);
 
         const form = card.querySelector('.hitl-input-body');
         const submitBtn = card.querySelector('#btnSubmitInputForm');
@@ -3347,7 +3349,7 @@ if (typeof document !== 'undefined') {
 
           const cancelledTaskEl = document.createElement('div');
           cancelledTaskEl.className = 'hitl-cancelled-task action-status-line is-done';
-          cancelledTaskEl.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #94a3b8; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
+          cancelledTaskEl.style.cssText = 'display: flex; align-items: center; font-size: 12.5px; color: #94a3b8; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
           cancelledTaskEl.innerHTML = `
             <span style="color: #94a3b8;">User rejected input request</span>
           `;
@@ -3404,12 +3406,11 @@ if (typeof document !== 'undefined') {
             ? 'Clarified instruction as per user input'
             : `Filled ${targetLabel} as per user input`;
 
-          // Immediately collapse the input form card into a single compact clean text item
+          // Immediately collapse the input form card into a single compact clean text item without tick mark
           const completedTaskEl = document.createElement('div');
           completedTaskEl.className = 'hitl-completed-task action-status-line is-done';
-          completedTaskEl.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
+          completedTaskEl.style.cssText = 'display: flex; align-items: center; font-size: 12.5px; color: #cbd5e1; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
           completedTaskEl.innerHTML = `
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
             <span style="color: #cbd5e1; font-weight: 450;">${escapeHtml(taskText)}</span>
           `;
           card.replaceWith(completedTaskEl);
@@ -3419,12 +3420,41 @@ if (typeof document !== 'undefined') {
           if (!continuationStatus) {
             continuationStatus = document.createElement('div');
             continuationStatus.className = 'continuation-status thinking-phase1 action-status-line is-executing';
-            continuationStatus.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; padding: 2px 0; margin: 4px 0; background: transparent; border: none;';
+            continuationStatus.style.cssText = 'display: flex; align-items: center; font-size: 12.5px; color: #cbd5e1; padding: 2px 0; margin: 4px 0; background: transparent; border: none;';
             continuationStatus.innerHTML = `<span class="thinking-shimmer-text">Executing next action...</span>`;
             agentBubble.appendChild(continuationStatus);
           }
           activeThinkingBubble = agentBubble;
           setAgentStatus('executing');
+
+          // Immediately reset continuation flag and expand/shimmer the thinking accordion
+          agentBubble.__continuationSettled = false;
+          agentBubble.__hasContinuationDivider = false;
+          agentBubble.__expanded = true;
+
+          let block = agentBubble.querySelector('.monologue-block');
+          if (!block) {
+            const temp = document.createElement('div');
+            temp.innerHTML = renderThinkingAccordion(
+              agentBubble.__accumulatedReasoning || 'Thinking...',
+              1,
+              { isExecuting: true, open: true, forceState2: true }
+            );
+            block = temp.firstElementChild;
+            if (block) agentBubble.insertBefore(block, agentBubble.firstChild);
+          } else {
+            const title = block.querySelector('.monologue-title');
+            if (title) {
+              title.textContent = 'Thinking...';
+              title.classList.remove('monologue-completed-text');
+              title.classList.add('thinking-shimmer-text');
+            }
+            const drawer = block.querySelector('.monologue-drawer');
+            if (drawer) drawer.style.display = 'block';
+            const chevron = block.querySelector('.monologue-chevron');
+            if (chevron) chevron.classList.add('rotate-90');
+            block.setAttribute('data-state', 'expanded');
+          }
 
           const runId = req.runId || currentRunId;
           const finishContinuation = (submitRes, err) => {
@@ -3463,9 +3493,8 @@ if (typeof document !== 'undefined') {
                 : (submitRes.message || action.rationale || 'Action executed successfully');
               const outcomeLine = document.createElement('div');
               outcomeLine.className = 'action-status-line is-done';
-              outcomeLine.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; padding: 2px 0; margin-top: 4px; background: transparent; border: none;';
+              outcomeLine.style.cssText = 'display: flex; align-items: center; font-size: 12.5px; color: #cbd5e1; padding: 2px 0; margin-top: 4px; background: transparent; border: none;';
               outcomeLine.innerHTML = `
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 <span style="color: #cbd5e1; font-weight: 450;">${escapeHtml(actionLabel)}</span>
               `;
               agentBubble.appendChild(outcomeLine);
@@ -3637,8 +3666,8 @@ if (typeof document !== 'undefined') {
             chrome.runtime.sendMessage({ type: 'APPROVE_ACTION', runId: targetRunId, actionId: action.actionId }, (postRes) => {
               if (postRes) {
                 executingLine.className = 'action-status-line is-done';
+                executingLine.style.cssText = 'display: flex; align-items: center; font-size: 12.5px; color: #cbd5e1; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
                 executingLine.innerHTML = `
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
                   <span style="color: #cbd5e1; font-weight: 450;">Approved and executed "${escapeHtml(targetLabel)}"</span>
                 `;
                 renderActionResult(agentBubble, postRes);
@@ -3890,9 +3919,8 @@ if (typeof document !== 'undefined') {
               }
               const label = getCleanActionLabel(s.proposal, s.sanitized?.elements);
               return `
-                <div class="action-status-line is-done" style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; margin: 3px 0; padding: 1px 0;">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.85;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                  <span style="color: #cbd5e1;">${escapeHtml(label)}</span>
+                <div class="action-status-line is-done" style="display: flex; align-items: center; font-size: 12.5px; color: #cbd5e1; margin: 3px 0; padding: 1px 0;">
+                  <span style="color: #cbd5e1; font-weight: 450;">${escapeHtml(label)}</span>
                 </div>
               `;
             }).filter(Boolean).join('');
@@ -4097,9 +4125,8 @@ if (typeof document !== 'undefined') {
         ${thinkingHtml}
         ${actionWebSearchHtml ? `<div class="websearch-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${actionWebSearchHtml}</div>` : (
           actionSubAgentHtml ? `<div class="subagent-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${actionSubAgentHtml}</div>` : `
-          <div class="action-status-line is-done" style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.9;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span class="action-done-label" style="color: #e2e8f0; font-weight: 500; font-size: 12px;">${escapeHtml(actionLabel)}</span>
+          <div class="action-status-line is-done" style="display: flex; align-items: center; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
+            <span class="action-done-label" style="color: #cbd5e1; font-weight: 450; font-size: 12.5px;">${escapeHtml(actionLabel)}</span>
           </div>
         `)}
         ${actionSpeechText ? `<div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 6px;">${renderMarkdown(actionSpeechText)}</div>` : ''}
@@ -4116,7 +4143,7 @@ if (typeof document !== 'undefined') {
       setAgentStatus('complete');
 
       // Record action execution turn in multi-turn history
-      const actionTurnText = `✓ ${actionLabel}`;
+      const actionTurnText = actionLabel;
       conversationHistory.push({
         role: 'assistant',
         content: actionTurnText
@@ -6335,13 +6362,12 @@ if (typeof document !== 'undefined') {
                   prevExecuting.style.alignItems = 'center';
                   prevExecuting.style.gap = '6px';
                   prevExecuting.style.fontSize = '12px';
-                  prevExecuting.style.color = '#94a3b8';
+                  prevExecuting.style.color = '#cbd5e1';
                   prevExecuting.style.margin = '3px 0';
                   prevExecuting.style.padding = '1px 0';
                   const prevLabel = prevExecuting.getAttribute('data-clean-label') || 'Action completed';
                   prevExecuting.innerHTML = `
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; opacity: 0.85;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    <span style="color: #cbd5e1;">${escapeHtml(prevLabel)}</span>
+                    <span style="color: #cbd5e1; font-weight: 450;">${escapeHtml(prevLabel)}</span>
                   `;
                 }
 

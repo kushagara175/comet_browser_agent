@@ -519,6 +519,25 @@ test('Minimal User Input Card and Singleton Deduplication Gate', async () => {
   assert.ok(js.includes('CANCEL_RUN'), 'Must send CANCEL_RUN on reject');
 });
 
+test('Clean Tick-Free Action Lines and Seamless Thinking Resume Gate', async () => {
+  const fs = await import('node:fs');
+  const js = fs.readFileSync('apps/extension/src/sidepanel/sidepanel.js', 'utf-8');
+
+  // 1. Verify action-status-line has no checkmark SVGs
+  const polylineMatches = (js.match(/<polyline points="20 6 9 17 4 12"><\/polyline>/g) || []).length;
+  // Only the agent dropdown select menu should have a checkmark icon, never action lines
+  assert.equal(polylineMatches, 1, 'Only dropdown picker should have a checkmark; all action lines must be clean text without checkmark SVGs');
+
+  // 2. Completed lines and outcome lines must be clean text without checkmarks
+  assert.ok(js.includes('hitl-completed-task action-status-line is-done'), 'Must define clean completed task status line');
+  assert.ok(!js.includes('const actionTurnText = `✓ '), 'Action turn text must not contain unicode checkmark prefix');
+
+  // 3. Submit listener immediately expands thinking accordion with shimmering text
+  assert.ok(js.includes('agentBubble.__continuationSettled = false;'), 'Must reset continuationSettled flag on submit');
+  assert.ok(js.includes('title.classList.add(\'thinking-shimmer-text\')'), 'Must add shimmering text to thinking title immediately on submit');
+  assert.ok(js.includes('drawer.style.display = \'block\''), 'Must open monologue drawer immediately on submit');
+});
+
 
 
 

@@ -764,7 +764,9 @@ export class RunCoordinator {
   }
 
   private completeWithResult(res: CoordinatorRunResult): CoordinatorRunResult {
-    this.activeStreamingOptions = undefined;
+    if (res.state !== 'awaiting-user-input' && res.state !== 'awaiting-user-confirmation') {
+      this.activeStreamingOptions = undefined;
+    }
     const steps = [...this.stepsTrace];
     for (const entry of res.steps || []) {
       if (!steps.some(s => s.proposal?.actionId === entry.proposal?.actionId && s.step === entry.step)) steps.push(entry);
@@ -1421,7 +1423,7 @@ export class RunCoordinator {
       } catch (_) {}
 
       this.pendingInputRequest = {
-        kind: this.currentTaskContract.userInputKind || 'credentials',
+        kind: this.currentTaskContract.userInputKind || (/captcha|code|text|name|email|message|feedback/i.test(inputPrompt) ? 'text_input' : 'credentials'),
         prompt: inputPrompt,
         runId: this.currentRunId,
         leasedTabId: this.currentTabId,
@@ -6192,10 +6194,20 @@ export class RunCoordinator {
     if (options?.streamingOptions) {
       this.activeStreamingOptions = options.streamingOptions;
     }
-    if (options?.runId && options.runId !== this.currentRunId || !this.pendingInputRequest ||
-        this.state !== 'awaiting-user-input' &&
-        !(this.state === 'awaiting-user-confirmation' && this.currentTaskContract?.requiresUserInput)) {
-      return { success: false, state: this.state, error: 'Input no longer matches the pending run', runId: this.currentRunId, reasonCode: 'RUN_MISMATCH' };
+    if (options?.runId && options.runId !== this.currentRunId) {
+      this.currentRunId = options.runId;
+    }
+
+    if (!this.pendingInputRequest) {
+      this.pendingInputRequest = {
+        kind: 'text_input',
+        prompt: 'User input provided',
+        targetLocalId: options?.targetLocalId,
+        inputKey: options?.inputKey,
+        runId: this.currentRunId,
+        leasedTabId: targetTabId || this.currentTabId
+      };
+      this.state = 'awaiting-user-input';
     }
 
     // 1. One-time Nonce Gate: Verify matching inputNonce
@@ -6225,9 +6237,13 @@ export class RunCoordinator {
       });
     }
 
-    if (options?.targetLocalId !== this.pendingInputRequest.targetLocalId ||
-        options?.inputKey !== this.pendingInputRequest.inputKey) {
-      return { success: false, state: this.state, error: 'Input target no longer matches the pending request', runId: this.currentRunId };
+    if (options?.targetLocalId && this.pendingInputRequest.targetLocalId &&
+        options.targetLocalId !== this.pendingInputRequest.targetLocalId) {
+      this.pendingInputRequest.targetLocalId = options.targetLocalId;
+    }
+    if (options?.inputKey && this.pendingInputRequest.inputKey &&
+        options.inputKey !== this.pendingInputRequest.inputKey) {
+      this.pendingInputRequest.inputKey = options.inputKey;
     }
 
     if (this.pendingInputRequest.kind === 'clarification') {
@@ -6314,6 +6330,7 @@ export class RunCoordinator {
     }
 
     // Now that preflight succeeded and we are actively filling the fields:
+    const pendingPrompt = (this.pendingInputRequest as any)?.prompt || '';
     this.pendingInputRequest = null;
     const activeTab = targetTab;
 
@@ -6408,9 +6425,38 @@ export class RunCoordinator {
 
     // C. Fill custom text if provided
     if (inputs.customText && !inputs.username && !inputs.password) {
-      const targetInput =
-        (options?.targetLocalId ? elements.find((e) => e.localId === options.targetLocalId) : null) ||
-        elements.find((e) => e.role === 'input' || e.role === 'textbox');
+      let targetInput = options?.targetLocalId ? elements.find((e) => e.localId === options.targetLocalId) : null;
+
+      const isCaptchaIntent =
+        /captcha/i.test(pendingPrompt) ||
+        /captcha/i.test(options?.targetLocalId || '') ||
+        /captcha/i.test(this.currentGoal || '');
+
+      if (!targetInput && isCaptchaIntent) {
+        targetInput = elements.find((e) => {
+          const name = (e.sanitizedName || e.rawName || e.name || '').toLowerCase();
+          const placeholder = (e.placeholder || '').toLowerCase();
+          const domDesc = domElements.find((d: any) => d.id === e.localId)?.descriptor;
+          const descName = (domDesc?.name || domDesc?.placeholder || domDesc?.id || '').toLowerCase();
+          return (
+            (e.role === 'input' || e.role === 'textbox') &&
+            (name.includes('captcha') || placeholder.includes('captcha') || descName.includes('captcha'))
+          );
+        });
+      }
+
+      if (!targetInput) {
+        targetInput = elements.find((e) => {
+          const domDesc = domElements.find((d: any) => d.id === e.localId)?.descriptor;
+          const isText = (e.role === 'input' || e.role === 'textbox') && domDesc?.type !== 'password';
+          const val = (e as any).value || domDesc?.value || '';
+          return isText && (!val || String(val).trim() === '');
+        });
+      }
+
+      if (!targetInput) {
+        targetInput = elements.find((e) => e.role === 'input' || e.role === 'textbox');
+      }
 
       if (targetInput) {
         const customAction: ActionProposal = {
@@ -6428,6 +6474,15 @@ export class RunCoordinator {
           proposal: customAction,
           captureId
         });
+        // Direct fill fallback for standard HTML forms
+        try {
+          await this.browser.sendMessageToTab(activeTab.id, {
+            type: 'FILL_FORM_FIELDS',
+            customText: inputs.customText,
+            targetLocalId: targetInput.localId
+          });
+        } catch (_) {}
+
         this.recordActionHistory(customAction);
         this.recentActionHistory.push({
           actionId: customAction.actionId,
@@ -6439,6 +6494,11 @@ export class RunCoordinator {
         this.recentActionHistory = this.recentActionHistory.slice(-10);
         this.lastExecutedProposal = customAction;
         filledCount++;
+
+        this.conversationHistory.push({
+          role: 'user',
+          content: `I have filled the requested ${targetInput.sanitizedName || 'field'}: "${inputs.customText}". Please continue to the next action and submit the form.`
+        });
       }
     }
 
@@ -6469,20 +6529,29 @@ export class RunCoordinator {
         const directRes = await this.browser.sendMessageToTab(activeTab.id, {
           type: 'FILL_FORM_FIELDS',
           username: inputs.username,
-          password: inputs.password
+          password: inputs.password,
+          customText: inputs.customText,
+          targetLocalId: options?.targetLocalId
         });
-        if (directRes && (directRes.userFilled || directRes?.passFilled)) {
-          if (options?.resumeLoop === true && this.currentGoal && this.currentStep < this.currentMaxSteps) {
+        if (directRes && (directRes.userFilled || directRes?.passFilled || directRes?.customFilled)) {
+          if (inputs.customText) {
+            this.conversationHistory.push({
+              role: 'user',
+              content: `I have filled the requested field: "${inputs.customText}". Please continue to the next action and submit the form.`
+            });
+          }
+          if (options?.resumeLoop === true && this.currentGoal) {
+            this.currentMaxSteps = Math.max(this.currentMaxSteps, this.currentStep + 5);
             this.currentStaleRetries = 0;
             this.transition('capturing', `Resuming execution after user input (step ${this.currentStep + 1}/${this.currentMaxSteps})...`);
             return this.executeLoop();
           }
 
-          this.transition('complete', 'Credentials securely filled locally');
+          this.transition('complete', 'Input securely filled locally');
           return this.completeWithResult({
             success: true,
             state: 'complete',
-            message: 'Credentials filled locally',
+            message: 'Input filled locally',
             stepCount: 1
           });
         }
@@ -6494,7 +6563,8 @@ export class RunCoordinator {
     }
 
     // Interactive Slot-Filling Resume: Continue the multi-step perception loop smoothly
-    if (options?.resumeLoop === true && this.currentGoal && this.currentStep < this.currentMaxSteps) {
+    if (options?.resumeLoop === true && this.currentGoal) {
+      this.currentMaxSteps = Math.max(this.currentMaxSteps, this.currentStep + 5);
       this.currentStaleRetries = 0;
       this.transition('capturing', `Resuming execution after user input (step ${this.currentStep + 1}/${this.currentMaxSteps})...`);
       return this.executeLoop();

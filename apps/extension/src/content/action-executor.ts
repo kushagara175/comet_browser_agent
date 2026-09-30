@@ -209,6 +209,17 @@ export class ActionExecutor {
             }
           }
         }
+
+        if (!targetEl && proposal.kind === 'type') {
+          const isCaptcha = /captcha/i.test(proposal.rationale || '') || /captcha/i.test(proposal.reasoning || '') || /captcha/i.test((proposal as any).targetName || '');
+          if (isCaptcha) {
+            targetEl = (doc.querySelector('input[name*="captcha" i], input[id*="captcha" i], input[placeholder*="captcha" i], input[aria-label*="captcha" i], input[class*="captcha" i]') as HTMLElement) || undefined;
+          }
+          if (!targetEl) {
+            const allInputs = Array.from(doc.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]), textarea')) as HTMLElement[];
+            targetEl = allInputs.find(i => !(i as any).disabled && !(i as any).readOnly && (i as HTMLElement).offsetParent !== null && !((i as any).value?.trim())) || allInputs[0];
+          }
+        }
       }
     }
 
