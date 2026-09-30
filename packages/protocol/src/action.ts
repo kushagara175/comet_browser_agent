@@ -1737,13 +1737,18 @@ export function classifyActionRisk(
     kind === 'wait' ||
     kind === 'scroll' ||
     kind === 'select' ||
-    (kind === 'click' && (name.includes('preview') || name.includes('filter') || name.includes('view') || name.includes('tab') || name.includes('next') || name.includes('search') || name.includes('close') || name.includes('cancel'))) ||
+    kind === 'navigate' ||
     kind === 'type'
   ) {
     return 'safe';
   }
 
-  return proposal.risk || 'protected';
+  // Non-destructive clicking (navigation links, tabs, menu items, filters, buttons)
+  if (kind === 'click') {
+    return (proposal.risk === 'blocked' || proposal.risk === 'protected') ? proposal.risk : 'safe';
+  }
+
+  return proposal.risk || 'safe';
 }
 
 /**
