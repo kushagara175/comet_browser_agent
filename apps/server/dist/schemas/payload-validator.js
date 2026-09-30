@@ -154,7 +154,7 @@ const PROHIBITED_SCRIPT_PATTERNS = [
     /javascript:/i,
     /vbscript:/i,
     /data:text\/html/i,
-    /on\w+\s*=/i,
+    /\bon(?:load|error|click|mouse\w+|key\w+|focus|blur|change|submit|reset|select|contextmenu|drag\w*|drop|wheel|scroll|touch\w*|animation\w*|transition\w*)\s*=/i,
     /\beval\s*\(/i,
     /\bexpression\s*\(/i
 ];
@@ -569,7 +569,13 @@ export function validateSanitizedPayload(body) {
         }
     }
     if (body.pageState.url !== undefined) {
-        if (typeof body.pageState.url !== 'string' || body.pageState.url.length > 2048 || hasProhibitedScriptPattern(body.pageState.url)) {
+        if (typeof body.pageState.url !== 'string') {
+            return { isValid: false, errorMessage: 'pageState.url must be a safe string up to 2048 characters' };
+        }
+        if (body.pageState.url.length > 2048) {
+            body.pageState.url = body.pageState.url.slice(0, 2048);
+        }
+        if (hasProhibitedScriptPattern(body.pageState.url)) {
             return { isValid: false, errorMessage: 'pageState.url must be a safe string up to 2048 characters' };
         }
     }
@@ -587,11 +593,27 @@ export function validateSanitizedPayload(body) {
         if (sd.urlChanged !== undefined && typeof sd.urlChanged !== 'boolean') {
             return { isValid: false, errorMessage: 'pageState.stateDelta.urlChanged must be a boolean' };
         }
-        if (sd.previousUrl !== undefined && (typeof sd.previousUrl !== 'string' || sd.previousUrl.length > 2048 || hasProhibitedScriptPattern(sd.previousUrl))) {
-            return { isValid: false, errorMessage: 'pageState.stateDelta.previousUrl must be a safe string up to 2048 characters' };
+        if (sd.previousUrl !== undefined) {
+            if (typeof sd.previousUrl !== 'string') {
+                return { isValid: false, errorMessage: 'pageState.stateDelta.previousUrl must be a safe string up to 2048 characters' };
+            }
+            if (sd.previousUrl.length > 2048) {
+                sd.previousUrl = sd.previousUrl.slice(0, 2048);
+            }
+            if (hasProhibitedScriptPattern(sd.previousUrl)) {
+                return { isValid: false, errorMessage: 'pageState.stateDelta.previousUrl must be a safe string up to 2048 characters' };
+            }
         }
-        if (sd.currentUrl !== undefined && (typeof sd.currentUrl !== 'string' || sd.currentUrl.length > 2048 || hasProhibitedScriptPattern(sd.currentUrl))) {
-            return { isValid: false, errorMessage: 'pageState.stateDelta.currentUrl must be a safe string up to 2048 characters' };
+        if (sd.currentUrl !== undefined) {
+            if (typeof sd.currentUrl !== 'string') {
+                return { isValid: false, errorMessage: 'pageState.stateDelta.currentUrl must be a safe string up to 2048 characters' };
+            }
+            if (sd.currentUrl.length > 2048) {
+                sd.currentUrl = sd.currentUrl.slice(0, 2048);
+            }
+            if (hasProhibitedScriptPattern(sd.currentUrl)) {
+                return { isValid: false, errorMessage: 'pageState.stateDelta.currentUrl must be a safe string up to 2048 characters' };
+            }
         }
         if (sd.elementsAddedCount !== undefined && (typeof sd.elementsAddedCount !== 'number' || !Number.isFinite(sd.elementsAddedCount))) {
             return { isValid: false, errorMessage: 'pageState.stateDelta.elementsAddedCount must be a number' };
@@ -1065,8 +1087,11 @@ export function validatePlatformTaskRequest(body) {
         return { isValid: false, errorMessage: 'Field "goal" contains prohibited script patterns' };
     }
     if (body.contextUrl !== undefined) {
-        if (typeof body.contextUrl !== 'string' || body.contextUrl.length > 2048) {
+        if (typeof body.contextUrl !== 'string') {
             return { isValid: false, errorMessage: 'Field "contextUrl" must be a string up to 2048 characters' };
+        }
+        if (body.contextUrl.length > 2048) {
+            body.contextUrl = body.contextUrl.slice(0, 2048);
         }
         if (hasProhibitedScriptPattern(body.contextUrl)) {
             return { isValid: false, errorMessage: 'Field "contextUrl" contains prohibited script patterns' };

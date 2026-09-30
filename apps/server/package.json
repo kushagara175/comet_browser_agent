@@ -8,6 +8,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@privapilot/pii-rules": "*",
     "@privapilot/protocol": "*",
     "@privapilot/test-fixtures": "*"
   }
