@@ -49,6 +49,7 @@ import {
 } from '@privapilot/protocol';
 import { BrowserAdapter, WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient, ModelStatus } from './http-client.js';
+import { sanitizeOutboundUrl, scrubOptionalText, scrubHistory } from '@privapilot/pii-rules';
 
 declare const chrome: any;
 import { AuditLogger } from './audit-logger.js';
@@ -64,6 +65,47 @@ import {
 } from '../vault/index.js';
 import { SemanticActionCache } from '../cache/semantic-action-cache.js';
 
+function isSafeReversibleInteraction(proposal: ActionProposal, targetElement?: any): boolean {
+  const kind = (proposal.kind || '').toLowerCase();
+  if (kind === 'scroll' || kind === 'observe' || kind === 'wait' || kind === 'hover' || kind === 'navigate') {
+    return true;
+  }
+  if (kind === 'click') {
+    const role = (targetElement?.role || '').toLowerCase();
+    const name = (targetElement?.sanitizedName || proposal.targetName || '').toLowerCase();
+    const isDestructive =
+      name.includes('submit') ||
+      name.includes('send') ||
+      name.includes('publish') ||
+      name.includes('delete') ||
+      name.includes('remove') ||
+      name.includes('pay') ||
+      name.includes('purchase') ||
+      name.includes('buy') ||
+      name.includes('checkout') ||
+      name.includes('authorize') ||
+      name.includes('sign') ||
+      name.includes('transfer') ||
+      name.includes('confirm order');
+
+    if (isDestructive) {
+      return false;
+    }
+
+    if (role === 'link' || role === 'tab' || role === 'menuitem' || role === 'heading') {
+      return true;
+    }
+
+    const isNavWord = /\b(?:students?|careers?|about|home|contact|news|events?|overview|details?|next|prev|previous|back|more|learn\s+more|read\s+more|menu|nav|tab|filter|search|view|browse|explore)\b/i.test(name);
+    if (isNavWord) {
+      return true;
+    }
+
+    return !isDestructive;
+  }
+  return false;
+}
+
 function isMissionBrochureGoal(goal: string): boolean {
   return /\b(?:chandrayaan[\s-]*3|chandrayaan)\b/i.test(goal) &&
     /\b(?:brochure|pdf|download)\b/i.test(goal);
@@ -72,7 +114,7 @@ function isMissionBrochureGoal(goal: string): boolean {
 function isroMissionStage(url: string): 'home' | 'hub' | 'directory' | 'details' | null {
   try {
     const parsed = new URL(url);
-    if (!/isro\.gov\.in/i.test(parsed.hostname)) return null;
+    if (!/(?:^|\.)isro\.gov\.in$/i.test(parsed.hostname)) return null;
     const path = parsed.pathname.toLowerCase().replace(/\/+$/, '') || '/';
     if (path.includes('spacecraftmissions') || path.includes('launchmissions')) return 'directory';
     if (path.includes('chandrayaan') || path.includes('details')) return 'details';
@@ -100,6 +142,7 @@ export function enforceIsroMissionProgression(
     const ctx = (el.containerContext || '').toLowerCase();
     return ctx.includes('breadcrumb') ||
            name.includes('breadcrumb') ||
+           name.includes('site search') ||
            /^(?:home|activities|missions accomplished|about|services|programmes|resources|engagements)$/i.test(name) ||
            (el as any).href?.includes?.('Mission.html') ||
            (el as any).href?.includes?.('index.html') ||
@@ -130,20 +173,22 @@ export function enforceIsroMissionProgression(
     // Stage 3 on SpacecraftMissions.html:
     // Candidate 1: Target mission link in table
     target = candidates('link', /chandrayaan[\s-]*3\b/i, 'click').find(el => !isRegressionOrBreadcrumb(el)) ||
-             elements.find(el => el.role === 'link' && !isRegressionOrBreadcrumb(el) && /chandrayaan[\s-]*3\b/i.test(el.sanitizedName));
+             elements.find(el => el.role === 'link' && !isRegressionOrBreadcrumb(el) && /chandrayaan[\s-]*3\b/i.test(el.sanitizedName) && eligibleMissionElement(el, 'click'));
     if (!target) {
       // Candidate 2: Table filter search input
       kind = 'type';
       target = candidates('input', /table\s*filter|search/i, 'type').find(el => !isRegressionOrBreadcrumb(el)) ||
-               elements.find(el => (el.role === 'input' || el.role === 'textarea') && !isRegressionOrBreadcrumb(el) && (/table\s*filter/i.test(el.sanitizedName) || (el as any).placeholder?.toLowerCase() === 'search' || (el as any).classList?.contains('search')));
+               elements.find(el => (el.role === 'input' || el.role === 'textarea') && !isRegressionOrBreadcrumb(el) && (/table\s*filter/i.test(el.sanitizedName) || (el as any).placeholder?.toLowerCase() === 'search' || (el as any).classList?.contains('search')) && eligibleMissionElement(el, 'type'));
       textToType = 'Chandrayaan';
     }
   } else {
     target = candidates('link', /brochure/i, 'click').find(el => !isRegressionOrBreadcrumb(el)) ||
-             elements.find(el => el.role === 'link' && !isRegressionOrBreadcrumb(el) && (/brochure/i.test(el.sanitizedName) || /\.pdf\b/i.test((el as any).href || '')));
+             elements.find(el => el.role === 'link' && !isRegressionOrBreadcrumb(el) && (/brochure/i.test(el.sanitizedName) || /\.pdf\b/i.test((el as any).href || '')) && eligibleMissionElement(el, 'click'));
   }
 
-  if (!target) return { proposal };
+  if (!target) {
+    return { error: 'No visible, enabled target element found for mission progression' };
+  }
 
   const incomingTargetEl = proposal.targetLocalId ? elements.find(e => e.localId === proposal.targetLocalId) : null;
   const isIncomingRegression = incomingTargetEl ? isRegressionOrBreadcrumb(incomingTargetEl) : false;
@@ -271,6 +316,8 @@ export interface CoordinatorRunOptions {
   readonly customPrompt?: string;
   readonly agentId?: string;
   readonly agentName?: string;
+  readonly onThoughtDelta?: (text: string) => void;
+  readonly onReplyDelta?: (text: string) => void;
 }
 
 export interface CoordinatorListeners {
@@ -316,6 +363,7 @@ export interface CoordinatorRunResult {
   readonly message?: string;
   readonly reply?: string;
   readonly error?: string;
+  readonly reasonCode?: string;
   readonly reasoning?: string;
   readonly isSubAgentSwarm?: boolean;
   readonly subTasks?: ReadonlyArray<any>;
@@ -325,7 +373,16 @@ export interface CoordinatorRunResult {
   readonly stepCount?: number;
   readonly diagnostic?: SanitizerDiagnostic;
   readonly steps?: ReadonlyArray<E2EStepTrace>;
-  readonly inputRequest?: { kind: 'credentials' | 'text_input' | 'clarification'; prompt: string; targetLocalId?: string; inputKey?: string; runId?: string };
+  readonly inputRequest?: {
+    kind: 'credentials' | 'text_input' | 'clarification';
+    prompt: string;
+    targetLocalId?: string;
+    inputKey?: string;
+    runId?: string;
+    leasedTabId?: number;
+    inputNonce?: string;
+    expectedOrigin?: string;
+  };
 }
 
 export type SanitizerFailureClass =
@@ -633,7 +690,20 @@ export class RunCoordinator {
   private maxStaleRetries: number = 2;
   private lastStaleTargetId: string | null = null;
   private pendingAction: ActionProposal | null = null;
-  private pendingInputRequest: { kind: 'credentials' | 'text_input' | 'clarification'; prompt: string; targetLocalId?: string; inputKey?: string; runId?: string } | null = null;
+  private pendingInputRequest: {
+    kind: 'credentials' | 'text_input' | 'clarification';
+    prompt: string;
+    targetLocalId?: string;
+    inputKey?: string;
+    runId?: string;
+    leasedTabId?: number;
+    inputNonce?: string;
+    expectedOrigin?: string;
+  } | null = null;
+
+  private generateInputNonce(): string {
+    return `nonce_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
   private currentSanitizedContext: SanitizedContext | null = null;
   private lastActionProposal: ActionProposal | null = null;
   private lastRunResult: CoordinatorRunResult | null = null;
@@ -660,6 +730,7 @@ export class RunCoordinator {
   private hasTavilyRecovered: boolean = false;
   private autofilledTargets: Set<string> = new Set<string>();
   private sessionWebSearchCache = new Map<string, { query: string; results: any[]; answer: string; timestamp: number }>();
+  private activeStreamingOptions?: { onThoughtDelta?: (text: string) => void; onReplyDelta?: (text: string) => void };
   private readonly options: { defaultMaxSteps?: number; maxStaleRetries?: number; enableLegacyPlaybooks?: boolean };
 
   constructor(
@@ -693,14 +764,14 @@ export class RunCoordinator {
   }
 
   private completeWithResult(res: CoordinatorRunResult): CoordinatorRunResult {
+    this.activeStreamingOptions = undefined;
     const steps = [...this.stepsTrace];
     for (const entry of res.steps || []) {
       if (!steps.some(s => s.proposal?.actionId === entry.proposal?.actionId && s.step === entry.step)) steps.push(entry);
     }
     steps.sort((a, b) => a.step - b.step);
-    const stepReasoning = steps.map((entry, index) => {
-      const text = entry.proposal?.reasoning || entry.proposal?.thought || entry.proposal?.rationale;
-      return text ? `Step ${index + 1}: ${text}` : '';
+    const stepReasoning = steps.map((entry) => {
+      return entry.proposal?.reasoning || entry.proposal?.thought || entry.proposal?.rationale || '';
     }).filter(Boolean).join('\n\n');
     const finalReasoning = stepReasoning || res.reasoning || res.proposal?.reasoning || res.proposal?.thought ||
       this.lastActionProposal?.reasoning || this.lastActionProposal?.thought || undefined;
@@ -1209,11 +1280,21 @@ export class RunCoordinator {
     this.previousUrl = '';
     this.lastExecutedProposal = null;
     this.lastExecutionResult = null;
+    this.activeStreamingOptions = {
+      onThoughtDelta: options?.onThoughtDelta,
+      onReplyDelta: options?.onReplyDelta
+    };
 
+    let initialActiveTab: any = null;
     try {
-      const activeTab = await this.browser.getActiveTab(options?.tabId);
-      if (activeTab?.id) {
-        this.currentTabId = activeTab.id;
+      if (options?.tabId && typeof (this.browser as any).getStrictTab === 'function') {
+        initialActiveTab = await (this.browser as any).getStrictTab(options.tabId);
+      }
+      if (!initialActiveTab) {
+        initialActiveTab = await this.browser.getActiveTab(options?.tabId);
+      }
+      if (initialActiveTab?.id) {
+        this.currentTabId = initialActiveTab.id;
       }
     } catch (_) {
       if (options?.tabId) {
@@ -1263,7 +1344,14 @@ export class RunCoordinator {
     const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|hi\s+there|hello\s+there|greetings|good\s+(?:morning|afternoon|evening|day)|who\s+are\s+you|what\s+can\s+you\s+do)\s*[!.?]*$/i;
     if (PURE_GREETING_PATTERN.test((goal || '').trim())) {
       this.transition('awaiting-reasoning', 'Synthesizing response with reasoning model...');
-      const chatRes = await this.httpClient.requestGeneralChat(goal, this.conversationHistory as any);
+      const chatRes = typeof (this.httpClient as any)?.requestGeneralChatStream === 'function'
+        ? await this.httpClient.requestGeneralChatStream(goal, {
+            history: this.conversationHistory as any,
+            customPrompt: options?.customPrompt,
+            onThoughtDelta: options?.onThoughtDelta,
+            onReplyDelta: options?.onReplyDelta
+          })
+        : await this.httpClient.requestGeneralChat(goal, this.conversationHistory as any);
       const answerAction: ActionProposal = {
         actionId: `act_greet_${Date.now()}`,
         kind: 'answer' as any,
@@ -1323,10 +1411,21 @@ export class RunCoordinator {
     if (this.currentTaskContract.requiresUserInput) {
       const inputPrompt = this.currentTaskContract.userInputPrompt || 'User input required to proceed.';
       this.transition('awaiting-user-confirmation', inputPrompt);
+      const inputNonce = this.generateInputNonce();
+      let expectedOrigin: string | undefined = undefined;
+      try {
+        if (initialActiveTab?.url) {
+          expectedOrigin = new URL(initialActiveTab.url).origin;
+        }
+      } catch (_) {}
+
       this.pendingInputRequest = {
         kind: this.currentTaskContract.userInputKind || 'credentials',
         prompt: inputPrompt,
-        runId: this.currentRunId
+        runId: this.currentRunId,
+        leasedTabId: this.currentTabId,
+        inputNonce,
+        expectedOrigin
       };
       this.listeners.onUserInputRequired?.(this.pendingInputRequest);
       const res: CoordinatorRunResult = {
@@ -1426,8 +1525,8 @@ export class RunCoordinator {
             sanitizedScreenshotDataUrl: blankScreenshot,
             elements: [],
             pageState: {
-              title: activeTab?.title || 'New Tab',
-              url: activeTab?.url || 'chrome://newtab',
+              title: scrubOptionalText(activeTab?.title || 'New Tab'),
+              url: sanitizeOutboundUrl(activeTab?.url || 'chrome://newtab'),
               viewport: [1280, 800]
             },
             maskCount: 0,
@@ -1439,14 +1538,16 @@ export class RunCoordinator {
             ? (this.currentCustomPrompt ? `${this.currentCustomPrompt}\n\n${cacheHitContext}` : cacheHitContext)
             : this.currentCustomPrompt;
           if (effectiveCustomPrompt) {
-            (blankContext as any).customPrompt = effectiveCustomPrompt;
+            (blankContext as any).customPrompt = scrubOptionalText(effectiveCustomPrompt);
           }
           if (this.conversationHistory && this.conversationHistory.length > 0) {
-            (blankContext as any).history = this.conversationHistory;
+            (blankContext as any).history = scrubHistory(this.conversationHistory);
           }
           this.transition('sending-sanitized-context', `Step ${step}/${maxSteps}: Transmitting initial tab context`);
           this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Formulating initial navigation action`);
-          proposal = await this.httpClient.requestReasoningAction(blankContext);
+          proposal = typeof (this.httpClient as any).requestReasoningActionStream === 'function'
+            ? await (this.httpClient as any).requestReasoningActionStream(blankContext, this.activeStreamingOptions)
+            : await this.httpClient.requestReasoningAction(blankContext);
         } catch (err: any) {
           console.warn('[PrivaPilot Coordinator] Initial LLM reasoning unavailable on blank tab, using fallback resolution:', err?.message || err);
         }
@@ -2122,7 +2223,7 @@ export class RunCoordinator {
 
         let outcomeDesc = this.lastExecutionResult?.message || 'Action executed';
         if (urlChanged) {
-          outcomeDesc = `Page navigated to ${activeTab?.url || 'new URL'}`;
+          outcomeDesc = `Page navigated to ${sanitizeOutboundUrl(activeTab?.url || 'new URL')}`;
         } else if (elementsAddedCount > 5) {
           outcomeDesc = `UI updated: ${elementsAddedCount} new elements rendered`;
         }
@@ -2130,25 +2231,25 @@ export class RunCoordinator {
         stateDelta = {
           previousAction: {
             kind: this.lastExecutedProposal.kind,
-            targetName: prevTargetName,
+            targetName: prevTargetName ? scrubOptionalText(prevTargetName) : undefined,
             targetLocalId: this.lastExecutedProposal.targetLocalId,
-            textToType: this.lastExecutedProposal.textToType,
-            expectedState: this.lastExecutedProposal.expectedState
+            textToType: this.lastExecutedProposal.textToType ? scrubOptionalText(this.lastExecutedProposal.textToType) : undefined,
+            expectedState: this.lastExecutedProposal.expectedState ? scrubOptionalText(this.lastExecutedProposal.expectedState) : undefined
           },
           urlChanged,
-          previousUrl: this.previousUrl,
-          currentUrl: activeTab?.url || '',
+          previousUrl: sanitizeOutboundUrl(this.previousUrl || ''),
+          currentUrl: sanitizeOutboundUrl(activeTab?.url || ''),
           elementsAddedCount,
           elementsRemovedCount,
           scrollDeltaY,
-          observedOutcome: outcomeDesc,
+          observedOutcome: scrubOptionalText(outcomeDesc),
           verificationPassed: Boolean(this.lastExecutionResult?.semanticOutcomeVerified || this.lastExecutionResult?.success)
         };
       }
 
       // Attach current URL, state delta, and previous step history to page state so LLM has accurate multi-step context
       if (sanitized.pageState) {
-        (sanitized.pageState as any).url = activeTab?.url || '';
+        (sanitized.pageState as any).url = sanitizeOutboundUrl(activeTab?.url || '');
         if (stateDelta) {
           (sanitized.pageState as any).stateDelta = stateDelta;
         }
@@ -2157,9 +2258,9 @@ export class RunCoordinator {
         }
         if (this.actionHistory.length > 0) {
           const historyText = this.actionHistory
-            .map((a: any, idx: number) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || 'page'}" -> Result: ${a.verification?.reasonCode || 'Executed'} (URL: ${activeTab?.url || ''})`)
+            .map((a: any, idx: number) => `Step ${idx + 1}: ${a.kind} on "${scrubOptionalText(a.sanitizedTargetName || a.targetLocalId || 'page')}" -> Result: ${a.verification?.reasonCode || 'Executed'} (URL: ${sanitizeOutboundUrl(activeTab?.url || '')})`)
             .join('; ');
-          (sanitized.pageState as any).postconditionSummary = historyText.length > 500 ? historyText.slice(-500) : historyText;
+          (sanitized.pageState as any).postconditionSummary = scrubOptionalText(historyText.length > 500 ? historyText.slice(-500) : historyText);
         }
       }
 
@@ -2314,10 +2415,10 @@ export class RunCoordinator {
               kind: 'click',
               targetLocalId: submitBtn.localId,
               confidence: 0.99,
-              risk: 'safe',
-              userApproved: true,
-              reasoning: `All required form fields are populated with your details. Based on your instruction to register, I will now click ${submitBtn.sanitizedName} to complete the registration.`,
-              rationale: `Submitting registration form via "${submitBtn.sanitizedName}" button.`
+              risk: 'protected',
+              userApproved: false,
+              reasoning: `All required form fields are populated with your details. Based on your instruction to register, confirmation is required before clicking ${submitBtn.sanitizedName} to submit.`,
+              rationale: `Submitting registration form via "${submitBtn.sanitizedName}" button requires user confirmation.`
             };
           } else {
             localAutofillProposal = {
@@ -2513,22 +2614,40 @@ export class RunCoordinator {
 
         try {
           if (this.conversationHistory && this.conversationHistory.length > 0) {
-            (sanitized as any).history = this.conversationHistory;
+            (sanitized as any).history = scrubHistory(this.conversationHistory);
           }
           const cacheHitContext = this.getSemanticCacheContext(this.currentGoal || goal);
           const effectiveCustomPrompt = cacheHitContext
             ? (this.currentCustomPrompt ? `${this.currentCustomPrompt}\n\n${cacheHitContext}` : cacheHitContext)
             : this.currentCustomPrompt;
           if (effectiveCustomPrompt) {
-            (sanitized as any).customPrompt = effectiveCustomPrompt;
+            (sanitized as any).customPrompt = scrubOptionalText(effectiveCustomPrompt);
           }
           if (this.currentExecutionFeedback) {
-            (sanitized as any).executionFeedback = this.currentExecutionFeedback;
+            (sanitized as any).executionFeedback = {
+              ...this.currentExecutionFeedback,
+              completedTasks: this.currentExecutionFeedback.completedTasks?.map(scrubOptionalText),
+              remainingTasks: this.currentExecutionFeedback.remainingTasks?.map(scrubOptionalText),
+              outcomeCode: scrubOptionalText(this.currentExecutionFeedback.outcomeCode || '')
+            };
           }
           const currentObjective = this.currentTaskSpec && this.objectiveProgress
             ? getCurrentObjective(this.currentTaskSpec, this.objectiveProgress)
             : undefined;
-          if (this.currentTaskSpec) (sanitized as any).taskSpecification = this.currentTaskSpec;
+          if (this.currentTaskSpec) {
+            (sanitized as any).taskSpecification = {
+              ...this.currentTaskSpec,
+              goal: scrubOptionalText(this.currentTaskSpec.goal),
+              tasksToDo: this.currentTaskSpec.tasksToDo?.map(scrubOptionalText),
+              tasksNotToDo: this.currentTaskSpec.tasksNotToDo?.map(scrubOptionalText),
+              successCriteria: scrubOptionalText(this.currentTaskSpec.successCriteria || ''),
+              subAgentTasks: this.currentTaskSpec.subAgentTasks?.map((st: any) => ({
+                ...st,
+                targetEntityOrUrl: sanitizeOutboundUrl(st.targetEntityOrUrl || ''),
+                goal: scrubOptionalText(st.goal || '')
+              }))
+            };
+          }
           if (this.objectiveProgress) {
             const objectiveId = currentObjective?.id;
             if (objectiveId) {
@@ -2540,22 +2659,38 @@ export class RunCoordinator {
                 }
               };
             }
-            (sanitized as any).objectiveProgress = this.objectiveProgress;
+            (sanitized as any).objectiveProgress = {
+              ...this.objectiveProgress,
+              evidence: this.objectiveProgress.evidence?.map(ev => ({
+                ...ev,
+                summary: scrubOptionalText(ev.summary)
+              }))
+            };
           }
-          if (currentObjective) (sanitized as any).currentObjective = currentObjective;
+          if (currentObjective) {
+            (sanitized as any).currentObjective = {
+              ...currentObjective,
+              description: scrubOptionalText(currentObjective.description),
+              targetPhrase: currentObjective.targetPhrase ? scrubOptionalText(currentObjective.targetPhrase) : undefined,
+              extractedValue: currentObjective.extractedValue ? scrubOptionalText(currentObjective.extractedValue) : undefined
+            };
+          }
           if (this.lastExecutedProposal) {
             (sanitized as any).previousAction = {
               actionId: this.lastExecutedProposal.actionId,
               objectiveId: this.lastExecutedProposal.objectiveId,
               kind: this.lastExecutedProposal.kind,
               targetLocalId: this.lastExecutedProposal.targetLocalId,
-              targetName: this.lastExecutedProposal.targetName
+              targetName: this.lastExecutedProposal.targetName ? scrubOptionalText(this.lastExecutedProposal.targetName) : undefined
             };
             if (this.lastExecutedProposal.expectedPostcondition) (sanitized as any).expectedPostcondition = this.lastExecutedProposal.expectedPostcondition;
           }
-          (sanitized as any).observedOutcome = this.lastExecutionResult?.message || sanitized.pageState.stateDelta?.observedOutcome || '';
+          (sanitized as any).observedOutcome = scrubOptionalText(this.lastExecutionResult?.message || sanitized.pageState.stateDelta?.observedOutcome || '');
           (sanitized as any).meaningfulProgress = Boolean(sanitized.pageState.stateDelta?.verificationPassed || sanitized.pageState.stateDelta?.urlChanged || Math.abs(sanitized.pageState.stateDelta?.scrollDeltaY || 0) > 2);
-          (sanitized as any).recentActionHistory = this.recentActionHistory.slice(-10);
+          (sanitized as any).recentActionHistory = this.recentActionHistory.slice(-10).map((a: any) => ({
+            ...a,
+            observedOutcome: a.observedOutcome ? scrubOptionalText(a.observedOutcome) : undefined
+          }));
 
           // Proactive Tavily Web Search Guard (bypassed if on-device cache hit is verified):
           const isCacheHit = Boolean(cacheHitContext);
@@ -2570,12 +2705,19 @@ export class RunCoordinator {
               const searchQuery = extractSearchQueryFromGoal(this.currentGoal || '') || this.currentGoal || '';
               const searchRes = await this.httpClient.searchWeb(searchQuery, 5);
               if (searchRes?.success && searchRes.results && searchRes.results.length > 0) {
-                (sanitized as any).searchResults = searchRes.results;
+                (sanitized as any).searchResults = searchRes.results.map((r: any) => ({
+                  ...r,
+                  url: sanitizeOutboundUrl(r.url),
+                  title: scrubOptionalText(r.title || ''),
+                  content: scrubOptionalText(r.content || '')
+                }));
               }
             } catch (_) {}
           }
 
-          proposal = await this.httpClient.requestReasoningAction(sanitized);
+          proposal = typeof (this.httpClient as any).requestReasoningActionStream === 'function'
+            ? await (this.httpClient as any).requestReasoningActionStream(sanitized, this.activeStreamingOptions)
+            : await this.httpClient.requestReasoningAction(sanitized);
         } catch (err: any) {
           console.warn('[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:', err?.message || err);
           const msg = (err?.message || '').toLowerCase();
@@ -2799,41 +2941,51 @@ export class RunCoordinator {
         }
       }
 
-      // Step 4b: Confidence Threshold Check (Ultra-low confidence cannot automatically execute)
-      if (proposal.confidence < 0.25 && proposal.kind !== 'finish' && proposal.kind !== 'wait' && proposal.kind !== 'request_user_input') {
-        const errorMsg = `Action rejected: Proposal confidence (${proposal.confidence}) is below safe execution threshold (0.25)`;
-        this.transition('failed-safe', errorMsg);
-        const stepTrace: E2EStepTrace = {
-          step,
-          captureId: sanitized.captureId,
-          pageGeneration: sanitized.captureId,
-          maskCount: sanitized.maskCount,
-          sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
-          decisionOrigin,
-          proposal,
-          riskDecision: 'safe',
-          confidenceDecision: 'rejected_low_confidence',
-          executed: false,
-          networkRequestMade,
-          timings: { total: Date.now() - t0_step }
-        };
-        this.stepsTrace.push(stepTrace);
-        const res: CoordinatorRunResult = {
-          success: false,
-          state: 'failed-safe',
-          error: errorMsg,
-          sanitized,
-          proposal,
-          stepCount: step,
-          steps: this.stepsTrace
-        };
-        return this.completeWithResult(res);
-      }
-
       // Step 4c: Target Lookup and Validation
       let targetElement = proposal.targetLocalId
         ? sanitized.elements.find(e => e.localId === proposal.targetLocalId)
         : undefined;
+
+      // Step 4b: Confidence Threshold & Human-In-The-Loop (HITL) Check
+      const isInformationalOrWait = proposal.kind === 'finish' || proposal.kind === 'wait' || proposal.kind === 'request_user_input' || proposal.kind === 'answer' || proposal.kind === 'observe';
+      if (!isInformationalOrWait && proposal.confidence !== undefined) {
+        if (proposal.confidence < 0.30) {
+          const errorMsg = `Action rejected: Proposal confidence (${proposal.confidence}) is below minimal execution threshold (0.30)`;
+          this.transition('failed-safe', errorMsg);
+          const stepTrace: E2EStepTrace = {
+            step,
+            captureId: sanitized.captureId,
+            pageGeneration: sanitized.captureId,
+            maskCount: sanitized.maskCount,
+            sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+            decisionOrigin,
+            proposal,
+            riskDecision: 'blocked',
+            confidenceDecision: 'low_confidence',
+            executed: false,
+            networkRequestMade,
+            timings: { total: Date.now() - t0_step }
+          };
+          this.stepsTrace.push(stepTrace);
+          const res: CoordinatorRunResult = {
+            success: false,
+            state: 'failed-safe',
+            error: errorMsg,
+            sanitized,
+            proposal,
+            stepCount: step,
+            steps: this.stepsTrace
+          };
+          return this.completeWithResult(res);
+        } else if (proposal.confidence < 0.85 && proposal.risk !== 'blocked' && !isSafeReversibleInteraction(proposal, targetElement)) {
+          // Human-in-the-loop: confidence below 0.85 requires human confirmation before executing destructive/state-altering actions
+          proposal = {
+            ...proposal,
+            risk: 'protected',
+            rationale: `Human-in-the-loop confirmation required: Confidence (${Math.round(proposal.confidence * 100)}%) is below autonomous threshold (85%). ${proposal.rationale}`
+          };
+        }
+      }
 
       if (proposal.targetLocalId && !targetElement) {
         const errorMsg = `Action rejected: Model proposed non-existent target ID "${proposal.targetLocalId}".`;
@@ -2865,7 +3017,15 @@ export class RunCoordinator {
       }
 
       // Step 4d: Client Safety Policy (always evaluated before semantic grounding)
-      const classifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
+      let classifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
+      if (proposal.kind === 'batch' && classifiedRisk === 'protected' && Array.isArray(proposal.batchActions) && proposal.batchActions.length > 0) {
+        const firstSub = proposal.batchActions[0];
+        const firstTarget = firstSub.targetLocalId ? sanitized.elements.find(e => e.localId === firstSub.targetLocalId) : undefined;
+        const firstRisk = classifyActionRisk(firstSub as any, firstTarget?.sanitizedName);
+        if (firstRisk === 'safe' && firstSub.kind !== 'click') {
+          classifiedRisk = 'safe';
+        }
+      }
       let riskLevel: RiskLevel = (proposal.risk === 'blocked' || classifiedRisk === 'blocked')
         ? 'blocked'
         : (proposal.risk === 'protected' || classifiedRisk === 'protected')
@@ -2969,8 +3129,8 @@ export class RunCoordinator {
           }
         }
 
-        // 2. Ambiguity resolution (Only for destructive/protected controls like buttons or form inputs; never links):
-        const isSafeNavControl = targetElement?.role === 'link' || proposal.kind === 'navigate';
+        // 2. Ambiguity resolution (Only for destructive/protected controls like buttons or form inputs; never links or safe nav):
+        const isSafeNavControl = targetElement?.role === 'link' || targetElement?.role === 'tab' || targetElement?.role === 'menuitem' || proposal.kind === 'navigate' || isSafeReversibleInteraction(proposal, targetElement);
         if (grounding.status === 'ambiguous_match' && !isSafeNavControl) {
           proposal = {
             ...proposal,
@@ -3005,9 +3165,11 @@ export class RunCoordinator {
       }
 
       // Step 4f: Unqualified Duplicate Candidate Ambiguity Gate (Only for low-confidence or non-link controls)
-      if (targetElement && proposal.kind === 'click') {
+      if (targetElement && proposal.kind === 'click' && !isSafeReversibleInteraction(proposal, targetElement)) {
         const isHighConfidenceOrLink = (proposal.confidence || 0) >= 0.90 ||
           targetElement.role === 'link' ||
+          targetElement.role === 'tab' ||
+          targetElement.role === 'menuitem' ||
           proposal.actionId.startsWith('act_search_result_click_') ||
           proposal.actionId.startsWith('act_download_') ||
           proposal.actionId.startsWith('act_playbook_') ||
@@ -3162,12 +3324,23 @@ export class RunCoordinator {
 
         if (!autoFilledFromVault) {
           const promptText = proposal.userInputPrompt || proposal.rationale || 'Please provide the information required by the form.';
+          const inputNonce = this.generateInputNonce();
+          let expectedOrigin: string | undefined = undefined;
+          try {
+            if (sanitized.pageState?.url) {
+              expectedOrigin = new URL(sanitized.pageState.url).origin;
+            }
+          } catch (_) {}
+
           const inputRequest = {
             kind: proposal.targetLocalId ? 'text_input' as const : 'clarification' as const,
             prompt: promptText,
             targetLocalId: proposal.targetLocalId,
             inputKey: proposal.inputKey,
-            runId: this.currentRunId
+            runId: this.currentRunId,
+            leasedTabId: this.currentTabId,
+            inputNonce,
+            expectedOrigin
           };
           this.pendingInputRequest = inputRequest;
           this.transition('awaiting-user-input', promptText);
@@ -3791,8 +3964,77 @@ export class RunCoordinator {
                 if (match.matched && match.valueToFill && (isAutofill || isPlaceholder)) {
                   subTextToType = match.valueToFill;
                 }
+                if (targetEl.role === 'textarea' || /feedback|message|comments/i.test(targetEl.sanitizedName || '')) {
+                  if (typeof subTextToType === 'string' && subTextToType) {
+                    subTextToType = subTextToType.replace(/[!@#$%^&*()_+\-=\[\]{};':"\\|<>\/?~`]/g, ' ').replace(/\s+/g, ' ').trim();
+                  }
+                }
               }
             } catch (_) {}
+          }
+
+          const batchTargetEl = sub.targetLocalId ? sanitized.elements.find(e => e.localId === sub.targetLocalId) : undefined;
+          const isSubmitOrProtected = (
+            sub.kind === 'click' && (
+              /\b(?:submit|register|sign\s*up|checkout|pay|delete|purchase|order)\b/i.test(sub.actionId || '') ||
+              /\b(?:submit|register|sign\s*up|checkout|pay|delete|purchase|order)\b/i.test(sub.rationale || '') ||
+              /\b(?:submit|register|sign\s*up|checkout|pay|delete|purchase|order)\b/i.test(batchTargetEl?.sanitizedName || '') ||
+              (sub as any).expectedState === 'submit'
+            )
+          );
+          const subClassifiedRisk = classifyActionRisk(sub as any, batchTargetEl?.sanitizedName);
+          const isSubProtected = subClassifiedRisk === 'protected' || isSubmitOrProtected || (sub.kind !== 'type' && proposal.confidence < 0.85);
+
+          if (isSubProtected) {
+            const protectedSubProposal: ActionProposal = {
+              actionId: sub.actionId || `act_sub_${i + 1}_${Date.now()}`,
+              kind: sub.kind as any,
+              targetLocalId: sub.targetLocalId,
+              destinationLocalId: sub.destinationLocalId,
+              textToType: subTextToType,
+              selectOptionValue: sub.selectOptionValue,
+              scrollDirection: sub.scrollDirection,
+              pressEnter: sub.pressEnter,
+              fileName: sub.fileName,
+              confidence: proposal.confidence,
+              risk: 'protected',
+              userApproved: false,
+              rationale: sub.rationale || `Human confirmation required before executing protected action '${sub.kind}' on ${batchTargetEl?.sanitizedName || sub.targetLocalId || 'form'}.`,
+              expectedState: (sub as any).expectedState || 'submit',
+              expectedPostcondition: (sub as any).expectedPostcondition
+            };
+
+            this.pendingAction = protectedSubProposal;
+            const msg = `Protected batch action requires user consent: ${protectedSubProposal.rationale}`;
+            this.transition('awaiting-user-confirmation', msg);
+            if (this.listeners.onActionConfirmedRequired) {
+              this.listeners.onActionConfirmedRequired(protectedSubProposal, this.currentRunId);
+            }
+            const stepTrace: E2EStepTrace = {
+              step,
+              captureId: sanitized.captureId,
+              pageGeneration: sanitized.captureId,
+              maskCount: sanitized.maskCount,
+              sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+              decisionOrigin,
+              proposal: protectedSubProposal,
+              riskDecision: 'protected',
+              confidenceDecision: 'requires_confirmation',
+              executed: false,
+              networkRequestMade,
+              timings: { total: Date.now() - t0_step }
+            };
+            this.stepsTrace.push(stepTrace);
+            const res: CoordinatorRunResult = {
+              success: false,
+              state: 'awaiting-user-confirmation',
+              message: msg,
+              sanitized,
+              proposal: protectedSubProposal,
+              stepCount: step,
+              steps: this.stepsTrace
+            };
+            return this.completeWithResult(res);
           }
 
           const subProposal: ActionProposal = {
@@ -3809,7 +4051,7 @@ export class RunCoordinator {
             risk: 'safe',
             userApproved: true,
             rationale: sub.rationale || proposal.rationale,
-            expectedState: (sub as any).expectedState || (/\b(?:submit|register|sign\s*up)\b/i.test(sub.actionId || (sub as any).rationale || '') ? 'submit' : undefined),
+            expectedState: (sub as any).expectedState,
             expectedPostcondition: (sub as any).expectedPostcondition
           };
 
@@ -3885,6 +4127,10 @@ export class RunCoordinator {
             if (cleanedText && cleanedText.length > 0 && cleanedText !== proposal.textToType) {
               (proposal as any).textToType = cleanedText;
             }
+          }
+          const targetEl = sanitized.elements.find(e => e.localId === proposal.targetLocalId);
+          if (targetEl && (targetEl.role === 'textarea' || /feedback|message|comments/i.test(targetEl.sanitizedName || ''))) {
+            (proposal as any).textToType = proposal.textToType.replace(/[!@#$%^&*()_+\-=\[\]{};':"\\|<>\/?~`]/g, ' ').replace(/\s+/g, ' ').trim();
           }
         }
 
@@ -5442,7 +5688,11 @@ export class RunCoordinator {
   async chatWithPage(
     userMessage: string,
     history?: ReadonlyArray<ChatHistoryMessage>,
-    customPrompt?: string
+    customPrompt?: string,
+    options?: {
+      onThoughtDelta?: (text: string) => void;
+      onReplyDelta?: (text: string) => void;
+    }
   ): Promise<ChatOutcome> {
     try {
       if (isSubAgentSwarmGoal(userMessage)) {
@@ -5464,12 +5714,12 @@ export class RunCoordinator {
       const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening))\s*$/i;
 
       if (PURE_GREETING_PATTERN.test(userMessage.trim())) {
-        return this.generalChat(userMessage, undefined, history, customPrompt);
+        return this.generalChat(userMessage, undefined, history, customPrompt, options);
       }
 
       const activeTab = await this.browser.getActiveTab(this.currentTabId);
       if (!activeTab || !activeTab.id) {
-        return this.generalChat(userMessage, undefined, history, customPrompt);
+        return this.generalChat(userMessage, undefined, history, customPrompt, options);
       }
 
       let domResponse: any = null;
@@ -5483,7 +5733,7 @@ export class RunCoordinator {
       }
 
       if (!domResponse || !domResponse.success || !domResponse.snapshot) {
-        return this.generalChat(userMessage, undefined, history, customPrompt);
+        return this.generalChat(userMessage, undefined, history, customPrompt, options);
       }
 
       let screenshotDataUrl: string = '';
@@ -5515,14 +5765,19 @@ export class RunCoordinator {
         });
       } catch (_) {
         // Sanitizer host unavailable or timed out; fallback to general chat
-        return this.generalChat(userMessage, undefined, history, customPrompt);
+        return this.generalChat(userMessage, undefined, history, customPrompt, options);
       }
 
       if (this.listeners.onSanitizationComplete) {
         this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
       }
 
-      const chatRes = await this.httpClient.requestChat(sanitized, userMessage, history, customPrompt);
+      const chatRes = await this.httpClient.requestChatStream(sanitized, userMessage, {
+        history,
+        customPrompt,
+        onThoughtDelta: options?.onThoughtDelta,
+        onReplyDelta: options?.onReplyDelta
+      });
       return {
         success: true,
         reply: chatRes.reply,
@@ -5532,7 +5787,7 @@ export class RunCoordinator {
         modelConnected: chatRes.modelConnected !== false
       };
     } catch (err: any) {
-      return this.generalChat(userMessage, err, history, customPrompt);
+      return this.generalChat(userMessage, err, history, customPrompt, options);
     }
   }
 
@@ -5542,7 +5797,11 @@ export class RunCoordinator {
   async chatWithoutPage(
     userMessage: string,
     history?: ReadonlyArray<ChatHistoryMessage>,
-    customPrompt?: string
+    customPrompt?: string,
+    options?: {
+      onThoughtDelta?: (text: string) => void;
+      onReplyDelta?: (text: string) => void;
+    }
   ): Promise<ChatOutcome> {
     const cacheHitContext = this.getSemanticCacheContext(userMessage);
     const effectivePrompt = cacheHitContext
@@ -5562,7 +5821,7 @@ export class RunCoordinator {
         modelConnected: true
       };
     }
-    return this.generalChat(userMessage, undefined, history, effectivePrompt);
+    return this.generalChat(userMessage, undefined, history, effectivePrompt, options);
   }
 
   /**
@@ -5574,7 +5833,11 @@ export class RunCoordinator {
     userMessage: string,
     priorError?: any,
     history?: ReadonlyArray<ChatHistoryMessage>,
-    customPrompt?: string
+    customPrompt?: string,
+    options?: {
+      onThoughtDelta?: (text: string) => void;
+      onReplyDelta?: (text: string) => void;
+    }
   ): Promise<ChatOutcome> {
     if (isSubAgentSwarmGoal(userMessage)) {
       const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
@@ -5590,7 +5853,12 @@ export class RunCoordinator {
       };
     }
     try {
-      const genRes = await this.httpClient.requestGeneralChat(userMessage, history, customPrompt);
+      const genRes = await this.httpClient.requestGeneralChatStream(userMessage, {
+        history,
+        customPrompt,
+        onThoughtDelta: options?.onThoughtDelta,
+        onReplyDelta: options?.onReplyDelta
+      });
       return {
         success: true,
         reply: genRes.reply,
@@ -5616,8 +5884,12 @@ export class RunCoordinator {
    * If resumeLoop is true, continues multi-step execution loop.
    */
   async approvePendingAction(options?: { resumeLoop?: boolean; runId?: string; actionId?: string }): Promise<CoordinatorRunResult> {
-    if (options?.runId !== this.currentRunId || options?.actionId !== this.pendingAction?.actionId ||
-        this.state !== 'awaiting-user-confirmation') {
+    if (this.state === 'executing' || this.state === 'verifying' || this.state === 'complete') {
+      return { success: true, state: this.state, runId: this.currentRunId, stepCount: this.currentStep };
+    }
+    const runMatches = !options?.runId || options.runId === this.currentRunId;
+    const actionMatches = !options?.actionId || !this.pendingAction?.actionId || options.actionId === this.pendingAction?.actionId;
+    if (!runMatches || !actionMatches || this.state !== 'awaiting-user-confirmation') {
       return { success: false, state: this.state, error: 'Confirmation no longer matches the pending action', runId: this.currentRunId };
     }
     if (!this.pendingAction || !this.currentSanitizedContext) {
@@ -5740,15 +6012,22 @@ export class RunCoordinator {
       };
     }
 
-    if (options?.resumeLoop && action.kind !== 'finish') {
+    const isFormSubmission = /submit/i.test(action.targetName || '') ||
+      /submit/i.test(action.elementText || '') ||
+      /submit/i.test((action as any).sanitizedTargetName || '') ||
+      /submit/i.test(action.rationale || '') ||
+      action.expectedState === 'submit';
+
+    if (options?.resumeLoop && action.kind !== 'finish' && !isFormSubmission) {
       return this.executeLoop();
     }
 
-    this.transition('complete', `Approved action executed: ${action.rationale}`);
+    const completionMsg = isFormSubmission ? 'Form submitted successfully with user approval.' : (action.rationale || 'Action executed with user approval.');
+    this.transition('complete', completionMsg);
     const res: CoordinatorRunResult = {
       success: true,
       state: 'complete',
-      message: action.rationale,
+      message: completionMsg,
       sanitized,
       proposal: action,
       telemetry,
@@ -5761,8 +6040,12 @@ export class RunCoordinator {
    * Called when the user clicks 'Deny' on a protected action card.
    */
   denyPendingAction(options?: { runId?: string; actionId?: string }): CoordinatorRunResult {
-    if (options?.runId !== this.currentRunId || options?.actionId !== this.pendingAction?.actionId ||
-        this.state !== 'awaiting-user-confirmation') {
+    if (this.state !== 'awaiting-user-confirmation') {
+      return { success: true, state: this.state, runId: this.currentRunId, stepCount: this.currentStep };
+    }
+    const runMatches = !options?.runId || options.runId === this.currentRunId;
+    const actionMatches = !options?.actionId || !this.pendingAction?.actionId || options.actionId === this.pendingAction?.actionId;
+    if (!runMatches || !actionMatches) {
       return { success: false, state: this.state, error: 'Confirmation no longer matches the pending action', runId: this.currentRunId };
     }
     const action = this.pendingAction;
@@ -5789,17 +6072,46 @@ export class RunCoordinator {
   async submitUserInput(
     inputs: { username?: string; password?: string; customText?: string },
     targetTabId?: number,
-    options?: { resumeLoop?: boolean; targetLocalId?: string; saveToVault?: boolean; inputKey?: string; runId?: string }
+    options?: { resumeLoop?: boolean; targetLocalId?: string; saveToVault?: boolean; inputKey?: string; runId?: string; inputNonce?: string }
   ): Promise<CoordinatorRunResult> {
-    if (options?.runId !== this.currentRunId || !this.pendingInputRequest ||
+    if (options?.runId && options.runId !== this.currentRunId || !this.pendingInputRequest ||
         this.state !== 'awaiting-user-input' &&
         !(this.state === 'awaiting-user-confirmation' && this.currentTaskContract?.requiresUserInput)) {
-      return { success: false, state: this.state, error: 'Input no longer matches the pending run', runId: this.currentRunId };
+      return { success: false, state: this.state, error: 'Input no longer matches the pending run', runId: this.currentRunId, reasonCode: 'RUN_MISMATCH' };
     }
+
+    // 1. One-time Nonce Gate: Verify matching inputNonce
+    if (this.pendingInputRequest.inputNonce) {
+      if (!options?.inputNonce || options.inputNonce !== this.pendingInputRequest.inputNonce) {
+        return {
+          success: false,
+          state: this.state,
+          error: 'NONCE_MISMATCH: Input nonce is invalid or replayed',
+          reasonCode: 'NONCE_MISMATCH',
+          runId: this.currentRunId
+        };
+      }
+    }
+
+    // 2. Strict Tab Lease Verification: Enforce matching tab ID
+    const leasedTabId = this.pendingInputRequest.leasedTabId || this.currentTabId;
+    if (targetTabId && leasedTabId && targetTabId !== leasedTabId) {
+      const errorMsg = `TAB_SWITCHED: Input was submitted for tab ${targetTabId}, but request was leased to tab ${leasedTabId}`;
+      this.transition('failed-safe', errorMsg);
+      return this.completeWithResult({
+        success: false,
+        state: 'failed-safe',
+        error: errorMsg,
+        reasonCode: 'TAB_SWITCHED',
+        runId: this.currentRunId
+      });
+    }
+
     if (options?.targetLocalId !== this.pendingInputRequest.targetLocalId ||
         options?.inputKey !== this.pendingInputRequest.inputKey) {
       return { success: false, state: this.state, error: 'Input target no longer matches the pending request', runId: this.currentRunId };
     }
+
     if (this.pendingInputRequest.kind === 'clarification') {
       const clarification = inputs.customText?.trim();
       if (!clarification) {
@@ -5812,12 +6124,47 @@ export class RunCoordinator {
       this.transition('capturing', 'Continuing after user clarification');
       return this.executeLoop();
     }
-    this.pendingInputRequest = null;
-    const tabToUse = targetTabId || this.currentTabId;
-    const activeTab = await this.browser.getActiveTab(tabToUse);
-    if (activeTab?.id) {
-      this.currentTabId = activeTab.id;
+
+    // 3. Strict Tab Resolution: Resolve leasedTabId strictly; NEVER fall back to active tab
+    const tabToUse = leasedTabId || targetTabId;
+    let targetTab: any = null;
+    if (tabToUse && typeof (this.browser as any).getStrictTab === 'function') {
+      targetTab = await (this.browser as any).getStrictTab(tabToUse);
+    } else {
+      targetTab = await this.browser.getActiveTab(tabToUse);
     }
+
+    if (!targetTab || !targetTab.id || (tabToUse && targetTab.id !== tabToUse)) {
+      const errorMsg = 'TAB_CLOSED: The target tab is closed or no longer accessible';
+      this.transition('failed-safe', errorMsg);
+      return this.completeWithResult({
+        success: false,
+        state: 'failed-safe',
+        error: errorMsg,
+        reasonCode: 'TAB_CLOSED',
+        runId: this.currentRunId
+      });
+    }
+
+    // 4. Origin Change Verification
+    if (this.pendingInputRequest.expectedOrigin && targetTab.url) {
+      try {
+        const currentOrigin = new URL(targetTab.url).origin;
+        if (currentOrigin !== this.pendingInputRequest.expectedOrigin) {
+          const errorMsg = `ORIGIN_CHANGED: Tab navigated from ${this.pendingInputRequest.expectedOrigin} to ${currentOrigin}`;
+          this.transition('failed-safe', errorMsg);
+          return this.completeWithResult({
+            success: false,
+            state: 'failed-safe',
+            error: errorMsg,
+            reasonCode: 'ORIGIN_CHANGED',
+            runId: this.currentRunId
+          });
+        }
+      } catch (_) {}
+    }
+
+    this.currentTabId = targetTab.id;
 
     if (!inputs.username && !inputs.password && !inputs.customText) {
       const errorMsg = 'Please enter your username/email or password to fill the form';
@@ -5827,17 +6174,19 @@ export class RunCoordinator {
 
     this.transition('executing', 'Safely filling form fields locally with provided input');
 
+    // 5. Safe Bridge Preflight: Do not nullify pendingInputRequest until bridge succeeds!
     const captureId = `cap_input_${Date.now()}`;
     let domResponse: any;
     try {
-      domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+      domResponse = await this.browser.sendMessageToTab(targetTab.id, {
         type: 'EXTRACT_DOM_SNAPSHOT',
         captureId
       });
     } catch (err: any) {
       const errorMsg = 'Could not communicate with tab to fill form inputs';
       this.transition('failed-safe', errorMsg);
-      return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg });
+      // NOTE: pendingInputRequest is preserved for safe retry!
+      return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg, reasonCode: 'BRIDGE_ERROR' });
     }
 
     if (!domResponse || !domResponse.snapshot) {
@@ -5845,6 +6194,10 @@ export class RunCoordinator {
       this.transition('failed-safe', errorMsg);
       return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg });
     }
+
+    // Now that preflight succeeded and we are actively filling the fields:
+    this.pendingInputRequest = null;
+    const activeTab = targetTab;
 
     const elements: any[] = domResponse.snapshot.interactiveElements || domResponse.snapshot.elements || [];
     const domElements: any[] = domResponse.snapshot.domElements || [];

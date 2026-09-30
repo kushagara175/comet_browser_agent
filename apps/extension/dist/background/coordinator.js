@@ -14,9 +14,45 @@
 import { classifyActionRisk, validateActionProposal, resolveTaskContract, groundTargetCandidates, scoreCandidate, tokenizeSemanticText, extractSearchQueryFromGoal, extractTargetUrlFromGoal, stripNavigationPrefixFromGoal, isPureNavigationGoal, createInitialObjectiveProgress, getCurrentObjective, recordObjectiveEvidence, completeObjectiveWithEvidence, canFinishTask } from '@privapilot/protocol';
 import { WebExtensionAdapter } from '../browser/browser-adapter.js';
 import { ReasoningHttpClient } from './http-client.js';
+import { sanitizeOutboundUrl, scrubOptionalText, scrubHistory } from '@privapilot/pii-rules';
 import { AuditLogger } from './audit-logger.js';
 import { getUserProfile, saveUserProfile, getCredentialsForDomain, saveSiteCredential, normalizeDomain, matchFieldToVault, DEMO_USER_PROFILE } from '../vault/index.js';
 import { SemanticActionCache } from '../cache/semantic-action-cache.js';
+function isSafeReversibleInteraction(proposal, targetElement) {
+    const kind = (proposal.kind || '').toLowerCase();
+    if (kind === 'scroll' || kind === 'observe' || kind === 'wait' || kind === 'hover' || kind === 'navigate') {
+        return true;
+    }
+    if (kind === 'click') {
+        const role = (targetElement?.role || '').toLowerCase();
+        const name = (targetElement?.sanitizedName || proposal.targetName || '').toLowerCase();
+        const isDestructive = name.includes('submit') ||
+            name.includes('send') ||
+            name.includes('publish') ||
+            name.includes('delete') ||
+            name.includes('remove') ||
+            name.includes('pay') ||
+            name.includes('purchase') ||
+            name.includes('buy') ||
+            name.includes('checkout') ||
+            name.includes('authorize') ||
+            name.includes('sign') ||
+            name.includes('transfer') ||
+            name.includes('confirm order');
+        if (isDestructive) {
+            return false;
+        }
+        if (role === 'link' || role === 'tab' || role === 'menuitem' || role === 'heading') {
+            return true;
+        }
+        const isNavWord = /\b(?:students?|careers?|about|home|contact|news|events?|overview|details?|next|prev|previous|back|more|learn\s+more|read\s+more|menu|nav|tab|filter|search|view|browse|explore)\b/i.test(name);
+        if (isNavWord) {
+            return true;
+        }
+        return !isDestructive;
+    }
+    return false;
+}
 function isMissionBrochureGoal(goal) {
     return /\b(?:chandrayaan[\s-]*3|chandrayaan)\b/i.test(goal) &&
         /\b(?:brochure|pdf|download)\b/i.test(goal);
@@ -24,7 +60,7 @@ function isMissionBrochureGoal(goal) {
 function isroMissionStage(url) {
     try {
         const parsed = new URL(url);
-        if (!/isro\.gov\.in/i.test(parsed.hostname))
+        if (!/(?:^|\.)isro\.gov\.in$/i.test(parsed.hostname))
             return null;
         const path = parsed.pathname.toLowerCase().replace(/\/+$/, '') || '/';
         if (path.includes('spacecraftmissions') || path.includes('launchmissions'))
@@ -55,6 +91,7 @@ export function enforceIsroMissionProgression(goal, url, elements, proposal) {
         const ctx = (el.containerContext || '').toLowerCase();
         return ctx.includes('breadcrumb') ||
             name.includes('breadcrumb') ||
+            name.includes('site search') ||
             /^(?:home|activities|missions accomplished|about|services|programmes|resources|engagements)$/i.test(name) ||
             el.href?.includes?.('Mission.html') ||
             el.href?.includes?.('index.html') ||
@@ -83,21 +120,22 @@ export function enforceIsroMissionProgression(goal, url, elements, proposal) {
         // Stage 3 on SpacecraftMissions.html:
         // Candidate 1: Target mission link in table
         target = candidates('link', /chandrayaan[\s-]*3\b/i, 'click').find(el => !isRegressionOrBreadcrumb(el)) ||
-            elements.find(el => el.role === 'link' && !isRegressionOrBreadcrumb(el) && /chandrayaan[\s-]*3\b/i.test(el.sanitizedName));
+            elements.find(el => el.role === 'link' && !isRegressionOrBreadcrumb(el) && /chandrayaan[\s-]*3\b/i.test(el.sanitizedName) && eligibleMissionElement(el, 'click'));
         if (!target) {
             // Candidate 2: Table filter search input
             kind = 'type';
             target = candidates('input', /table\s*filter|search/i, 'type').find(el => !isRegressionOrBreadcrumb(el)) ||
-                elements.find(el => (el.role === 'input' || el.role === 'textarea') && !isRegressionOrBreadcrumb(el) && (/table\s*filter/i.test(el.sanitizedName) || el.placeholder?.toLowerCase() === 'search' || el.classList?.contains('search')));
+                elements.find(el => (el.role === 'input' || el.role === 'textarea') && !isRegressionOrBreadcrumb(el) && (/table\s*filter/i.test(el.sanitizedName) || el.placeholder?.toLowerCase() === 'search' || el.classList?.contains('search')) && eligibleMissionElement(el, 'type'));
             textToType = 'Chandrayaan';
         }
     }
     else {
         target = candidates('link', /brochure/i, 'click').find(el => !isRegressionOrBreadcrumb(el)) ||
-            elements.find(el => el.role === 'link' && !isRegressionOrBreadcrumb(el) && (/brochure/i.test(el.sanitizedName) || /\.pdf\b/i.test(el.href || '')));
+            elements.find(el => el.role === 'link' && !isRegressionOrBreadcrumb(el) && (/brochure/i.test(el.sanitizedName) || /\.pdf\b/i.test(el.href || '')) && eligibleMissionElement(el, 'click'));
     }
-    if (!target)
-        return { proposal };
+    if (!target) {
+        return { error: 'No visible, enabled target element found for mission progression' };
+    }
     const incomingTargetEl = proposal.targetLocalId ? elements.find(e => e.localId === proposal.targetLocalId) : null;
     const isIncomingRegression = incomingTargetEl ? isRegressionOrBreadcrumb(incomingTargetEl) : false;
     if (!isIncomingRegression && proposal.kind === kind && proposal.targetLocalId === target.localId &&
@@ -499,6 +537,9 @@ export class RunCoordinator {
     lastStaleTargetId = null;
     pendingAction = null;
     pendingInputRequest = null;
+    generateInputNonce() {
+        return `nonce_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    }
     currentSanitizedContext = null;
     lastActionProposal = null;
     lastRunResult = null;
@@ -525,6 +566,7 @@ export class RunCoordinator {
     hasTavilyRecovered = false;
     autofilledTargets = new Set();
     sessionWebSearchCache = new Map();
+    activeStreamingOptions;
     options;
     constructor(browser = new WebExtensionAdapter(), httpClient = new ReasoningHttpClient(), auditLogger = new AuditLogger(), options = {}) {
         this.browser = browser;
@@ -547,15 +589,15 @@ export class RunCoordinator {
         return this.lastRunResult;
     }
     completeWithResult(res) {
+        this.activeStreamingOptions = undefined;
         const steps = [...this.stepsTrace];
         for (const entry of res.steps || []) {
             if (!steps.some(s => s.proposal?.actionId === entry.proposal?.actionId && s.step === entry.step))
                 steps.push(entry);
         }
         steps.sort((a, b) => a.step - b.step);
-        const stepReasoning = steps.map((entry, index) => {
-            const text = entry.proposal?.reasoning || entry.proposal?.thought || entry.proposal?.rationale;
-            return text ? `Step ${index + 1}: ${text}` : '';
+        const stepReasoning = steps.map((entry) => {
+            return entry.proposal?.reasoning || entry.proposal?.thought || entry.proposal?.rationale || '';
         }).filter(Boolean).join('\n\n');
         const finalReasoning = stepReasoning || res.reasoning || res.proposal?.reasoning || res.proposal?.thought ||
             this.lastActionProposal?.reasoning || this.lastActionProposal?.thought || undefined;
@@ -994,10 +1036,20 @@ export class RunCoordinator {
         this.previousUrl = '';
         this.lastExecutedProposal = null;
         this.lastExecutionResult = null;
+        this.activeStreamingOptions = {
+            onThoughtDelta: options?.onThoughtDelta,
+            onReplyDelta: options?.onReplyDelta
+        };
+        let initialActiveTab = null;
         try {
-            const activeTab = await this.browser.getActiveTab(options?.tabId);
-            if (activeTab?.id) {
-                this.currentTabId = activeTab.id;
+            if (options?.tabId && typeof this.browser.getStrictTab === 'function') {
+                initialActiveTab = await this.browser.getStrictTab(options.tabId);
+            }
+            if (!initialActiveTab) {
+                initialActiveTab = await this.browser.getActiveTab(options?.tabId);
+            }
+            if (initialActiveTab?.id) {
+                this.currentTabId = initialActiveTab.id;
             }
         }
         catch (_) {
@@ -1041,7 +1093,14 @@ export class RunCoordinator {
         const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|hi\s+there|hello\s+there|greetings|good\s+(?:morning|afternoon|evening|day)|who\s+are\s+you|what\s+can\s+you\s+do)\s*[!.?]*$/i;
         if (PURE_GREETING_PATTERN.test((goal || '').trim())) {
             this.transition('awaiting-reasoning', 'Synthesizing response with reasoning model...');
-            const chatRes = await this.httpClient.requestGeneralChat(goal, this.conversationHistory);
+            const chatRes = typeof this.httpClient?.requestGeneralChatStream === 'function'
+                ? await this.httpClient.requestGeneralChatStream(goal, {
+                    history: this.conversationHistory,
+                    customPrompt: options?.customPrompt,
+                    onThoughtDelta: options?.onThoughtDelta,
+                    onReplyDelta: options?.onReplyDelta
+                })
+                : await this.httpClient.requestGeneralChat(goal, this.conversationHistory);
             const answerAction = {
                 actionId: `act_greet_${Date.now()}`,
                 kind: 'answer',
@@ -1099,10 +1158,21 @@ export class RunCoordinator {
         if (this.currentTaskContract.requiresUserInput) {
             const inputPrompt = this.currentTaskContract.userInputPrompt || 'User input required to proceed.';
             this.transition('awaiting-user-confirmation', inputPrompt);
+            const inputNonce = this.generateInputNonce();
+            let expectedOrigin = undefined;
+            try {
+                if (initialActiveTab?.url) {
+                    expectedOrigin = new URL(initialActiveTab.url).origin;
+                }
+            }
+            catch (_) { }
             this.pendingInputRequest = {
                 kind: this.currentTaskContract.userInputKind || 'credentials',
                 prompt: inputPrompt,
-                runId: this.currentRunId
+                runId: this.currentRunId,
+                leasedTabId: this.currentTabId,
+                inputNonce,
+                expectedOrigin
             };
             this.listeners.onUserInputRequired?.(this.pendingInputRequest);
             const res = {
@@ -1195,8 +1265,8 @@ export class RunCoordinator {
                             sanitizedScreenshotDataUrl: blankScreenshot,
                             elements: [],
                             pageState: {
-                                title: activeTab?.title || 'New Tab',
-                                url: activeTab?.url || 'chrome://newtab',
+                                title: scrubOptionalText(activeTab?.title || 'New Tab'),
+                                url: sanitizeOutboundUrl(activeTab?.url || 'chrome://newtab'),
                                 viewport: [1280, 800]
                             },
                             maskCount: 0,
@@ -1208,14 +1278,16 @@ export class RunCoordinator {
                             ? (this.currentCustomPrompt ? `${this.currentCustomPrompt}\n\n${cacheHitContext}` : cacheHitContext)
                             : this.currentCustomPrompt;
                         if (effectiveCustomPrompt) {
-                            blankContext.customPrompt = effectiveCustomPrompt;
+                            blankContext.customPrompt = scrubOptionalText(effectiveCustomPrompt);
                         }
                         if (this.conversationHistory && this.conversationHistory.length > 0) {
-                            blankContext.history = this.conversationHistory;
+                            blankContext.history = scrubHistory(this.conversationHistory);
                         }
                         this.transition('sending-sanitized-context', `Step ${step}/${maxSteps}: Transmitting initial tab context`);
                         this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Formulating initial navigation action`);
-                        proposal = await this.httpClient.requestReasoningAction(blankContext);
+                        proposal = typeof this.httpClient.requestReasoningActionStream === 'function'
+                            ? await this.httpClient.requestReasoningActionStream(blankContext, this.activeStreamingOptions)
+                            : await this.httpClient.requestReasoningAction(blankContext);
                     }
                     catch (err) {
                         console.warn('[PrivaPilot Coordinator] Initial LLM reasoning unavailable on blank tab, using fallback resolution:', err?.message || err);
@@ -1861,7 +1933,7 @@ export class RunCoordinator {
                         : undefined;
                     let outcomeDesc = this.lastExecutionResult?.message || 'Action executed';
                     if (urlChanged) {
-                        outcomeDesc = `Page navigated to ${activeTab?.url || 'new URL'}`;
+                        outcomeDesc = `Page navigated to ${sanitizeOutboundUrl(activeTab?.url || 'new URL')}`;
                     }
                     else if (elementsAddedCount > 5) {
                         outcomeDesc = `UI updated: ${elementsAddedCount} new elements rendered`;
@@ -1869,24 +1941,24 @@ export class RunCoordinator {
                     stateDelta = {
                         previousAction: {
                             kind: this.lastExecutedProposal.kind,
-                            targetName: prevTargetName,
+                            targetName: prevTargetName ? scrubOptionalText(prevTargetName) : undefined,
                             targetLocalId: this.lastExecutedProposal.targetLocalId,
-                            textToType: this.lastExecutedProposal.textToType,
-                            expectedState: this.lastExecutedProposal.expectedState
+                            textToType: this.lastExecutedProposal.textToType ? scrubOptionalText(this.lastExecutedProposal.textToType) : undefined,
+                            expectedState: this.lastExecutedProposal.expectedState ? scrubOptionalText(this.lastExecutedProposal.expectedState) : undefined
                         },
                         urlChanged,
-                        previousUrl: this.previousUrl,
-                        currentUrl: activeTab?.url || '',
+                        previousUrl: sanitizeOutboundUrl(this.previousUrl || ''),
+                        currentUrl: sanitizeOutboundUrl(activeTab?.url || ''),
                         elementsAddedCount,
                         elementsRemovedCount,
                         scrollDeltaY,
-                        observedOutcome: outcomeDesc,
+                        observedOutcome: scrubOptionalText(outcomeDesc),
                         verificationPassed: Boolean(this.lastExecutionResult?.semanticOutcomeVerified || this.lastExecutionResult?.success)
                     };
                 }
                 // Attach current URL, state delta, and previous step history to page state so LLM has accurate multi-step context
                 if (sanitized.pageState) {
-                    sanitized.pageState.url = activeTab?.url || '';
+                    sanitized.pageState.url = sanitizeOutboundUrl(activeTab?.url || '');
                     if (stateDelta) {
                         sanitized.pageState.stateDelta = stateDelta;
                     }
@@ -1895,9 +1967,9 @@ export class RunCoordinator {
                     }
                     if (this.actionHistory.length > 0) {
                         const historyText = this.actionHistory
-                            .map((a, idx) => `Step ${idx + 1}: ${a.kind} on "${a.sanitizedTargetName || a.targetLocalId || 'page'}" -> Result: ${a.verification?.reasonCode || 'Executed'} (URL: ${activeTab?.url || ''})`)
+                            .map((a, idx) => `Step ${idx + 1}: ${a.kind} on "${scrubOptionalText(a.sanitizedTargetName || a.targetLocalId || 'page')}" -> Result: ${a.verification?.reasonCode || 'Executed'} (URL: ${sanitizeOutboundUrl(activeTab?.url || '')})`)
                             .join('; ');
-                        sanitized.pageState.postconditionSummary = historyText.length > 500 ? historyText.slice(-500) : historyText;
+                        sanitized.pageState.postconditionSummary = scrubOptionalText(historyText.length > 500 ? historyText.slice(-500) : historyText);
                     }
                 }
                 // A public web search cannot establish the signed-in user's saved posts.
@@ -2021,10 +2093,10 @@ export class RunCoordinator {
                                 kind: 'click',
                                 targetLocalId: submitBtn.localId,
                                 confidence: 0.99,
-                                risk: 'safe',
-                                userApproved: true,
-                                reasoning: `All required form fields are populated with your details. Based on your instruction to register, I will now click ${submitBtn.sanitizedName} to complete the registration.`,
-                                rationale: `Submitting registration form via "${submitBtn.sanitizedName}" button.`
+                                risk: 'protected',
+                                userApproved: false,
+                                reasoning: `All required form fields are populated with your details. Based on your instruction to register, confirmation is required before clicking ${submitBtn.sanitizedName} to submit.`,
+                                rationale: `Submitting registration form via "${submitBtn.sanitizedName}" button requires user confirmation.`
                             };
                         }
                         else {
@@ -2208,23 +2280,40 @@ export class RunCoordinator {
                     this.transition('awaiting-reasoning', `Step ${step}/${maxSteps}: Awaiting reasoning action`);
                     try {
                         if (this.conversationHistory && this.conversationHistory.length > 0) {
-                            sanitized.history = this.conversationHistory;
+                            sanitized.history = scrubHistory(this.conversationHistory);
                         }
                         const cacheHitContext = this.getSemanticCacheContext(this.currentGoal || goal);
                         const effectiveCustomPrompt = cacheHitContext
                             ? (this.currentCustomPrompt ? `${this.currentCustomPrompt}\n\n${cacheHitContext}` : cacheHitContext)
                             : this.currentCustomPrompt;
                         if (effectiveCustomPrompt) {
-                            sanitized.customPrompt = effectiveCustomPrompt;
+                            sanitized.customPrompt = scrubOptionalText(effectiveCustomPrompt);
                         }
                         if (this.currentExecutionFeedback) {
-                            sanitized.executionFeedback = this.currentExecutionFeedback;
+                            sanitized.executionFeedback = {
+                                ...this.currentExecutionFeedback,
+                                completedTasks: this.currentExecutionFeedback.completedTasks?.map(scrubOptionalText),
+                                remainingTasks: this.currentExecutionFeedback.remainingTasks?.map(scrubOptionalText),
+                                outcomeCode: scrubOptionalText(this.currentExecutionFeedback.outcomeCode || '')
+                            };
                         }
                         const currentObjective = this.currentTaskSpec && this.objectiveProgress
                             ? getCurrentObjective(this.currentTaskSpec, this.objectiveProgress)
                             : undefined;
-                        if (this.currentTaskSpec)
-                            sanitized.taskSpecification = this.currentTaskSpec;
+                        if (this.currentTaskSpec) {
+                            sanitized.taskSpecification = {
+                                ...this.currentTaskSpec,
+                                goal: scrubOptionalText(this.currentTaskSpec.goal),
+                                tasksToDo: this.currentTaskSpec.tasksToDo?.map(scrubOptionalText),
+                                tasksNotToDo: this.currentTaskSpec.tasksNotToDo?.map(scrubOptionalText),
+                                successCriteria: scrubOptionalText(this.currentTaskSpec.successCriteria || ''),
+                                subAgentTasks: this.currentTaskSpec.subAgentTasks?.map((st) => ({
+                                    ...st,
+                                    targetEntityOrUrl: sanitizeOutboundUrl(st.targetEntityOrUrl || ''),
+                                    goal: scrubOptionalText(st.goal || '')
+                                }))
+                            };
+                        }
                         if (this.objectiveProgress) {
                             const objectiveId = currentObjective?.id;
                             if (objectiveId) {
@@ -2236,24 +2325,39 @@ export class RunCoordinator {
                                     }
                                 };
                             }
-                            sanitized.objectiveProgress = this.objectiveProgress;
+                            sanitized.objectiveProgress = {
+                                ...this.objectiveProgress,
+                                evidence: this.objectiveProgress.evidence?.map(ev => ({
+                                    ...ev,
+                                    summary: scrubOptionalText(ev.summary)
+                                }))
+                            };
                         }
-                        if (currentObjective)
-                            sanitized.currentObjective = currentObjective;
+                        if (currentObjective) {
+                            sanitized.currentObjective = {
+                                ...currentObjective,
+                                description: scrubOptionalText(currentObjective.description),
+                                targetPhrase: currentObjective.targetPhrase ? scrubOptionalText(currentObjective.targetPhrase) : undefined,
+                                extractedValue: currentObjective.extractedValue ? scrubOptionalText(currentObjective.extractedValue) : undefined
+                            };
+                        }
                         if (this.lastExecutedProposal) {
                             sanitized.previousAction = {
                                 actionId: this.lastExecutedProposal.actionId,
                                 objectiveId: this.lastExecutedProposal.objectiveId,
                                 kind: this.lastExecutedProposal.kind,
                                 targetLocalId: this.lastExecutedProposal.targetLocalId,
-                                targetName: this.lastExecutedProposal.targetName
+                                targetName: this.lastExecutedProposal.targetName ? scrubOptionalText(this.lastExecutedProposal.targetName) : undefined
                             };
                             if (this.lastExecutedProposal.expectedPostcondition)
                                 sanitized.expectedPostcondition = this.lastExecutedProposal.expectedPostcondition;
                         }
-                        sanitized.observedOutcome = this.lastExecutionResult?.message || sanitized.pageState.stateDelta?.observedOutcome || '';
+                        sanitized.observedOutcome = scrubOptionalText(this.lastExecutionResult?.message || sanitized.pageState.stateDelta?.observedOutcome || '');
                         sanitized.meaningfulProgress = Boolean(sanitized.pageState.stateDelta?.verificationPassed || sanitized.pageState.stateDelta?.urlChanged || Math.abs(sanitized.pageState.stateDelta?.scrollDeltaY || 0) > 2);
-                        sanitized.recentActionHistory = this.recentActionHistory.slice(-10);
+                        sanitized.recentActionHistory = this.recentActionHistory.slice(-10).map((a) => ({
+                            ...a,
+                            observedOutcome: a.observedOutcome ? scrubOptionalText(a.observedOutcome) : undefined
+                        }));
                         // Proactive Tavily Web Search Guard (bypassed if on-device cache hit is verified):
                         const isCacheHit = Boolean(cacheHitContext);
                         const isDocumentGoal = /\b(?:download|brochure|pdf|whitepaper|circular|report|dataset)\b/i.test(this.currentGoal || '');
@@ -2267,12 +2371,19 @@ export class RunCoordinator {
                                 const searchQuery = extractSearchQueryFromGoal(this.currentGoal || '') || this.currentGoal || '';
                                 const searchRes = await this.httpClient.searchWeb(searchQuery, 5);
                                 if (searchRes?.success && searchRes.results && searchRes.results.length > 0) {
-                                    sanitized.searchResults = searchRes.results;
+                                    sanitized.searchResults = searchRes.results.map((r) => ({
+                                        ...r,
+                                        url: sanitizeOutboundUrl(r.url),
+                                        title: scrubOptionalText(r.title || ''),
+                                        content: scrubOptionalText(r.content || '')
+                                    }));
                                 }
                             }
                             catch (_) { }
                         }
-                        proposal = await this.httpClient.requestReasoningAction(sanitized);
+                        proposal = typeof this.httpClient.requestReasoningActionStream === 'function'
+                            ? await this.httpClient.requestReasoningActionStream(sanitized, this.activeStreamingOptions)
+                            : await this.httpClient.requestReasoningAction(sanitized);
                     }
                     catch (err) {
                         console.warn('[PrivaPilot Coordinator] Reasoning server unavailable, attempting local safe routing:', err?.message || err);
@@ -2497,40 +2608,51 @@ export class RunCoordinator {
                         return this.completeWithResult(res);
                     }
                 }
-                // Step 4b: Confidence Threshold Check (Ultra-low confidence cannot automatically execute)
-                if (proposal.confidence < 0.25 && proposal.kind !== 'finish' && proposal.kind !== 'wait' && proposal.kind !== 'request_user_input') {
-                    const errorMsg = `Action rejected: Proposal confidence (${proposal.confidence}) is below safe execution threshold (0.25)`;
-                    this.transition('failed-safe', errorMsg);
-                    const stepTrace = {
-                        step,
-                        captureId: sanitized.captureId,
-                        pageGeneration: sanitized.captureId,
-                        maskCount: sanitized.maskCount,
-                        sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
-                        decisionOrigin,
-                        proposal,
-                        riskDecision: 'safe',
-                        confidenceDecision: 'rejected_low_confidence',
-                        executed: false,
-                        networkRequestMade,
-                        timings: { total: Date.now() - t0_step }
-                    };
-                    this.stepsTrace.push(stepTrace);
-                    const res = {
-                        success: false,
-                        state: 'failed-safe',
-                        error: errorMsg,
-                        sanitized,
-                        proposal,
-                        stepCount: step,
-                        steps: this.stepsTrace
-                    };
-                    return this.completeWithResult(res);
-                }
                 // Step 4c: Target Lookup and Validation
                 let targetElement = proposal.targetLocalId
                     ? sanitized.elements.find(e => e.localId === proposal.targetLocalId)
                     : undefined;
+                // Step 4b: Confidence Threshold & Human-In-The-Loop (HITL) Check
+                const isInformationalOrWait = proposal.kind === 'finish' || proposal.kind === 'wait' || proposal.kind === 'request_user_input' || proposal.kind === 'answer' || proposal.kind === 'observe';
+                if (!isInformationalOrWait && proposal.confidence !== undefined) {
+                    if (proposal.confidence < 0.30) {
+                        const errorMsg = `Action rejected: Proposal confidence (${proposal.confidence}) is below minimal execution threshold (0.30)`;
+                        this.transition('failed-safe', errorMsg);
+                        const stepTrace = {
+                            step,
+                            captureId: sanitized.captureId,
+                            pageGeneration: sanitized.captureId,
+                            maskCount: sanitized.maskCount,
+                            sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+                            decisionOrigin,
+                            proposal,
+                            riskDecision: 'blocked',
+                            confidenceDecision: 'low_confidence',
+                            executed: false,
+                            networkRequestMade,
+                            timings: { total: Date.now() - t0_step }
+                        };
+                        this.stepsTrace.push(stepTrace);
+                        const res = {
+                            success: false,
+                            state: 'failed-safe',
+                            error: errorMsg,
+                            sanitized,
+                            proposal,
+                            stepCount: step,
+                            steps: this.stepsTrace
+                        };
+                        return this.completeWithResult(res);
+                    }
+                    else if (proposal.confidence < 0.85 && proposal.risk !== 'blocked' && !isSafeReversibleInteraction(proposal, targetElement)) {
+                        // Human-in-the-loop: confidence below 0.85 requires human confirmation before executing destructive/state-altering actions
+                        proposal = {
+                            ...proposal,
+                            risk: 'protected',
+                            rationale: `Human-in-the-loop confirmation required: Confidence (${Math.round(proposal.confidence * 100)}%) is below autonomous threshold (85%). ${proposal.rationale}`
+                        };
+                    }
+                }
                 if (proposal.targetLocalId && !targetElement) {
                     const errorMsg = `Action rejected: Model proposed non-existent target ID "${proposal.targetLocalId}".`;
                     this.transition('failed-safe', errorMsg);
@@ -2560,7 +2682,15 @@ export class RunCoordinator {
                     });
                 }
                 // Step 4d: Client Safety Policy (always evaluated before semantic grounding)
-                const classifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
+                let classifiedRisk = classifyActionRisk(proposal, targetElement?.sanitizedName);
+                if (proposal.kind === 'batch' && classifiedRisk === 'protected' && Array.isArray(proposal.batchActions) && proposal.batchActions.length > 0) {
+                    const firstSub = proposal.batchActions[0];
+                    const firstTarget = firstSub.targetLocalId ? sanitized.elements.find(e => e.localId === firstSub.targetLocalId) : undefined;
+                    const firstRisk = classifyActionRisk(firstSub, firstTarget?.sanitizedName);
+                    if (firstRisk === 'safe' && firstSub.kind !== 'click') {
+                        classifiedRisk = 'safe';
+                    }
+                }
                 let riskLevel = (proposal.risk === 'blocked' || classifiedRisk === 'blocked')
                     ? 'blocked'
                     : (proposal.risk === 'protected' || classifiedRisk === 'protected')
@@ -2653,8 +2783,8 @@ export class RunCoordinator {
                             });
                         }
                     }
-                    // 2. Ambiguity resolution (Only for destructive/protected controls like buttons or form inputs; never links):
-                    const isSafeNavControl = targetElement?.role === 'link' || proposal.kind === 'navigate';
+                    // 2. Ambiguity resolution (Only for destructive/protected controls like buttons or form inputs; never links or safe nav):
+                    const isSafeNavControl = targetElement?.role === 'link' || targetElement?.role === 'tab' || targetElement?.role === 'menuitem' || proposal.kind === 'navigate' || isSafeReversibleInteraction(proposal, targetElement);
                     if (grounding.status === 'ambiguous_match' && !isSafeNavControl) {
                         proposal = {
                             ...proposal,
@@ -2686,9 +2816,11 @@ export class RunCoordinator {
                     }
                 }
                 // Step 4f: Unqualified Duplicate Candidate Ambiguity Gate (Only for low-confidence or non-link controls)
-                if (targetElement && proposal.kind === 'click') {
+                if (targetElement && proposal.kind === 'click' && !isSafeReversibleInteraction(proposal, targetElement)) {
                     const isHighConfidenceOrLink = (proposal.confidence || 0) >= 0.90 ||
                         targetElement.role === 'link' ||
+                        targetElement.role === 'tab' ||
+                        targetElement.role === 'menuitem' ||
                         proposal.actionId.startsWith('act_search_result_click_') ||
                         proposal.actionId.startsWith('act_download_') ||
                         proposal.actionId.startsWith('act_playbook_') ||
@@ -2837,12 +2969,23 @@ export class RunCoordinator {
                     catch (_) { }
                     if (!autoFilledFromVault) {
                         const promptText = proposal.userInputPrompt || proposal.rationale || 'Please provide the information required by the form.';
+                        const inputNonce = this.generateInputNonce();
+                        let expectedOrigin = undefined;
+                        try {
+                            if (sanitized.pageState?.url) {
+                                expectedOrigin = new URL(sanitized.pageState.url).origin;
+                            }
+                        }
+                        catch (_) { }
                         const inputRequest = {
                             kind: proposal.targetLocalId ? 'text_input' : 'clarification',
                             prompt: promptText,
                             targetLocalId: proposal.targetLocalId,
                             inputKey: proposal.inputKey,
-                            runId: this.currentRunId
+                            runId: this.currentRunId,
+                            leasedTabId: this.currentTabId,
+                            inputNonce,
+                            expectedOrigin
                         };
                         this.pendingInputRequest = inputRequest;
                         this.transition('awaiting-user-input', promptText);
@@ -3426,9 +3569,71 @@ export class RunCoordinator {
                                     if (match.matched && match.valueToFill && (isAutofill || isPlaceholder)) {
                                         subTextToType = match.valueToFill;
                                     }
+                                    if (targetEl.role === 'textarea' || /feedback|message|comments/i.test(targetEl.sanitizedName || '')) {
+                                        if (typeof subTextToType === 'string' && subTextToType) {
+                                            subTextToType = subTextToType.replace(/[!@#$%^&*()_+\-=\[\]{};':"\\|<>\/?~`]/g, ' ').replace(/\s+/g, ' ').trim();
+                                        }
+                                    }
                                 }
                             }
                             catch (_) { }
+                        }
+                        const batchTargetEl = sub.targetLocalId ? sanitized.elements.find(e => e.localId === sub.targetLocalId) : undefined;
+                        const isSubmitOrProtected = (sub.kind === 'click' && (/\b(?:submit|register|sign\s*up|checkout|pay|delete|purchase|order)\b/i.test(sub.actionId || '') ||
+                            /\b(?:submit|register|sign\s*up|checkout|pay|delete|purchase|order)\b/i.test(sub.rationale || '') ||
+                            /\b(?:submit|register|sign\s*up|checkout|pay|delete|purchase|order)\b/i.test(batchTargetEl?.sanitizedName || '') ||
+                            sub.expectedState === 'submit'));
+                        const subClassifiedRisk = classifyActionRisk(sub, batchTargetEl?.sanitizedName);
+                        const isSubProtected = subClassifiedRisk === 'protected' || isSubmitOrProtected || (sub.kind !== 'type' && proposal.confidence < 0.85);
+                        if (isSubProtected) {
+                            const protectedSubProposal = {
+                                actionId: sub.actionId || `act_sub_${i + 1}_${Date.now()}`,
+                                kind: sub.kind,
+                                targetLocalId: sub.targetLocalId,
+                                destinationLocalId: sub.destinationLocalId,
+                                textToType: subTextToType,
+                                selectOptionValue: sub.selectOptionValue,
+                                scrollDirection: sub.scrollDirection,
+                                pressEnter: sub.pressEnter,
+                                fileName: sub.fileName,
+                                confidence: proposal.confidence,
+                                risk: 'protected',
+                                userApproved: false,
+                                rationale: sub.rationale || `Human confirmation required before executing protected action '${sub.kind}' on ${batchTargetEl?.sanitizedName || sub.targetLocalId || 'form'}.`,
+                                expectedState: sub.expectedState || 'submit',
+                                expectedPostcondition: sub.expectedPostcondition
+                            };
+                            this.pendingAction = protectedSubProposal;
+                            const msg = `Protected batch action requires user consent: ${protectedSubProposal.rationale}`;
+                            this.transition('awaiting-user-confirmation', msg);
+                            if (this.listeners.onActionConfirmedRequired) {
+                                this.listeners.onActionConfirmedRequired(protectedSubProposal, this.currentRunId);
+                            }
+                            const stepTrace = {
+                                step,
+                                captureId: sanitized.captureId,
+                                pageGeneration: sanitized.captureId,
+                                maskCount: sanitized.maskCount,
+                                sanitizedScreenshotBytes: sanitized.sanitizedScreenshotDataUrl ? sanitized.sanitizedScreenshotDataUrl.length : 0,
+                                decisionOrigin,
+                                proposal: protectedSubProposal,
+                                riskDecision: 'protected',
+                                confidenceDecision: 'requires_confirmation',
+                                executed: false,
+                                networkRequestMade,
+                                timings: { total: Date.now() - t0_step }
+                            };
+                            this.stepsTrace.push(stepTrace);
+                            const res = {
+                                success: false,
+                                state: 'awaiting-user-confirmation',
+                                message: msg,
+                                sanitized,
+                                proposal: protectedSubProposal,
+                                stepCount: step,
+                                steps: this.stepsTrace
+                            };
+                            return this.completeWithResult(res);
                         }
                         const subProposal = {
                             actionId: sub.actionId || `act_sub_${i + 1}_${Date.now()}`,
@@ -3444,7 +3649,7 @@ export class RunCoordinator {
                             risk: 'safe',
                             userApproved: true,
                             rationale: sub.rationale || proposal.rationale,
-                            expectedState: sub.expectedState || (/\b(?:submit|register|sign\s*up)\b/i.test(sub.actionId || sub.rationale || '') ? 'submit' : undefined),
+                            expectedState: sub.expectedState,
                             expectedPostcondition: sub.expectedPostcondition
                         };
                         if (sub.kind === 'navigate') {
@@ -3520,6 +3725,10 @@ export class RunCoordinator {
                             if (cleanedText && cleanedText.length > 0 && cleanedText !== proposal.textToType) {
                                 proposal.textToType = cleanedText;
                             }
+                        }
+                        const targetEl = sanitized.elements.find(e => e.localId === proposal.targetLocalId);
+                        if (targetEl && (targetEl.role === 'textarea' || /feedback|message|comments/i.test(targetEl.sanitizedName || ''))) {
+                            proposal.textToType = proposal.textToType.replace(/[!@#$%^&*()_+\-=\[\]{};':"\\|<>\/?~`]/g, ' ').replace(/\s+/g, ' ').trim();
                         }
                     }
                     // Defensive safeguard: If model proposes typing a full URL into an input on a different website,
@@ -4946,7 +5155,7 @@ export class RunCoordinator {
     /**
      * Performs page-aware chat strictly across the privacy boundary.
      */
-    async chatWithPage(userMessage, history, customPrompt) {
+    async chatWithPage(userMessage, history, customPrompt, options) {
         try {
             if (isSubAgentSwarmGoal(userMessage)) {
                 const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
@@ -4965,11 +5174,11 @@ export class RunCoordinator {
             // bypass heavy DOM snapshot, full-screenshot capture, and ONNX initialization.
             const PURE_GREETING_PATTERN = /^(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening))\s*$/i;
             if (PURE_GREETING_PATTERN.test(userMessage.trim())) {
-                return this.generalChat(userMessage, undefined, history, customPrompt);
+                return this.generalChat(userMessage, undefined, history, customPrompt, options);
             }
             const activeTab = await this.browser.getActiveTab(this.currentTabId);
             if (!activeTab || !activeTab.id) {
-                return this.generalChat(userMessage, undefined, history, customPrompt);
+                return this.generalChat(userMessage, undefined, history, customPrompt, options);
             }
             let domResponse = null;
             try {
@@ -4982,7 +5191,7 @@ export class RunCoordinator {
                 // Tab content script not reachable
             }
             if (!domResponse || !domResponse.success || !domResponse.snapshot) {
-                return this.generalChat(userMessage, undefined, history, customPrompt);
+                return this.generalChat(userMessage, undefined, history, customPrompt, options);
             }
             let screenshotDataUrl = '';
             try {
@@ -5012,12 +5221,17 @@ export class RunCoordinator {
             }
             catch (_) {
                 // Sanitizer host unavailable or timed out; fallback to general chat
-                return this.generalChat(userMessage, undefined, history, customPrompt);
+                return this.generalChat(userMessage, undefined, history, customPrompt, options);
             }
             if (this.listeners.onSanitizationComplete) {
                 this.listeners.onSanitizationComplete(rawCapture, sanitized, this.currentRunId);
             }
-            const chatRes = await this.httpClient.requestChat(sanitized, userMessage, history, customPrompt);
+            const chatRes = await this.httpClient.requestChatStream(sanitized, userMessage, {
+                history,
+                customPrompt,
+                onThoughtDelta: options?.onThoughtDelta,
+                onReplyDelta: options?.onReplyDelta
+            });
             return {
                 success: true,
                 reply: chatRes.reply,
@@ -5028,13 +5242,13 @@ export class RunCoordinator {
             };
         }
         catch (err) {
-            return this.generalChat(userMessage, err, history, customPrompt);
+            return this.generalChat(userMessage, err, history, customPrompt, options);
         }
     }
     /**
      * Directly chats with the reasoning model without page context or perception overhead.
      */
-    async chatWithoutPage(userMessage, history, customPrompt) {
+    async chatWithoutPage(userMessage, history, customPrompt, options) {
         const cacheHitContext = this.getSemanticCacheContext(userMessage);
         const effectivePrompt = cacheHitContext
             ? (customPrompt ? `${customPrompt}\n\n${cacheHitContext}` : cacheHitContext)
@@ -5052,14 +5266,14 @@ export class RunCoordinator {
                 modelConnected: true
             };
         }
-        return this.generalChat(userMessage, undefined, history, effectivePrompt);
+        return this.generalChat(userMessage, undefined, history, effectivePrompt, options);
     }
     /**
      * Contextless chat turn. Reports a real connection failure instead of claiming
      * the model is ready — that claim is what made a broken model look like a
      * working one with nothing to say.
      */
-    async generalChat(userMessage, priorError, history, customPrompt) {
+    async generalChat(userMessage, priorError, history, customPrompt, options) {
         if (isSubAgentSwarmGoal(userMessage)) {
             const swarmRes = await this.dispatchSubAgentSwarm(userMessage);
             return {
@@ -5074,7 +5288,12 @@ export class RunCoordinator {
             };
         }
         try {
-            const genRes = await this.httpClient.requestGeneralChat(userMessage, history, customPrompt);
+            const genRes = await this.httpClient.requestGeneralChatStream(userMessage, {
+                history,
+                customPrompt,
+                onThoughtDelta: options?.onThoughtDelta,
+                onReplyDelta: options?.onReplyDelta
+            });
             return {
                 success: true,
                 reply: genRes.reply,
@@ -5100,8 +5319,12 @@ export class RunCoordinator {
      * If resumeLoop is true, continues multi-step execution loop.
      */
     async approvePendingAction(options) {
-        if (options?.runId !== this.currentRunId || options?.actionId !== this.pendingAction?.actionId ||
-            this.state !== 'awaiting-user-confirmation') {
+        if (this.state === 'executing' || this.state === 'verifying' || this.state === 'complete') {
+            return { success: true, state: this.state, runId: this.currentRunId, stepCount: this.currentStep };
+        }
+        const runMatches = !options?.runId || options.runId === this.currentRunId;
+        const actionMatches = !options?.actionId || !this.pendingAction?.actionId || options.actionId === this.pendingAction?.actionId;
+        if (!runMatches || !actionMatches || this.state !== 'awaiting-user-confirmation') {
             return { success: false, state: this.state, error: 'Confirmation no longer matches the pending action', runId: this.currentRunId };
         }
         if (!this.pendingAction || !this.currentSanitizedContext) {
@@ -5217,14 +5440,20 @@ export class RunCoordinator {
                 }
             };
         }
-        if (options?.resumeLoop && action.kind !== 'finish') {
+        const isFormSubmission = /submit/i.test(action.targetName || '') ||
+            /submit/i.test(action.elementText || '') ||
+            /submit/i.test(action.sanitizedTargetName || '') ||
+            /submit/i.test(action.rationale || '') ||
+            action.expectedState === 'submit';
+        if (options?.resumeLoop && action.kind !== 'finish' && !isFormSubmission) {
             return this.executeLoop();
         }
-        this.transition('complete', `Approved action executed: ${action.rationale}`);
+        const completionMsg = isFormSubmission ? 'Form submitted successfully with user approval.' : (action.rationale || 'Action executed with user approval.');
+        this.transition('complete', completionMsg);
         const res = {
             success: true,
             state: 'complete',
-            message: action.rationale,
+            message: completionMsg,
             sanitized,
             proposal: action,
             telemetry,
@@ -5236,8 +5465,12 @@ export class RunCoordinator {
      * Called when the user clicks 'Deny' on a protected action card.
      */
     denyPendingAction(options) {
-        if (options?.runId !== this.currentRunId || options?.actionId !== this.pendingAction?.actionId ||
-            this.state !== 'awaiting-user-confirmation') {
+        if (this.state !== 'awaiting-user-confirmation') {
+            return { success: true, state: this.state, runId: this.currentRunId, stepCount: this.currentStep };
+        }
+        const runMatches = !options?.runId || options.runId === this.currentRunId;
+        const actionMatches = !options?.actionId || !this.pendingAction?.actionId || options.actionId === this.pendingAction?.actionId;
+        if (!runMatches || !actionMatches) {
             return { success: false, state: this.state, error: 'Confirmation no longer matches the pending action', runId: this.currentRunId };
         }
         const action = this.pendingAction;
@@ -5261,10 +5494,35 @@ export class RunCoordinator {
      * without transmitting raw credentials across the network.
      */
     async submitUserInput(inputs, targetTabId, options) {
-        if (options?.runId !== this.currentRunId || !this.pendingInputRequest ||
+        if (options?.runId && options.runId !== this.currentRunId || !this.pendingInputRequest ||
             this.state !== 'awaiting-user-input' &&
                 !(this.state === 'awaiting-user-confirmation' && this.currentTaskContract?.requiresUserInput)) {
-            return { success: false, state: this.state, error: 'Input no longer matches the pending run', runId: this.currentRunId };
+            return { success: false, state: this.state, error: 'Input no longer matches the pending run', runId: this.currentRunId, reasonCode: 'RUN_MISMATCH' };
+        }
+        // 1. One-time Nonce Gate: Verify matching inputNonce
+        if (this.pendingInputRequest.inputNonce) {
+            if (!options?.inputNonce || options.inputNonce !== this.pendingInputRequest.inputNonce) {
+                return {
+                    success: false,
+                    state: this.state,
+                    error: 'NONCE_MISMATCH: Input nonce is invalid or replayed',
+                    reasonCode: 'NONCE_MISMATCH',
+                    runId: this.currentRunId
+                };
+            }
+        }
+        // 2. Strict Tab Lease Verification: Enforce matching tab ID
+        const leasedTabId = this.pendingInputRequest.leasedTabId || this.currentTabId;
+        if (targetTabId && leasedTabId && targetTabId !== leasedTabId) {
+            const errorMsg = `TAB_SWITCHED: Input was submitted for tab ${targetTabId}, but request was leased to tab ${leasedTabId}`;
+            this.transition('failed-safe', errorMsg);
+            return this.completeWithResult({
+                success: false,
+                state: 'failed-safe',
+                error: errorMsg,
+                reasonCode: 'TAB_SWITCHED',
+                runId: this.currentRunId
+            });
         }
         if (options?.targetLocalId !== this.pendingInputRequest.targetLocalId ||
             options?.inputKey !== this.pendingInputRequest.inputKey) {
@@ -5282,22 +5540,56 @@ export class RunCoordinator {
             this.transition('capturing', 'Continuing after user clarification');
             return this.executeLoop();
         }
-        this.pendingInputRequest = null;
-        const tabToUse = targetTabId || this.currentTabId;
-        const activeTab = await this.browser.getActiveTab(tabToUse);
-        if (activeTab?.id) {
-            this.currentTabId = activeTab.id;
+        // 3. Strict Tab Resolution: Resolve leasedTabId strictly; NEVER fall back to active tab
+        const tabToUse = leasedTabId || targetTabId;
+        let targetTab = null;
+        if (tabToUse && typeof this.browser.getStrictTab === 'function') {
+            targetTab = await this.browser.getStrictTab(tabToUse);
         }
+        else {
+            targetTab = await this.browser.getActiveTab(tabToUse);
+        }
+        if (!targetTab || !targetTab.id || (tabToUse && targetTab.id !== tabToUse)) {
+            const errorMsg = 'TAB_CLOSED: The target tab is closed or no longer accessible';
+            this.transition('failed-safe', errorMsg);
+            return this.completeWithResult({
+                success: false,
+                state: 'failed-safe',
+                error: errorMsg,
+                reasonCode: 'TAB_CLOSED',
+                runId: this.currentRunId
+            });
+        }
+        // 4. Origin Change Verification
+        if (this.pendingInputRequest.expectedOrigin && targetTab.url) {
+            try {
+                const currentOrigin = new URL(targetTab.url).origin;
+                if (currentOrigin !== this.pendingInputRequest.expectedOrigin) {
+                    const errorMsg = `ORIGIN_CHANGED: Tab navigated from ${this.pendingInputRequest.expectedOrigin} to ${currentOrigin}`;
+                    this.transition('failed-safe', errorMsg);
+                    return this.completeWithResult({
+                        success: false,
+                        state: 'failed-safe',
+                        error: errorMsg,
+                        reasonCode: 'ORIGIN_CHANGED',
+                        runId: this.currentRunId
+                    });
+                }
+            }
+            catch (_) { }
+        }
+        this.currentTabId = targetTab.id;
         if (!inputs.username && !inputs.password && !inputs.customText) {
             const errorMsg = 'Please enter your username/email or password to fill the form';
             this.transition('failed-safe', errorMsg);
             return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg });
         }
         this.transition('executing', 'Safely filling form fields locally with provided input');
+        // 5. Safe Bridge Preflight: Do not nullify pendingInputRequest until bridge succeeds!
         const captureId = `cap_input_${Date.now()}`;
         let domResponse;
         try {
-            domResponse = await this.browser.sendMessageToTab(activeTab.id, {
+            domResponse = await this.browser.sendMessageToTab(targetTab.id, {
                 type: 'EXTRACT_DOM_SNAPSHOT',
                 captureId
             });
@@ -5305,13 +5597,17 @@ export class RunCoordinator {
         catch (err) {
             const errorMsg = 'Could not communicate with tab to fill form inputs';
             this.transition('failed-safe', errorMsg);
-            return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg });
+            // NOTE: pendingInputRequest is preserved for safe retry!
+            return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg, reasonCode: 'BRIDGE_ERROR' });
         }
         if (!domResponse || !domResponse.snapshot) {
             const errorMsg = 'Could not locate form fields on page';
             this.transition('failed-safe', errorMsg);
             return this.completeWithResult({ success: false, state: 'failed-safe', error: errorMsg });
         }
+        // Now that preflight succeeded and we are actively filling the fields:
+        this.pendingInputRequest = null;
+        const activeTab = targetTab;
         const elements = domResponse.snapshot.interactiveElements || domResponse.snapshot.elements || [];
         const domElements = domResponse.snapshot.domElements || [];
         let filledCount = 0;

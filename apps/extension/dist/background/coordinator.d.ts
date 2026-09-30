@@ -43,6 +43,8 @@ export interface CoordinatorRunOptions {
     readonly customPrompt?: string;
     readonly agentId?: string;
     readonly agentName?: string;
+    readonly onThoughtDelta?: (text: string) => void;
+    readonly onReplyDelta?: (text: string) => void;
 }
 export interface CoordinatorListeners {
     onStateChange?(state: AgentState, message?: string, runId?: string): void;
@@ -91,6 +93,7 @@ export interface CoordinatorRunResult {
     readonly message?: string;
     readonly reply?: string;
     readonly error?: string;
+    readonly reasonCode?: string;
     readonly reasoning?: string;
     readonly isSubAgentSwarm?: boolean;
     readonly subTasks?: ReadonlyArray<any>;
@@ -106,6 +109,9 @@ export interface CoordinatorRunResult {
         targetLocalId?: string;
         inputKey?: string;
         runId?: string;
+        leasedTabId?: number;
+        inputNonce?: string;
+        expectedOrigin?: string;
     };
 }
 export type SanitizerFailureClass = 'OFFSCREEN_UNAVAILABLE' | 'SCREENSHOT_DECODE_FAILED' | 'CANVAS_UNAVAILABLE' | 'MASK_RENDER_FAILED' | 'MASK_VERIFICATION_FAILED' | 'DIGEST_FAILED' | 'SANITIZER_TIMEOUT' | 'UNKNOWN_SANITIZER_FAILURE';
@@ -153,6 +159,7 @@ export declare class RunCoordinator {
     private lastStaleTargetId;
     private pendingAction;
     private pendingInputRequest;
+    private generateInputNonce;
     private currentSanitizedContext;
     private lastActionProposal;
     private lastRunResult;
@@ -179,6 +186,7 @@ export declare class RunCoordinator {
     private hasTavilyRecovered;
     private autofilledTargets;
     private sessionWebSearchCache;
+    private activeStreamingOptions?;
     private readonly options;
     constructor(browser?: BrowserAdapter, httpClient?: ReasoningHttpClient, auditLogger?: AuditLogger, options?: {
         defaultMaxSteps?: number;
@@ -224,11 +232,17 @@ export declare class RunCoordinator {
     /**
      * Performs page-aware chat strictly across the privacy boundary.
      */
-    chatWithPage(userMessage: string, history?: ReadonlyArray<ChatHistoryMessage>, customPrompt?: string): Promise<ChatOutcome>;
+    chatWithPage(userMessage: string, history?: ReadonlyArray<ChatHistoryMessage>, customPrompt?: string, options?: {
+        onThoughtDelta?: (text: string) => void;
+        onReplyDelta?: (text: string) => void;
+    }): Promise<ChatOutcome>;
     /**
      * Directly chats with the reasoning model without page context or perception overhead.
      */
-    chatWithoutPage(userMessage: string, history?: ReadonlyArray<ChatHistoryMessage>, customPrompt?: string): Promise<ChatOutcome>;
+    chatWithoutPage(userMessage: string, history?: ReadonlyArray<ChatHistoryMessage>, customPrompt?: string, options?: {
+        onThoughtDelta?: (text: string) => void;
+        onReplyDelta?: (text: string) => void;
+    }): Promise<ChatOutcome>;
     /**
      * Contextless chat turn. Reports a real connection failure instead of claiming
      * the model is ready — that claim is what made a broken model look like a
@@ -265,6 +279,7 @@ export declare class RunCoordinator {
         saveToVault?: boolean;
         inputKey?: string;
         runId?: string;
+        inputNonce?: string;
     }): Promise<CoordinatorRunResult>;
     /**
      * Performs an autonomous web search using the configured Tavily client.

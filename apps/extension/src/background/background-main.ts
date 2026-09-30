@@ -82,7 +82,7 @@ coordinator.setListeners({
   }
 });
 
-async function handleSidepanelRequest(message: any): Promise<any> {
+async function handleSidepanelRequest(message: any, streamingOptions?: any): Promise<any> {
   if (message.type === 'START_AGENT_RUN') {
     return coordinator.startRun(message.goal || 'Safe assistance', {
       runId: message.runId,
@@ -91,12 +91,14 @@ async function handleSidepanelRequest(message: any): Promise<any> {
       history: message.history,
       customPrompt: message.customPrompt,
       agentId: message.agentId,
-      agentName: message.agentName
+      agentName: message.agentName,
+      onThoughtDelta: streamingOptions?.onThoughtDelta,
+      onReplyDelta: streamingOptions?.onReplyDelta
     });
   }
 
   if (message.type === 'GENERAL_CHAT') {
-    return coordinator.chatWithoutPage(message.message || '', message.history, message.customPrompt);
+    return coordinator.chatWithoutPage(message.message || '', message.history, message.customPrompt, streamingOptions);
   }
 
   if (message.type === 'WEB_SEARCH') {
@@ -104,7 +106,7 @@ async function handleSidepanelRequest(message: any): Promise<any> {
   }
 
   if (message.type === 'CHAT_WITH_PAGE') {
-    return coordinator.chatWithPage(message.message || '', message.history, message.customPrompt);
+    return coordinator.chatWithPage(message.message || '', message.history, message.customPrompt, streamingOptions);
   }
 
   if (message.type === 'SUBMIT_USER_INPUT') {
@@ -116,7 +118,8 @@ async function handleSidepanelRequest(message: any): Promise<any> {
         targetLocalId: message.targetLocalId,
         saveToVault: message.saveToVault,
         inputKey: message.inputKey,
-        runId: message.runId
+        runId: message.runId,
+        inputNonce: message.inputNonce
       }
     );
   }
@@ -189,8 +192,21 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onConnect) {
       const requestId = message?.requestId;
       if (!requestId) return;
 
-      handleSidepanelRequest(message).then((response) => {
-        try { port.postMessage({ requestId, response }); } catch (_) { /* Panel closed during run. */ }
+      const streamingOptions = {
+        onThoughtDelta: (delta: string) => {
+          try {
+            port.postMessage({ requestId, type: 'STREAM_THOUGHT_DELTA', delta });
+          } catch (_) { /* Panel closed or port disconnected */ }
+        },
+        onReplyDelta: (delta: string) => {
+          try {
+            port.postMessage({ requestId, type: 'STREAM_REPLY_DELTA', delta });
+          } catch (_) { /* Panel closed or port disconnected */ }
+        }
+      };
+
+      handleSidepanelRequest(message, streamingOptions).then((response) => {
+        try { port.postMessage({ requestId, response, type: 'STREAM_FINAL' }); } catch (_) { /* Panel closed during run. */ }
       }).catch((err) => {
         try { port.postMessage({
           requestId,
@@ -359,7 +375,8 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
           targetLocalId: message.targetLocalId,
           saveToVault: message.saveToVault,
           inputKey: message.inputKey,
-          runId: message.runId
+          runId: message.runId,
+          inputNonce: message.inputNonce
         }
       ).then((result) => {
         sendResponse(result);
