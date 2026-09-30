@@ -24,6 +24,13 @@ export interface BrowserAdapter {
         windowId?: number;
         status?: string;
     }>;
+    getStrictTab?(tabId: number): Promise<{
+        id: number;
+        url: string;
+        title: string;
+        windowId?: number;
+        status?: string;
+    } | null>;
     navigateTab?(tabId: number, url: string, options?: {
         createNewTab?: boolean;
     }): Promise<{
@@ -77,6 +84,13 @@ export declare class WebExtensionAdapter implements BrowserAdapter {
         windowId?: number;
         status?: string;
     }>;
+    getStrictTab(tabId: number): Promise<{
+        id: number;
+        url: string;
+        title: string;
+        windowId?: number;
+        status?: string;
+    } | null>;
     navigateTab(tabId: number, url: string, options?: {
         createNewTab?: boolean;
     }): Promise<{

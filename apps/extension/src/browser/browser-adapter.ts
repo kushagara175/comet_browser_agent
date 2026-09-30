@@ -23,6 +23,7 @@ export interface BrowserAdapter {
   sendMessageToTab<T = any>(tabId: number, message: any): Promise<T>;
   sendMessageToRuntime<T = any>(message: any): Promise<T>;
   getActiveTab(preferredTabId?: number): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string }>;
+  getStrictTab?(tabId: number): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string } | null>;
   navigateTab?(tabId: number, url: string, options?: { createNewTab?: boolean }): Promise<{ tabId: number; url?: string } | void>;
   waitForTabReady?(tabId: number, timeoutMs?: number, expectedUrl?: string): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string } | null>;
   ensureContentScript?(tabId: number): Promise<boolean>;
@@ -421,6 +422,32 @@ export class WebExtensionAdapter implements BrowserAdapter {
           });
         });
       });
+    });
+  }
+
+  async getStrictTab(tabId: number): Promise<{ id: number; url: string; title: string; windowId?: number; status?: string } | null> {
+    const api = this.browserAPI;
+    if (!api || !api.tabs || typeof api.tabs.get !== 'function' || !tabId || tabId <= 0) {
+      return null;
+    }
+    return new Promise((resolve) => {
+      try {
+        api.tabs.get(tabId, (tab: any) => {
+          if (!api.runtime?.lastError && tab && tab.id) {
+            resolve({
+              id: tab.id,
+              url: tab.url || '',
+              title: tab.title || '',
+              windowId: tab.windowId,
+              status: tab.status || 'complete'
+            });
+          } else {
+            resolve(null);
+          }
+        });
+      } catch (_) {
+        resolve(null);
+      }
     });
   }
 

@@ -394,6 +394,33 @@ export class WebExtensionAdapter {
             });
         });
     }
+    async getStrictTab(tabId) {
+        const api = this.browserAPI;
+        if (!api || !api.tabs || typeof api.tabs.get !== 'function' || !tabId || tabId <= 0) {
+            return null;
+        }
+        return new Promise((resolve) => {
+            try {
+                api.tabs.get(tabId, (tab) => {
+                    if (!api.runtime?.lastError && tab && tab.id) {
+                        resolve({
+                            id: tab.id,
+                            url: tab.url || '',
+                            title: tab.title || '',
+                            windowId: tab.windowId,
+                            status: tab.status || 'complete'
+                        });
+                    }
+                    else {
+                        resolve(null);
+                    }
+                });
+            }
+            catch (_) {
+                resolve(null);
+            }
+        });
+    }
     async navigateTab(tabId, url, options) {
         const api = this.browserAPI;
         if (api && api.tabs) {

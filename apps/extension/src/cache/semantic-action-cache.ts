@@ -94,8 +94,7 @@ export class SemanticActionCache {
     const domain = ((sanitized.pageState as any)?.domain || '').toLowerCase();
     const url = (sanitized.pageState?.url || '').toLowerCase();
     if (
-      domain.includes('isro') || url.includes('isro.gov.in') ||
-      /chandrayaan|aditya|isro/i.test(goal) ||
+      ((domain.includes('isro') || url.includes('isro.gov.in')) && /chandrayaan|aditya|brochure|mission/i.test(goal)) ||
       /\b(?:fresh|re-think|rethink|deep\s*think|no\s*cache|nocache|clear\s*cache)\b/i.test(goal)
     ) {
       this.metrics.totalMisses++;
@@ -161,8 +160,8 @@ export class SemanticActionCache {
 
     const domain = ((sanitized.pageState as any)?.domain || 'active').toLowerCase();
     const url = (sanitized.pageState?.url || '').toLowerCase();
-    // Never cache actions on ISRO to ensure completely dynamic, live natural browsing
-    if (domain.includes('isro') || url.includes('isro.gov.in') || /chandrayaan|aditya|isro/i.test(goal)) {
+    // Never cache mission brochure downloads on ISRO to ensure completely dynamic, live natural browsing
+    if (((domain.includes('isro') || url.includes('isro.gov.in')) && /chandrayaan|aditya|brochure|mission/i.test(goal)) || /chandrayaan|aditya/i.test(goal)) {
       return;
     }
 
