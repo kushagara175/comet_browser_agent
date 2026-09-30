@@ -10,4 +10,5 @@ export * from './dom-semantic.js';
 export * from './scrubber.js';
 export * from './fusion.js';
 export * from './surface-classifier.js';
+export * from './url-scrubber.js';
 
