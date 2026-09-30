@@ -425,25 +425,44 @@ export function sanitizeReasoningText(raw) {
  */
 export function collectAllStepReasoning(res, liveReasoning = '') {
   const parts = [];
+  const existingLive = (typeof liveReasoning === 'string' ? liveReasoning : '').trim();
+  if (existingLive) {
+    parts.push(sanitizeReasoningText(existingLive));
+  }
+
   const steps = Array.isArray(res?.steps) ? res.steps : [];
   const ordered = [...steps].sort((a, b) => (a.step || 0) - (b.step || 0));
   for (const s of ordered) {
     const raw = sanitizeReasoningText(s.proposal?.reasoning || s.proposal?.thought || s.reasoning || s.proposal?.rationale);
     const text = raw.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/i, '').trim();
-    if (text && !parts.some(p => p === text || p.includes(text) || text.includes(p))) {
+    if (!text) continue;
+    if (parts.some(p => p === text || p.includes(text))) continue;
+    const smallerIndex = parts.findIndex(p => text.includes(p));
+    if (smallerIndex >= 0) {
+      parts[smallerIndex] = text;
+    } else {
       parts.push(text);
     }
   }
-  for (const source of [res?.reasoning, liveReasoning]) {
-    const clean = sanitizeReasoningText(source);
-    if (!clean) continue;
-    const blocks = clean.split(/\n\s*\n/);
-    for (const block of blocks) {
-      const text = block.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/i, '').trim();
-      if (!text || parts.some(p => p === text || p.includes(text) || text.includes(p))) continue;
-      parts.push(text);
+
+  if (res?.reasoning) {
+    const clean = sanitizeReasoningText(res.reasoning);
+    if (clean) {
+      const blocks = clean.split(/\n\s*\n/);
+      for (const block of blocks) {
+        const text = block.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/i, '').trim();
+        if (!text) continue;
+        if (parts.some(p => p === text || p.includes(text))) continue;
+        const smallerIndex = parts.findIndex(p => text.includes(p));
+        if (smallerIndex >= 0) {
+          parts[smallerIndex] = text;
+        } else {
+          parts.push(text);
+        }
+      }
     }
   }
+
   if (!parts.length) {
     const fallback = sanitizeReasoningText(res?.proposal?.reasoning || res?.proposal?.thought || res?.proposal?.rationale || res?.message);
     const text = fallback.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/i, '').trim();
@@ -3233,7 +3252,9 @@ if (typeof document !== 'undefined') {
       // 1a. Interactive User Input Required (Form / Credentials)
       if (res && res.inputRequest) {
         const req = res.inputRequest;
-        const realReasoning = collectAllStepReasoning(res) || agentBubble.__accumulatedReasoning || '';
+        const liveReasoning = agentBubble.__accumulatedReasoning || '';
+        const realReasoning = collectAllStepReasoning(res, liveReasoning) || liveReasoning;
+        agentBubble.__accumulatedReasoning = realReasoning;
         const thinkingHtml = realReasoning
           ? renderThinkingAccordion(realReasoning, Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000)), { open: false })
           : '';
@@ -3342,33 +3363,58 @@ if (typeof document !== 'undefined') {
             </div>
           `;
 
-          // Create the continuation agent bubble for the agent running further actions
-          const continuationBubble = document.createElement('div');
-          continuationBubble.className = 'chat-msg agent';
-          const continuationStartTime = Date.now();
-          continuationBubble.__turnStartTime = continuationStartTime;
-          continuationBubble.innerHTML = `
-            <div class="thinking-phase1 action-status-line is-executing" style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #cbd5e1; padding: 2px 0;">
-              <span class="thinking-shimmer-text">Executing next action...</span>
-            </div>
-          `;
-          chatMessages.appendChild(continuationBubble);
-          chatMessages.scrollTop = chatMessages.scrollHeight;
-          activeThinkingBubble = continuationBubble;
+          // Add inline continuation status line below the completed card inside the same agent bubble
+          let continuationStatus = agentBubble.querySelector('.continuation-status');
+          if (!continuationStatus) {
+            continuationStatus = document.createElement('div');
+            continuationStatus.className = 'continuation-status thinking-phase1 action-status-line is-executing';
+            continuationStatus.style.cssText = 'display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #cbd5e1; padding: 6px 0; margin-top: 6px;';
+            continuationStatus.innerHTML = `<span class="thinking-shimmer-text">Executing next action...</span>`;
+            agentBubble.appendChild(continuationStatus);
+          }
+          activeThinkingBubble = agentBubble;
           setAgentStatus('executing');
 
           const runId = req.runId || currentRunId;
           const finishContinuation = (submitRes, err) => {
-            if (continuationBubble.__settled) return;
-            continuationBubble.__settled = true;
+            if (agentBubble.__continuationSettled) return;
+            agentBubble.__continuationSettled = true;
+            continuationStatus?.remove();
             if (runId !== currentRunId) return;
             if (err) {
-              continuationBubble.textContent = err;
+              const errEl = document.createElement('div');
+              errEl.className = 'action-error-box';
+              errEl.style.cssText = 'padding: 7px 9px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; color: #f87171; font-size: 11px; margin-top: 6px;';
+              errEl.textContent = err;
+              agentBubble.appendChild(errEl);
               setAgentStatus('failed-safe');
               return;
             }
             if (submitRes) {
-              renderActionResult(continuationBubble, submitRes);
+              const elapsed = Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000));
+              const block = agentBubble.querySelector('.monologue-block');
+              if (block) {
+                const title = block.querySelector('.monologue-title');
+                if (title) {
+                  title.textContent = `Thought for ${elapsed}s`;
+                  title.classList.remove('thinking-shimmer-text');
+                  title.classList.add('monologue-completed-text');
+                }
+              }
+              const action = submitRes.proposal || {};
+              const actionName = action.targetName || action.sanitizedTargetName || action.elementText || (action.targetLocalId ? resolveFriendlyElementName(action.targetLocalId) : '');
+              const actionLabel = action.kind === 'click'
+                ? `Clicked "${actionName || 'Submit'}"`
+                : (submitRes.message || action.rationale || 'Action executed successfully');
+              const outcomeLine = document.createElement('div');
+              outcomeLine.className = 'action-status-line is-done';
+              outcomeLine.style.cssText = 'display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #cbd5e1; padding: 4px 0; margin-top: 6px;';
+              outcomeLine.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>${escapeHtml(actionLabel)}</span>
+              `;
+              agentBubble.appendChild(outcomeLine);
+              setAgentStatus(submitRes.state === 'complete' ? 'idle' : 'executing');
             }
           };
 
@@ -3386,36 +3432,39 @@ if (typeof document !== 'undefined') {
                 if (message.type === 'STREAM_THOUGHT_DELTA') {
                   const delta = message.delta;
                   if (!delta) return;
-                  continuationBubble.__hasStreamedTokens = true;
-                  continuationBubble.__accumulatedReasoning = (continuationBubble.__accumulatedReasoning || '') + delta;
-                  activeThinkingBubble = continuationBubble;
-                  continuationBubble.__expanded = true;
+                  if (!agentBubble.__hasContinuationDivider) {
+                    agentBubble.__hasContinuationDivider = true;
+                    agentBubble.__accumulatedReasoning = (agentBubble.__accumulatedReasoning || '').trimEnd() + '\n\n';
+                  }
+                  agentBubble.__accumulatedReasoning = (agentBubble.__accumulatedReasoning || '') + delta;
+                  agentBubble.__expanded = true;
 
-                  const phase1 = continuationBubble.querySelector('.thinking-phase1');
-                  if (phase1) phase1.remove();
-
-                  let block = continuationBubble.querySelector('.monologue-block');
-                  const elapsed = Math.max(1, Math.round((Date.now() - continuationStartTime) / 1000));
+                  let block = agentBubble.querySelector('.monologue-block');
+                  const elapsed = Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000));
                   if (!block) {
                     const temp = document.createElement('div');
                     temp.innerHTML = renderThinkingAccordion(
-                      continuationBubble.__accumulatedReasoning || 'Thinking...',
+                      agentBubble.__accumulatedReasoning || 'Thinking...',
                       elapsed,
                       { isExecuting: true, open: true, forceState2: true }
                     );
                     block = temp.firstElementChild;
-                    if (block) continuationBubble.insertBefore(block, continuationBubble.firstChild);
+                    if (block) agentBubble.insertBefore(block, agentBubble.firstChild);
                   } else {
                     const title = block.querySelector('.monologue-title');
-                    if (title && (title.classList.contains('thinking-shimmer-text') || title.textContent.startsWith('Thinking'))) {
+                    if (title) {
                       title.textContent = `Thinking (${elapsed}s)`;
+                      title.classList.add('thinking-shimmer-text');
                     }
+                    const drawer = block.querySelector('.monologue-drawer');
+                    if (drawer) drawer.style.display = 'block';
+                    const chevron = block.querySelector('.monologue-chevron');
+                    if (chevron) chevron.classList.add('rotate-90');
+                    block.setAttribute('data-state', 'expanded');
                   }
 
                   const content = block?.querySelector('.monologue-content');
                   if (content) {
-                    const placeholder = content.querySelector('.monologue-initial-placeholder');
-                    if (placeholder) placeholder.remove();
                     let streamSpan = content.querySelector('.live-thought-stream');
                     if (!streamSpan) {
                       content.innerHTML = '';
@@ -3428,7 +3477,7 @@ if (typeof document !== 'undefined') {
                       streamSpan.style.display = 'block';
                       content.appendChild(streamSpan);
                     }
-                    streamSpan.textContent = continuationBubble.__accumulatedReasoning.trimStart();
+                    streamSpan.textContent = agentBubble.__accumulatedReasoning.trimStart();
                     content.scrollTop = content.scrollHeight;
                   }
                 } else if (message.type === 'STREAM_FINAL') {
@@ -3480,7 +3529,9 @@ if (typeof document !== 'undefined') {
       // 1. Awaiting User Confirmation (Pending Protected or Low-Confidence Action)
       if (res && res.state === 'awaiting-user-confirmation') {
         const action = res.proposal || {};
-        const realReasoning = collectAllStepReasoning(res) || agentBubble.__accumulatedReasoning || '';
+        const liveReasoning = agentBubble.__accumulatedReasoning || '';
+        const realReasoning = collectAllStepReasoning(res, liveReasoning) || liveReasoning;
+        agentBubble.__accumulatedReasoning = realReasoning;
         const thinkingHtml = realReasoning
           ? renderThinkingAccordion(realReasoning, Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000)), { open: false })
           : '';
@@ -3722,7 +3773,9 @@ if (typeof document !== 'undefined') {
           conversationHistory = conversationHistory.slice(-20);
         }
 
-        const realReasoning = collectAllStepReasoning(res) || agentBubble.__accumulatedReasoning || '';
+        const liveReasoning = agentBubble.__accumulatedReasoning || '';
+        const realReasoning = collectAllStepReasoning(res, liveReasoning) || liveReasoning;
+        agentBubble.__accumulatedReasoning = realReasoning;
         const liveDuration = agentBubble.__thoughtDuration || (agentBubble.__turnStartTime ? Math.max(1, Math.round((Date.now() - agentBubble.__turnStartTime) / 1000)) : 0);
         const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs;
         const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
@@ -3917,7 +3970,9 @@ if (typeof document !== 'undefined') {
           displayHtml = `<strong>Verification Failed:</strong> ${escapeHtml(errorMsg)}`;
         }
 
-        const realReasoning = collectAllStepReasoning(res) || agentBubble.__accumulatedReasoning || '';
+        const liveReasoning = agentBubble.__accumulatedReasoning || '';
+        const realReasoning = collectAllStepReasoning(res, liveReasoning) || liveReasoning;
+        agentBubble.__accumulatedReasoning = realReasoning;
         const liveDuration = agentBubble.__thoughtDuration || (agentBubble.__turnStartTime ? Math.max(1, Math.round((Date.now() - agentBubble.__turnStartTime) / 1000)) : 0);
         const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs;
         const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
@@ -3945,7 +4000,9 @@ if (typeof document !== 'undefined') {
       const sanitized = res.sanitized || lastSanitizedContext;
 
       const actionLabel = getCleanActionLabel(action, sanitized?.elements);
-      const realReasoning = collectAllStepReasoning(res) || agentBubble.__accumulatedReasoning || '';
+      const liveReasoning = agentBubble.__accumulatedReasoning || '';
+      const realReasoning = collectAllStepReasoning(res, liveReasoning) || liveReasoning;
+      agentBubble.__accumulatedReasoning = realReasoning;
       const actionLiveDuration = agentBubble.__thoughtDuration || (agentBubble.__turnStartTime ? Math.max(1, Math.round((Date.now() - agentBubble.__turnStartTime) / 1000)) : 0);
       const actionReasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs;
       const actionWords = (realReasoning || '').split(/\s+/).filter(Boolean).length;
