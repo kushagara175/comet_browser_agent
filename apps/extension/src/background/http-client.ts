@@ -21,6 +21,12 @@ import {
   ObjectiveIntent
 } from '@privapilot/protocol';
 import { assertNoCanaryLeak } from '@privapilot/test-fixtures';
+import {
+  sanitizeOutboundUrl,
+  scrubOptionalText,
+  scrubHistory,
+  sanitizeOutboundPayload
+} from '@privapilot/pii-rules';
 
 export const DEFAULT_SERVER_BASE_URL = 'http://localhost:4501';
 
@@ -166,7 +172,8 @@ export class ReasoningHttpClient {
    */
   async requestReasoningAction(sanitized: SanitizedContext): Promise<ActionProposal> {
     // 1. Prepare Closed Network Payload via single canonical protocol converter (Stage C2)
-    const payload = toSanitizedNetworkPayload(sanitized);
+    const rawPayload = toSanitizedNetworkPayload(sanitized);
+    const payload = sanitizeOutboundPayload(rawPayload);
 
     // 2. Outgoing Canary Gate check
     assertNoCanaryLeak(payload, 'Outgoing HTTP Payload');
@@ -228,6 +235,104 @@ export class ReasoningHttpClient {
   }
 
   /**
+   * Transmits SanitizedContext to Reasoning Stream endpoint and consumes SSE deltas in real time.
+   * Delivers live thought and reply tokens to UI listeners and returns validated ActionProposal upon completion.
+   */
+  async requestReasoningActionStream(
+    sanitized: SanitizedContext,
+    options?: {
+      onThoughtDelta?: (text: string) => void;
+      onReplyDelta?: (text: string) => void;
+    }
+  ): Promise<ActionProposal> {
+    const rawPayload = toSanitizedNetworkPayload(sanitized);
+    const payload = sanitizeOutboundPayload(rawPayload);
+    assertNoCanaryLeak(payload, 'Outgoing HTTP Stream Payload');
+
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.serverBaseUrl}/api/v1/reason/stream`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+            'X-PrivaPilot-Version': '1.0'
+          },
+          body: JSON.stringify(payload)
+        },
+        'Reasoning stream request',
+        REASONING_TIMEOUT_MS
+      );
+
+      if (!response.ok || !response.body) {
+        return this.requestReasoningAction(sanitized);
+      }
+
+      const reader = (response.body as any).getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let actionRaw: any = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const jsonStr = trimmed.slice(5).trim();
+          if (!jsonStr) continue;
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === 'thought_delta' && typeof event.text === 'string') {
+              options?.onThoughtDelta?.(event.text);
+            } else if (event.type === 'reply_delta' && typeof event.text === 'string') {
+              options?.onReplyDelta?.(event.text);
+            } else if (event.type === 'final' && event.action) {
+              actionRaw = event.action;
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (actionRaw && typeof actionRaw === 'object' && !Array.isArray(actionRaw)) {
+        for (const k of Object.keys(actionRaw)) {
+          if (!ALLOWED_ACTION_PROPOSAL_KEYS.has(k)) {
+            delete actionRaw[k];
+          }
+        }
+        if (Array.isArray(actionRaw.batchActions)) {
+          for (const sub of actionRaw.batchActions) {
+            if (sub && typeof sub === 'object' && !Array.isArray(sub)) {
+              if (sub.userInputPrompt && !sub.kind) {
+                sub.kind = 'request_user_input';
+              }
+              for (const subK of Object.keys(sub)) {
+                if (!ALLOWED_ATOMIC_ACTION_KEYS.has(subK)) {
+                  delete sub[subK];
+                }
+              }
+            }
+          }
+        }
+
+        const validation = validateActionProposal(actionRaw, sanitized.elements);
+        if (validation.isValid && validation.proposal) {
+          return validation.proposal;
+        }
+      }
+    } catch (_) {
+      // Graceful fallback to non-streaming endpoint
+    }
+
+    return this.requestReasoningAction(sanitized);
+  }
+
+  /**
    * Requests dynamic task decomposition and guardrails (tasks to do & tasks NOT to do)
    * from the reasoning planner.
    */
@@ -237,6 +342,16 @@ export class ReasoningHttpClient {
     customPrompt?: string
   ): Promise<TaskSpecification> {
     try {
+      const safeGoal = scrubOptionalText(goal);
+      const safeContextUrl = contextUrl ? sanitizeOutboundUrl(contextUrl) : undefined;
+      const safeCustomPrompt = customPrompt ? scrubOptionalText(customPrompt) : undefined;
+      const reqBody: any = {
+        goal: safeGoal,
+        ...(safeContextUrl ? { contextUrl: safeContextUrl } : {}),
+        ...(safeCustomPrompt ? { customPrompt: safeCustomPrompt } : {})
+      };
+      assertNoCanaryLeak(reqBody, 'Outgoing Task Spec Payload');
+
       const response = await this.fetchWithTimeout(
         `${this.serverBaseUrl}/api/v1/agent/spec`,
         {
@@ -245,11 +360,7 @@ export class ReasoningHttpClient {
             'Content-Type': 'application/json',
             'X-PrivaPilot-Version': '1.0'
           },
-          body: JSON.stringify({
-            goal,
-            contextUrl,
-            customPrompt
-          })
+          body: JSON.stringify(reqBody)
         },
         'Task specification request',
         10000
@@ -333,15 +444,18 @@ export class ReasoningHttpClient {
     history?: ReadonlyArray<ChatHistoryMessage>,
     customPrompt?: string
   ): Promise<ChatReply> {
+    const safeMessage = scrubOptionalText(message);
+    const safeHistory = history ? scrubHistory(history) : undefined;
+    const safeCustomPrompt = customPrompt ? scrubOptionalText(customPrompt) : undefined;
     const payload: SanitizedChatPayload = {
       _brand: 'SanitizedChatPayload_Verified',
       protocolVersion: '1.0',
-      message,
+      message: safeMessage,
       elements: sanitized.elements,
-      sanitizedTitle: sanitized.pageState.title,
+      sanitizedTitle: sanitized.pageState.title ? scrubOptionalText(sanitized.pageState.title) : '',
       maskCount: sanitized.maskCount,
-      ...(history && history.length > 0 ? { history } : {}),
-      ...(customPrompt ? { customPrompt } : {})
+      ...(safeHistory && safeHistory.length > 0 ? { history: safeHistory } : {}),
+      ...(safeCustomPrompt ? { customPrompt: safeCustomPrompt } : {})
     };
 
     assertNoCanaryLeak(payload, 'Outgoing Chat Payload');
@@ -384,12 +498,17 @@ export class ReasoningHttpClient {
     history?: ReadonlyArray<ChatHistoryMessage>,
     customPrompt?: string
   ): Promise<ChatReply> {
+    const safeMessage = scrubOptionalText(message);
+    const safeHistory = history ? scrubHistory(history) : undefined;
+    const safeCustomPrompt = customPrompt ? scrubOptionalText(customPrompt) : undefined;
     const payload: GeneralChatPayload = {
       protocolVersion: '1.0',
-      message,
-      ...(history && history.length > 0 ? { history } : {}),
-      ...(customPrompt ? { customPrompt } : {})
+      message: safeMessage,
+      ...(safeHistory && safeHistory.length > 0 ? { history: safeHistory } : {}),
+      ...(safeCustomPrompt ? { customPrompt: safeCustomPrompt } : {})
     };
+
+    assertNoCanaryLeak(payload, 'Outgoing General Chat Payload');
 
     const response = await this.fetchWithTimeout(
       `${this.serverBaseUrl}/api/v1/chat`,
@@ -411,6 +530,186 @@ export class ReasoningHttpClient {
     }
 
     return await response.json();
+  }
+
+  /**
+   * Transmits sanitized page-aware context projection to Chat stream endpoint.
+   * Consumes SSE chunks in real time, delivering onThoughtDelta and onReplyDelta.
+   */
+  async requestChatStream(
+    sanitized: SanitizedContext,
+    message: string,
+    options?: {
+      history?: ReadonlyArray<ChatHistoryMessage>;
+      customPrompt?: string;
+      onThoughtDelta?: (text: string) => void;
+      onReplyDelta?: (text: string) => void;
+    }
+  ): Promise<ChatReply> {
+    const safeMessage = scrubOptionalText(message);
+    const safeHistory = options?.history ? scrubHistory(options.history) : undefined;
+    const safeCustomPrompt = options?.customPrompt ? scrubOptionalText(options.customPrompt) : undefined;
+    const payload: SanitizedChatPayload = {
+      _brand: 'SanitizedChatPayload_Verified',
+      protocolVersion: '1.0',
+      message: safeMessage,
+      elements: sanitized.elements,
+      sanitizedTitle: sanitized.pageState.title ? scrubOptionalText(sanitized.pageState.title) : '',
+      maskCount: sanitized.maskCount,
+      ...(safeHistory && safeHistory.length > 0 ? { history: safeHistory } : {}),
+      ...(safeCustomPrompt ? { customPrompt: safeCustomPrompt } : {})
+    };
+
+    assertNoCanaryLeak(payload, 'Outgoing Chat Stream Payload');
+
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.serverBaseUrl}/api/v1/chat/stream`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+            'X-PrivaPilot-Version': '1.0'
+          },
+          body: JSON.stringify({
+            protocolVersion: payload.protocolVersion,
+            message: payload.message,
+            elements: payload.elements,
+            sanitizedTitle: payload.sanitizedTitle,
+            maskCount: payload.maskCount,
+            ...(payload.history ? { history: payload.history } : {}),
+            ...(payload.customPrompt ? { customPrompt: payload.customPrompt } : {})
+          })
+        },
+        'Chat stream request',
+        CHAT_TIMEOUT_MS
+      );
+
+      if (!response.ok || !response.body) {
+        return this.requestChat(sanitized, message, options?.history, options?.customPrompt);
+      }
+
+      const reader = (response.body as any).getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalResult: ChatReply | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const jsonStr = trimmed.slice(5).trim();
+          if (!jsonStr) continue;
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === 'thought_delta' && typeof event.text === 'string') {
+              options?.onThoughtDelta?.(event.text);
+            } else if (event.type === 'reply_delta' && typeof event.text === 'string') {
+              options?.onReplyDelta?.(event.text);
+            } else if (event.type === 'final' && event.response) {
+              finalResult = event.response;
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (finalResult) return finalResult;
+    } catch (_) {}
+
+    return this.requestChat(sanitized, message, options?.history, options?.customPrompt);
+  }
+
+  /**
+   * Transmits contextless general query to Chat stream endpoint.
+   * Consumes SSE chunks in real time, delivering onThoughtDelta and onReplyDelta.
+   */
+  async requestGeneralChatStream(
+    message: string,
+    options?: {
+      history?: ReadonlyArray<ChatHistoryMessage>;
+      customPrompt?: string;
+      onThoughtDelta?: (text: string) => void;
+      onReplyDelta?: (text: string) => void;
+    }
+  ): Promise<ChatReply> {
+    const safeMessage = scrubOptionalText(message);
+    const safeHistory = options?.history ? scrubHistory(options.history) : undefined;
+    const safeCustomPrompt = options?.customPrompt ? scrubOptionalText(options.customPrompt) : undefined;
+    const payload: GeneralChatPayload = {
+      protocolVersion: '1.0',
+      message: safeMessage,
+      ...(safeHistory && safeHistory.length > 0 ? { history: safeHistory } : {}),
+      ...(safeCustomPrompt ? { customPrompt: safeCustomPrompt } : {})
+    };
+
+    assertNoCanaryLeak(payload, 'Outgoing General Chat Stream Payload');
+
+    try {
+      const response = await this.fetchWithTimeout(
+        `${this.serverBaseUrl}/api/v1/chat/stream`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+            'X-PrivaPilot-Version': '1.0'
+          },
+          body: JSON.stringify({
+            protocolVersion: payload.protocolVersion,
+            message: payload.message,
+            ...(payload.history ? { history: payload.history } : {}),
+            ...(payload.customPrompt ? { customPrompt: payload.customPrompt } : {})
+          })
+        },
+        'General chat stream request',
+        CHAT_TIMEOUT_MS
+      );
+
+      if (!response.ok || !response.body) {
+        return this.requestGeneralChat(message, options?.history, options?.customPrompt);
+      }
+
+      const reader = (response.body as any).getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalResult: ChatReply | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const jsonStr = trimmed.slice(5).trim();
+          if (!jsonStr) continue;
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === 'thought_delta' && typeof event.text === 'string') {
+              options?.onThoughtDelta?.(event.text);
+            } else if (event.type === 'reply_delta' && typeof event.text === 'string') {
+              options?.onReplyDelta?.(event.text);
+            } else if (event.type === 'final' && event.response) {
+              finalResult = event.response;
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (finalResult) return finalResult;
+    } catch (_) {}
+
+    return this.requestGeneralChat(message, options?.history, options?.customPrompt);
   }
 
   async getPlatformApiTelemetry(): Promise<any> {
@@ -475,6 +774,15 @@ export class ReasoningHttpClient {
       this.serverBaseUrl.includes('localhost') ? `${this.serverBaseUrl.replace('localhost', '127.0.0.1')}/api/v1/agent/dispatch` : null
     ].filter(Boolean) as string[];
 
+    const safeReqBody = {
+      protocolVersion: '1.0',
+      goal: scrubOptionalText(payload.goal),
+      enableSubAgents: payload.enableSubAgents ?? true,
+      maxParallel: payload.maxParallel ?? 2,
+      contextUrl: payload.contextUrl ? sanitizeOutboundUrl(payload.contextUrl) : undefined
+    };
+    assertNoCanaryLeak(safeReqBody, 'Outgoing Platform Task Payload');
+
     for (const url of urls) {
       try {
         const response = await this.fetchWithTimeout(
@@ -485,13 +793,7 @@ export class ReasoningHttpClient {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${apiKey}`
             },
-            body: JSON.stringify({
-              protocolVersion: '1.0',
-              goal: payload.goal,
-              enableSubAgents: payload.enableSubAgents ?? true,
-              maxParallel: payload.maxParallel ?? 2,
-              contextUrl: payload.contextUrl
-            })
+            body: JSON.stringify(safeReqBody)
           },
           'SubAgent Swarm Dispatch',
           45000
@@ -516,6 +818,7 @@ export class ReasoningHttpClient {
     answer?: string | null;
     results: Array<{ title: string; url: string; content: string; score: number }>;
   }> {
+    const safeQuery = scrubOptionalText(query);
     try {
       const response = await this.fetchWithTimeout(
         `${this.serverBaseUrl}/api/v1/search`,
@@ -525,7 +828,7 @@ export class ReasoningHttpClient {
             'Content-Type': 'application/json',
             'X-PrivaPilot-Version': '1.0'
           },
-          body: JSON.stringify({ query, maxResults })
+          body: JSON.stringify({ query: safeQuery, maxResults })
         },
         'Tavily Web Search',
         10000
@@ -537,7 +840,7 @@ export class ReasoningHttpClient {
     } catch (err: any) {
       console.warn('[PrivaPilot HttpClient] Tavily search failed:', err?.message || err);
     }
-    return { success: false, query, results: [] };
+    return { success: false, query: safeQuery, results: [] };
   }
 }
 

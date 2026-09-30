@@ -51,6 +51,14 @@ export declare class ReasoningHttpClient {
      */
     requestReasoningAction(sanitized: SanitizedContext): Promise<ActionProposal>;
     /**
+     * Transmits SanitizedContext to Reasoning Stream endpoint and consumes SSE deltas in real time.
+     * Delivers live thought and reply tokens to UI listeners and returns validated ActionProposal upon completion.
+     */
+    requestReasoningActionStream(sanitized: SanitizedContext, options?: {
+        onThoughtDelta?: (text: string) => void;
+        onReplyDelta?: (text: string) => void;
+    }): Promise<ActionProposal>;
+    /**
      * Requests dynamic task decomposition and guardrails (tasks to do & tasks NOT to do)
      * from the reasoning planner.
      */
@@ -65,6 +73,26 @@ export declare class ReasoningHttpClient {
      * Transmits contextless general query (zero page or browser state).
      */
     requestGeneralChat(message: string, history?: ReadonlyArray<ChatHistoryMessage>, customPrompt?: string): Promise<ChatReply>;
+    /**
+     * Transmits sanitized page-aware context projection to Chat stream endpoint.
+     * Consumes SSE chunks in real time, delivering onThoughtDelta and onReplyDelta.
+     */
+    requestChatStream(sanitized: SanitizedContext, message: string, options?: {
+        history?: ReadonlyArray<ChatHistoryMessage>;
+        customPrompt?: string;
+        onThoughtDelta?: (text: string) => void;
+        onReplyDelta?: (text: string) => void;
+    }): Promise<ChatReply>;
+    /**
+     * Transmits contextless general query to Chat stream endpoint.
+     * Consumes SSE chunks in real time, delivering onThoughtDelta and onReplyDelta.
+     */
+    requestGeneralChatStream(message: string, options?: {
+        history?: ReadonlyArray<ChatHistoryMessage>;
+        customPrompt?: string;
+        onThoughtDelta?: (text: string) => void;
+        onReplyDelta?: (text: string) => void;
+    }): Promise<ChatReply>;
     getPlatformApiTelemetry(): Promise<any>;
     generatePlatformApiKey(name?: string, tier?: string): Promise<any>;
     dispatchPlatformTask(payload: {
