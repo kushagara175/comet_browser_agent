@@ -3261,6 +3261,27 @@ if (typeof document !== 'undefined') {
       // 1a. Interactive User Input Required (Form / Credentials)
       if (res && res.inputRequest) {
         const req = res.inputRequest;
+
+        // Singleton guarantee: never display duplicate input cards in this bubble or active chat
+        const existingInBubble = agentBubble.querySelector('.hitl-input-card');
+        if (existingInBubble) {
+          return;
+        }
+
+        // Clean up any stale uncompleted input cards in other chat bubbles
+        const existingInChat = chatMessages.querySelectorAll('.hitl-input-card');
+        let isAlreadyActive = false;
+        existingInChat.forEach((oldCard) => {
+          if (oldCard.getAttribute('data-input-nonce') === (req.inputNonce || 'default')) {
+            isAlreadyActive = true;
+          } else {
+            oldCard.remove();
+          }
+        });
+        if (isAlreadyActive) {
+          return;
+        }
+
         const liveReasoning = agentBubble.__accumulatedReasoning || '';
         const realReasoning = collectAllStepReasoning(res, liveReasoning) || liveReasoning;
         agentBubble.__accumulatedReasoning = realReasoning;
@@ -3269,59 +3290,42 @@ if (typeof document !== 'undefined') {
           : '';
         updateOrPrependThinking(agentBubble, thinkingHtml);
 
+        const isCredentials = req.kind === 'credentials';
+        const isCaptcha = /captcha/i.test(req.prompt || '') || /captcha/i.test(req.targetLocalId || '');
+        const promptText = req.prompt || (req.kind === 'clarification' ? 'Please clarify what should happen next.' : 'Please enter value to continue.');
+
         const card = document.createElement('div');
         card.className = 'hitl-input-card';
+        card.setAttribute('data-input-nonce', req.inputNonce || 'default');
 
-        const header = document.createElement('div');
-        header.className = 'hitl-header';
-        header.innerHTML = `
-          <div class="hitl-title-wrap">
-            <span class="hitl-title">${req.kind === 'clarification' ? 'Clarification Needed' : 'Input Required'}</span>
-          </div>
-        `;
-
-        const desc = document.createElement('div');
-        desc.className = 'hitl-rationale';
-        desc.textContent = req.prompt || (req.kind === 'clarification' ? 'Clarify what should happen next.' : 'Enter value to continue.');
-
-        const form = document.createElement('div');
-        form.style.marginTop = '4px';
-        form.style.display = 'flex';
-        form.style.flexDirection = 'column';
-        form.style.gap = '6px';
-
-        const saveVaultToggle = req.kind === 'clarification' ? '' : `
+        const saveVaultToggle = isCredentials ? `
           <label class="hitl-vault-checkbox">
             <input type="checkbox" id="saveToVaultToggle" checked />
             <span>Save to Personal Vault</span>
           </label>
+        ` : '';
+
+        card.innerHTML = `
+          <div class="hitl-input-prompt">${escapeHtml(promptText)}</div>
+          <div class="hitl-input-body">
+            ${isCredentials ? `
+              <input type="text" id="userInputUsername" class="hitl-input-field" placeholder="Email or Username" autocomplete="off" />
+              <input type="password" id="userInputPassword" class="hitl-input-field" placeholder="Password" autocomplete="off" />
+              ${saveVaultToggle}
+            ` : `
+              <input type="text" id="userInputText" class="hitl-input-field" placeholder="${isCaptcha ? 'Enter CAPTCHA...' : (req.kind === 'clarification' ? 'Clarify action...' : 'Enter value...')}" autocomplete="off" />
+            `}
+            <div class="hitl-buttons-row">
+              <button id="btnRejectInputForm" type="button" class="btn-hitl-deny">Reject</button>
+              <button id="btnSubmitInputForm" type="button" class="btn-hitl-submit-action">Submit</button>
+            </div>
+          </div>
         `;
-
-        if (req.kind === 'credentials') {
-          form.innerHTML = `
-            <input type="text" id="userInputUsername" class="hitl-input-field" placeholder="Email or Username" autocomplete="off" />
-            <input type="password" id="userInputPassword" class="hitl-input-field" placeholder="Password" autocomplete="off" />
-            ${saveVaultToggle}
-            <div class="hitl-buttons-row">
-              <button id="btnSubmitInputForm" class="btn-hitl-approve">Submit</button>
-            </div>
-          `;
-        } else {
-          form.innerHTML = `
-            <input type="text" id="userInputText" class="hitl-input-field" placeholder="${req.kind === 'clarification' ? 'Clarify action...' : 'Enter value...'}" autocomplete="off" />
-            ${saveVaultToggle}
-            <div class="hitl-buttons-row">
-              <button id="btnSubmitInputForm" class="btn-hitl-approve">Submit</button>
-            </div>
-          `;
-        }
-
-        card.appendChild(header);
-        card.appendChild(desc);
-        card.appendChild(form);
         agentBubble.appendChild(card);
 
-        const submitBtn = form.querySelector('#btnSubmitInputForm');
+        const form = card.querySelector('.hitl-input-body');
+        const submitBtn = card.querySelector('#btnSubmitInputForm');
+        const rejectBtn = card.querySelector('#btnRejectInputForm');
 
         const handleEnterKey = (e) => {
           if (e.key === 'Enter') {
@@ -3329,27 +3333,63 @@ if (typeof document !== 'undefined') {
             submitBtn?.click();
           }
         };
-        form.querySelector('#userInputText')?.addEventListener('keydown', handleEnterKey);
-        form.querySelector('#userInputUsername')?.addEventListener('keydown', handleEnterKey);
-        form.querySelector('#userInputPassword')?.addEventListener('keydown', handleEnterKey);
+        card.querySelector('#userInputText')?.addEventListener('keydown', handleEnterKey);
+        card.querySelector('#userInputUsername')?.addEventListener('keydown', handleEnterKey);
+        card.querySelector('#userInputPassword')?.addEventListener('keydown', handleEnterKey);
+
+        rejectBtn?.addEventListener('click', (e) => {
+          e.preventDefault();
+          const targetLabel = req.kind === 'clarification'
+            ? 'clarification'
+            : (/captcha/i.test(req.prompt || '')
+                ? 'CAPTCHA'
+                : (resolveFriendlyElementName(req.targetLocalId) || 'input'));
+
+          const cancelledTaskEl = document.createElement('div');
+          cancelledTaskEl.className = 'hitl-cancelled-task action-status-line is-done';
+          cancelledTaskEl.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #94a3b8; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
+          cancelledTaskEl.innerHTML = `
+            <span style="color: #94a3b8;">User rejected input request</span>
+          `;
+          card.replaceWith(cancelledTaskEl);
+
+          activeThinkingBubble = null;
+          setAgentStatus('idle');
+          addAuditEntry('INPUT', `User rejected input request for ${targetLabel}`, 'warn');
+
+          const runId = req.runId || currentRunId;
+          if (activeRunPort) {
+            try {
+              activeRunPort.disconnect();
+            } catch (_) {}
+            activeRunPort = null;
+          }
+
+          if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+            chrome.runtime.sendMessage({
+              type: 'CANCEL_RUN',
+              runId
+            }).catch?.(() => {});
+          }
+        });
 
         submitBtn?.addEventListener('click', (e) => {
           e.preventDefault();
           if (req.runId && req.runId !== currentRunId) return;
-          const userVal = (form.querySelector('#userInputUsername'))?.value?.trim() || '';
-          const passVal = (form.querySelector('#userInputPassword'))?.value?.trim() || '';
-          const customVal = (form.querySelector('#userInputText'))?.value?.trim() || '';
-          const saveToVault = (form.querySelector('#saveToVaultToggle'))?.checked !== false;
+          const userVal = (card.querySelector('#userInputUsername'))?.value?.trim() || '';
+          const passVal = (card.querySelector('#userInputPassword'))?.value?.trim() || '';
+          const customVal = (card.querySelector('#userInputText'))?.value?.trim() || '';
+          const saveToVault = (card.querySelector('#saveToVaultToggle'))?.checked !== false;
 
           if (!userVal && !passVal && !customVal) {
-            let warn = form.querySelector('.input-validation-warn');
+            let warn = form?.querySelector('.input-validation-warn');
             if (!warn) {
               warn = document.createElement('div');
               warn.className = 'input-validation-warn';
-              warn.style.color = '#ef4444';
-              warn.style.fontSize = '10.5px';
+              warn.style.color = '#f87171';
+              warn.style.fontSize = '11px';
               warn.style.marginTop = '2px';
-              form.insertBefore(warn, form.querySelector('.hitl-buttons-row') || submitBtn);
+              form?.insertBefore(warn, form.querySelector('.hitl-buttons-row') || submitBtn);
             }
             warn.textContent = req.kind === 'clarification' ? 'Please clarify the intended action.' : 'Please enter a value to continue.';
             return;
@@ -6422,13 +6462,13 @@ if (typeof document !== 'undefined') {
           }
 
           if (message.type === 'COORDINATOR_USER_INPUT_REQUIRED') {
-            if (message.request?.runId !== currentRunId) return;
-            let lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
-            if (!lastAgentBubble) {
-              lastAgentBubble = appendMessage('agent', '');
+            if (message.request?.runId && currentRunId && message.request.runId !== currentRunId) return;
+            let targetBubble = activeThinkingBubble || chatMessages.querySelector('.chat-msg.agent:last-child');
+            if (!targetBubble) {
+              targetBubble = appendMessage('agent', '');
             }
-            renderActionResult(lastAgentBubble, {
-              state: 'awaiting-user-confirmation',
+            renderActionResult(targetBubble, {
+              state: 'awaiting-user-input',
               inputRequest: message.request
             });
             setAgentStatus('awaiting-user-input');

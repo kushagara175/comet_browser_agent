@@ -499,5 +499,26 @@ test('Clean Text Actions and Calm Left-to-Right Shimmer CSS Gate', async () => {
   assert.ok(css.includes('border: none !important;'), 'completed tasks must have no border');
 });
 
+test('Minimal User Input Card and Singleton Deduplication Gate', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync('apps/extension/src/sidepanel/sidepanel.css', 'utf-8');
+  const js = fs.readFileSync('apps/extension/src/sidepanel/sidepanel.js', 'utf-8');
+
+  // 1. CSS styling: Minimal matte dark card without heavy left accent border
+  const inputCardCss = css.slice(css.indexOf('.hitl-input-card'), css.indexOf('.hitl-input-card') + 400);
+  assert.ok(!inputCardCss.includes('border-left'), 'Input card must not have heavy left accent border');
+  assert.ok(css.includes('.hitl-input-card'), 'Must define .hitl-input-card');
+  assert.ok(css.includes('.btn-hitl-submit-action'), 'Must define .btn-hitl-submit-action for minimal submit button');
+  assert.ok(css.includes('.hitl-input-prompt'), 'Must define .hitl-input-prompt for clean natural prompt text');
+
+  // 2. JS: Singleton deduplication to prevent double input cards
+  assert.ok(js.includes('data-input-nonce'), 'Must tag input card with data-input-nonce for singleton verification');
+  assert.ok(js.includes('existingInBubble'), 'Must check existingInBubble before creating card');
+  assert.ok(js.includes('#btnRejectInputForm'), 'Must provide Reject button');
+  assert.ok(js.includes('#btnSubmitInputForm'), 'Must provide Submit button');
+  assert.ok(js.includes('CANCEL_RUN'), 'Must send CANCEL_RUN on reject');
+});
+
+
 
 
