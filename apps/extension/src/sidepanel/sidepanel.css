@@ -1527,15 +1527,15 @@ html, body {
 }
 
 .monologue-drawer {
-  overflow: hidden;
+  overflow: visible;
   padding-left: 20px;
   padding-top: 5px;
   transition: opacity 0.2s ease;
 }
 
 .monologue-content {
-  max-height: 450px;
-  overflow-y: auto;
+  max-height: none;
+  overflow: visible;
   padding-left: 10px !important;
   border-left: 1px solid rgba(255, 255, 255, 0.12) !important;
   background: transparent !important;

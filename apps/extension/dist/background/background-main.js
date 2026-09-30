@@ -25254,6 +25254,20 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
         }
         let riskLevel = proposal.risk === "blocked" || classifiedRisk === "blocked" ? "blocked" : proposal.risk === "protected" || classifiedRisk === "protected" ? "protected" : "safe";
         if (riskLevel === "blocked") {
+          const targetName = (targetElement?.sanitizedName || "").toLowerCase();
+          const rationale = (proposal.rationale || "").toLowerCase();
+          if (proposal.kind === "request_user_input" || targetName.includes("captcha") || targetName.includes("password") || targetName.includes("otp") || targetName.includes("pin") || rationale.includes("captcha") || rationale.includes("manual entry") || rationale.includes("user input")) {
+            proposal = {
+              ...proposal,
+              kind: "request_user_input",
+              confidence: Math.max(proposal.confidence || 0, 0.95),
+              risk: "safe",
+              rationale: proposal.rationale || "Please provide manual input to proceed."
+            };
+            riskLevel = "safe";
+          }
+        }
+        if (riskLevel === "blocked") {
           const errorMsg2 = `Action blocked by client safety policy: ${proposal.rationale}`;
           this.transition("failed-safe", errorMsg2);
           const stepTrace2 = {
@@ -27902,7 +27916,7 @@ ${detail}`,
         }
       };
     }
-    const isFormSubmission = /submit/i.test(action.targetName || "") || /submit/i.test(action.elementText || "") || /submit/i.test(action.sanitizedTargetName || "") || /submit/i.test(action.rationale || "") || action.expectedState === "submit";
+    const isFormSubmission = (/submit/i.test(action.targetName || "") || /submit/i.test(action.elementText || "") || /submit/i.test(action.sanitizedTargetName || "") || /submit/i.test(action.rationale || "") || action.expectedState === "submit") && /\b(?:form|registration|feedback|application|survey|lead)\b/i.test(`${this.currentGoal || ""} ${action.rationale || ""}`);
     if (options?.resumeLoop && action.kind !== "finish" && !isFormSubmission) {
       return this.executeLoop();
     }

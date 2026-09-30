@@ -431,4 +431,32 @@ test('Per-Action Inline Confidence Gate: System prompt mandates per-action inlin
   assert.ok(prompt.includes('NEVER append a unified summary block'), 'Prompt must explicitly forbid unified summary blocks');
 });
 
+test('HITL Recovery Gate: Blocked actions on sensitive inputs convert gracefully to awaiting-user-input instead of hard failing', async () => {
+  const browser = createMockBrowser();
+  let inputRequested = false;
+
+  // Simulate model proposing an action that is flagged as blocked or targets a CAPTCHA field
+  const mockHttp = createMockHttpClient({
+    actionId: 'act_blocked_captcha',
+    kind: 'type',
+    targetLocalId: 'el_input_captcha',
+    textToType: 'ABC12',
+    confidence: 0.8,
+    risk: 'blocked',
+    rationale: 'The feedback form requires manual CAPTCHA entry to proceed.'
+  });
+
+  const coordinator = new RunCoordinator(browser, mockHttp);
+  coordinator.setListeners({
+    onUserInputRequired: (req) => {
+      inputRequested = true;
+    }
+  });
+
+  const result = await coordinator.startRun('Fill feedback form');
+  assert.equal(result.state, 'awaiting-user-input', 'Must transition to awaiting-user-input instead of failed-safe');
+  assert.ok(inputRequested, 'Must trigger onUserInputRequired listener');
+});
+
+
 
