@@ -538,6 +538,25 @@ test('Clean Tick-Free Action Lines and Seamless Thinking Resume Gate', async () 
   assert.ok(js.includes('drawer.style.display = \'block\''), 'Must open monologue drawer immediately on submit');
 });
 
+test('Minimal HITL Approval Card and Singleton Deduplication Gate', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync('apps/extension/src/sidepanel/sidepanel.css', 'utf-8');
+  const js = fs.readFileSync('apps/extension/src/sidepanel/sidepanel.js', 'utf-8');
 
+  // 1. CSS styling: Minimal matte dark card and pure white minimal Approve button
+  assert.ok(css.includes('.hitl-confirm-card'), 'Must define .hitl-confirm-card');
+  assert.ok(css.includes('.hitl-confirm-prompt'), 'Must define .hitl-confirm-prompt');
+  assert.ok(css.includes('.btn-hitl-approve'), 'Must define .btn-hitl-approve');
+  assert.ok(css.includes('.btn-hitl-deny'), 'Must define .btn-hitl-deny');
 
+  const approveBtnCss = css.slice(css.indexOf('.btn-hitl-approve'), css.indexOf('.btn-hitl-approve') + 300);
+  assert.ok(!approveBtnCss.includes('#3b82f6'), 'Approve button in CSS must not be hardcoded blue');
+  assert.ok(approveBtnCss.includes('#ffffff'), 'Approve button must use minimal crisp white background');
 
+  // 2. JS: Singleton deduplication to prevent double approval cards
+  assert.ok(js.includes('data-action-id'), 'Must tag confirm card with data-action-id');
+  assert.ok(js.includes('agentBubble.__handledActionIds'), 'Must track handledActionIds to prevent replay cards');
+  assert.ok(js.includes('agentBubble.querySelector(\'.hitl-confirm-card\')'), 'Must check existingInBubble before creating confirm card');
+  assert.ok(js.includes('chatMessages.querySelectorAll(\'.hitl-confirm-card\')'), 'Must clean up stale or duplicate cards across chat');
+  assert.ok(!js.includes('style="padding: 6px 16px; background: #3b82f6;'), 'Must not have inline blue button style');
+});

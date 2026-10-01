@@ -3613,6 +3613,33 @@ if (typeof document !== 'undefined') {
       // 1. Awaiting User Confirmation (Pending Protected or Low-Confidence Action)
       if (res && res.state === 'awaiting-user-confirmation') {
         const action = res.proposal || {};
+        const actionId = action.actionId || `${res.runId || currentRunId || 'run'}_${action.kind || 'act'}_${action.targetLocalId || 'tgt'}`;
+
+        // Never re-render a card for an action that was already approved or rejected in this bubble
+        agentBubble.__handledActionIds = agentBubble.__handledActionIds || new Set();
+        if (agentBubble.__handledActionIds.has(actionId)) {
+          return;
+        }
+
+        // Singleton guarantee: never display duplicate confirmation cards in this bubble or active chat
+        const existingInBubble = agentBubble.querySelector('.hitl-confirm-card');
+        if (existingInBubble) {
+          return;
+        }
+
+        const existingInChat = chatMessages.querySelectorAll('.hitl-confirm-card');
+        let isAlreadyActive = false;
+        existingInChat.forEach((oldCard) => {
+          if (oldCard.getAttribute('data-action-id') === actionId) {
+            isAlreadyActive = true;
+          } else {
+            oldCard.remove();
+          }
+        });
+        if (isAlreadyActive) {
+          return;
+        }
+
         const liveReasoning = agentBubble.__accumulatedReasoning || '';
         const realReasoning = collectAllStepReasoning(res, liveReasoning) || liveReasoning;
         agentBubble.__accumulatedReasoning = realReasoning;
@@ -3623,6 +3650,8 @@ if (typeof document !== 'undefined') {
 
         const card = document.createElement('div');
         card.className = 'hitl-confirm-card';
+        card.setAttribute('data-action-id', actionId);
+        card.setAttribute('data-run-id', res.runId || currentRunId || '');
 
         let friendlyTarget = action.targetName || action.sanitizedTargetName || action.elementText || '';
         if (!friendlyTarget && action.targetLocalId) {
@@ -3637,19 +3666,19 @@ if (typeof document !== 'undefined') {
         const promptText = `Please approve or reject ${actionVerb} "${targetLabel}" ${isSubmit ? 'to submit the form.' : 'to continue.'}`;
 
         card.innerHTML = `
-          <div style="padding: 12px 14px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; margin-top: 8px;">
-            <p style="margin: 0 0 10px 0; font-size: 13px; color: #e2e8f0; line-height: 1.5;">${escapeHtml(promptText)}</p>
-            <div style="display: flex; gap: 8px;">
-              <button class="btn-hitl-approve" style="padding: 6px 16px; background: #3b82f6; color: #ffffff; border-radius: 6px; font-size: 12px; font-weight: 500; border: none; cursor: pointer;">Approve</button>
-              <button class="btn-hitl-deny" style="padding: 6px 16px; background: transparent; color: #94a3b8; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; font-size: 12px; cursor: pointer;">Reject</button>
-            </div>
+          <div class="hitl-confirm-prompt">${escapeHtml(promptText)}</div>
+          <div class="hitl-buttons-row">
+            <button type="button" class="btn-hitl-deny">Reject</button>
+            <button type="button" class="btn-hitl-approve">Approve</button>
           </div>
         `;
 
         const approveBtn = card.querySelector('.btn-hitl-approve');
         const cancelBtn = card.querySelector('.btn-hitl-deny');
 
-        approveBtn?.addEventListener('click', () => {
+        approveBtn?.addEventListener('click', (e) => {
+          e.preventDefault();
+          agentBubble.__handledActionIds.add(actionId);
           const targetRunId = res.runId || currentRunId;
           const executingLine = document.createElement('div');
           executingLine.className = 'action-status-line is-executing';
@@ -3662,8 +3691,24 @@ if (typeof document !== 'undefined') {
           addAuditEntry('AUTH', `User Approved Action: ${targetLabel}`, 'pass');
           setAgentStatus('executing');
 
+          // Immediately expand and shimmer thinking monologue block if present
+          let block = agentBubble.querySelector('.monologue-block');
+          if (block) {
+            const title = block.querySelector('.monologue-title');
+            if (title) {
+              title.textContent = 'Thinking...';
+              title.classList.remove('monologue-completed-text');
+              title.classList.add('thinking-shimmer-text');
+            }
+            const drawer = block.querySelector('.monologue-drawer');
+            if (drawer) drawer.style.display = 'block';
+            const chevron = block.querySelector('.monologue-chevron');
+            if (chevron) chevron.classList.add('rotate-90');
+            block.setAttribute('data-state', 'expanded');
+          }
+
           if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-            chrome.runtime.sendMessage({ type: 'APPROVE_ACTION', runId: targetRunId, actionId: action.actionId }, (postRes) => {
+            chrome.runtime.sendMessage({ type: 'APPROVE_ACTION', runId: targetRunId, actionId: action.actionId, resumeLoop: true }, (postRes) => {
               if (postRes) {
                 executingLine.className = 'action-status-line is-done';
                 executingLine.style.cssText = 'display: flex; align-items: center; font-size: 12.5px; color: #cbd5e1; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
@@ -3676,7 +3721,9 @@ if (typeof document !== 'undefined') {
           }
         });
 
-        cancelBtn?.addEventListener('click', () => {
+        cancelBtn?.addEventListener('click', (e) => {
+          e.preventDefault();
+          agentBubble.__handledActionIds.add(actionId);
           const targetRunId = res.runId || currentRunId;
           const cancelledLine = document.createElement('div');
           cancelledLine.className = 'action-status-line is-done';
@@ -6475,7 +6522,7 @@ if (typeof document !== 'undefined') {
             setAgentStatus('awaiting-user-confirmation');
             addAuditEntry('AUTH', `Confirmation requested for ${action.kind}`, 'warn');
 
-            let lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
+            let lastAgentBubble = activeThinkingBubble || chatMessages.querySelector('.chat-msg.agent:last-child');
             if (!lastAgentBubble) {
               lastAgentBubble = appendMessage('agent', '');
             }
