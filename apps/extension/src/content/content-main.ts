@@ -354,25 +354,32 @@ export async function handleMessage(message: any): Promise<any> {
       // 1. Target element resolution with live self-healing
       let targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;
 
-      // If target is missing from current map or detached from DOM, self-heal immediately
-      if (proposal.targetLocalId && (!targetEl || !targetEl.isConnected)) {
+      // If target is missing from current map, detached from DOM, or proposal.targetLocalId was empty/unresolved:
+      if (!targetEl || !targetEl.isConnected) {
         const refreshed = extractor.extractSnapshot(document);
         currentElementMap = refreshed.elementMap;
         currentCaptureId = message.captureId || currentCaptureId;
-        targetEl = currentElementMap.get(proposal.targetLocalId) || null;
+        if (proposal.targetLocalId) {
+          targetEl = currentElementMap.get(proposal.targetLocalId) || null;
+        }
 
-        // Heuristic self-healing: if still not found by localId, match by semantic text or rationale
+        // Heuristic self-healing: if still not found, match by semantic text, rationale, or targetName
         if (!targetEl) {
-          const targetTextMatch = (proposal.rationale || '').match(/["']([^"']+)["']/);
-          const targetSearch = targetTextMatch ? targetTextMatch[1].toLowerCase().trim() : '';
+          const fullClues = `${proposal.targetLocalId || ''} ${(proposal as any).targetName || ''} ${proposal.rationale || ''} ${proposal.reasoning || ''}`;
+          const targetTextMatch = fullClues.match(/["']([^"']+)["']/);
+          const targetSearch = (targetTextMatch ? targetTextMatch[1] : (proposal as any).targetName || '').toLowerCase().trim();
           if (targetSearch) {
             for (const el of currentElementMap.values()) {
-              const elText = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').toLowerCase();
+              const elVal = (el as HTMLInputElement).value || '';
+              const elText = ((el.innerText || '') + ' ' + elVal + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('placeholder') || '')).toLowerCase();
               if (el.isConnected && (elText === targetSearch || elText.includes(targetSearch))) {
                 targetEl = el;
                 break;
               }
             }
+          }
+          if (!targetEl && proposal.kind === 'click' && /\b(?:login|submit|sign\s*in|log\s*in)\b/i.test(fullClues)) {
+            targetEl = (document.querySelector('button[type="submit"], input[type="submit"], input[value*="login" i], button#login, button#submit, [role="button"][aria-label*="login" i]') as HTMLElement) || null;
           }
         }
       }

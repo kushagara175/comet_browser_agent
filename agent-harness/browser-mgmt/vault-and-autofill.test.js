@@ -641,3 +641,32 @@ test('Form Autofill: Matches heterogeneous DemoQA form fields (usernumber, dob, 
   assert.strictEqual(matches[4].matched, true);
   assert.strictEqual(matches[4].valueToFill, '123 Main Street, Suite 100');
 });
+
+test('Form Autofill: [EMAIL FIELD] and [PHONE FIELD] tokens match Personal Vault profile', () => {
+  const profile = {
+    fullName: 'Kushagra Singh',
+    email: 'kushagrasingh175@gmail.com',
+    phone: '+91 98765 43210',
+    organization: 'SIH Innovation Lab'
+  };
+
+  const emailField = { id: 'el_8', sanitizedName: '[EMAIL FIELD]' };
+  const phoneField = { id: 'el_9', sanitizedName: '[PHONE FIELD]' };
+  const nameField = { id: 'el_7', sanitizedName: '[NAME FIELD]' };
+
+  const matchEmail = matchFieldToVault(emailField, profile);
+  assert.strictEqual(matchEmail.matched, true);
+  assert.strictEqual(matchEmail.canonicalField, 'email');
+  assert.strictEqual(matchEmail.valueToFill, 'kushagrasingh175@gmail.com');
+
+  const matchPhone = matchFieldToVault(phoneField, profile);
+  assert.strictEqual(matchPhone.matched, true);
+  assert.strictEqual(matchPhone.canonicalField, 'phone');
+  assert.strictEqual(matchPhone.valueToFill, '+91 98765 43210');
+
+  const matchName = matchFieldToVault(nameField, profile);
+  assert.strictEqual(matchName.matched, true);
+  assert.strictEqual(matchName.canonicalField, 'fullName');
+  assert.strictEqual(matchName.valueToFill, 'Kushagra Singh');
+});
+

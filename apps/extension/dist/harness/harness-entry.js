@@ -17992,7 +17992,19 @@ as ORT format: ${n}`);
               sanitizedName = "[SENSITIVE FIELD]";
               break;
           }
-          actionCapabilities = actionCapabilities.filter((cap) => cap !== "type");
+          const nonTypableCategories = [
+            "password",
+            "auth_code",
+            "credit_card",
+            "cvv",
+            "bank_account",
+            "token",
+            "uninspectable",
+            "high_risk_surface"
+          ];
+          if (nonTypableCategories.includes(sensitiveCategory)) {
+            actionCapabilities = actionCapabilities.filter((cap) => cap !== "type");
+          }
         } else {
           sanitizedName = sanitizeElementName(el2.rawName, { publicAuthorHandles: el2.publicAuthorHandles });
         }

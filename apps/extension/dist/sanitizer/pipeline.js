@@ -177,9 +177,23 @@ export class SanitizerPipeline {
                         sanitizedName = '[SENSITIVE FIELD]';
                         break;
                 }
-                // Restrict unsafe action capabilities for sensitive controls (Requirement 6)
-                // Remote server must NOT type into password, OTP, payment, token, or sensitive fields
-                actionCapabilities = actionCapabilities.filter((cap) => cap !== 'type');
+                // Restrict unsafe action capabilities for strictly confidential credentials & financial controls (Requirement 6)
+                // Remote server must NOT type into password, OTP, payment, secret tokens, or uninspectable sensitive fields.
+                // Standard user profile inputs (email, phone, national_id) retain typing capability so the zero-knowledge vault
+                // can securely populate them with user profile data on-device without exposing secrets.
+                const nonTypableCategories = [
+                    'password',
+                    'auth_code',
+                    'credit_card',
+                    'cvv',
+                    'bank_account',
+                    'token',
+                    'uninspectable',
+                    'high_risk_surface'
+                ];
+                if (nonTypableCategories.includes(sensitiveCategory)) {
+                    actionCapabilities = actionCapabilities.filter((cap) => cap !== 'type');
+                }
             }
             else {
                 sanitizedName = sanitizeElementName(el.rawName, { publicAuthorHandles: el.publicAuthorHandles });

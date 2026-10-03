@@ -187,26 +187,35 @@ export class ActionExecutor {
     }
 
     // Semantic Target Recovery: If targetLocalId is not in elementMap, search DOM by target name / keywords
-    if (!targetEl && proposal.targetLocalId) {
+    if (!targetEl) {
       const win = typeof window !== 'undefined' ? window : null;
       const doc = win?.document || (typeof document !== 'undefined' ? document : null);
       if (doc) {
-        const fullText = (proposal.rationale || '') + ' ' + (proposal.reasoning || '') + ' ' + ((proposal as any).targetName || '');
+        const fullText = (proposal.rationale || '') + ' ' + (proposal.reasoning || '') + ' ' + ((proposal as any).targetName || '') + ' ' + (proposal.targetLocalId || '') + ' ' + ((proposal as any).target || '');
         const matchPhrase = fullText.match(/["']([^"']{3,40})["']/)?.[1] ||
-          fullText.match(/\b(?:click|open|select|navigate\s+to|check|explore)\s+([a-zA-Z0-9_&\s-]{3,30})/i)?.[1] || '';
+          fullText.match(/\b(?:click|open|select|navigate\s+to|check|explore|submit|press|tap)\s+([a-zA-Z0-9_&\s-]{3,30})/i)?.[1] || '';
         const cleanPhrase = matchPhrase.toLowerCase().replace(/[^a-z0-9]/g, '');
 
         if (cleanPhrase.length >= 3) {
-          const allInteractive = doc.querySelectorAll('a, button, [role="button"], [role="link"], [role="menuitem"], [role="tab"]');
+          const allInteractive = doc.querySelectorAll('a, button, input[type="submit"], input[type="button"], input[type="image"], [role="button"], [role="link"], [role="menuitem"], [role="tab"]');
           for (let i = 0; i < allInteractive.length; i++) {
             const item = allInteractive[i] as HTMLElement;
-            const itemText = (item.textContent || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const itemVal = (item as HTMLInputElement).value || '';
+            const itemText = ((item.textContent || '') + ' ' + itemVal).toLowerCase().replace(/[^a-z0-9]/g, '');
             const itemAria = (item.getAttribute('aria-label') || '').toLowerCase().replace(/[^a-z0-9]/g, '');
             const itemHref = ((item as HTMLAnchorElement).href || '').toLowerCase();
             if (itemText.includes(cleanPhrase) || cleanPhrase.includes(itemText) || itemAria.includes(cleanPhrase) || itemHref.includes(cleanPhrase)) {
               targetEl = item;
               break;
             }
+          }
+        }
+
+        // Dedicated submit/login button fallback
+        if (!targetEl && proposal.kind === 'click' && /\b(?:login|sign\s*in|log\s*in|submit|proceed|continue)\b/i.test(fullText)) {
+          const submitEl = doc.querySelector('button[type="submit"], input[type="submit"], input[value*="login" i], input[value*="submit" i], button#login, button#submit, [role="button"][aria-label*="login" i]') as HTMLElement;
+          if (submitEl) {
+            targetEl = submitEl;
           }
         }
 
@@ -225,22 +234,33 @@ export class ActionExecutor {
 
     if (!targetEl) {
       if (!proposal.targetLocalId && !(proposal as any).coordinates) {
+        const win = typeof window !== 'undefined' ? window : null;
+        const doc = win?.document || (typeof document !== 'undefined' ? document : null);
+        if (proposal.kind === 'click' && doc) {
+          const candidateBtn = doc.querySelector('button[type="submit"], input[type="submit"], button:not([disabled])') as HTMLElement;
+          if (candidateBtn) {
+            targetEl = candidateBtn;
+          }
+        }
+        if (!targetEl) {
+          return {
+            actionId: proposal.actionId,
+            success: false,
+            timestamp,
+            semanticOutcomeVerified: false,
+            message: 'Missing targetLocalId or coordinates for DOM action'
+          };
+        }
+      } else {
         return {
           actionId: proposal.actionId,
           success: false,
           timestamp,
           semanticOutcomeVerified: false,
-          message: 'Missing targetLocalId or coordinates for DOM action'
+          staleTarget: true,
+          message: `Target element '${proposal.targetLocalId || `coordinates [${(proposal as any).coordinates?.join(', ')}]`}' is stale or not found in DOM`
         };
       }
-      return {
-        actionId: proposal.actionId,
-        success: false,
-        timestamp,
-        semanticOutcomeVerified: false,
-        staleTarget: true,
-        message: `Target element '${proposal.targetLocalId || `coordinates [${(proposal as any).coordinates?.join(', ')}]`}' is stale or not found in DOM`
-      };
     }
 
     // 4. Detached target validation

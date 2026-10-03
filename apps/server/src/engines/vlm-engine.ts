@@ -1298,8 +1298,7 @@ export class VlmReasoningEngine {
     let accumulatedThinking = '';
     let accumulatedContent = '';
     let inThinkTag = false;
-    let reasoningFieldEmittedLength = 0;
-    let replyFieldEmittedLength = 0;
+    const emittedFieldLengths = new Map<string, number>();
 
     while (true) {
       const { done, value } = await reader.read();
@@ -1325,40 +1324,51 @@ export class VlmReasoningEngine {
               const afterOpen = accumulatedContent.split('<think>')[1] || '';
               if (afterOpen.includes('</think>')) {
                 const thinkPart = afterOpen.split('</think>')[0];
-                if (thinkPart.length > reasoningFieldEmittedLength) {
-                  const d = thinkPart.slice(reasoningFieldEmittedLength);
-                  reasoningFieldEmittedLength = thinkPart.length;
+                const lastEmitted = emittedFieldLengths.get('think_tag') || 0;
+                if (thinkPart.length > lastEmitted) {
+                  const d = thinkPart.slice(lastEmitted);
+                  emittedFieldLengths.set('think_tag', thinkPart.length);
                   accumulatedThinking = thinkPart;
                   onChunk?.({ type: 'thought_delta', text: d });
                 }
               } else {
                 const safeThinking = afterOpen.replace(/<\/?[a-z0-9]*$/i, '');
-                if (safeThinking.length > reasoningFieldEmittedLength) {
-                  const d = safeThinking.slice(reasoningFieldEmittedLength);
-                  reasoningFieldEmittedLength = safeThinking.length;
+                const lastEmitted = emittedFieldLengths.get('think_tag') || 0;
+                if (safeThinking.length > lastEmitted) {
+                  const d = safeThinking.slice(lastEmitted);
+                  emittedFieldLengths.set('think_tag', safeThinking.length);
                   accumulatedThinking = safeThinking;
                   onChunk?.({ type: 'thought_delta', text: d });
                 }
               }
-            } else if (!accumulatedThinking) {
-              const match = accumulatedContent.match(/"(?:reasoning|rationale|thought|thinking)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
-              if (match && match[1]) {
-                const unescaped = match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-                if (unescaped.length > reasoningFieldEmittedLength) {
-                  const newDelta = unescaped.slice(reasoningFieldEmittedLength);
-                  reasoningFieldEmittedLength = unescaped.length;
-                  onChunk?.({ type: 'thought_delta', text: newDelta });
+            } else {
+              for (const thoughtKey of ['thought', 'thinking', 'reasoning', 'rationale'] as const) {
+                const fieldRegex = new RegExp(`"${thoughtKey}"\\s*:\\s*"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)`);
+                const match = accumulatedContent.match(fieldRegex);
+                if (match && match[1]) {
+                  const unescaped = match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                  const lastEmitted = emittedFieldLengths.get(thoughtKey) || 0;
+                  if (unescaped.length > lastEmitted) {
+                    const delta = unescaped.slice(lastEmitted);
+                    emittedFieldLengths.set(thoughtKey, unescaped.length);
+                    accumulatedThinking += delta;
+                    onChunk?.({ type: 'thought_delta', text: delta });
+                  }
                 }
               }
             }
 
-            const replyMatch = accumulatedContent.match(/"(?:reply|message)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
-            if (replyMatch && replyMatch[1]) {
-              const unescapedReply = replyMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-              if (unescapedReply.length > replyFieldEmittedLength) {
-                const newReplyDelta = unescapedReply.slice(replyFieldEmittedLength);
-                replyFieldEmittedLength = unescapedReply.length;
-                onChunk?.({ type: 'reply_delta', text: newReplyDelta });
+            for (const replyKey of ['reply', 'message'] as const) {
+              const fieldRegex = new RegExp(`"${replyKey}"\\s*:\\s*"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)`);
+              const replyMatch = accumulatedContent.match(fieldRegex);
+              if (replyMatch && replyMatch[1]) {
+                const unescapedReply = replyMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                const lastEmitted = emittedFieldLengths.get(replyKey) || 0;
+                if (unescapedReply.length > lastEmitted) {
+                  const newReplyDelta = unescapedReply.slice(lastEmitted);
+                  emittedFieldLengths.set(replyKey, unescapedReply.length);
+                  onChunk?.({ type: 'reply_delta', text: newReplyDelta });
+                }
               }
             }
           }
@@ -1462,8 +1472,7 @@ export class VlmReasoningEngine {
     let accumulatedThinking = '';
     let accumulatedContent = '';
     let inThinkTag = false;
-    let reasoningFieldEmittedLength = 0;
-    let replyFieldEmittedLength = 0;
+    const emittedFieldLengths = new Map<string, number>();
 
     while (true) {
       const { done, value } = await reader.read();
@@ -1493,40 +1502,51 @@ export class VlmReasoningEngine {
               const afterOpen = accumulatedContent.split('<think>')[1] || '';
               if (afterOpen.includes('</think>')) {
                 const thinkPart = afterOpen.split('</think>')[0];
-                if (thinkPart.length > reasoningFieldEmittedLength) {
-                  const d = thinkPart.slice(reasoningFieldEmittedLength);
-                  reasoningFieldEmittedLength = thinkPart.length;
+                const lastEmitted = emittedFieldLengths.get('think_tag') || 0;
+                if (thinkPart.length > lastEmitted) {
+                  const d = thinkPart.slice(lastEmitted);
+                  emittedFieldLengths.set('think_tag', thinkPart.length);
                   accumulatedThinking = thinkPart;
                   onChunk?.({ type: 'thought_delta', text: d });
                 }
               } else {
                 const safeThinking = afterOpen.replace(/<\/?[a-z0-9]*$/i, '');
-                if (safeThinking.length > reasoningFieldEmittedLength) {
-                  const d = safeThinking.slice(reasoningFieldEmittedLength);
-                  reasoningFieldEmittedLength = safeThinking.length;
+                const lastEmitted = emittedFieldLengths.get('think_tag') || 0;
+                if (safeThinking.length > lastEmitted) {
+                  const d = safeThinking.slice(lastEmitted);
+                  emittedFieldLengths.set('think_tag', safeThinking.length);
                   accumulatedThinking = safeThinking;
                   onChunk?.({ type: 'thought_delta', text: d });
                 }
               }
-            } else if (!accumulatedThinking) {
-              const match = accumulatedContent.match(/"(?:reasoning|rationale|thought|thinking)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
-              if (match && match[1]) {
-                const unescaped = match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-                if (unescaped.length > reasoningFieldEmittedLength) {
-                  const newDelta = unescaped.slice(reasoningFieldEmittedLength);
-                  reasoningFieldEmittedLength = unescaped.length;
-                  onChunk?.({ type: 'thought_delta', text: newDelta });
+            } else {
+              for (const thoughtKey of ['thought', 'thinking', 'reasoning', 'rationale'] as const) {
+                const fieldRegex = new RegExp(`"${thoughtKey}"\\s*:\\s*"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)`);
+                const match = accumulatedContent.match(fieldRegex);
+                if (match && match[1]) {
+                  const unescaped = match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                  const lastEmitted = emittedFieldLengths.get(thoughtKey) || 0;
+                  if (unescaped.length > lastEmitted) {
+                    const delta = unescaped.slice(lastEmitted);
+                    emittedFieldLengths.set(thoughtKey, unescaped.length);
+                    accumulatedThinking += delta;
+                    onChunk?.({ type: 'thought_delta', text: delta });
+                  }
                 }
               }
             }
 
-            const replyMatch = accumulatedContent.match(/"(?:reply|message)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
-            if (replyMatch && replyMatch[1]) {
-              const unescapedReply = replyMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-              if (unescapedReply.length > replyFieldEmittedLength) {
-                const newReplyDelta = unescapedReply.slice(replyFieldEmittedLength);
-                replyFieldEmittedLength = unescapedReply.length;
-                onChunk?.({ type: 'reply_delta', text: newReplyDelta });
+            for (const replyKey of ['reply', 'message'] as const) {
+              const fieldRegex = new RegExp(`"${replyKey}"\\s*:\\s*"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)`);
+              const replyMatch = accumulatedContent.match(fieldRegex);
+              if (replyMatch && replyMatch[1]) {
+                const unescapedReply = replyMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                const lastEmitted = emittedFieldLengths.get(replyKey) || 0;
+                if (unescapedReply.length > lastEmitted) {
+                  const newReplyDelta = unescapedReply.slice(lastEmitted);
+                  emittedFieldLengths.set(replyKey, unescapedReply.length);
+                  onChunk?.({ type: 'reply_delta', text: newReplyDelta });
+                }
               }
             }
           }
@@ -1627,8 +1647,15 @@ export class VlmReasoningEngine {
             if (!s.url && s.href) s.url = s.href;
             if (!s.url && s.link) s.url = s.link;
           }
-          if (!s.targetLocalId && (s.target || s.elementId || s.element || s.id)) {
-            s.targetLocalId = String(s.target || s.elementId || s.element || s.id);
+          if (!s.targetLocalId && (s.targetName || s.target || s.elementId || s.element || s.id || s.label || s.button)) {
+            s.targetLocalId = String(s.targetName || s.target || s.elementId || s.element || s.id || s.label || s.button);
+          }
+          if (!s.targetLocalId && s.kind === 'click' && /\b(?:login|submit|sign\s*in)\b/i.test((s.rationale || '') + ' ' + (payload.goal || ''))) {
+            const submitEl = payload.elements.find(e =>
+              (e.role === 'button' || e.role === 'input') &&
+              /\b(?:login|submit|sign\s*in)\b/i.test(e.sanitizedName || '')
+            );
+            if (submitEl) s.targetLocalId = submitEl.localId;
           }
           if (s.text && !s.textToType) s.textToType = String(s.text);
           if (s.value && !s.textToType && s.kind === 'type') s.textToType = String(s.value);
@@ -1757,8 +1784,27 @@ export class VlmReasoningEngine {
         }
       }
 
-      if (!parsed.targetLocalId && (parsed.target || parsed.elementId || parsed.id || parsed.targetId || parsed.element || parsed.elementName)) {
-        parsed.targetLocalId = String(parsed.target || parsed.elementId || parsed.id || parsed.targetId || parsed.element || parsed.elementName);
+      if (!parsed.targetLocalId && (parsed.targetName || parsed.target || parsed.elementId || parsed.id || parsed.targetId || parsed.element || parsed.elementName || parsed.label || parsed.button)) {
+        parsed.targetLocalId = String(parsed.targetName || parsed.target || parsed.elementId || parsed.id || parsed.targetId || parsed.element || parsed.elementName || parsed.label || parsed.button);
+      }
+
+      // If targetLocalId is still missing for an interactive action, extract from clues or resolve via submit/login fallback
+      if (!parsed.targetLocalId && (parsed.kind === 'click' || parsed.kind === 'type' || parsed.kind === 'select' || parsed.kind === 'hover') && payload.elements?.length > 0) {
+        const fullClues = `${parsed.targetName || ''} ${parsed.rationale || ''} ${parsed.reasoning || ''} ${payload.goal || ''}`;
+        const phraseMatch = fullClues.match(/["']([^"']{2,40})["']/)?.[1] ||
+          fullClues.match(/\b(?:click|press|tap|submit|open|select)\s+(?:on\s+)?(?:the\s+)?([a-zA-Z0-9_\s-]{2,30})/i)?.[1] ||
+          '';
+        if (phraseMatch) {
+          parsed.targetLocalId = phraseMatch.trim();
+        } else if (/\b(?:login|sign\s*in|log\s*in|submit)\b/i.test(fullClues)) {
+          const submitCandidate = payload.elements.find(e =>
+            (e.role === 'button' || e.role === 'input') &&
+            /\b(?:login|submit|sign\s*in|log\s*in|proceed|continue)\b/i.test(e.sanitizedName || '')
+          );
+          if (submitCandidate) {
+            parsed.targetLocalId = submitCandidate.localId;
+          }
+        }
       }
 
       // If targetLocalId does not match an element ID directly, resolve via semantic grounding
@@ -2091,7 +2137,9 @@ Available Browser Skills Library:
 - Domain Playbooks: Specialized patterns for isro-portal.md (ISRO official portal navigation, missions directory /Missions.html, launchers /Launchers.html, search #txtSearch, specifications tables, PDF brochure/report downloads), bhuvan-geoportal.md (Bhuvan 2D/3D map viewer /bhuvan_geoportal.php, location search, thematic layers, disaster support, open satellite data download), sih-portal.md (SIH Problem Statements portal search, filters, and submission metrics), flight-booking.md (airline flight booking forms, origin/destination inputs, search buttons), x-twitter.md (on X.com / Twitter, Bookmarks is located at /i/bookmarks with the ribbon/bookmark icon; Bookmarks are completely separate from Lists /lists; to view bookmarks on X, click the Bookmarks link or navigate to https://x.com/i/bookmarks; never confuse Lists with Bookmarks), wikipedia.md, github.md, duckduckgo-google.md, youtube.md, reddit.md.
 
 Strict Rules:
-1. Return ONLY schema-valid JSON for exactly one minimal next action or answer. Act only on the current objective and paste its exact id value (e.g. "objective_1") into the objectiveId field. The objectiveId MUST be a plain alphanumeric/underscore/dash string with no spaces, only letters, digits, underscores, or dashes.
+1. Return ONLY schema-valid JSON for exactly one minimal next action or answer.
+CRITICAL REAL-TIME STREAMING DIRECTIVE: You MUST output the "thought" field as the VERY FIRST key in your JSON response (e.g. {"thought": "I observe that...", "actionId": ...}). Never place actionId or kind before thought. This enables your reasoning monologue to stream live to the user in real time with zero lag.
+Act only on the current objective and paste its exact id value (e.g. "objective_1") into the objectiveId field. The objectiveId MUST be a plain alphanumeric/underscore/dash string with no spaces, only letters, digits, underscores, or dashes.
 2. Target elements using "targetLocalId" for interaction actions ("click", "type", "select", "hover", "scroll", "drag_and_drop", "upload_file"). When proposing kind: "scroll" to bring a specific section, heading, or element into view (e.g. an element with verticalOffset: "below"), ALWAYS provide "targetLocalId" set to that element's ID (e.g. "targetLocalId": "el_19") so the browser scrolls directly to it in ONE step instead of scrolling repeatedly! NEVER invent CSS selectors, XPath, or JavaScript.
 3. Classify risk as "safe" (read/navigate/preview/filter/hover/drag/upload/finish/answer/web_search) or "protected" (submit/delete/pay/sign).
 3b. NAVIGATION & MULTI-TAB DIRECTIVE:
@@ -2184,6 +2232,16 @@ Strict Rules:
       DO NOT assume controls require scrolling down. If a layer control element is present in the elements list (even if listed with inViewport: false), CLICK it directly to expand the layers panel!
     - When searching a city or place on Bhuvan or map portals:
       Type the place name (e.g. "Bengaluru") with pressEnter: true, or click the search button adjacent to the input. Once the map centers on the location, proceed directly to clicking the layers or services buttons.
+4d. SOCIAL MEDIA & PROFILE ACTIONS DIRECTIVE (X / TWITTER, YOUTUBE, GITHUB, REDDIT, INSTAGRAM):
+    - When the user asks to "unfollow", "follow", "subscribe", "unsubscribe", "like", "mute", "block" an account or profile (e.g. "unfollow him", "unfollow @elonmusk", "follow him", "subscribe", "like post"):
+      1. Inspect the profile header controls on screen. Ground the action to the relevant button (e.g. "Unfollow @username", "Following", "Follow", "Subscribe").
+      2. YOU MUST PROPOSE kind: "click" on that target button! NEVER propose kind: "finish" or kind: "answer" before clicking the button!
+      3. MANDATORY TWO-STEP CONFIRMATION & VISUAL VERIFICATION:
+         - On social platforms (such as X / Twitter), clicking "Unfollow" opens a confirmation dialog/modal with "Unfollow @username?" and two options: "Cancel" and "Unfollow".
+         - NEVER propose kind: "finish" immediately after clicking the first button!
+         - On the next turn, inspect the updated screen: if the confirmation modal is visible, propose kind: "click" on the confirmation "Unfollow" button inside the dialog!
+         - Only propose kind: "finish" AFTER you have inspected the updated screen and visually verified that the button state has toggled (e.g. the button now displays "Follow" instead of "Unfollow", or "Subscribed" instead of "Subscribe").
+         - In your "reasoning" monologue, explicitly state your visual observation confirming the state transition before concluding with kind: "finish".
 5. SELECT DIRECTIVE: When selecting an option from a dropdown (role: "select"), you MUST return kind: "select", target that select's local ID, and provide "selectOptionValue" with the desired option value.
 6. HOVER DIRECTIVE: When hovering or inspecting flyouts/dropdown menus, return kind: "hover", and target that element's local ID.
 7. DRAG AND DROP DIRECTIVE: When moving or dragging an item, return kind: "drag_and_drop", set "targetLocalId" to the source element and "destinationLocalId" to the target drop container.
@@ -2201,6 +2259,7 @@ Strict Rules:
     Express your thoughts in pure, fluent, natural conversational prose.
     Ensure your proposal's "confidence" number field (between 0.0 and 1.0) directly reflects the confidence assessment you articulated in your monologue.
 11. Do not return "finish" merely because you have explained what should happen. Use "finish" only when every required objective is completed and the evidence ledger contains verified evidence for each objective.
+    CRITICAL FOR IMPERATIVE MUTATING ACTIONS: If the user asks to perform an action (e.g. "unfollow him", "follow", "subscribe", "click the button", "like", "delete") and no mutating action has been executed yet on the page, you are STRICTLY FORBIDDEN from returning kind: "finish" or kind: "answer". You MUST propose kind: "click" on the target button to execute the action. Only propose kind: "finish" after the action has executed AND the updated visual screen verifies the completed state (e.g. button state changed or confirmation dialog handled)!
 12. GOAL COMPLETION & PROGRESSION:
    - For QUESTION-ANSWERING & INFORMATION RETRIEVAL GOALS (e.g. "search for X and tell me Y", "find Z and tell me when it was first launched and who organizes it", "how many submissions..."):
      Typing into a search box or clicking a search tab is ONLY an intermediate step! DO NOT conclude that the goal is complete just because text was typed into an input. If the search results or answer are not yet visible on screen (e.g. still on the home page or search input), DO NOT propose kind: "finish"! Instead, propose clicking the search button or submitting the search.
@@ -2352,7 +2411,9 @@ Strict Rules:
       * Premature finishes with empty replies, or placeholder replies like "Task finished" / "Done", are strictly prohibited and will be rejected.
 
 JSON Schema:
+CRITICAL STREAMING DIRECTIVE: You MUST output "thought" as the VERY FIRST key in your JSON object. This ensures your live thinking monologue streams to the user in real time without lag.
 {
+  "thought": "Internal reasoning monologue: step-by-step thinking analyzing the page layout and Set-of-Marks labels, grounding each target element to the user goal, evaluating action confidence for each action inline as regular conversational text (e.g. 'I will type the name into el_1 with 0.98 confidence because the placeholder matches...'). Do not append a single unified confidence block or threshold formula at the bottom.",
   "actionId": "act_1",
   "objectiveId": "objective_1",
   "kind": "click" | "type" | "select" | "scroll" | "hover" | "drag_and_drop" | "upload_file" | "wait" | "batch" | "request_user_input" | "finish" | "extract" | "answer" | "web_search",
@@ -2374,7 +2435,6 @@ JSON Schema:
   "semanticMatchReason": "Concise explanation of target-to-objective match",
   "fallbackStrategy": "reperceive" | "wait_for_hydration" | "retry_target" | "scroll_to_target" | "navigate_fallback" | "refresh_once" | "request_user_input" | "fail_safe",
   "completionEvidence": ["url" | "element" | "text" | "input_value" | "dialog" | "attribute" | "scroll" | "visual_change"],
-  "thought": "Internal reasoning monologue: step-by-step thinking analyzing the page layout and Set-of-Marks labels, grounding each target element to the user goal, evaluating action confidence for each action inline as regular conversational text (e.g. 'I will type the name into el_1 with 0.98 confidence because the placeholder matches...'). Do not append a single unified confidence block or threshold formula at the bottom.",
   "rationale": "Short user-safe explanation or summary of action/answer",
   "reply": "Optional conversational response text when kind is answer or finish",
   "expectedState": "Expected UI change"

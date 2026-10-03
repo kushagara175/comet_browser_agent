@@ -1990,24 +1990,31 @@
           }
         }
       }
-      if (!targetEl && proposal.targetLocalId) {
+      if (!targetEl) {
         const win2 = typeof window !== "undefined" ? window : null;
         const doc = win2?.document || (typeof document !== "undefined" ? document : null);
         if (doc) {
-          const fullText = (proposal.rationale || "") + " " + (proposal.reasoning || "") + " " + (proposal.targetName || "");
-          const matchPhrase = fullText.match(/["']([^"']{3,40})["']/)?.[1] || fullText.match(/\b(?:click|open|select|navigate\s+to|check|explore)\s+([a-zA-Z0-9_&\s-]{3,30})/i)?.[1] || "";
+          const fullText = (proposal.rationale || "") + " " + (proposal.reasoning || "") + " " + (proposal.targetName || "") + " " + (proposal.targetLocalId || "") + " " + (proposal.target || "");
+          const matchPhrase = fullText.match(/["']([^"']{3,40})["']/)?.[1] || fullText.match(/\b(?:click|open|select|navigate\s+to|check|explore|submit|press|tap)\s+([a-zA-Z0-9_&\s-]{3,30})/i)?.[1] || "";
           const cleanPhrase = matchPhrase.toLowerCase().replace(/[^a-z0-9]/g, "");
           if (cleanPhrase.length >= 3) {
-            const allInteractive = doc.querySelectorAll('a, button, [role="button"], [role="link"], [role="menuitem"], [role="tab"]');
+            const allInteractive = doc.querySelectorAll('a, button, input[type="submit"], input[type="button"], input[type="image"], [role="button"], [role="link"], [role="menuitem"], [role="tab"]');
             for (let i = 0; i < allInteractive.length; i++) {
               const item = allInteractive[i];
-              const itemText = (item.textContent || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+              const itemVal = item.value || "";
+              const itemText = ((item.textContent || "") + " " + itemVal).toLowerCase().replace(/[^a-z0-9]/g, "");
               const itemAria = (item.getAttribute("aria-label") || "").toLowerCase().replace(/[^a-z0-9]/g, "");
               const itemHref = (item.href || "").toLowerCase();
               if (itemText.includes(cleanPhrase) || cleanPhrase.includes(itemText) || itemAria.includes(cleanPhrase) || itemHref.includes(cleanPhrase)) {
                 targetEl = item;
                 break;
               }
+            }
+          }
+          if (!targetEl && proposal.kind === "click" && /\b(?:login|sign\s*in|log\s*in|submit|proceed|continue)\b/i.test(fullText)) {
+            const submitEl = doc.querySelector('button[type="submit"], input[type="submit"], input[value*="login" i], input[value*="submit" i], button#login, button#submit, [role="button"][aria-label*="login" i]');
+            if (submitEl) {
+              targetEl = submitEl;
             }
           }
           if (!targetEl && proposal.kind === "type") {
@@ -2024,22 +2031,33 @@
       }
       if (!targetEl) {
         if (!proposal.targetLocalId && !proposal.coordinates) {
+          const win2 = typeof window !== "undefined" ? window : null;
+          const doc = win2?.document || (typeof document !== "undefined" ? document : null);
+          if (proposal.kind === "click" && doc) {
+            const candidateBtn = doc.querySelector('button[type="submit"], input[type="submit"], button:not([disabled])');
+            if (candidateBtn) {
+              targetEl = candidateBtn;
+            }
+          }
+          if (!targetEl) {
+            return {
+              actionId: proposal.actionId,
+              success: false,
+              timestamp,
+              semanticOutcomeVerified: false,
+              message: "Missing targetLocalId or coordinates for DOM action"
+            };
+          }
+        } else {
           return {
             actionId: proposal.actionId,
             success: false,
             timestamp,
             semanticOutcomeVerified: false,
-            message: "Missing targetLocalId or coordinates for DOM action"
+            staleTarget: true,
+            message: `Target element '${proposal.targetLocalId || `coordinates [${proposal.coordinates?.join(", ")}]`}' is stale or not found in DOM`
           };
         }
-        return {
-          actionId: proposal.actionId,
-          success: false,
-          timestamp,
-          semanticOutcomeVerified: false,
-          staleTarget: true,
-          message: `Target element '${proposal.targetLocalId || `coordinates [${proposal.coordinates?.join(", ")}]`}' is stale or not found in DOM`
-        };
       }
       const isConnected = targetEl.isConnected ?? (targetEl.ownerDocument && targetEl.ownerDocument.contains(targetEl));
       if (isConnected === false || targetEl.ownerDocument && typeof targetEl.ownerDocument.contains === "function" && !targetEl.ownerDocument.contains(targetEl)) {
@@ -4806,22 +4824,29 @@
       overlay.enableSafetyShield(proposal?.kind ? `PrivaPilot: ${proposal.kind.toUpperCase()}` : "PrivaPilot Automating Page...");
       try {
         let targetEl = proposal.targetLocalId ? currentElementMap.get(proposal.targetLocalId) : null;
-        if (proposal.targetLocalId && (!targetEl || !targetEl.isConnected)) {
+        if (!targetEl || !targetEl.isConnected) {
           const refreshed = extractor.extractSnapshot(document);
           currentElementMap = refreshed.elementMap;
           currentCaptureId = message.captureId || currentCaptureId;
-          targetEl = currentElementMap.get(proposal.targetLocalId) || null;
+          if (proposal.targetLocalId) {
+            targetEl = currentElementMap.get(proposal.targetLocalId) || null;
+          }
           if (!targetEl) {
-            const targetTextMatch = (proposal.rationale || "").match(/["']([^"']+)["']/);
-            const targetSearch = targetTextMatch ? targetTextMatch[1].toLowerCase().trim() : "";
+            const fullClues = `${proposal.targetLocalId || ""} ${proposal.targetName || ""} ${proposal.rationale || ""} ${proposal.reasoning || ""}`;
+            const targetTextMatch = fullClues.match(/["']([^"']+)["']/);
+            const targetSearch = (targetTextMatch ? targetTextMatch[1] : proposal.targetName || "").toLowerCase().trim();
             if (targetSearch) {
               for (const el of currentElementMap.values()) {
-                const elText = (el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "").toLowerCase();
+                const elVal = el.value || "";
+                const elText = ((el.innerText || "") + " " + elVal + " " + (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("placeholder") || "")).toLowerCase();
                 if (el.isConnected && (elText === targetSearch || elText.includes(targetSearch))) {
                   targetEl = el;
                   break;
                 }
               }
+            }
+            if (!targetEl && proposal.kind === "click" && /\b(?:login|submit|sign\s*in|log\s*in)\b/i.test(fullClues)) {
+              targetEl = document.querySelector('button[type="submit"], input[type="submit"], input[value*="login" i], button#login, button#submit, [role="button"][aria-label*="login" i]') || null;
             }
           }
         }

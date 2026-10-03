@@ -441,8 +441,6 @@ function renderBandCanvas(bandCanvas, haloCanvas, points, w, h, state, config, i
     haloCtx.clearRect(0, 0, w, h);
   }
 
-  if (isProcessing) return;
-
   const bandStrength = config.bandStrength ?? 1.55;
   const bandWidth = config.bandWidth ?? 2.15;
   const strength = state.strength ?? 1;
@@ -734,9 +732,11 @@ export function initVoiceBeam(containerEl, userConfig = {}) {
       : 1 - 0.5 * Math.pow(2 - 2 * cycleFrac, curve);
     const pingPong = cycleIndex % 2 === 0 ? 2 * curvedFrac - 1 : 1 - 2 * curvedFrac;
 
-    const sweepX = hScan * travelRange * pingPong;
-    const lobeCompress = 1 - hScan * 0.6;
-    const maskWidthCompress = 1 - hScan * 0.45;
+    // Scale travel range gently so the beam oscillates across the center without cutting off either half
+    const maxTravel = Math.min(26, halfSpan * 0.22);
+    const sweepX = hScan * maxTravel * pingPong;
+    const lobeCompress = 1 - hScan * 0.05;
+    const maskWidthCompress = 1 + hScan * 0.35;
     const centerPulse = 1 + hScan * 0.3 * (1 - pingPong * pingPong);
 
     const rampW = Math.max(0, Math.min(1, (hScan - 0.25) / 0.75));
@@ -748,8 +748,9 @@ export function initVoiceBeam(containerEl, userConfig = {}) {
     const wMult = (0.85 + (config.spread || 1.05) * effectiveProcessingLevel) * centerPulse;
     const liftPx = (config.bend || 60) * effectiveProcessingLevel;
 
-    if (config.flow && config.flow !== 0 && !isProcessing) {
-      phase = ((phase + config.flow * effectiveProcessingLevel * dt) % ringSpan + ringSpan) % ringSpan;
+    if (config.flow && config.flow !== 0) {
+      const flowMultiplier = isProcessing ? 1.6 : 1.0;
+      phase = ((phase + config.flow * flowMultiplier * effectiveProcessingLevel * dt) % ringSpan + ringSpan) % ringSpan;
     }
 
     // Write CSS variables
@@ -773,8 +774,8 @@ export function initVoiceBeam(containerEl, userConfig = {}) {
       containerEl.style.setProperty(`--vb-l${i}-${id}`, lVal.toFixed(3));
     }
 
-    // Render Canvas Bell Band with chromatic aberration
-    if (!isProcessing && (config.bandStrength ?? 1) > 0) {
+    // Render Canvas Bell Band with chromatic aberration across full width
+    if ((config.bandStrength ?? 1) > 0) {
       const state = {
         cx: sweepX,
         w: wMult,
@@ -782,11 +783,11 @@ export function initVoiceBeam(containerEl, userConfig = {}) {
         mw: maskWidthCompress,
         lift: liftPx,
         strength: (config.bend > 0 ? Math.min(1, liftPx / config.bend) : 0),
-        level: currentLevel,
+        level: Math.max(currentLevel, isProcessing ? 0.65 : 0),
         corner: 0
       };
       const points = computeBellPoints(config, state, w, hEl);
-      renderBandCanvas(bandCanvas, haloCanvas, points, w, hEl, state, config, isProcessing);
+      renderBandCanvas(bandCanvas, haloCanvas, points, w, hEl, state, config, false);
     } else {
       const ctx = bandCanvas.getContext('2d');
       if (ctx) ctx.clearRect(0, 0, w, hEl);
@@ -827,6 +828,9 @@ export function initVoiceBeam(containerEl, userConfig = {}) {
     },
     setProcessing(processing) {
       isProcessing = Boolean(processing);
+      if (containerEl) {
+        containerEl.setAttribute('data-processing', isProcessing ? 'true' : 'false');
+      }
       if (!isProcessing) scanT = 0;
     },
     setColorVariant(variant) {

@@ -155,6 +155,11 @@ export class SubAgentOrchestrator {
       }
       tasksNotToDo.push('Do not mix state or credentials between different browser stations/subagents');
     } else {
+      if (/\b(?:unfollow|follow|subscribe|unsubscribe|mute|block|like|unlike)\b/i.test(trimmed)) {
+        tasksToDo.push('Locate and click the profile action button');
+        tasksToDo.push('Confirm any action modal or dialog if visible');
+        tasksToDo.push('Visually verify that the button state has changed on the screen');
+      }
       if (/\b(?:search|find|lookup|query)\b/i.test(trimmed)) {
         tasksToDo.push('Locate and focus the target search input');
         tasksToDo.push('Enter the extracted search query and submit with Enter');

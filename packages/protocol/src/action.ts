@@ -409,15 +409,18 @@ export function resolveTaskContract(goal: string): TaskContract {
     };
   }
 
-  // 1a. Information retrieval, question-answering, and summarization goals (e.g. "how many submissions are done", "summarize the mission key milestones", "analyze pricing", "tell me when it was first launched")
+  // 1a. Information retrieval, question-answering, and summarization goals (e.g. "how many submissions are done", "how much followers i have", "summarize the mission key milestones", "analyze pricing", "tell me when it was first launched")
   const isQuestionOrRetrieval =
-    /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is|what\s+are|which\s+tab|tell\s+me|summarize|summarise|milestones?|key\s+milestones?|explain|analyze|analyse|overview|findings|give\s+me\s+(?:a\s+)?(?:summary|overview|details?|breakdown)|find\s+.*?\s+and\s+(?:tell|summarize|explain)|search\s+.*?\s+and\s+(?:tell|summarize|explain)|check\s+.*?\s+and\s+(?:tell|summarize|explain)|read\s+.*?\s+and\s+(?:tell|summarize|explain)|(?:when|who|where|why)\s+(?:was|is|are|were|organizes|coordinates|leads|founded|created|launched|started)|when\s+it\s+was|who\s+organizes)/i.test(g);
+    /(?:how\s+(?:many|much|do|does|can)|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+(?:is|are|does|do|was|were|about)|which\s+(?:tab|one|button|page|item|link)|tell\s+me|show\s+me\s+(?:the\s+)?(?:count|number|details|followers?|following|posts?|tweets?|summary)|summarize|summarise|milestones?|key\s+milestones?|explain|analyze|analyse|overview|findings|give\s+me\s+(?:a\s+)?(?:summary|overview|details?|breakdown)|find\s+.*?\s+and\s+(?:tell|summarize|explain)|search\s+.*?\s+and\s+(?:tell|summarize|explain)|check\s+.*?\s+and\s+(?:tell|summarize|explain)|read\s+.*?\s+and\s+(?:tell|summarize|explain)|(?:when|who|where|why)\s+(?:was|is|are|were|organizes|coordinates|leads|founded|created|launched|started)|when\s+it\s+was|who\s+organizes|who\s+is|who\s+are|can\s+i|do\s+i|am\s+i|is\s+there|are\s+there|does\s+(?:it|he|she|this|the))\b/i.test(g) ||
+    /\?+\s*$/.test(g.trim());
 
   if (isQuestionOrRetrieval) {
     let queryTopic = 'information';
     if (/submi/i.test(g)) queryTopic = 'submissions';
     else if (/problem|ps\b/i.test(g)) queryTopic = 'problem statements';
-    else if (g.includes('count') || g.includes('how many')) queryTopic = 'count';
+    else if (/follower/i.test(g)) queryTopic = 'followers';
+    else if (/following/i.test(g)) queryTopic = 'following';
+    else if (g.includes('count') || g.includes('how many') || g.includes('how much')) queryTopic = 'count';
     else if (/(?:milestone|milestones)/i.test(g)) queryTopic = 'mission key milestones';
     else if (/(?:summarize|summarise|summary)/i.test(g)) queryTopic = 'summary';
     else if (/(?:analyze|analyse|analysis)/i.test(g)) queryTopic = 'analysis';
@@ -775,9 +778,34 @@ export function resolveTaskContract(goal: string): TaskContract {
     };
   }
 
-  // 8. Generic clicking / interactions / navigation (button, link, item, admin, finish, sanitize, navigate, go to, show, open, tap, expand, delete, remove, download, save, export)
+  // 7e. Social media & interactive profile actions (unfollow, follow, subscribe, unsubscribe, mute, block, like, unlike, repost, retweet, bookmark, pin, unpin, upvote, downvote)
+  const socialActionMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:unfollow|follow|subscribe(?:\s+to)?|unsubscribe(?:\s+from)?|mute|unmute|block|unblock|like|unlike|repost|retweet|bookmark|pin|unpin|upvote|downvote)\b(?:\s+(?:on\s+)?(?:the\s+|a\s+|an\s+)?)?(.*)$/i);
+  if (socialActionMatch) {
+    const verbTokenMatch = g.match(/\b(unfollow|follow|subscribe|unsubscribe|mute|unmute|block|unblock|like|unlike|repost|retweet|bookmark|pin|unpin|upvote|downvote)\b/i);
+    const verb = verbTokenMatch ? verbTokenMatch[1].toLowerCase() : 'click';
+    const target = (socialActionMatch[1] || '').trim().replace(/^(?:him|her|them|it|user|profile|account|channel|page)\b/i, '').replace(/^[@]/, '').trim();
+    const targetPhrase = verb;
+    const targetTokens = [...new Set([verb, 'following', 'follow', target])].filter(Boolean);
+
+    return {
+      supported: true,
+      goalPattern: 'click_control',
+      isMultiStep: true, // Always multi-step to guarantee visual postcondition verification cycle!
+      expectedTerminal: { kind: 'status_changed', statusId: `${verb}_verified` },
+      expectedTargetNameSubstring: verb,
+      structuredIntent: {
+        intent: 'click',
+        targetPhrase,
+        roleHint: 'button',
+        targetTokens,
+        contextPhrase: target || undefined
+      }
+    };
+  }
+
+  // 8. Generic clicking / interactions / navigation (button, link, item, admin, finish, sanitize, navigate, go to, show, open, tap, expand, delete, remove, download, save, export, unfollow, follow, subscribe)
   // Extracts target phrase, role hints, and contextual qualifiers (e.g. "Open View Details for SIH26003", "download Chandrayaan 3 brochure")
-  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove|download|save|export|fetch)\s+(?:on\s+)?(?:me\s+)?(?:the\s+|a\s+|an\s+)?/i);
+  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove|download|save|export|fetch|unfollow|follow|subscribe|unsubscribe|mute|block|like|unlike)\s+(?:on\s+)?(?:me\s+)?(?:the\s+|a\s+|an\s+)?/i);
   const hasInteractionVerb = Boolean(verbMatch);
   let cleanStr = hasInteractionVerb ? g.replace(verbMatch![0], '').trim() : g;
   cleanStr = cleanStr.replace(/^(?:me\s+)?(?:the\s+|a\s+|an\s+)/i, '').trim();

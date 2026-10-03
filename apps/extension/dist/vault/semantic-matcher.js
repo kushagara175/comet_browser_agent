@@ -39,7 +39,9 @@ const SYNONYM_GROUPS = [
             '10 digits',
             'cell',
             'whatsapp',
-            'tel'
+            'tel',
+            'phone field',
+            'contact field'
         ],
         autocompletes: ['tel', 'tel-national', 'tel-country-code'],
         inputTypes: ['tel'],
@@ -47,14 +49,14 @@ const SYNONYM_GROUPS = [
     },
     {
         canonical: 'email',
-        aliases: ['email', 'e-mail', 'mail', 'email id', 'email address', 'user email', 'useremail'],
+        aliases: ['email', 'e-mail', 'mail', 'email id', 'email address', 'user email', 'useremail', 'email field'],
         autocompletes: ['email'],
         inputTypes: ['email'],
         friendlyPrompt: 'Please enter your Email Address'
     },
     {
         canonical: 'fullName',
-        aliases: ['full name', 'your name', 'name', 'applicant name', 'candidate name', 'student name', 'candidate'],
+        aliases: ['full name', 'your name', 'name', 'applicant name', 'candidate name', 'student name', 'candidate', 'name field', 'full name field'],
         autocompletes: ['name'],
         friendlyPrompt: 'Please enter your Full Name'
     },
@@ -181,19 +183,19 @@ function cleanTokens(raw) {
  */
 export function classifyFieldDescriptor(descriptor) {
     const rawSanitized = descriptor.sanitizedName || '';
-    if (/\[EMAIL(?:\s+ADDRESS)?\]/i.test(rawSanitized)) {
+    if (/\[EMAIL(?:\s+(?:ADDRESS|FIELD))?\]/i.test(rawSanitized)) {
         return { canonical: 'email', confidence: 0.99, reason: 'Matched privacy token [EMAIL ADDRESS]' };
     }
-    if (/\[(?:FULL\s+)?NAME\]/i.test(rawSanitized)) {
+    if (/\[(?:(?:FULL\s+)?NAME|FULL\s+NAME\s+FIELD|NAME\s+FIELD)\]/i.test(rawSanitized)) {
         return { canonical: 'fullName', confidence: 0.99, reason: 'Matched privacy token [FULL NAME]' };
     }
-    if (/\[PHONE(?:\s+NUMBER)?\]/i.test(rawSanitized)) {
+    if (/\[PHONE(?:\s+(?:NUMBER|FIELD))?\]/i.test(rawSanitized)) {
         return { canonical: 'phone', confidence: 0.99, reason: 'Matched privacy token [PHONE NUMBER]' };
     }
-    if (/\[PASSWORD\]/i.test(rawSanitized)) {
+    if (/\[PASSWORD(?:\s+FIELD)?\]/i.test(rawSanitized)) {
         return { canonical: 'password', confidence: 0.99, reason: 'Matched privacy token [PASSWORD]' };
     }
-    if (/\[ADDRESS\]/i.test(rawSanitized) && !/\[EMAIL/i.test(rawSanitized)) {
+    if (/\[ADDRESS(?:\s+FIELD)?\]/i.test(rawSanitized) && !/\[EMAIL/i.test(rawSanitized)) {
         return { canonical: 'address', confidence: 0.99, reason: 'Matched privacy token [ADDRESS]' };
     }
     const typeAttr = (descriptor.type || '').toLowerCase().trim();

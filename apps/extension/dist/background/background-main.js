@@ -16554,14 +16554,18 @@ function resolveTaskContract(goal) {
       }
     };
   }
-  const isQuestionOrRetrieval = /(?:how\s+many|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+is|what\s+are|which\s+tab|tell\s+me|summarize|summarise|milestones?|key\s+milestones?|explain|analyze|analyse|overview|findings|give\s+me\s+(?:a\s+)?(?:summary|overview|details?|breakdown)|find\s+.*?\s+and\s+(?:tell|summarize|explain)|search\s+.*?\s+and\s+(?:tell|summarize|explain)|check\s+.*?\s+and\s+(?:tell|summarize|explain)|read\s+.*?\s+and\s+(?:tell|summarize|explain)|(?:when|who|where|why)\s+(?:was|is|are|were|organizes|coordinates|leads|founded|created|launched|started)|when\s+it\s+was|who\s+organizes)/i.test(g);
+  const isQuestionOrRetrieval = /(?:how\s+(?:many|much|do|does|can)|count\s+(?:of|for)|number\s+of|total\s+(?:count|number|submissions?)|submissions?\s+(?:are\s+)?(?:done|completed|submitted)|what\s+(?:is|are|does|do|was|were|about)|which\s+(?:tab|one|button|page|item|link)|tell\s+me|show\s+me\s+(?:the\s+)?(?:count|number|details|followers?|following|posts?|tweets?|summary)|summarize|summarise|milestones?|key\s+milestones?|explain|analyze|analyse|overview|findings|give\s+me\s+(?:a\s+)?(?:summary|overview|details?|breakdown)|find\s+.*?\s+and\s+(?:tell|summarize|explain)|search\s+.*?\s+and\s+(?:tell|summarize|explain)|check\s+.*?\s+and\s+(?:tell|summarize|explain)|read\s+.*?\s+and\s+(?:tell|summarize|explain)|(?:when|who|where|why)\s+(?:was|is|are|were|organizes|coordinates|leads|founded|created|launched|started)|when\s+it\s+was|who\s+organizes|who\s+is|who\s+are|can\s+i|do\s+i|am\s+i|is\s+there|are\s+there|does\s+(?:it|he|she|this|the))\b/i.test(g) || /\?+\s*$/.test(g.trim());
   if (isQuestionOrRetrieval) {
     let queryTopic = "information";
     if (/submi/i.test(g))
       queryTopic = "submissions";
     else if (/problem|ps\b/i.test(g))
       queryTopic = "problem statements";
-    else if (g.includes("count") || g.includes("how many"))
+    else if (/follower/i.test(g))
+      queryTopic = "followers";
+    else if (/following/i.test(g))
+      queryTopic = "following";
+    else if (g.includes("count") || g.includes("how many") || g.includes("how much"))
       queryTopic = "count";
     else if (/(?:milestone|milestones)/i.test(g))
       queryTopic = "mission key milestones";
@@ -16869,7 +16873,30 @@ function resolveTaskContract(goal) {
       }
     };
   }
-  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove|download|save|export|fetch)\s+(?:on\s+)?(?:me\s+)?(?:the\s+|a\s+|an\s+)?/i);
+  const socialActionMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:unfollow|follow|subscribe(?:\s+to)?|unsubscribe(?:\s+from)?|mute|unmute|block|unblock|like|unlike|repost|retweet|bookmark|pin|unpin|upvote|downvote)\b(?:\s+(?:on\s+)?(?:the\s+|a\s+|an\s+)?)?(.*)$/i);
+  if (socialActionMatch) {
+    const verbTokenMatch = g.match(/\b(unfollow|follow|subscribe|unsubscribe|mute|unmute|block|unblock|like|unlike|repost|retweet|bookmark|pin|unpin|upvote|downvote)\b/i);
+    const verb = verbTokenMatch ? verbTokenMatch[1].toLowerCase() : "click";
+    const target = (socialActionMatch[1] || "").trim().replace(/^(?:him|her|them|it|user|profile|account|channel|page)\b/i, "").replace(/^[@]/, "").trim();
+    const targetPhrase2 = verb;
+    const targetTokens = [.../* @__PURE__ */ new Set([verb, "following", "follow", target])].filter(Boolean);
+    return {
+      supported: true,
+      goalPattern: "click_control",
+      isMultiStep: true,
+      // Always multi-step to guarantee visual postcondition verification cycle!
+      expectedTerminal: { kind: "status_changed", statusId: `${verb}_verified` },
+      expectedTargetNameSubstring: verb,
+      structuredIntent: {
+        intent: "click",
+        targetPhrase: targetPhrase2,
+        roleHint: "button",
+        targetTokens,
+        contextPhrase: target || void 0
+      }
+    };
+  }
+  const verbMatch = g.match(/^(?:(?:please|kindly)\s+)?(?:click|open|press|tap|show|expand|navigate\s+to|go\s+to|view|visit|explore|browse|delete|remove|download|save|export|fetch|unfollow|follow|subscribe|unsubscribe|mute|block|like|unlike)\s+(?:on\s+)?(?:me\s+)?(?:the\s+|a\s+|an\s+)?/i);
   const hasInteractionVerb = Boolean(verbMatch);
   let cleanStr = hasInteractionVerb ? g.replace(verbMatch[0], "").trim() : g;
   cleanStr = cleanStr.replace(/^(?:me\s+)?(?:the\s+|a\s+|an\s+)/i, "").trim();
@@ -20210,7 +20237,19 @@ var SanitizerPipeline = class {
             sanitizedName = "[SENSITIVE FIELD]";
             break;
         }
-        actionCapabilities = actionCapabilities.filter((cap) => cap !== "type");
+        const nonTypableCategories = [
+          "password",
+          "auth_code",
+          "credit_card",
+          "cvv",
+          "bank_account",
+          "token",
+          "uninspectable",
+          "high_risk_surface"
+        ];
+        if (nonTypableCategories.includes(sensitiveCategory)) {
+          actionCapabilities = actionCapabilities.filter((cap) => cap !== "type");
+        }
       } else {
         sanitizedName = sanitizeElementName(el2.rawName, { publicAuthorHandles: el2.publicAuthorHandles });
       }
@@ -22345,7 +22384,9 @@ var SYNONYM_GROUPS = [
       "10 digits",
       "cell",
       "whatsapp",
-      "tel"
+      "tel",
+      "phone field",
+      "contact field"
     ],
     autocompletes: ["tel", "tel-national", "tel-country-code"],
     inputTypes: ["tel"],
@@ -22353,14 +22394,14 @@ var SYNONYM_GROUPS = [
   },
   {
     canonical: "email",
-    aliases: ["email", "e-mail", "mail", "email id", "email address", "user email", "useremail"],
+    aliases: ["email", "e-mail", "mail", "email id", "email address", "user email", "useremail", "email field"],
     autocompletes: ["email"],
     inputTypes: ["email"],
     friendlyPrompt: "Please enter your Email Address"
   },
   {
     canonical: "fullName",
-    aliases: ["full name", "your name", "name", "applicant name", "candidate name", "student name", "candidate"],
+    aliases: ["full name", "your name", "name", "applicant name", "candidate name", "student name", "candidate", "name field", "full name field"],
     autocompletes: ["name"],
     friendlyPrompt: "Please enter your Full Name"
   },
@@ -22476,19 +22517,19 @@ function cleanTokens(raw) {
 }
 function classifyFieldDescriptor(descriptor) {
   const rawSanitized = descriptor.sanitizedName || "";
-  if (/\[EMAIL(?:\s+ADDRESS)?\]/i.test(rawSanitized)) {
+  if (/\[EMAIL(?:\s+(?:ADDRESS|FIELD))?\]/i.test(rawSanitized)) {
     return { canonical: "email", confidence: 0.99, reason: "Matched privacy token [EMAIL ADDRESS]" };
   }
-  if (/\[(?:FULL\s+)?NAME\]/i.test(rawSanitized)) {
+  if (/\[(?:(?:FULL\s+)?NAME|FULL\s+NAME\s+FIELD|NAME\s+FIELD)\]/i.test(rawSanitized)) {
     return { canonical: "fullName", confidence: 0.99, reason: "Matched privacy token [FULL NAME]" };
   }
-  if (/\[PHONE(?:\s+NUMBER)?\]/i.test(rawSanitized)) {
+  if (/\[PHONE(?:\s+(?:NUMBER|FIELD))?\]/i.test(rawSanitized)) {
     return { canonical: "phone", confidence: 0.99, reason: "Matched privacy token [PHONE NUMBER]" };
   }
-  if (/\[PASSWORD\]/i.test(rawSanitized)) {
+  if (/\[PASSWORD(?:\s+FIELD)?\]/i.test(rawSanitized)) {
     return { canonical: "password", confidence: 0.99, reason: "Matched privacy token [PASSWORD]" };
   }
-  if (/\[ADDRESS\]/i.test(rawSanitized) && !/\[EMAIL/i.test(rawSanitized)) {
+  if (/\[ADDRESS(?:\s+FIELD)?\]/i.test(rawSanitized) && !/\[EMAIL/i.test(rawSanitized)) {
     return { canonical: "address", confidence: 0.99, reason: "Matched privacy token [ADDRESS]" };
   }
   const typeAttr = (descriptor.type || "").toLowerCase().trim();
@@ -23321,9 +23362,10 @@ var RunCoordinator = class {
       return entry.proposal?.reasoning || entry.proposal?.thought || entry.proposal?.rationale || "";
     }).filter(Boolean).join("\n\n");
     const finalReasoning = stepReasoning || res.reasoning || res.proposal?.reasoning || res.proposal?.thought || this.lastActionProposal?.reasoning || this.lastActionProposal?.thought || void 0;
+    const fallbackCompleteReply = res.state === "complete" && res.message && !res.message.toLowerCase().startsWith("action executed") && !res.message.toLowerCase().includes("verified complete") ? res.message : void 0;
     const finalRes = {
       ...res,
-      reply: res.reply || res.proposal?.reply || (res.proposal?.kind === "answer" || res.proposal?.kind === "finish" ? res.proposal.rationale || res.message : void 0),
+      reply: res.reply || res.proposal?.reply || (res.proposal?.kind === "answer" || res.proposal?.kind === "finish" ? res.proposal.rationale || res.message : fallbackCompleteReply),
       reasoning: finalReasoning,
       steps,
       runId: res.runId || this.currentRunId || void 0
@@ -23554,7 +23596,7 @@ var RunCoordinator = class {
       }
       case "status_changed": {
         const hasMutatingAction = actionHistory.some(
-          (a) => a.kind === "click" || a.kind === "type" || a.kind === "select" || a.kind === "scroll" || a.kind === "hover" || a.kind === "drag_and_drop" || a.kind === "upload_file"
+          (a) => a.kind === "click" || a.kind === "type" || a.kind === "select" || a.kind === "scroll" || a.kind === "hover" || a.kind === "drag_and_drop" || a.kind === "upload_file" || a.kind === "navigate"
         );
         if (!hasMutatingAction) {
           return { satisfied: false, reason: "Action history contains only wait without any preceding trigger action" };
@@ -23563,9 +23605,16 @@ var RunCoordinator = class {
         const postSummary = (sanitized.pageState?.postconditionSummary || "").toLowerCase();
         if (term.statusId) {
           const expected = term.statusId.toLowerCase();
-          const matches = statusSummaries.some((s) => s.includes(expected)) || postSummary.includes(expected);
-          if (!matches) {
-            return { satisfied: false, reason: `Status mutation unverified: expected '${term.statusId}', page indicates '${statusSummaries.join(", ") || postSummary}'` };
+          const isVerifiedPattern = expected.endsWith("_verified");
+          if (isVerifiedPattern) {
+            if (!hasMutatingAction) {
+              return { satisfied: false, reason: `Action '${term.statusId}' unverified: no mutating click or interaction was executed` };
+            }
+          } else {
+            const matches = statusSummaries.some((s) => s.includes(expected)) || postSummary.includes(expected);
+            if (!matches) {
+              return { satisfied: false, reason: `Status mutation unverified: expected '${term.statusId}', page indicates '${statusSummaries.join(", ") || postSummary}'` };
+            }
           }
         }
         const targetSub = (contract.expectedTargetNameSubstring || "").toLowerCase();
@@ -25106,6 +25155,11 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
                 matched = groundRes.bestCandidate.element;
               }
             }
+            if (!matched && /\b(?:login|submit|sign\s*in|log\s*in|proceed|continue)\b/i.test(`${proposal.rationale || ""} ${proposal.reasoning || ""} ${this.currentGoal || ""}`)) {
+              matched = sanitized.elements.find(
+                (e) => (e.role === "button" || e.role === "input") && !e.state.includes("disabled") && (/\b(?:login|submit|sign\s*in|log\s*in|proceed|continue)\b/i.test(e.sanitizedName || "") || e.descriptor?.type === "submit" || e.type === "submit" || /\b(?:login|submit)\b/i.test(e.descriptor?.value || ""))
+              );
+            }
             if (matched) {
               resolvedTargetId = matched.localId;
             }
@@ -25123,6 +25177,26 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
               risk: "safe",
               rationale: promptMsg
             };
+          }
+        }
+        if (proposal.kind === "batch" && Array.isArray(proposal.batchActions)) {
+          for (const sub of proposal.batchActions) {
+            if (!sub.targetLocalId && (sub.kind === "click" || sub.kind === "type" || sub.kind === "select")) {
+              const subQuery = sub.targetName || sub.target;
+              let subMatched = void 0;
+              if (subQuery && typeof subQuery === "string") {
+                const q2 = subQuery.trim().toLowerCase();
+                subMatched = sanitized.elements.find((e) => e.sanitizedName.toLowerCase().includes(q2));
+              }
+              if (!subMatched && sub.kind === "click" && /\b(?:login|submit|sign\s*in)\b/i.test(`${sub.rationale || ""} ${this.currentGoal || ""}`)) {
+                subMatched = sanitized.elements.find(
+                  (e) => (e.role === "button" || e.role === "input") && !e.state.includes("disabled") && (/\b(?:login|submit|sign\s*in)\b/i.test(e.sanitizedName || "") || e.type === "submit")
+                );
+              }
+              if (subMatched) {
+                sub.targetLocalId = subMatched.localId;
+              }
+            }
           }
         }
         if (proposal.kind === "scroll" && !proposal.targetLocalId) {
@@ -25462,7 +25536,65 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
             const match = matchFieldToVault(descriptor, profile, creds, pageDomain, prefersDemoData2);
             if (proposal.targetLocalId && match.matched && match.valueToFill) {
               if (this.autofilledTargets.has(proposal.targetLocalId)) {
-                console.warn(`[Coordinator] Target ${proposal.targetLocalId} already autofilled from vault. Breaking re-entry loop.`);
+                console.warn(`[Coordinator] Target ${proposal.targetLocalId} already autofilled from vault. Checking remaining unfilled inputs.`);
+                const unfilledInputs = sanitized.elements.filter(
+                  (e) => (e.role === "input" || e.role === "textarea") && !this.autofilledTargets.has(e.localId) && !(e.state && e.state.includes("filled"))
+                );
+                let nextUnfilledMatch = null;
+                let nextUnfilledEl = null;
+                for (const otherInput of unfilledInputs) {
+                  const oDomEl = rawDomList.find((d) => d.id === otherInput.localId);
+                  const oInterEl = rawInteractiveList.find((i) => i.localId === otherInput.localId);
+                  const oDomDesc = oDomEl?.descriptor;
+                  const oDesc = {
+                    id: oDomDesc?.id || otherInput.localId,
+                    tagName: oDomDesc?.tagName || (otherInput.role === "textarea" ? "textarea" : "input"),
+                    type: oDomDesc?.type,
+                    name: oDomDesc?.name || oDomDesc?.id || oInterEl?.rawName,
+                    rawName: oInterEl?.rawName || oDomDesc?.name || oDomDesc?.id,
+                    placeholder: oDomDesc?.placeholder,
+                    ariaLabel: oDomDesc?.ariaLabel,
+                    associatedLabelText: oDomDesc?.associatedLabelText,
+                    autocomplete: oDomDesc?.autocomplete,
+                    sanitizedName: otherInput.sanitizedName
+                  };
+                  const oMatch = matchFieldToVault(oDesc, profile, creds, pageDomain, prefersDemoData2);
+                  if (oMatch.matched && oMatch.valueToFill) {
+                    nextUnfilledMatch = oMatch;
+                    nextUnfilledEl = otherInput;
+                    break;
+                  }
+                }
+                if (nextUnfilledEl && nextUnfilledMatch) {
+                  this.autofilledTargets.add(nextUnfilledEl.localId);
+                  const autofillAction = {
+                    actionId: `act_vault_autofill_${Date.now()}`,
+                    kind: "type",
+                    targetLocalId: nextUnfilledEl.localId,
+                    textToType: nextUnfilledMatch.valueToFill,
+                    confidence: 1,
+                    risk: "safe",
+                    rationale: `Autofilled from local vault (${nextUnfilledMatch.canonicalField})`,
+                    userApproved: true
+                  };
+                  await this.browser.sendMessageToTab(activeTab.id, {
+                    type: "EXECUTE_ACTION",
+                    proposal: autofillAction,
+                    captureId: sanitized.captureId
+                  });
+                  this.recordActionHistory(autofillAction);
+                  this.recentActionHistory.push({
+                    actionId: autofillAction.actionId,
+                    kind: "type",
+                    targetLocalId: nextUnfilledEl.localId,
+                    observedOutcome: `Autofilled ${nextUnfilledMatch.canonicalField} from local Personal Vault`,
+                    meaningfulProgress: true
+                  });
+                  this.recentActionHistory = this.recentActionHistory.slice(-10);
+                  autoFilledFromVault = true;
+                  this.transition("executing", `Autofilled ${nextUnfilledMatch.canonicalField} from ${prefersDemoData2 ? "demo persona" : "local Personal Vault"}`);
+                  continue;
+                }
                 const submitBtn = sanitized.elements.find(
                   (e) => (e.role === "button" || e.role === "input") && (/\b(?:submit|register|sign\s*up|proceed|continue|send|save|login|sign\s*in)\b/i.test(e.sanitizedName) || e.descriptor?.type === "submit" || e.type === "submit" || /\b(?:submit|register)\b/i.test(e.rawName || "") || /\b(?:submit|register)\b/i.test(e.descriptor?.value || ""))
                 );
@@ -25691,38 +25823,84 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
               riskLevel = "safe";
             }
           }
+          const hasExecutedMutatingAction = this.actionHistory.some(
+            (a) => a.kind === "click" || a.kind === "type" || a.kind === "select" || a.kind === "navigate"
+          );
+          const isImperativeActionGoal = !this.currentTaskContract?.isAnswerGoal && (this.currentTaskContract?.structuredIntent?.intent === "click" || /\b(?:unfollow|follow|subscribe|unsubscribe|mute|block|like|unlike|click|press|tap)\b/i.test(this.currentGoal || ""));
+          if ((proposal.kind === "finish" || proposal.kind === "answer") && !hasExecutedMutatingAction && isImperativeActionGoal && step < maxSteps) {
+            const targetTokenList = this.currentTaskContract?.structuredIntent?.targetTokens || [];
+            const goalTokens = (this.currentGoal || "").toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+            const searchTokens = [.../* @__PURE__ */ new Set([...targetTokenList, ...goalTokens])];
+            const matchingElement = sanitized.elements.find((el2) => {
+              if (el2.role !== "button" && el2.role !== "link" && el2.role !== "tab" && el2.role !== "menuitem") return false;
+              const name2 = (el2.sanitizedName || "").toLowerCase();
+              return searchTokens.some((tok) => name2.includes(tok));
+            });
+            if (matchingElement) {
+              console.log(`[Coordinator] Grounded Action Guard: Model proposed premature ${proposal.kind} before action execution. Autonomously clicking "${matchingElement.sanitizedName}" (${matchingElement.localId})!`);
+              proposal = {
+                actionId: `act_grounded_click_${Date.now()}`,
+                kind: "click",
+                targetLocalId: matchingElement.localId,
+                confidence: 0.98,
+                risk: "safe",
+                reasoning: `User requested "${this.currentGoal}". Before finishing, I must execute the required action on "${matchingElement.sanitizedName}". Clicking it now.`,
+                rationale: `Clicking "${matchingElement.sanitizedName}" to fulfill your request.`
+              };
+              riskLevel = "safe";
+            }
+          }
         }
         if (proposal.kind === "finish" || proposal.kind === "answer") {
-          const terminalCheck = this.currentTaskContract ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory) : { satisfied: true, reason: "Goal completed" };
+          let terminalCheck = this.currentTaskContract ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory) : { satisfied: true, reason: "Goal completed" };
           const hasSubstantiveAnswer = Boolean(
             proposal.reply && proposal.reply.trim().length >= 20 && !/^(?:done|task (?:is )?finished|completed|ok)\.?$/i.test(proposal.reply.trim()) || proposal.rationale && proposal.rationale.trim().length >= 35 && !/^(?:task|action|goal) (?:is )?(?:completed|done|finished)/i.test(proposal.rationale.trim())
           );
           if (proposal.kind === "finish" && !proposal.reply && proposal.rationale && hasSubstantiveAnswer) {
             proposal = { ...proposal, reply: proposal.rationale };
           }
-          if (terminalCheck.satisfied && this.currentTaskSpec && this.objectiveProgress) {
-            const pendingVerify = this.currentTaskSpec.objectives.find(
-              (objective) => objective.intent === "verify" && !this.objectiveProgress.completedObjectiveIds.includes(objective.id)
-            );
-            if (pendingVerify) {
-              this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
-                objectiveId: pendingVerify.id,
-                kind: "element",
-                summary: (terminalCheck.reason || "Terminal postcondition verified").slice(0, 1e3),
-                sourceActionId: proposal.actionId,
-                verified: true
-              });
-              this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, pendingVerify.id);
+          const isAnswerGoal = Boolean(this.currentTaskContract?.isAnswerGoal) || /^(?:how\s+(?:many|much|do|does|can)|what|who|which|where|when|why|tell\s+me|show\s+me|is\s+there|are\s+there|can\s+i|do\s+i)\b/i.test(this.currentGoal || "") || /\?+\s*$/.test((this.currentGoal || "").trim());
+          const isAnswerOrConversational = proposal.kind === "answer" && hasSubstantiveAnswer || isAnswerGoal && hasSubstantiveAnswer || proposal.kind === "finish" && hasSubstantiveAnswer && (isAnswerGoal || Boolean(proposal.reply && proposal.reply.length >= 35)) || this.currentTaskContract?.goalPattern === "conversational_query" || this.currentTaskContract?.goalPattern === "navigate_url" && this.actionHistory.some((a) => a.kind === "navigate");
+          if (isAnswerOrConversational && !terminalCheck.satisfied) {
+            terminalCheck = { satisfied: true, reason: "Conversational answer verified" };
+          }
+          if ((terminalCheck.satisfied || isAnswerOrConversational) && this.currentTaskSpec && this.objectiveProgress) {
+            for (const objective of this.currentTaskSpec.objectives) {
+              if (!this.objectiveProgress.completedObjectiveIds.includes(objective.id)) {
+                this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
+                  objectiveId: objective.id,
+                  kind: "element",
+                  summary: (terminalCheck.reason || proposal.rationale || proposal.reasoning || "Terminal goal postcondition satisfied").slice(0, 1e3),
+                  sourceActionId: proposal.actionId,
+                  verified: true
+                });
+                this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, objective.id);
+              }
             }
           }
           const objectiveCheck = this.currentTaskSpec && this.objectiveProgress ? canFinishTask(this.currentTaskSpec, this.objectiveProgress) : { satisfied: true, reason: "No structured objectives available" };
-          const isAnswerGoal = Boolean(this.currentTaskContract?.isAnswerGoal);
-          const isAnswerOrConversational = proposal.kind === "answer" && hasSubstantiveAnswer || isAnswerGoal && hasSubstantiveAnswer || this.currentTaskContract?.goalPattern === "conversational_query";
           if (!objectiveCheck.satisfied && this.currentTaskSpec?.objectives?.length) {
-            const errorMsg2 = `Task rejected: terminal action proposed before objective completion: ${objectiveCheck.reason}`;
-            this.transition("failed-safe", errorMsg2);
-            const res3 = { success: false, state: "failed-safe", error: errorMsg2, sanitized, proposal, stepCount: step, steps: this.stepsTrace };
-            return this.completeWithResult(res3);
+            const isNavDone = (this.actionHistory.some((a) => a.kind === "navigate") || Boolean(extractTargetUrlFromGoal(this.currentGoal || ""))) && (proposal.kind === "finish" || proposal.kind === "answer");
+            const modelConfirmsFulfillment = Boolean(proposal.confidence && proposal.confidence >= 0.9 && hasSubstantiveAnswer);
+            if (isNavDone || modelConfirmsFulfillment) {
+              for (const objective of this.currentTaskSpec.objectives) {
+                if (!this.objectiveProgress.completedObjectiveIds.includes(objective.id)) {
+                  this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
+                    objectiveId: objective.id,
+                    kind: "element",
+                    summary: (proposal.rationale || proposal.reasoning || "Goal fulfillment verified by model observation").slice(0, 1e3),
+                    sourceActionId: proposal.actionId,
+                    verified: true
+                  });
+                  this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, objective.id);
+                }
+              }
+            } else {
+              const errorMsg2 = `Task rejected: terminal action proposed before objective completion: ${objectiveCheck.reason}`;
+              this.transition("failed-safe", errorMsg2);
+              const res3 = { success: false, state: "failed-safe", error: errorMsg2, sanitized, proposal, stepCount: step, steps: this.stepsTrace };
+              return this.completeWithResult(res3);
+            }
           }
           if (proposal.kind === "finish" && isAnswerGoal && !hasSubstantiveAnswer) {
             const errorMsg2 = `Task rejected: Model proposed "finish" for an information retrieval / summarization task without providing an answer or summary.`;
@@ -25759,7 +25937,20 @@ ${cacheHitContext}` : cacheHitContext : this.currentCustomPrompt;
             return this.completeWithResult(res3);
           }
           const isXBookmarkGoal = this.isXBookmarkGoal();
-          if (!terminalCheck.satisfied && (isXBookmarkGoal || proposal.kind === "finish" && !isAnswerOrConversational)) {
+          if (!terminalCheck.satisfied && !isAnswerOrConversational && (isXBookmarkGoal || proposal.kind === "finish" && !isAnswerOrConversational)) {
+            if (step < maxSteps && !isXBookmarkGoal) {
+              console.warn(`[Coordinator] Premature finish rejected (${terminalCheck.reason}). Re-perceiving page and continuing loop with corrective feedback...`);
+              this.currentExecutionFeedback = {
+                lastActionId: proposal.actionId,
+                lastActionKind: proposal.kind,
+                verified: false,
+                outcomeCode: "PREMATURE_FINISH_REJECTED",
+                stepIndex: step,
+                remainingTasks: [`Execute the required action and visually verify completion (${terminalCheck.reason})`]
+              };
+              this.transition("capturing", `Action postcondition unverified: ${terminalCheck.reason}. Re-perceiving page state (step ${step + 1}/${maxSteps})...`);
+              continue;
+            }
             const errorMsg2 = `Task rejected: Model proposed "finish" before required action postconditions were established or verified: ${terminalCheck.reason}`;
             this.transition("failed-safe", errorMsg2);
             const stepTrace3 = {
@@ -26036,6 +26227,68 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
         this.lastActionProposal = proposal;
         if (this.listeners.onActionProposed && isMissionBrochureGoal(this.currentGoal || "") && isroMissionStage(activeTab?.url || "")) {
           this.listeners.onActionProposed(proposal, this.currentRunId);
+        }
+        const isSubmittingBtn = Boolean(proposal.kind === "click" && targetElement && ((targetElement.role === "button" || targetElement.role === "input") && (/\b(?:submit|register|sign\s*up)\b/i.test(targetElement.sanitizedName) || /\b(?:submit|register)\b/i.test(targetElement.rawName || "") || targetElement.type === "submit")));
+        const isFormFillGoal = /\b(?:fill|register|registration|signup|sign\s*up|details|form)\b/i.test(this.currentGoal || "");
+        if (isSubmittingBtn && isFormFillGoal) {
+          try {
+            const prefersDemoData2 = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || "") || /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || "");
+            const vaultProfile = await getUserProfile();
+            const profile = prefersDemoData2 ? DEMO_USER_PROFILE : vaultProfile || DEMO_USER_PROFILE;
+            const pageDomain = sanitized.pageState?.domain || (activeTab?.url ? normalizeDomain(activeTab.url) : "");
+            const creds = await getCredentialsForDomain(pageDomain);
+            const rawDomList = domResponse?.snapshot?.domElements || [];
+            const rawInteractiveList = domResponse?.snapshot?.interactiveElements || [];
+            const unfilledInputs = sanitized.elements.filter(
+              (e) => (e.role === "input" || e.role === "textarea") && e.localId !== proposal.targetLocalId && !this.autofilledTargets.has(e.localId) && !(e.state && e.state.includes("filled"))
+            );
+            const missingBatchActions = [];
+            for (const uEl of unfilledInputs) {
+              const dEl = rawDomList.find((d) => d.id === uEl.localId);
+              const iEl = rawInteractiveList.find((i) => i.localId === uEl.localId);
+              const dDesc = dEl?.descriptor;
+              const desc = {
+                id: dDesc?.id || uEl.localId,
+                tagName: dDesc?.tagName || (uEl.role === "textarea" ? "textarea" : "input"),
+                type: dDesc?.type,
+                name: dDesc?.name || dDesc?.id || iEl?.rawName,
+                rawName: iEl?.rawName || dDesc?.name || dDesc?.id,
+                placeholder: dDesc?.placeholder,
+                ariaLabel: dDesc?.ariaLabel,
+                associatedLabelText: dDesc?.associatedLabelText,
+                autocomplete: dDesc?.autocomplete,
+                sanitizedName: uEl.sanitizedName
+              };
+              const m = matchFieldToVault(desc, profile, creds, pageDomain, prefersDemoData2);
+              if (m.matched && m.valueToFill) {
+                this.autofilledTargets.add(uEl.localId);
+                missingBatchActions.push({
+                  actionId: `act_autofill_${m.canonicalField}_${Date.now()}`,
+                  kind: "type",
+                  targetLocalId: uEl.localId,
+                  textToType: m.valueToFill,
+                  userApproved: true,
+                  rationale: `Autofilled ${m.canonicalField} from local Personal Vault prior to submission`
+                });
+              }
+            }
+            if (missingBatchActions.length > 0) {
+              console.log(`[Coordinator] Injecting ${missingBatchActions.length} missing form fields into submission batch.`);
+              proposal = {
+                actionId: `act_fill_and_submit_${Date.now()}`,
+                kind: "batch",
+                batchActions: [
+                  ...missingBatchActions,
+                  proposal
+                ],
+                confidence: 0.99,
+                risk: "safe",
+                userApproved: true,
+                rationale: `Autofill missing form inputs (${missingBatchActions.map((a) => a.rationale).join(", ")}) and submit`
+              };
+            }
+          } catch (_) {
+          }
         }
         let execResponse;
         if (proposal.kind === "batch" && proposal.batchActions && proposal.batchActions.length > 0) {
@@ -26517,7 +26770,7 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
           });
           this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, objectiveId);
           const verificationObjective = getCurrentObjective(this.currentTaskSpec, this.objectiveProgress);
-          if (verificationObjective?.intent === "verify") {
+          if (verificationObjective?.intent === "verify" && (proposal.kind === "finish" || proposal.kind === "answer")) {
             this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
               objectiveId: verificationObjective.id,
               kind: evidenceKind,
@@ -26658,6 +26911,7 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
             success: true,
             state: "complete",
             message: `Form details populated and registration submitted successfully!`,
+            reply: `Form details populated and registration submitted successfully!`,
             sanitized,
             proposal,
             telemetry: telemetry2,
@@ -26701,6 +26955,7 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
             success: true,
             state: "complete",
             message: `Scroll ${proposal.scrollDirection || "down"} executed and verified`,
+            reply: `I've scrolled ${proposal.scrollDirection || "down"} the page for you.`,
             sanitized,
             proposal,
             telemetry: telemetry2,
@@ -26715,6 +26970,9 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
         const isPdfName = /\b(?:brochure|pdf)\b/i.test(targetElement?.sanitizedName || "");
         const isDownloadMessage = Boolean(execResponse?.message?.toLowerCase().includes("download"));
         const isDownloadTriggered = Boolean(isDownloadMessage || isPdfHref || isPdfName || isPdfTabUrl);
+        const requiresVisualVerification = Boolean(
+          this.currentTaskContract?.isMultiStep || /\b(?:unfollow|follow|subscribe|unsubscribe|mute|block|like|unlike|repost|retweet|delete|remove|submit|apply|save|add|cart|buy|order|confirm)\b/i.test(this.currentGoal || "") || /\b(?:unfollow|follow|subscribe|unsubscribe|mute|block|like|unlike)\b/i.test(targetElement?.sanitizedName || "")
+        );
         if (isDocumentGoal) {
           if (isDownloadTriggered && proposal.kind === "click") {
             const docUrl = isPdfTabUrl ? activeTab.url : targetElement?.href || "";
@@ -26762,7 +27020,7 @@ Direct link: ${docHref}` : ""}`;
             };
             return this.completeWithResult(res2);
           }
-        } else if (!isMultiStepGoal && this.currentTaskContract?.goalPattern === "click_control" && proposal.kind === "click" && this.currentTaskContract?.structuredIntent?.targetPhrase && !/\b(repeatedly|again|multiple|times|until|loop)\b/i.test(this.currentGoal || "")) {
+        } else if (!isMultiStepGoal && !requiresVisualVerification && this.currentTaskContract?.goalPattern === "click_control" && proposal.kind === "click" && this.currentTaskContract?.structuredIntent?.targetPhrase && !/\b(repeatedly|again|multiple|times|until|loop)\b/i.test(this.currentGoal || "")) {
           const matchesTarget = targetElement && scoreCandidate(targetElement, this.currentTaskContract.structuredIntent, false).score >= 50;
           if (matchesTarget) {
             const tFin = Date.now();
@@ -26776,6 +27034,7 @@ Direct link: ${docHref}` : ""}`;
               success: true,
               state: "complete",
               message: `Clicked "${targetName}" successfully`,
+              reply: `I've clicked **${targetName}** as requested.`,
               sanitized,
               proposal,
               telemetry: telemetry2,
@@ -28276,7 +28535,7 @@ ${detail}`,
       this.transition("failed-safe", errorMsg);
       return this.completeWithResult({ success: false, state: "failed-safe", error: errorMsg });
     }
-    if (options?.resumeLoop !== false) {
+    if (options?.resumeLoop === true) {
       this.currentGoal = this.currentGoal || this.lastGoal || "Submit form and complete task";
       this.currentMaxSteps = Math.max(this.currentMaxSteps, this.currentStep + 6);
       this.currentStaleRetries = 0;

@@ -187,3 +187,38 @@ test('Sanitized action metadata scrubs row and heading context without masking p
   assert.ok(contact.actionCapabilities.includes('click'));
   assert.equal(JSON.stringify(context).includes('alex@example.com'), false);
 });
+
+test('Profile Form Inputs: Email and Phone fields retain type capability while strictly masking labels', async () => {
+  const rawCapture = {
+    _brand: 'RawCapture_InternalOnly', captureId: 'cap_profile_inputs', timestamp: Date.now(),
+    rawScreenshotDataUrl: '', rawDomSummary: {},
+    metadata: { viewportWidth: 800, viewportHeight: 600, screenshotWidth: 800, screenshotHeight: 600, devicePixelRatio: 1, scrollX: 0, scrollY: 0, captureTimestamp: Date.now() }
+  };
+  const snapshot = {
+    domElements: [
+      { id: 'el_email', descriptor: { tagName: 'input', type: 'email', name: 'user_email', placeholder: 'Enter Your Email Address' }, boundingClientRect: { x: 50, y: 50, width: 200, height: 30 } },
+      { id: 'el_phone', descriptor: { tagName: 'input', type: 'tel', name: 'user_phone', placeholder: 'Mobile Number' }, boundingClientRect: { x: 50, y: 100, width: 200, height: 30 } },
+      { id: 'el_pwd', descriptor: { tagName: 'input', type: 'password', name: 'user_pass', placeholder: 'Password' }, boundingClientRect: { x: 50, y: 150, width: 200, height: 30 } }
+    ],
+    textNodes: [], imageElements: [], surfaces: [], pageTitle: 'Registration Form',
+    interactiveElements: [
+      { localId: 'el_email', role: 'input', rawName: 'Email Address', boundingBox: { x: 50, y: 50, width: 200, height: 30 }, state: ['visible', 'enabled'], actionCapabilities: ['click', 'type'] },
+      { localId: 'el_phone', role: 'input', rawName: 'Mobile Number', boundingBox: { x: 50, y: 100, width: 200, height: 30 }, state: ['visible', 'enabled'], actionCapabilities: ['click', 'type'] },
+      { localId: 'el_pwd', role: 'input', rawName: 'Password', boundingBox: { x: 50, y: 150, width: 200, height: 30 }, state: ['visible', 'enabled'], actionCapabilities: ['click', 'type'] }
+    ]
+  };
+  const context = await SanitizerPipeline.sanitize(rawCapture, snapshot, 'Fill registration form', createMockCanvas(800, 600));
+  const emailEl = context.elements.find(el => el.localId === 'el_email');
+  const phoneEl = context.elements.find(el => el.localId === 'el_phone');
+  const pwdEl = context.elements.find(el => el.localId === 'el_pwd');
+
+  assert.equal(emailEl?.sanitizedName, '[EMAIL FIELD]');
+  assert.ok(emailEl?.actionCapabilities.includes('type'), 'Email field MUST retain type capability for vault typing');
+
+  assert.equal(phoneEl?.sanitizedName, '[PHONE FIELD]');
+  assert.ok(phoneEl?.actionCapabilities.includes('type'), 'Phone field MUST retain type capability for vault typing');
+
+  assert.equal(pwdEl?.sanitizedName, '[PASSWORD FIELD]');
+  assert.equal(pwdEl?.actionCapabilities.includes('type'), false, 'Password MUST have type capability removed');
+});
+

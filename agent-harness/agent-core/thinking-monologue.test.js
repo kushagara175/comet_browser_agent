@@ -5,6 +5,7 @@ import {
   parseReasoningLines,
   formatReasoningIntoLinesHtml,
   renderThinkingAccordion,
+  renderActivityTimeline,
   collectAllStepReasoning,
   streamLiveReasoningLines,
   getCachedThoughtDuration,
@@ -89,6 +90,35 @@ test('Thinking: formatReasoningIntoLinesHtml formats element IDs with code chips
   assert.ok(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
   assert.ok(html.includes('thought-paragraph'), 'Must render as clean thought-paragraph');
   assert.ok(html.includes('Found search input'), 'Must retain reasoning body');
+});
+
+test('Activity: a read shimmers until complete, then remains static beside thoughts', () => {
+  const active = renderActivityTimeline([], 'Reading page');
+  assert.match(active, /class="chat-activity-current thinking-shimmer-text" role="status">Reading page/);
+  assert.ok(!active.includes('Read page</div>'));
+
+  const completed = renderActivityTimeline(['Read page'], 'Thinking');
+  assert.equal((completed.match(/class="chat-activity-completed">Read<\/div>/g) || []).length, 1);
+  assert.ok(!completed.includes('thinking-shimmer-text'));
+  assert.ok(!completed.includes('role="status"'));
+  assert.equal(renderActivityTimeline(['Read page']), completed, 'Restoration keeps completed reads');
+});
+
+test('Activity: later reads remain separate without exposing internal phases or action labels', () => {
+  const activities = ['Read page', 'Protecting page data', 'Read page', 'Sending protected context'];
+  const again = renderActivityTimeline(activities, 'Reading page');
+  assert.equal((again.match(/class="chat-activity-completed">Read<\/div>/g) || []).length, 2);
+  assert.equal((again.match(/class="chat-activity-current thinking-shimmer-text"/g) || []).length, 1);
+  assert.ok(again.indexOf('chat-activity-completed') < again.indexOf('chat-activity-current'));
+
+  for (const label of ['Protecting page data', 'Sending protected context', 'Thinking', 'Executing action', 'Executing click', 'Writing response', 'Verifying result']) {
+    const html = renderActivityTimeline(activities, label);
+    assert.equal((html.match(/class="chat-activity-completed">Read<\/div>/g) || []).length, 2);
+    assert.ok(!html.includes('chat-activity-current'), `${label} must not render as activity`);
+    assert.ok(!html.includes(label), `${label} must not leak into the timeline`);
+  }
+  assert.equal(renderActivityTimeline([]), '');
+  assert.equal((renderActivityTimeline(activities).match(/class="chat-activity-completed">Read<\/div>/g) || []).length, 2);
 });
 
 test('Thinking: renderThinkingAccordion generates accessible collapsible monologue block with natural paragraphs', () => {

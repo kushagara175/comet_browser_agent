@@ -1238,7 +1238,7 @@ test('Grounding 22: Credential flow preserves tab ID and safely fills username &
   const submitRes = await coordinator.submitUserInput(
     { username: 'student@example.edu.in', password: 'SecretPassword123' },
     42,
-    { runId: initialRes.runId }
+    { runId: initialRes.runId, inputNonce: initialRes.inputRequest?.inputNonce }
   );
   assert.equal(submitRes.success, true);
   assert.equal(submitRes.state, 'complete');

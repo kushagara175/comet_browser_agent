@@ -689,6 +689,19 @@ export function setCachedThoughtDuration(messageId, duration) {
  *  Phase 2: Active thoughts in-flight (interactive accordion with live Thinking (Xs))
  *  Phase 3: Completed thoughts (Thought for Xs, collapsed by default)
  */
+const READ_ACTIVITY_ICON_SVG = '<svg class="chat-activity-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>';
+
+export function renderActivityTimeline(activities = [], activeLabel = '') {
+  const readCount = activities.filter(label => label === 'Read page').length;
+  const activeReading = activeLabel === 'Reading page';
+  if (!readCount && !activeReading) return '';
+  const completed = Array.from({ length: readCount }, () => `<div class="chat-activity-item chat-activity-done">${READ_ACTIVITY_ICON_SVG}<div class="chat-activity-completed">Read</div></div>`).join('');
+  const active = activeReading
+    ? `<div class="chat-activity-item chat-activity-running">${READ_ACTIVITY_ICON_SVG}<div class="chat-activity-current thinking-shimmer-text" role="status">Reading page</div></div>`
+    : '';
+  return `<div class="chat-activity-timeline">${completed}${active}</div>`;
+}
+
 export function renderThinkingAccordion(rawReasoning, durationSeconds, options = {}) {
   const sanitized = sanitizeReasoningText(rawReasoning);
   const isExecuting = Boolean(options.isExecuting);
@@ -1303,6 +1316,7 @@ if (typeof document !== 'undefined') {
           } else {
             conversationHistory.push({ role: 'assistant', content: msg.text });
             const agentBubble = document.createElement('div');
+            const activityHtml = renderActivityTimeline(msg.activities || []);
             let thoughtContent = msg.reasoning;
             if (!thoughtContent && Array.isArray(msg.steps) && msg.steps.length > 0) {
               thoughtContent = collectAllStepReasoning({ steps: msg.steps });
@@ -1322,6 +1336,7 @@ if (typeof document !== 'undefined') {
               agentBubble.className = 'chat-msg agent msg-action';
               agentBubble.innerHTML = `
                 ${thinkingHtml}
+                ${activityHtml}
                 <div class="action-status-line is-done" style="display: flex; align-items: center; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
                   <span class="action-done-label" style="color: #cbd5e1; font-weight: 450; font-size: 12.5px;">${escapeHtml(displayAction)}</span>
                 </div>
@@ -1331,6 +1346,7 @@ if (typeof document !== 'undefined') {
               const webSearchHtml = renderWebSearchComponent(msg.webSearchResults, msg.webSearchQuery || '', false);
               agentBubble.innerHTML = `
                 ${thinkingHtml}
+                ${activityHtml}
                 <div class="websearch-tool-space">
                   ${webSearchHtml}
                 </div>
@@ -1343,14 +1359,25 @@ if (typeof document !== 'undefined') {
               agentBubble.className = 'chat-msg agent';
               agentBubble.innerHTML = `
                 ${thinkingHtml}
+                ${activityHtml}
                 <div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 4px;">
                   ${renderMarkdown(msg.text)}
+                </div>
+              `;
+            } else if (msg.isError) {
+              agentBubble.className = 'chat-msg agent';
+              agentBubble.innerHTML = `
+                ${thinkingHtml}
+                ${activityHtml}
+                <div class="agent-speech-text" style="color: #f87171; font-size: 13px; line-height: 1.5; margin-top: 6px;">
+                  ${escapeHtml(msg.text)}
                 </div>
               `;
             } else {
               agentBubble.className = 'chat-msg agent';
               agentBubble.innerHTML = `
                 ${thinkingHtml}
+                ${activityHtml}
                 <div class="agent-speech-text" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.6; user-select: text; margin-top: 4px;">
                   ${renderMarkdown(msg.text)}
                 </div>
@@ -3081,6 +3108,8 @@ if (typeof document !== 'undefined') {
     // =========================================================================
     let activeThinkingBubble = null;
     let activeThinkingTimer = null;
+    const READ_PHASE_STATES = new Set(['capturing', 'sanitizing', 'sending-sanitized-context']);
+    let currentCoordinatorState = 'idle';
 
     function initLiveThinking(bubble, isSubAgent = false) {
       stopLiveThinking();
@@ -3090,6 +3119,11 @@ if (typeof document !== 'undefined') {
       bubble.__isSubAgent = isSubAgent;
       bubble.__expanded = true; // State 2 will open so live streaming reasoning is immediately visible
       bubble.__progress = 'Starting agent…';
+      bubble.__activities = [];
+      bubble.__activeActivity = '';
+      bubble.__hasSanitizedPage = false;
+      currentCoordinatorState = 'idle';
+
       bubble.__goalText = currentGoalText || '';
 
       // Pure clean start: NO hardcoded demo text!
@@ -3097,8 +3131,7 @@ if (typeof document !== 'undefined') {
       bubble.__renderedReasoning = '';
       bubble.__hasStreamedTokens = false;
 
-      // State 1: Render clean non-expandable shimmering "Thinking..." text (NO chevron, NO drawer)
-      bubble.innerHTML = renderThinkingAccordion('', 1, { isExecuting: true });
+      bubble.innerHTML = `${renderThinkingAccordion('', 1, { isExecuting: true })}${renderActivityTimeline([])}`;
 
       // Live timer interval updating elapsed seconds every 500ms
       activeThinkingTimer = setInterval(() => {
@@ -3112,6 +3145,7 @@ if (typeof document !== 'undefined') {
       const elapsed = Math.max(1, Math.round((Date.now() - (b.__turnStartTime || Date.now())) / 1000));
       const cleanReasoning = sanitizeReasoningText(b.__accumulatedReasoning);
       const hasTokens = Boolean(b.__hasStreamedTokens || cleanReasoning || b.__accumulatedReasoning);
+      if (b.__activeActivity === 'Reading page') return;
 
       // If reply tokens have already started without any thinking monologue, remove State 1 placeholder completely
       if (b.__accumulatedReply && !b.__accumulatedReasoning) {
@@ -3121,23 +3155,25 @@ if (typeof document !== 'undefined') {
       }
 
       if (!hasTokens) {
+        // No activity yet (just sent, waiting on the first state change) also shows the Thinking placeholder
+        if (b.__activeActivity && b.__activeActivity !== 'Thinking') {
+          b.querySelector('.thinking-phase1')?.remove();
+          return;
+        }
         // STATE 1: Pure shimmering thinking text (NO dropdown arrow, NO drawer before any token arrives)
         let phase1 = b.querySelector('.thinking-phase1');
         if (!phase1) {
           const block = b.querySelector('.monologue-block');
           if (block) block.remove();
           const temp = document.createElement('div');
-          temp.innerHTML = renderThinkingAccordion('', elapsed, { isExecuting: true });
+          temp.innerHTML = renderThinkingAccordion('', 0, { isExecuting: true });
           phase1 = temp.firstElementChild;
           if (phase1) {
             b.insertBefore(phase1, b.firstChild);
           }
         } else {
           const shimmerSpan = phase1.querySelector('.thinking-shimmer-text');
-          if (shimmerSpan) {
-            const elapsedText = elapsed > 1 ? ` (${elapsed}s)` : '';
-            shimmerSpan.textContent = `Thinking${elapsedText}...`;
-          }
+          if (shimmerSpan) shimmerSpan.textContent = 'Thinking...';
         }
         return;
       }
@@ -3175,6 +3211,73 @@ if (typeof document !== 'undefined') {
           }
         }
       }
+    }
+
+    function markPageReadComplete(bubble) {
+      const b = bubble || activeThinkingBubble;
+      if (!b) return;
+      b.__hasSanitizedPage = true;
+      if (!b.__activities.includes('Read page')) {
+        b.__activities.push('Read page');
+      }
+      b.__activeActivity = '';
+      const html = renderActivityTimeline(b.__activities);
+      const timeline = b.querySelector('.chat-activity-timeline');
+      if (timeline) {
+        if (html) timeline.outerHTML = html;
+        else timeline.remove();
+      } else if (html) {
+        const container = document.createElement('div');
+        container.innerHTML = html;
+        const thought = b.querySelector('.monologue-block, .thinking-phase1');
+        if (thought) thought.after(container.firstElementChild);
+        else b.insertBefore(container.firstElementChild, b.firstChild);
+      }
+    }
+
+    function updateChatActivity(bubble, label) {
+      if (!bubble || !label || bubble !== activeThinkingBubble) return;
+      if (bubble.__activeActivity === label) return;
+      if (bubble.__activeActivity === 'Reading page' && label !== 'Reading page') {
+        if (bubble.__hasSanitizedPage) {
+          if (!bubble.__activities.includes('Read page')) {
+            bubble.__activities.push('Read page');
+          }
+          bubble.__hasSanitizedPage = false;
+        }
+      }
+      bubble.__activeActivity = label;
+      const html = renderActivityTimeline(bubble.__activities, label);
+      const timeline = bubble.querySelector('.chat-activity-timeline');
+      if (timeline) {
+        if (html) timeline.outerHTML = html;
+        else timeline.remove();
+      } else if (html) {
+        const container = document.createElement('div');
+        container.innerHTML = html;
+        const thought = bubble.querySelector('.monologue-block, .thinking-phase1');
+        if (thought) thought.after(container.firstElementChild);
+        else bubble.insertBefore(container.firstElementChild, bubble.firstChild);
+      }
+      if (label === 'Thinking') updateLiveThinkingDisclosure();
+    }
+
+    function completeChatActivity(bubble) {
+      if (!bubble) return '';
+      if (bubble.__activeActivity === 'Reading page' && bubble.__hasSanitizedPage) {
+        if (!bubble.__activities.includes('Read page')) {
+          bubble.__activities.push('Read page');
+        }
+        bubble.__hasSanitizedPage = false;
+      }
+      bubble.__activeActivity = '';
+      const html = renderActivityTimeline(bubble.__activities);
+      const timeline = bubble.querySelector('.chat-activity-timeline');
+      if (timeline) {
+        if (html) timeline.outerHTML = html;
+        else timeline.remove();
+      }
+      return html;
     }
 
     function updateLiveProgress(message) {
@@ -3232,6 +3335,8 @@ if (typeof document !== 'undefined') {
         appRoot.setAttribute('data-last-result-state', res.state || '');
       }
       if (!agentBubble) return;
+      const activityHtml = completeChatActivity(agentBubble);
+      agentBubble.querySelector('.thinking-phase1')?.remove();
 
       function updateOrPrependThinking(bubble, html) {
         if (!html || !bubble) return;
@@ -3284,8 +3389,14 @@ if (typeof document !== 'undefined') {
         const liveReasoning = agentBubble.__accumulatedReasoning || '';
         const realReasoning = collectAllStepReasoning(res, liveReasoning) || liveReasoning;
         agentBubble.__accumulatedReasoning = realReasoning;
+        const inputReasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs;
+        if (!agentBubble.__thoughtDuration) {
+          agentBubble.__thoughtDuration = inputReasoningMs && inputReasoningMs > 300
+            ? Math.max(1, Math.round(inputReasoningMs / 1000))
+            : Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000));
+        }
         const thinkingHtml = realReasoning
-          ? renderThinkingAccordion(realReasoning, Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000)), { open: false })
+          ? renderThinkingAccordion(realReasoning, agentBubble.__thoughtDuration, { open: false })
           : '';
         updateOrPrependThinking(agentBubble, thinkingHtml);
 
@@ -3431,6 +3542,9 @@ if (typeof document !== 'undefined') {
           agentBubble.__continuationSettled = false;
           agentBubble.__hasContinuationDivider = false;
           agentBubble.__expanded = true;
+          agentBubble.__turnStartTime = Date.now();
+          agentBubble.__thoughtDuration = null;
+          agentBubble.__thinkingTimerStarted = false;
 
           let block = agentBubble.querySelector('.monologue-block');
           if (!block) {
@@ -3476,7 +3590,9 @@ if (typeof document !== 'undefined') {
                 renderActionResult(agentBubble, submitRes);
                 return;
               }
-              const elapsed = Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000));
+              const elapsed = submitRes?.telemetry?.serverLatencyMs
+                ? Math.max(1, Math.round(submitRes.telemetry.serverLatencyMs / 1000))
+                : Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000));
               const block = agentBubble.querySelector('.monologue-block');
               if (block) {
                 const title = block.querySelector('.monologue-title');
@@ -3605,6 +3721,23 @@ if (typeof document !== 'undefined') {
           }
         });
 
+        stopLiveThinking();
+        if (agentBubble.__turnStartTime && !agentBubble.__thoughtDuration) {
+          const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs;
+          agentBubble.__thoughtDuration = reasoningMs && reasoningMs > 300
+            ? Math.max(1, Math.round(reasoningMs / 1000))
+            : Math.max(1, Math.round((Date.now() - agentBubble.__turnStartTime) / 1000));
+        }
+        const inputBlock = agentBubble.querySelector('.monologue-block');
+        if (inputBlock) {
+          const title = inputBlock.querySelector('.monologue-title');
+          if (title) {
+            title.classList.remove('thinking-shimmer-text');
+            title.classList.add('monologue-completed-text');
+            title.textContent = `Thought for ${agentBubble.__thoughtDuration || 1}s`;
+          }
+        }
+
         setAgentStatus(res.state === 'awaiting-user-input' ? 'awaiting-user-input' : 'awaiting-user-confirmation');
         chatMessages.scrollTop = chatMessages.scrollHeight;
         return;
@@ -3613,7 +3746,12 @@ if (typeof document !== 'undefined') {
       // 1. Awaiting User Confirmation (Pending Protected or Low-Confidence Action)
       if (res && res.state === 'awaiting-user-confirmation') {
         const action = res.proposal || {};
-        const actionId = action.actionId || `${res.runId || currentRunId || 'run'}_${action.kind || 'act'}_${action.targetLocalId || 'tgt'}`;
+        const actionId = action.actionId;
+        if (!actionId || !(res.runId || currentRunId)) {
+          agentBubble.insertAdjacentHTML('beforeend', '<div class="agent-speech-text">Approval unavailable: action identity is missing. Please retry the request.</div>');
+          setAgentStatus('failed-safe');
+          return;
+        }
 
         // Never re-render a card for an action that was already approved or rejected in this bubble
         agentBubble.__handledActionIds = agentBubble.__handledActionIds || new Set();
@@ -3624,6 +3762,7 @@ if (typeof document !== 'undefined') {
         // Singleton guarantee: never display duplicate confirmation cards in this bubble or active chat
         const existingInBubble = agentBubble.querySelector('.hitl-confirm-card');
         if (existingInBubble) {
+          existingInBubble.scrollIntoView({ block: 'nearest' });
           return;
         }
 
@@ -3637,16 +3776,25 @@ if (typeof document !== 'undefined') {
           }
         });
         if (isAlreadyActive) {
+          chatMessages.querySelector('.hitl-confirm-card')?.scrollIntoView({ block: 'nearest' });
           return;
         }
 
+        stopLiveThinking();
         const liveReasoning = agentBubble.__accumulatedReasoning || '';
         const realReasoning = collectAllStepReasoning(res, liveReasoning) || liveReasoning;
         agentBubble.__accumulatedReasoning = realReasoning;
+        const confirmReasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs;
+        if (!agentBubble.__thoughtDuration) {
+          agentBubble.__thoughtDuration = confirmReasoningMs && confirmReasoningMs > 300
+            ? Math.max(1, Math.round(confirmReasoningMs / 1000))
+            : Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000));
+        }
         const thinkingHtml = realReasoning
-          ? renderThinkingAccordion(realReasoning, Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000)), { open: false })
+          ? renderThinkingAccordion(realReasoning, agentBubble.__thoughtDuration, { open: false })
           : '';
         updateOrPrependThinking(agentBubble, thinkingHtml);
+        agentBubble.querySelector('.live-actions-container')?.remove();
 
         const card = document.createElement('div');
         card.className = 'hitl-confirm-card';
@@ -3660,7 +3808,7 @@ if (typeof document !== 'undefined') {
         if (!friendlyTarget || /^(?:el_\w+|input_\d+|btn_\d+|elem_\d+)$/i.test(friendlyTarget.trim())) {
           friendlyTarget = (action.kind || 'click').toLowerCase() === 'click' ? 'Submit' : 'button';
         }
-        const targetLabel = friendlyTarget.trim();
+        const targetLabel = friendlyTarget.trim().replace(/\s*(?:\[REDACTED[^\]]*\]|<REDACTED[^>]*>)\s*/gi, ' ').trim() || 'Protected action';
         const actionVerb = (action.kind || 'click').toLowerCase() === 'click' ? 'clicking' : 'executing';
         const isSubmit = /submit/i.test(targetLabel) || /submit/i.test(action.rationale || '');
         const promptText = `Please approve or reject ${actionVerb} "${targetLabel}" ${isSubmit ? 'to submit the form.' : 'to continue.'}`;
@@ -3678,53 +3826,117 @@ if (typeof document !== 'undefined') {
 
         approveBtn?.addEventListener('click', (e) => {
           e.preventDefault();
-          agentBubble.__handledActionIds.add(actionId);
           const targetRunId = res.runId || currentRunId;
+          if (targetRunId !== currentRunId) {
+            card.querySelector('.hitl-confirm-prompt').textContent = 'This approval has expired. Please retry the request.';
+            return;
+          }
+          agentBubble.__handledActionIds.add(actionId);
+          agentBubble.__turnStartTime = Date.now();
+          agentBubble.__thoughtDuration = null;
+          agentBubble.__thinkingTimerStarted = false;
           const executingLine = document.createElement('div');
           executingLine.className = 'action-status-line is-executing';
           executingLine.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
           executingLine.innerHTML = `
-            <span class="thinking-shimmer-text">User approved: Executing ${actionVerb === 'clicking' ? 'click on' : 'action'} "${escapeHtml(targetLabel)}"...</span>
+            <span class="thinking-shimmer-text">Doing ${escapeHtml(targetLabel)}...</span>
           `;
           card.replaceWith(executingLine);
           actionConfirmModal?.classList.add('hidden');
           addAuditEntry('AUTH', `User Approved Action: ${targetLabel}`, 'pass');
           setAgentStatus('executing');
 
-          // Immediately expand and shimmer thinking monologue block if present
-          let block = agentBubble.querySelector('.monologue-block');
-          if (block) {
-            const title = block.querySelector('.monologue-title');
-            if (title) {
-              title.textContent = 'Thinking...';
-              title.classList.remove('monologue-completed-text');
-              title.classList.add('thinking-shimmer-text');
+          if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
+            let port;
+            try {
+              port = chrome.runtime.connect({ name: 'privapilot-sidepanel' });
+            } catch (error) {
+              executingLine.remove();
+              renderActionResult(agentBubble, { success: false, state: 'failed-safe', error: error?.message || 'Approval connection unavailable', runId: targetRunId });
+              return;
             }
-            const drawer = block.querySelector('.monologue-drawer');
-            if (drawer) drawer.style.display = 'block';
-            const chevron = block.querySelector('.monologue-chevron');
-            if (chevron) chevron.classList.add('rotate-90');
-            block.setAttribute('data-state', 'expanded');
-          }
-
-          if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-            chrome.runtime.sendMessage({ type: 'APPROVE_ACTION', runId: targetRunId, actionId: action.actionId, resumeLoop: true }, (postRes) => {
-              if (postRes) {
-                executingLine.className = 'action-status-line is-done';
-                executingLine.style.cssText = 'display: flex; align-items: center; font-size: 12.5px; color: #cbd5e1; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
-                executingLine.innerHTML = `
-                  <span style="color: #cbd5e1; font-weight: 450;">Approved and executed "${escapeHtml(targetLabel)}"</span>
-                `;
-                renderActionResult(agentBubble, postRes);
+            const requestId = `approve_${targetRunId}_${actionId}`;
+            let settled = false;
+            const thoughtBlock = agentBubble.querySelector('.monologue-block');
+            if (!thoughtBlock) {
+              const placeholder = document.createElement('div');
+              placeholder.innerHTML = renderThinkingAccordion('', 1, { isExecuting: true });
+              if (placeholder.firstElementChild) executingLine.before(placeholder.firstElementChild);
+            }
+            const finishApproval = (postRes, error) => {
+              if (settled) return;
+              settled = true;
+              try { port.disconnect(); } catch (_) {}
+              if (targetRunId !== currentRunId) return;
+              executingLine.remove();
+              if (error || !postRes) {
+                renderActionResult(agentBubble, { success: false, state: 'failed-safe', error: error || 'Approval did not return a result', runId: targetRunId });
+                return;
               }
+              renderActionResult(agentBubble, postRes);
+            };
+            port.onMessage.addListener((message) => {
+              if (message?.requestId !== requestId || settled || targetRunId !== currentRunId) return;
+              if (message.type === 'STREAM_THOUGHT_DELTA') {
+                if (!message.delta) return;
+                agentBubble.__accumulatedReasoning = (agentBubble.__accumulatedReasoning || '') + message.delta;
+                agentBubble.__hasStreamedTokens = true;
+                agentBubble.querySelector('.thinking-phase1')?.remove();
+                let block = agentBubble.querySelector('.monologue-block');
+                if (!block) {
+                  const wrapper = document.createElement('div');
+                  wrapper.innerHTML = renderThinkingAccordion(agentBubble.__accumulatedReasoning, 1, { isExecuting: true, open: true, forceState2: true });
+                  block = wrapper.firstElementChild;
+                  if (block) executingLine.before(block);
+                }
+                const title = block?.querySelector('.monologue-title');
+                if (title) {
+                  title.textContent = `Thinking (${Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000))}s)`;
+                  title.classList.remove('monologue-completed-text');
+                  title.classList.add('thinking-shimmer-text');
+                }
+                const content = block?.querySelector('.monologue-content');
+                if (content) {
+                  let stream = content.querySelector('.live-thought-stream');
+                  if (!stream) {
+                    content.textContent = '';
+                    stream = document.createElement('span');
+                    stream.className = 'live-thought-stream';
+                    content.appendChild(stream);
+                  }
+                  stream.textContent = agentBubble.__accumulatedReasoning;
+                }
+                return;
+              }
+              if (message.type === 'STREAM_REPLY_DELTA') {
+                agentBubble.__accumulatedReply = (agentBubble.__accumulatedReply || '') + (message.delta || '');
+                agentBubble.querySelector('.thinking-phase1')?.remove();
+                return;
+              }
+              if (message.type === 'STREAM_FINAL' || message.response) finishApproval(message.response);
             });
+            port.onDisconnect.addListener(() => {
+              if (!settled) finishApproval(null, chrome.runtime.lastError?.message || 'Approval connection closed before completion');
+            });
+            try {
+              port.postMessage({ requestId, type: 'APPROVE_ACTION', target: 'privapilot-background', runId: targetRunId, actionId, resumeLoop: true });
+            } catch (error) {
+              finishApproval(null, error?.message || 'Could not send approval');
+            }
+          } else {
+            executingLine.remove();
+            renderActionResult(agentBubble, { success: false, state: 'failed-safe', error: 'Approval connection unavailable', runId: targetRunId });
           }
         });
 
         cancelBtn?.addEventListener('click', (e) => {
           e.preventDefault();
-          agentBubble.__handledActionIds.add(actionId);
           const targetRunId = res.runId || currentRunId;
+          if (targetRunId !== currentRunId) {
+            card.querySelector('.hitl-confirm-prompt').textContent = 'This approval has expired. Please retry the request.';
+            return;
+          }
+          agentBubble.__handledActionIds.add(actionId);
           const cancelledLine = document.createElement('div');
           cancelledLine.className = 'action-status-line is-done';
           cancelledLine.style.cssText = 'display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #94a3b8; margin: 4px 0; padding: 2px 0; background: transparent; border: none;';
@@ -3737,7 +3949,7 @@ if (typeof document !== 'undefined') {
           setAgentStatus('idle');
 
           if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-            chrome.runtime.sendMessage({ type: 'DENY_ACTION', runId: targetRunId, actionId: action.actionId }, (postRes) => {
+            chrome.runtime.sendMessage({ type: 'DENY_ACTION', runId: targetRunId, actionId }, (postRes) => {
               if (postRes) renderActionResult(agentBubble, postRes);
             });
           }
@@ -3745,7 +3957,7 @@ if (typeof document !== 'undefined') {
 
         agentBubble.appendChild(card);
         setAgentStatus('awaiting-user-confirmation');
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        card.scrollIntoView({ block: 'nearest' });
         return;
       }
 
@@ -3897,11 +4109,15 @@ if (typeof document !== 'undefined') {
         return `${kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : 'Action'} done`;
       }
 
-      // 0. Conversational Model Reply (from Chat Endpoint / Local Model / Agent Answer)
-      const modelReply = res.reply ||
-        res.proposal?.reply ||
-        (res.proposal?.kind === 'answer' ? (res.proposal?.rationale || res.message) : null) ||
-        (res.proposal?.kind === 'finish' ? (res.proposal?.reply || res.proposal?.rationale || res.message) : null);
+      // 0. Conversational Model Reply / Task Completion Answer
+      const finalProposalIsAnswer = res?.proposal?.kind === 'answer' || res?.proposal?.kind === 'finish';
+      const explicitReply = res?.reply || res?.proposal?.reply;
+      const modelReply = res?.success && (!res.state || res.state === 'complete') &&
+        (explicitReply
+          ? explicitReply
+          : (finalProposalIsAnswer
+              ? (res.proposal?.rationale || res.message)
+              : (!res.proposal?.kind ? (res.message || null) : null)));
       if (res && modelReply) {
         const maskCount = res.maskCount ?? res.sanitized?.maskCount ?? 0;
         const elementCount = res.elementCount ?? res.sanitized?.elementCount ?? (res.sanitized?.elements ? res.sanitized.elements.length : 0);
@@ -3918,11 +4134,12 @@ if (typeof document !== 'undefined') {
         const liveReasoning = agentBubble.__accumulatedReasoning || '';
         const realReasoning = collectAllStepReasoning(res, liveReasoning) || liveReasoning;
         agentBubble.__accumulatedReasoning = realReasoning;
-        const liveDuration = agentBubble.__thoughtDuration || (agentBubble.__turnStartTime ? Math.max(1, Math.round((Date.now() - agentBubble.__turnStartTime) / 1000)) : 0);
         const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs;
+        const actualReasoningSeconds = (reasoningMs && reasoningMs > 300) ? Math.max(1, Math.round(reasoningMs / 1000)) : 0;
+        const liveDuration = agentBubble.__thoughtDuration;
         const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
         const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
-        const duration = liveDuration || (durationSeconds && durationSeconds > 0 ? durationSeconds : (reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback));
+        const duration = actualReasoningSeconds || liveDuration || (durationSeconds && durationSeconds > 0 ? durationSeconds : computedFallback);
         const wasExpanded = Boolean(
           agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
           agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true'
@@ -3940,6 +4157,7 @@ if (typeof document !== 'undefined') {
             reasoning: realReasoning,
             durationSeconds: duration,
             agentName: activeAgentLabel || undefined,
+            activities: agentBubble.__activities || [],
             steps: res.steps
           });
           activeSession.updatedAt = Date.now();
@@ -3976,6 +4194,16 @@ if (typeof document !== 'undefined') {
             }
           }
         }
+        if (!executedStepsHtml && res.proposal && res.proposal.kind !== 'finish' && res.proposal.kind !== 'answer') {
+          const label = getCleanActionLabel(res.proposal, res.sanitized?.elements);
+          executedStepsHtml = `
+            <div class="executed-steps-summary" style="margin-top: 5px; margin-bottom: 5px;">
+              <div class="action-status-line is-done" style="display: flex; align-items: center; font-size: 12.5px; color: #cbd5e1; margin: 3px 0; padding: 1px 0;">
+                <span style="color: #cbd5e1; font-weight: 450;">${escapeHtml(label)}</span>
+              </div>
+            </div>
+          `;
+        }
         if (!webSearchComponentHtml && res.proposal?.kind === 'web_search' && Array.isArray(res.proposal.searchResults) && res.proposal.searchResults.length > 0) {
           webSearchComponentHtml = renderWebSearchComponent(res.proposal.searchResults, res.proposal.searchQuery || currentGoalText || '', true);
         }
@@ -4009,6 +4237,7 @@ if (typeof document !== 'undefined') {
             </div>
           ` : ''}
           ${thinkingHtml}
+          ${activityHtml}
           ${executedStepsHtml}
           ${webSearchComponentHtml ? `<div class="websearch-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${webSearchComponentHtml}</div>` : ''}
           ${subAgentSwarmHtml ? `<div class="subagent-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${subAgentSwarmHtml}</div>` : ''}
@@ -4075,7 +4304,7 @@ if (typeof document !== 'undefined') {
           addAuditEntry('MASK', `Rendered ${maskCount} opaque privacy masks locally [${zone.toUpperCase()}]`, 'mask');
         }
 
-        setAgentStatus(modelDisconnected ? 'failed-safe' : 'idle');
+        setAgentStatus(res.state === 'complete' ? 'complete' : (modelDisconnected ? 'failed-safe' : 'idle'));
         chatMessages.scrollTop = chatMessages.scrollHeight;
         return;
       }
@@ -4083,6 +4312,7 @@ if (typeof document !== 'undefined') {
       // 2. Denied / Cancelled Action
       if (res && (res.cancelled === true || res.state === 'cancelled' || (res.message && /(?:cancelled|denied)\s+by\s+user/i.test(res.message)))) {
         agentBubble.innerHTML = `
+          ${activityHtml}
           <div style="padding: 7px 9px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: #94a3b8; font-size: 11px;">
             Action was cancelled by user.
           </div>
@@ -4114,11 +4344,12 @@ if (typeof document !== 'undefined') {
         const liveReasoning = agentBubble.__accumulatedReasoning || '';
         const realReasoning = collectAllStepReasoning(res, liveReasoning) || liveReasoning;
         agentBubble.__accumulatedReasoning = realReasoning;
-        const liveDuration = agentBubble.__thoughtDuration || (agentBubble.__turnStartTime ? Math.max(1, Math.round((Date.now() - agentBubble.__turnStartTime) / 1000)) : 0);
         const reasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs;
+        const actualReasoningSeconds = (reasoningMs && reasoningMs > 300) ? Math.max(1, Math.round(reasoningMs / 1000)) : 0;
+        const liveDuration = agentBubble.__thoughtDuration;
         const words = (realReasoning || '').split(/\s+/).filter(Boolean).length;
         const computedFallback = Math.max(2, Math.min(16, 2 + Math.floor(words / 25)));
-        const duration = liveDuration || (durationSeconds && durationSeconds > 0 ? durationSeconds : (reasoningMs > 500 ? Math.max(1, Math.round(reasoningMs / 1000)) : computedFallback));
+        const duration = actualReasoningSeconds || liveDuration || (durationSeconds && durationSeconds > 0 ? durationSeconds : computedFallback);
         const wasExpanded = Boolean(
           agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
           agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true'
@@ -4129,10 +4360,40 @@ if (typeof document !== 'undefined') {
 
         agentBubble.innerHTML = `
           ${thinkingHtml}
+          ${activityHtml}
           <div style="padding: 7px 9px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 11px;">${displayHtml}</div>
         `;
+
+        conversationHistory.push({ role: 'assistant', content: errorMsg });
+        if (conversationHistory.length > 20) conversationHistory = conversationHistory.slice(-20);
+
+        const activeSession = chatSessions.find(s => s.id === currentSessionId);
+        if (activeSession) {
+          if (!activeSession.messages) activeSession.messages = [];
+          activeSession.messages.push({
+            role: 'agent',
+            text: errorMsg,
+            isError: true,
+            reasoning: realReasoning,
+            durationSeconds: duration,
+            activities: agentBubble.__activities || [],
+            steps: res?.steps
+          });
+          activeSession.updatedAt = Date.now();
+          saveChatSessions();
+          renderRecentChatsMenu();
+        }
+
         setAgentStatus(statusState);
         chatMessages.scrollTop = chatMessages.scrollHeight;
+        return;
+      }
+
+      // Do not mark an in-flight coordinator response as a completed action.
+      if (res.state && res.state !== 'complete') {
+        agentBubble.querySelector('.action-status-line.is-executing')?.remove();
+        agentBubble.insertAdjacentHTML('beforeend', '<div class="agent-speech-text">Completion was not confirmed. Please check the page before retrying.</div>');
+        setAgentStatus('failed-safe');
         return;
       }
 
@@ -4144,11 +4405,12 @@ if (typeof document !== 'undefined') {
       const liveReasoning = agentBubble.__accumulatedReasoning || '';
       const realReasoning = collectAllStepReasoning(res, liveReasoning) || liveReasoning;
       agentBubble.__accumulatedReasoning = realReasoning;
-      const actionLiveDuration = agentBubble.__thoughtDuration || (agentBubble.__turnStartTime ? Math.max(1, Math.round((Date.now() - agentBubble.__turnStartTime) / 1000)) : 0);
       const actionReasoningMs = (res?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || res?.telemetry?.serverLatencyMs;
+      const actualActionSeconds = (actionReasoningMs && actionReasoningMs > 300) ? Math.max(1, Math.round(actionReasoningMs / 1000)) : 0;
+      const actionLiveDuration = agentBubble.__thoughtDuration;
       const actionWords = (realReasoning || '').split(/\s+/).filter(Boolean).length;
       const actionFallback = Math.max(2, Math.min(16, 2 + Math.floor(actionWords / 25)));
-      const duration = actionLiveDuration || (durationSeconds && durationSeconds > 0 ? durationSeconds : (actionReasoningMs > 500 ? Math.max(1, Math.round(actionReasoningMs / 1000)) : actionFallback));
+      const duration = actualActionSeconds || actionLiveDuration || (durationSeconds && durationSeconds > 0 ? durationSeconds : actionFallback);
       const wasExpanded = Boolean(
         agentBubble.querySelector('.monologue-block')?.getAttribute('data-state') === 'expanded' ||
         agentBubble.querySelector('.monologue-toggle-btn')?.getAttribute('aria-expanded') === 'true'
@@ -4167,9 +4429,12 @@ if (typeof document !== 'undefined') {
       }
 
       agentBubble.classList.add('msg-action');
-      const actionSpeechText = action.reply || ((action.kind === 'web_search' || action.kind === 'spawn_subagents') ? res.message : '');
+      const actionSpeechText = res.reply || action.reply ||
+        ((action.kind === 'web_search' || action.kind === 'spawn_subagents') ? res.message : null) ||
+        (res.message && !res.message.toLowerCase().startsWith('action executed') && !res.message.toLowerCase().includes('verified complete') && !res.message.toLowerCase().includes(actionLabel.toLowerCase()) ? res.message : null);
       agentBubble.innerHTML = `
         ${thinkingHtml}
+        ${activityHtml}
         ${actionWebSearchHtml ? `<div class="websearch-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${actionWebSearchHtml}</div>` : (
           actionSubAgentHtml ? `<div class="subagent-tool-space" style="margin-top: 6px; margin-bottom: 6px;">${actionSubAgentHtml}</div>` : `
           <div class="action-status-line is-done" style="display: flex; align-items: center; font-size: 12.5px; color: #cbd5e1; margin-top: 5px; padding: 2px 0;">
@@ -4190,7 +4455,7 @@ if (typeof document !== 'undefined') {
       setAgentStatus('complete');
 
       // Record action execution turn in multi-turn history
-      const actionTurnText = actionLabel;
+      const actionTurnText = actionSpeechText || actionLabel;
       conversationHistory.push({
         role: 'assistant',
         content: actionTurnText
@@ -4208,6 +4473,7 @@ if (typeof document !== 'undefined') {
           isAction: true,
           reasoning: realReasoning,
           durationSeconds: duration,
+          activities: agentBubble.__activities || [],
           steps: res.steps,
           isSubAgentSwarm: Boolean(actionSubAgentHtml),
           subTasks: action.subTasks || res.subTasks
@@ -4806,7 +5072,9 @@ if (typeof document !== 'undefined') {
         if (currentActiveTabId && typeof chrome !== 'undefined' && chrome.tabs?.sendMessage) {
           chrome.tabs.sendMessage(currentActiveTabId, { type: 'SET_ACTIVE_BORDER', active: false }).catch?.(() => {});
         }
-        agentBubble.textContent = "Understood. I've stopped.";
+        stopLiveThinking();
+        const activityHtml = completeChatActivity(agentBubble);
+        agentBubble.innerHTML = `${activityHtml}<div class="agent-speech-text">Understood. I've stopped.</div>`;
         setAgentStatus('idle');
         return;
       }
@@ -4872,19 +5140,69 @@ if (typeof document !== 'undefined') {
           }
           if (error) {
             stopLiveThinking();
-            agentBubble.textContent = error;
+            const activityHtml = completeChatActivity(agentBubble);
+            agentBubble.querySelector('.thinking-phase1')?.remove();
+
+            const liveReasoning = agentBubble.__accumulatedReasoning || '';
+            const liveDuration = agentBubble.__thoughtDuration || (agentBubble.__turnStartTime ? Math.max(1, Math.round((Date.now() - agentBubble.__turnStartTime) / 1000)) : 1);
+            const existingBlock = agentBubble.querySelector('.monologue-block');
+            let thinkingHtml = '';
+            if (existingBlock) {
+              thinkingHtml = existingBlock.outerHTML;
+            } else if (liveReasoning) {
+              thinkingHtml = renderThinkingAccordion(
+                liveReasoning,
+                liveDuration,
+                { open: false }
+              );
+            }
+
+            agentBubble.innerHTML = `
+              ${thinkingHtml}
+              ${activityHtml}
+              <div class="agent-speech-text" style="color: #f87171; font-size: 13px; line-height: 1.5; margin-top: 6px;">
+                ${escapeHtml(error)}
+              </div>
+            `;
+
+            conversationHistory.push({ role: 'assistant', content: error });
+            if (conversationHistory.length > 20) conversationHistory = conversationHistory.slice(-20);
+
+            const activeSession = chatSessions.find(s => s.id === currentSessionId);
+            if (activeSession) {
+              if (!activeSession.messages) activeSession.messages = [];
+              activeSession.messages.push({
+                role: 'agent',
+                text: error,
+                isError: true,
+                reasoning: liveReasoning,
+                durationSeconds: liveDuration,
+                activities: agentBubble.__activities || []
+              });
+              activeSession.updatedAt = Date.now();
+              saveChatSessions();
+              renderRecentChatsMenu();
+            }
+
             setAgentStatus('failed-safe');
             return;
           }
           renderActionResult(agentBubble, res, Math.max(1, Math.round((Date.now() - turnStartTime) / 1000)));
         };
         port.onMessage.addListener((message) => {
-          if (message?.requestId !== runId) return;
+          if (message?.requestId !== runId || !(message?.requestId === runId)) return;
 
           if (message.type === 'STREAM_THOUGHT_DELTA') {
             const delta = message.delta;
             if (!delta) return;
+            if (!agentBubble.__thinkingTimerStarted) {
+              agentBubble.__thinkingTimerStarted = true;
+              agentBubble.__turnStartTime = Date.now();
+            }
             agentBubble.__hasStreamedTokens = true;
+            if (!READ_PHASE_STATES.has(currentCoordinatorState)) {
+              updateChatActivity(agentBubble, 'Thinking');
+            }
             agentBubble.__accumulatedReasoning = (agentBubble.__accumulatedReasoning || '') + delta;
             activeThinkingBubble = agentBubble;
             agentBubble.__expanded = true;
@@ -4945,6 +5263,7 @@ if (typeof document !== 'undefined') {
             const delta = message.delta;
             if (!delta) return;
             agentBubble.__hasStreamedTokens = true;
+            updateChatActivity(agentBubble, 'Writing response');
             agentBubble.__accumulatedReply = (agentBubble.__accumulatedReply || '') + delta;
 
             // When reply starts arriving, record the exact thought duration so it never jumps or mismatches
@@ -4984,6 +5303,14 @@ if (typeof document !== 'undefined') {
           }
 
           if (message.type === 'STREAM_FINAL' || message.response) {
+            stopLiveThinking();
+            if (agentBubble.__accumulatedReasoning && !agentBubble.__thoughtDuration) {
+              const resObj = message.response;
+              const reasoningMs = (resObj?.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || resObj?.telemetry?.serverLatencyMs;
+              agentBubble.__thoughtDuration = reasoningMs && reasoningMs > 300
+                ? Math.max(1, Math.round(reasoningMs / 1000))
+                : Math.max(1, Math.round((Date.now() - (agentBubble.__turnStartTime || Date.now())) / 1000));
+            }
             finish(message.response);
           }
         });
@@ -6339,13 +6666,28 @@ if (typeof document !== 'undefined') {
           if (message.type?.startsWith('COORDINATOR_') && message.runId && message.runId !== currentRunId) return;
 
           if (message.type === 'COORDINATOR_STATE_CHANGED') {
+            currentCoordinatorState = message.state;
             setAgentStatus(message.state);
             if (message.message) {
               addAuditEntry('AGENT', message.message, 'info');
             }
-            if (!['complete', 'failed-safe', 'idle'].includes(message.state)) {
+            if (!['complete', 'failed-safe', 'idle', 'awaiting-user-input', 'awaiting-user-confirmation'].includes(message.state)) {
+              const activity = {
+                capturing: 'Reading page',
+                'detecting-sensitive-content': 'Reading page',
+                sanitizing: 'Reading page',
+                'sending-sanitized-context': 'Reading page',
+                'awaiting-reasoning': 'Thinking',
+                'validating-action': 'Thinking',
+                executing: 'Executing action',
+                verifying: 'Thinking'
+              }[message.state];
+              if (activity && activeThinkingBubble) {
+                updateChatActivity(activeThinkingBubble, activity);
+              }
               const phase = {
                 capturing: 'Capturing current page',
+                'detecting-sensitive-content': 'Scanning for sensitive content',
                 sanitizing: 'Protecting sensitive content',
                 'sending-sanitized-context': 'Sending sanitized page context',
                 'awaiting-reasoning': 'Formulating plan',
@@ -6366,7 +6708,7 @@ if (typeof document !== 'undefined') {
               const cleanStepMsg = message.message.replace(/^Step \d+(?:\/\d+)?(?::|\s*-)?\s*/i, '');
               updateLiveProgress(cleanStepMsg);
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
-              const liveActionSpan = lastAgentBubble?.querySelector('.action-status-line.is-executing .thinking-shimmer-text');
+              const liveActionSpan = lastAgentBubble?.querySelector('.live-actions-container .action-status-line.is-executing .thinking-shimmer-text');
               if (liveActionSpan && !liveActionSpan.textContent.includes('...')) {
                 liveActionSpan.textContent = cleanStepMsg;
               }
@@ -6378,9 +6720,8 @@ if (typeof document !== 'undefined') {
             const act = message.action;
             if (act) {
               const elementsList = lastSanitizedContext?.elements || [];
-              const executingLabel = getExecutingActionLabel(act, elementsList);
               const cleanLabel = getCleanActionLabel(act, elementsList);
-              addAuditEntry('PLAN', `${cleanLabel}: ${act.rationale || 'Executing action'}`, 'pass');
+              addAuditEntry('PLAN', `${cleanLabel}: ${act.rationale || 'Proposed action'}`, 'info');
               const lastAgentBubble = chatMessages.querySelector('.chat-msg.agent:last-child');
               if (lastAgentBubble && !lastAgentBubble.classList.contains('msg-action') && !lastAgentBubble.querySelector('.thought-card')) {
                 const liveReasoning = act.reasoning || act.thought || act.rationale;
@@ -6420,6 +6761,7 @@ if (typeof document !== 'undefined') {
 
                 // Append new executing action line with shimmering text
                 if (act.kind !== 'finish' && act.kind !== 'answer') {
+                  const executingLabel = getExecutingActionLabel(act, elementsList);
                   const newExecuting = document.createElement('div');
                   newExecuting.className = 'action-status-line is-executing';
                   newExecuting.setAttribute('data-clean-label', cleanLabel);
@@ -6455,6 +6797,11 @@ if (typeof document !== 'undefined') {
           }
 
           if (message.type === 'COORDINATOR_SANITIZATION_COMPLETE') {
+            const isBlankPlaceholder = message.payloadDigestSha256 === 'sha256_init_blank' ||
+              (message.elements && message.elements.length === 0 && (!message.sanitizedScreenshot || message.sanitizedScreenshot.length < 200));
+            if (!isBlankPlaceholder) {
+              markPageReadComplete(activeThinkingBubble);
+            }
             cachedRawScreenshot = message.rawScreenshot || '';
             cachedSanitizedScreenshot = message.sanitizedScreenshot || '';
 

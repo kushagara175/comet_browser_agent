@@ -301,3 +301,38 @@ test('Live Token Streaming: Coordinator.startRun streams reasoning tokens during
   assert.doesNotMatch(result.reasoning || '', /Step \d+:/);
 });
 
+test('Live Token Streaming: Thought duration reflects genuine AI latency and decouples human wait time', () => {
+  // Simulate an agent bubble where human spent 66s entering a CAPTCHA or reviewing an approval
+  const bubble = {
+    __turnStartTime: Date.now() - 66000, // 66 seconds ago
+    __accumulatedReasoning: 'Evaluating CAPTCHA challenge and identifying input element.',
+    __thoughtDuration: null
+  };
+
+  // Model response returned with actual server reasoning telemetry of 3.5s (3500ms)
+  const serverResponse = {
+    success: true,
+    state: 'complete',
+    proposal: { kind: 'click', targetLocalId: 'el_submit' },
+    telemetry: { serverLatencyMs: 3500 },
+    steps: [
+      { timings: { reasoning: 3500, total: 3500 } }
+    ]
+  };
+
+  const reasoningMs = (serverResponse.steps || []).reduce((acc, s) => acc + (s.timings?.reasoning || s.timings?.total || 0), 0) || serverResponse.telemetry?.serverLatencyMs;
+  const actualReasoningSeconds = (reasoningMs && reasoningMs > 300) ? Math.max(1, Math.round(reasoningMs / 1000)) : 0;
+  const liveDuration = bubble.__thoughtDuration;
+  const duration = actualReasoningSeconds || liveDuration || 1;
+
+  // Duration must be 4s (Math.round(3.5)), NOT 66s
+  assert.equal(duration, 4);
+  assert.notEqual(duration, 66);
+
+  // Accordion HTML must display 'Thought for 4s'
+  const html = renderThinkingAccordion(bubble.__accumulatedReasoning, duration, { open: false });
+  assert.match(html, /Thought for 4s/);
+  assert.doesNotMatch(html, /66s/);
+});
+
+

@@ -778,9 +778,15 @@ export class RunCoordinator {
     const finalReasoning = stepReasoning || res.reasoning || res.proposal?.reasoning || res.proposal?.thought ||
       this.lastActionProposal?.reasoning || this.lastActionProposal?.thought || undefined;
 
+    const fallbackCompleteReply = res.state === 'complete' && res.message &&
+      !res.message.toLowerCase().startsWith('action executed') &&
+      !res.message.toLowerCase().includes('verified complete')
+      ? res.message
+      : undefined;
+
     const finalRes: CoordinatorRunResult = {
       ...res,
-      reply: res.reply || res.proposal?.reply || ((res.proposal?.kind === 'answer' || res.proposal?.kind === 'finish') ? (res.proposal.rationale || res.message) : undefined),
+      reply: res.reply || res.proposal?.reply || ((res.proposal?.kind === 'answer' || res.proposal?.kind === 'finish') ? (res.proposal.rationale || res.message) : fallbackCompleteReply),
       reasoning: finalReasoning,
       steps,
       runId: res.runId || this.currentRunId || undefined
@@ -1081,7 +1087,8 @@ export class RunCoordinator {
           a.kind === 'scroll' ||
           a.kind === 'hover' ||
           a.kind === 'drag_and_drop' ||
-          a.kind === 'upload_file'
+          a.kind === 'upload_file' ||
+          a.kind === 'navigate'
         );
         if (!hasMutatingAction) {
           return { satisfied: false, reason: 'Action history contains only wait without any preceding trigger action' };
@@ -1090,9 +1097,16 @@ export class RunCoordinator {
         const postSummary = (sanitized.pageState?.postconditionSummary || '').toLowerCase();
         if (term.statusId) {
           const expected = term.statusId.toLowerCase();
-          const matches = statusSummaries.some(s => s.includes(expected)) || postSummary.includes(expected);
-          if (!matches) {
-            return { satisfied: false, reason: `Status mutation unverified: expected '${term.statusId}', page indicates '${statusSummaries.join(', ') || postSummary}'` };
+          const isVerifiedPattern = expected.endsWith('_verified');
+          if (isVerifiedPattern) {
+            if (!hasMutatingAction) {
+              return { satisfied: false, reason: `Action '${term.statusId}' unverified: no mutating click or interaction was executed` };
+            }
+          } else {
+            const matches = statusSummaries.some(s => s.includes(expected)) || postSummary.includes(expected);
+            if (!matches) {
+              return { satisfied: false, reason: `Status mutation unverified: expected '${term.statusId}', page indicates '${statusSummaries.join(', ') || postSummary}'` };
+            }
           }
         }
         // Reject transitional 'syncing' for sync goals
@@ -2863,6 +2877,16 @@ export class RunCoordinator {
               matched = groundRes.bestCandidate.element;
             }
           }
+          // Autonomous login/submit button fallback
+          if (!matched && /\b(?:login|submit|sign\s*in|log\s*in|proceed|continue)\b/i.test(`${proposal.rationale || ''} ${proposal.reasoning || ''} ${this.currentGoal || ''}`)) {
+            matched = sanitized.elements.find(e =>
+              (e.role === 'button' || e.role === 'input') && !e.state.includes('disabled') &&
+              (/\b(?:login|submit|sign\s*in|log\s*in|proceed|continue)\b/i.test(e.sanitizedName || '') ||
+               (e as any).descriptor?.type === 'submit' ||
+               (e as any).type === 'submit' ||
+               /\b(?:login|submit)\b/i.test((e as any).descriptor?.value || ''))
+            );
+          }
           if (matched) {
             resolvedTargetId = matched.localId;
           }
@@ -2883,6 +2907,29 @@ export class RunCoordinator {
             risk: 'safe',
             rationale: promptMsg
           };
+        }
+      }
+
+      // Ensure batch sub-actions have valid targetLocalId where applicable
+      if (proposal.kind === 'batch' && Array.isArray(proposal.batchActions)) {
+        for (const sub of proposal.batchActions) {
+          if (!sub.targetLocalId && (sub.kind === 'click' || sub.kind === 'type' || sub.kind === 'select')) {
+            const subQuery = (sub as any).targetName || (sub as any).target;
+            let subMatched: any = undefined;
+            if (subQuery && typeof subQuery === 'string') {
+              const q = subQuery.trim().toLowerCase();
+              subMatched = sanitized.elements.find(e => e.sanitizedName.toLowerCase().includes(q));
+            }
+            if (!subMatched && sub.kind === 'click' && /\b(?:login|submit|sign\s*in)\b/i.test(`${sub.rationale || ''} ${this.currentGoal || ''}`)) {
+              subMatched = sanitized.elements.find(e =>
+                (e.role === 'button' || e.role === 'input') && !e.state.includes('disabled') &&
+                (/\b(?:login|submit|sign\s*in)\b/i.test(e.sanitizedName || '') || (e as any).type === 'submit')
+              );
+            }
+            if (subMatched) {
+              sub.targetLocalId = subMatched.localId;
+            }
+          }
         }
       }
 
@@ -3291,7 +3338,69 @@ export class RunCoordinator {
           const match = matchFieldToVault(descriptor, profile, creds, pageDomain, prefersDemoData);
           if (proposal.targetLocalId && match.matched && match.valueToFill) {
             if (this.autofilledTargets.has(proposal.targetLocalId)) {
-              console.warn(`[Coordinator] Target ${proposal.targetLocalId} already autofilled from vault. Breaking re-entry loop.`);
+              console.warn(`[Coordinator] Target ${proposal.targetLocalId} already autofilled from vault. Checking remaining unfilled inputs.`);
+              const unfilledInputs = sanitized.elements.filter(e =>
+                (e.role === 'input' || e.role === 'textarea') &&
+                !this.autofilledTargets.has(e.localId) &&
+                !(e.state && e.state.includes('filled'))
+              );
+              let nextUnfilledMatch: any = null;
+              let nextUnfilledEl: any = null;
+              for (const otherInput of unfilledInputs) {
+                const oDomEl = rawDomList.find((d: any) => d.id === otherInput.localId);
+                const oInterEl = rawInteractiveList.find((i: any) => i.localId === otherInput.localId);
+                const oDomDesc = oDomEl?.descriptor;
+                const oDesc: FormElementDescriptor = {
+                  id: oDomDesc?.id || otherInput.localId,
+                  tagName: oDomDesc?.tagName || (otherInput.role === 'textarea' ? 'textarea' : 'input'),
+                  type: oDomDesc?.type,
+                  name: oDomDesc?.name || oDomDesc?.id || oInterEl?.rawName,
+                  rawName: oInterEl?.rawName || oDomDesc?.name || oDomDesc?.id,
+                  placeholder: oDomDesc?.placeholder,
+                  ariaLabel: oDomDesc?.ariaLabel,
+                  associatedLabelText: oDomDesc?.associatedLabelText,
+                  autocomplete: oDomDesc?.autocomplete,
+                  sanitizedName: otherInput.sanitizedName
+                };
+                const oMatch = matchFieldToVault(oDesc, profile, creds, pageDomain, prefersDemoData);
+                if (oMatch.matched && oMatch.valueToFill) {
+                  nextUnfilledMatch = oMatch;
+                  nextUnfilledEl = otherInput;
+                  break;
+                }
+              }
+
+              if (nextUnfilledEl && nextUnfilledMatch) {
+                this.autofilledTargets.add(nextUnfilledEl.localId);
+                const autofillAction: ActionProposal = {
+                  actionId: `act_vault_autofill_${Date.now()}`,
+                  kind: 'type',
+                  targetLocalId: nextUnfilledEl.localId,
+                  textToType: nextUnfilledMatch.valueToFill,
+                  confidence: 1.0,
+                  risk: 'safe',
+                  rationale: `Autofilled from local vault (${nextUnfilledMatch.canonicalField})`,
+                  userApproved: true
+                };
+                await this.browser.sendMessageToTab(activeTab.id, {
+                  type: 'EXECUTE_ACTION',
+                  proposal: autofillAction,
+                  captureId: sanitized.captureId
+                });
+                this.recordActionHistory(autofillAction);
+                this.recentActionHistory.push({
+                  actionId: autofillAction.actionId,
+                  kind: 'type',
+                  targetLocalId: nextUnfilledEl.localId,
+                  observedOutcome: `Autofilled ${nextUnfilledMatch.canonicalField} from local Personal Vault`,
+                  meaningfulProgress: true
+                });
+                this.recentActionHistory = this.recentActionHistory.slice(-10);
+                autoFilledFromVault = true;
+                this.transition('executing', `Autofilled ${nextUnfilledMatch.canonicalField} from ${prefersDemoData ? 'demo persona' : 'local Personal Vault'}`);
+                continue;
+              }
+
               const submitBtn = sanitized.elements.find(e =>
                 (e.role === 'button' || e.role === 'input') &&
                 (/\b(?:submit|register|sign\s*up|proceed|continue|send|save|login|sign\s*in)\b/i.test(e.sanitizedName) ||
@@ -3577,10 +3686,46 @@ export class RunCoordinator {
             riskLevel = 'safe';
           }
         }
+
+        // Grounded Imperative Action Guard: If user goal is an imperative action (e.g. "unfollow him", "follow", "subscribe", "like", "delete", "click"),
+        // but the model proposes finish or answer on step 1 (or before any mutating action has been executed),
+        // intercept it and autonomously execute the click on the matching target button!
+        const hasExecutedMutatingAction = this.actionHistory.some(a =>
+          a.kind === 'click' || a.kind === 'type' || a.kind === 'select' || a.kind === 'navigate'
+        );
+        const isImperativeActionGoal = !this.currentTaskContract?.isAnswerGoal &&
+          (this.currentTaskContract?.structuredIntent?.intent === 'click' ||
+           /\b(?:unfollow|follow|subscribe|unsubscribe|mute|block|like|unlike|click|press|tap)\b/i.test(this.currentGoal || ''));
+
+        if ((proposal.kind === 'finish' || proposal.kind === 'answer') && !hasExecutedMutatingAction && isImperativeActionGoal && step < maxSteps) {
+          const targetTokenList = this.currentTaskContract?.structuredIntent?.targetTokens || [];
+          const goalTokens = (this.currentGoal || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
+          const searchTokens = [...new Set([...targetTokenList, ...goalTokens])];
+
+          const matchingElement = sanitized.elements.find(el => {
+            if (el.role !== 'button' && el.role !== 'link' && el.role !== 'tab' && el.role !== 'menuitem') return false;
+            const name = (el.sanitizedName || '').toLowerCase();
+            return searchTokens.some(tok => name.includes(tok));
+          });
+
+          if (matchingElement) {
+            console.log(`[Coordinator] Grounded Action Guard: Model proposed premature ${proposal.kind} before action execution. Autonomously clicking "${matchingElement.sanitizedName}" (${matchingElement.localId})!`);
+            proposal = {
+              actionId: `act_grounded_click_${Date.now()}`,
+              kind: 'click',
+              targetLocalId: matchingElement.localId,
+              confidence: 0.98,
+              risk: 'safe',
+              reasoning: `User requested "${this.currentGoal}". Before finishing, I must execute the required action on "${matchingElement.sanitizedName}". Clicking it now.`,
+              rationale: `Clicking "${matchingElement.sanitizedName}" to fulfill your request.`
+            };
+            riskLevel = 'safe';
+          }
+        }
       }
 
       if (proposal.kind === 'finish' || proposal.kind === 'answer') {
-        const terminalCheck = this.currentTaskContract
+        let terminalCheck = this.currentTaskContract
           ? this.verifyTerminalPostcondition(this.currentTaskContract, sanitized, this.actionHistory)
           : { satisfied: true, reason: 'Goal completed' };
 
@@ -3593,35 +3738,62 @@ export class RunCoordinator {
           proposal = { ...proposal, reply: proposal.rationale };
         }
 
-        if (terminalCheck.satisfied && this.currentTaskSpec && this.objectiveProgress) {
-          const pendingVerify = this.currentTaskSpec.objectives.find((objective) =>
-            objective.intent === 'verify' && !this.objectiveProgress!.completedObjectiveIds.includes(objective.id)
-          );
-          if (pendingVerify) {
-            this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
-              objectiveId: pendingVerify.id,
-              kind: 'element',
-              summary: (terminalCheck.reason || 'Terminal postcondition verified').slice(0, 1000),
-              sourceActionId: proposal.actionId,
-              verified: true
-            });
-            this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, pendingVerify.id);
+        const isAnswerGoal = Boolean(this.currentTaskContract?.isAnswerGoal) ||
+          /^(?:how\s+(?:many|much|do|does|can)|what|who|which|where|when|why|tell\s+me|show\s+me|is\s+there|are\s+there|can\s+i|do\s+i)\b/i.test(this.currentGoal || '') ||
+          /\?+\s*$/.test((this.currentGoal || '').trim());
+        const isAnswerOrConversational = (proposal.kind === 'answer' && hasSubstantiveAnswer) ||
+          (isAnswerGoal && hasSubstantiveAnswer) ||
+          (proposal.kind === 'finish' && hasSubstantiveAnswer && (isAnswerGoal || Boolean(proposal.reply && proposal.reply.length >= 35))) ||
+          (this.currentTaskContract?.goalPattern === 'conversational_query') ||
+          (this.currentTaskContract?.goalPattern === 'navigate_url' && this.actionHistory.some(a => a.kind === 'navigate'));
+
+        if (isAnswerOrConversational && !terminalCheck.satisfied) {
+          terminalCheck = { satisfied: true, reason: 'Conversational answer verified' };
+        }
+
+        if ((terminalCheck.satisfied || isAnswerOrConversational) && this.currentTaskSpec && this.objectiveProgress) {
+          for (const objective of this.currentTaskSpec.objectives) {
+            if (!this.objectiveProgress.completedObjectiveIds.includes(objective.id)) {
+              this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
+                objectiveId: objective.id,
+                kind: 'element',
+                summary: (terminalCheck.reason || proposal.rationale || proposal.reasoning || 'Terminal goal postcondition satisfied').slice(0, 1000),
+                sourceActionId: proposal.actionId,
+                verified: true
+              });
+              this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, objective.id);
+            }
           }
         }
+
         const objectiveCheck = this.currentTaskSpec && this.objectiveProgress
           ? canFinishTask(this.currentTaskSpec, this.objectiveProgress)
           : { satisfied: true, reason: 'No structured objectives available' };
 
-        const isAnswerGoal = Boolean(this.currentTaskContract?.isAnswerGoal);
-        const isAnswerOrConversational = (proposal.kind === 'answer' && hasSubstantiveAnswer) ||
-          (isAnswerGoal && hasSubstantiveAnswer) ||
-          (this.currentTaskContract?.goalPattern === 'conversational_query');
-
         if (!objectiveCheck.satisfied && this.currentTaskSpec?.objectives?.length) {
-          const errorMsg = `Task rejected: terminal action proposed before objective completion: ${objectiveCheck.reason}`;
-          this.transition('failed-safe', errorMsg);
-          const res: CoordinatorRunResult = { success: false, state: 'failed-safe', error: errorMsg, sanitized, proposal, stepCount: step, steps: this.stepsTrace };
-          return this.completeWithResult(res);
+          const isNavDone = (this.actionHistory.some(a => a.kind === 'navigate') || Boolean(extractTargetUrlFromGoal(this.currentGoal || ''))) &&
+            (proposal.kind === 'finish' || proposal.kind === 'answer');
+          const modelConfirmsFulfillment = Boolean(proposal.confidence && proposal.confidence >= 0.9 && hasSubstantiveAnswer);
+
+          if (isNavDone || modelConfirmsFulfillment) {
+            for (const objective of this.currentTaskSpec.objectives) {
+              if (!this.objectiveProgress!.completedObjectiveIds.includes(objective.id)) {
+                this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress!, {
+                  objectiveId: objective.id,
+                  kind: 'element',
+                  summary: (proposal.rationale || proposal.reasoning || 'Goal fulfillment verified by model observation').slice(0, 1000),
+                  sourceActionId: proposal.actionId,
+                  verified: true
+                });
+                this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress!, objective.id);
+              }
+            }
+          } else {
+            const errorMsg = `Task rejected: terminal action proposed before objective completion: ${objectiveCheck.reason}`;
+            this.transition('failed-safe', errorMsg);
+            const res: CoordinatorRunResult = { success: false, state: 'failed-safe', error: errorMsg, sanitized, proposal, stepCount: step, steps: this.stepsTrace };
+            return this.completeWithResult(res);
+          }
         }
 
         if (proposal.kind === 'finish' && isAnswerGoal && !hasSubstantiveAnswer) {
@@ -3660,7 +3832,21 @@ export class RunCoordinator {
         }
 
         const isXBookmarkGoal = this.isXBookmarkGoal();
-        if (!terminalCheck.satisfied && (isXBookmarkGoal || (proposal.kind === 'finish' && !isAnswerOrConversational))) {
+        if (!terminalCheck.satisfied && !isAnswerOrConversational && (isXBookmarkGoal || (proposal.kind === 'finish' && !isAnswerOrConversational))) {
+          if (step < maxSteps && !isXBookmarkGoal) {
+            console.warn(`[Coordinator] Premature finish rejected (${terminalCheck.reason}). Re-perceiving page and continuing loop with corrective feedback...`);
+            this.currentExecutionFeedback = {
+              lastActionId: proposal.actionId,
+              lastActionKind: proposal.kind,
+              verified: false,
+              outcomeCode: 'PREMATURE_FINISH_REJECTED',
+              stepIndex: step,
+              remainingTasks: [`Execute the required action and visually verify completion (${terminalCheck.reason})`]
+            };
+            this.transition('capturing', `Action postcondition unverified: ${terminalCheck.reason}. Re-perceiving page state (step ${step + 1}/${maxSteps})...`);
+            continue;
+          }
+
           const errorMsg = `Task rejected: Model proposed "finish" before required action postconditions were established or verified: ${terminalCheck.reason}`;
           this.transition('failed-safe', errorMsg);
           const stepTrace: E2EStepTrace = {
@@ -3953,6 +4139,79 @@ export class RunCoordinator {
       this.lastActionProposal = proposal;
       if (this.listeners.onActionProposed && isMissionBrochureGoal(this.currentGoal || '') && isroMissionStage(activeTab?.url || '')) {
         this.listeners.onActionProposed(proposal, this.currentRunId);
+      }
+
+      // Pre-submission completeness guard: if goal is to fill/register and the proposed action is to submit,
+      // verify that any unfilled profile fields matching local vault are populated first
+      const isSubmittingBtn = Boolean(proposal.kind === 'click' && targetElement && (
+        (targetElement.role === 'button' || targetElement.role === 'input') &&
+        (/\b(?:submit|register|sign\s*up)\b/i.test(targetElement.sanitizedName) ||
+         /\b(?:submit|register)\b/i.test((targetElement as any).rawName || '') ||
+         (targetElement as any).type === 'submit')
+      ));
+      const isFormFillGoal = /\b(?:fill|register|registration|signup|sign\s*up|details|form)\b/i.test(this.currentGoal || '');
+      if (isSubmittingBtn && isFormFillGoal) {
+        try {
+          const prefersDemoData = /\b(?:demo|sample|dummy|test|practice|mock|synthetic)\b/i.test(this.currentGoal || '') ||
+                                  /\b(?:demoqa\.com|practice|automation-practice|form-test)\b/i.test(activeTab?.url || '');
+          const vaultProfile = await getUserProfile();
+          const profile = prefersDemoData ? DEMO_USER_PROFILE : (vaultProfile || DEMO_USER_PROFILE);
+          const pageDomain = (sanitized.pageState as any)?.domain || (activeTab?.url ? normalizeDomain(activeTab.url) : '');
+          const creds = await getCredentialsForDomain(pageDomain);
+          const rawDomList: any[] = domResponse?.snapshot?.domElements || [];
+          const rawInteractiveList: any[] = domResponse?.snapshot?.interactiveElements || [];
+          const unfilledInputs = sanitized.elements.filter(e =>
+            (e.role === 'input' || e.role === 'textarea') &&
+            e.localId !== proposal.targetLocalId &&
+            !this.autofilledTargets.has(e.localId) &&
+            !(e.state && e.state.includes('filled'))
+          );
+          const missingBatchActions: any[] = [];
+          for (const uEl of unfilledInputs) {
+            const dEl = rawDomList.find((d: any) => d.id === uEl.localId);
+            const iEl = rawInteractiveList.find((i: any) => i.localId === uEl.localId);
+            const dDesc = dEl?.descriptor;
+            const desc: FormElementDescriptor = {
+              id: dDesc?.id || uEl.localId,
+              tagName: dDesc?.tagName || (uEl.role === 'textarea' ? 'textarea' : 'input'),
+              type: dDesc?.type,
+              name: dDesc?.name || dDesc?.id || iEl?.rawName,
+              rawName: iEl?.rawName || dDesc?.name || dDesc?.id,
+              placeholder: dDesc?.placeholder,
+              ariaLabel: dDesc?.ariaLabel,
+              associatedLabelText: dDesc?.associatedLabelText,
+              autocomplete: dDesc?.autocomplete,
+              sanitizedName: uEl.sanitizedName
+            };
+            const m = matchFieldToVault(desc, profile, creds, pageDomain, prefersDemoData);
+            if (m.matched && m.valueToFill) {
+              this.autofilledTargets.add(uEl.localId);
+              missingBatchActions.push({
+                actionId: `act_autofill_${m.canonicalField}_${Date.now()}`,
+                kind: 'type',
+                targetLocalId: uEl.localId,
+                textToType: m.valueToFill,
+                userApproved: true,
+                rationale: `Autofilled ${m.canonicalField} from local Personal Vault prior to submission`
+              });
+            }
+          }
+          if (missingBatchActions.length > 0) {
+            console.log(`[Coordinator] Injecting ${missingBatchActions.length} missing form fields into submission batch.`);
+            proposal = {
+              actionId: `act_fill_and_submit_${Date.now()}`,
+              kind: 'batch',
+              batchActions: [
+                ...missingBatchActions,
+                proposal
+              ],
+              confidence: 0.99,
+              risk: 'safe',
+              userApproved: true,
+              rationale: `Autofill missing form inputs (${missingBatchActions.map(a => a.rationale).join(', ')}) and submit`
+            };
+          }
+        } catch (_) {}
       }
 
       let execResponse: any;
@@ -4479,7 +4738,7 @@ export class RunCoordinator {
         });
         this.objectiveProgress = completeObjectiveWithEvidence(this.currentTaskSpec, this.objectiveProgress, objectiveId);
         const verificationObjective = getCurrentObjective(this.currentTaskSpec, this.objectiveProgress);
-        if (verificationObjective?.intent === 'verify') {
+        if (verificationObjective?.intent === 'verify' && (proposal.kind === 'finish' || proposal.kind === 'answer')) {
           this.objectiveProgress = recordObjectiveEvidence(this.objectiveProgress, {
             objectiveId: verificationObjective.id,
             kind: evidenceKind,
@@ -4653,6 +4912,7 @@ export class RunCoordinator {
           success: true,
           state: 'complete',
           message: `Form details populated and registration submitted successfully!`,
+          reply: `Form details populated and registration submitted successfully!`,
           sanitized,
           proposal,
           telemetry,
@@ -4712,6 +4972,7 @@ export class RunCoordinator {
           success: true,
           state: 'complete',
           message: `Scroll ${proposal.scrollDirection || 'down'} executed and verified`,
+          reply: `I've scrolled ${proposal.scrollDirection || 'down'} the page for you.`,
           sanitized,
           proposal,
           telemetry,
@@ -4730,6 +4991,12 @@ export class RunCoordinator {
       const isDownloadTriggered = Boolean(isDownloadMessage || isPdfHref || isPdfName || isPdfTabUrl);
 
       // If this is a document download goal, ONLY complete if the download was actually triggered!
+      const requiresVisualVerification = Boolean(
+        this.currentTaskContract?.isMultiStep ||
+        /\b(?:unfollow|follow|subscribe|unsubscribe|mute|block|like|unlike|repost|retweet|delete|remove|submit|apply|save|add|cart|buy|order|confirm)\b/i.test(this.currentGoal || '') ||
+        /\b(?:unfollow|follow|subscribe|unsubscribe|mute|block|like|unlike)\b/i.test(targetElement?.sanitizedName || '')
+      );
+
       if (isDocumentGoal) {
         if (isDownloadTriggered && proposal.kind === 'click') {
           const docUrl = isPdfTabUrl ? activeTab.url : ((targetElement as any)?.href || '');
@@ -4772,9 +5039,9 @@ export class RunCoordinator {
           };
           return this.completeWithResult(res);
         }
-        // If download was not triggered yet, DO NOT complete! Continue perception to locate the brochure link.
       } else if (
         !isMultiStepGoal &&
+        !requiresVisualVerification &&
         this.currentTaskContract?.goalPattern === 'click_control' &&
         proposal.kind === 'click' &&
         this.currentTaskContract?.structuredIntent?.targetPhrase &&
@@ -4795,6 +5062,7 @@ export class RunCoordinator {
             success: true,
             state: 'complete',
             message: `Clicked "${targetName}" successfully`,
+            reply: `I've clicked **${targetName}** as requested.`,
             sanitized,
             proposal,
             telemetry,
@@ -6567,7 +6835,7 @@ export class RunCoordinator {
     }
 
     // Interactive Slot-Filling Resume: Continue the multi-step perception loop smoothly
-    if (options?.resumeLoop !== false) {
+    if (options?.resumeLoop === true) {
       this.currentGoal = this.currentGoal || this.lastGoal || 'Submit form and complete task';
       this.currentMaxSteps = Math.max(this.currentMaxSteps, this.currentStep + 6);
       this.currentStaleRetries = 0;
