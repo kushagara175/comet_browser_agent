@@ -189,6 +189,11 @@ async function handleSidepanelRequest(message: any, streamingOptions?: any): Pro
     return { success: true, keyData };
   }
 
+  if (message.type === 'TEST_PLATFORM_API_KEY') {
+    const result = await coordinator.testPlatformApiKey(message.apiKey, message.goal);
+    return { success: true, result };
+  }
+
   throw new Error(`Unsupported side-panel request: ${message?.type || 'unknown'}`);
 }
 
@@ -492,6 +497,15 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
         sendResponse({ success: true, keyData });
       }).catch((err) => {
         sendResponse({ success: false, error: err?.message || 'Failed to generate key' });
+      });
+      return true;
+    }
+
+    if (message.type === 'TEST_PLATFORM_API_KEY') {
+      coordinator.testPlatformApiKey(message.apiKey, message.goal).then((result) => {
+        sendResponse({ success: true, result });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err?.message || 'Failed to test API key' });
       });
       return true;
     }

@@ -22027,6 +22027,56 @@ var ReasoningHttpClient = class {
     }
     return null;
   }
+  async testPlatformApiKey(apiKey, goal = "Compare iPhone 16 prices across Amazon and Flipkart") {
+    const urls = [
+      `${this.serverBaseUrl}/api/v1/agent/dispatch`,
+      this.serverBaseUrl.includes("localhost") ? `${this.serverBaseUrl.replace("localhost", "127.0.0.1")}/api/v1/agent/dispatch` : null
+    ].filter(Boolean);
+    const safeReqBody = {
+      protocolVersion: "1.0",
+      goal: scrubOptionalText(goal),
+      enableSubAgents: true,
+      maxParallel: 2
+    };
+    assertNoCanaryLeak(safeReqBody, "Outgoing Platform Task Payload");
+    const tStart = Date.now();
+    for (const url of urls) {
+      try {
+        const response = await this.fetchWithTimeout(
+          url,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(safeReqBody)
+          },
+          "Platform API Key Test",
+          2e4
+        );
+        const latencyMs = Math.max(1, Date.now() - tStart);
+        let data = {};
+        try {
+          data = await response.json();
+        } catch {
+        }
+        return {
+          ok: response.ok,
+          status: response.status,
+          latencyMs,
+          data
+        };
+      } catch {
+      }
+    }
+    return {
+      ok: false,
+      status: 503,
+      latencyMs: Math.max(1, Date.now() - tStart),
+      data: { error: "Gateway unreachable at 127.0.0.1:4501. Start server with npm run dev:server." }
+    };
+  }
   /**
    * Performs an autonomous web search via Tavily through the reasoning server gateway.
    */
@@ -27084,6 +27134,9 @@ Direct link: ${docHref}` : ""}`;
   async generatePlatformApiKey(name2, tier) {
     return this.httpClient.generatePlatformApiKey(name2, tier);
   }
+  async testPlatformApiKey(apiKey, goal) {
+    return this.httpClient.testPlatformApiKey(apiKey, goal);
+  }
   /**
    * Drives visual browser interaction on a designated tab for a sub-agent worker.
    * Performs real DOM inspection, form typing / search submission, and live result extraction.
@@ -28720,6 +28773,10 @@ async function handleSidepanelRequest(message, streamingOptions) {
     const keyData = await coordinator.generatePlatformApiKey(message.name, message.tier);
     return { success: true, keyData };
   }
+  if (message.type === "TEST_PLATFORM_API_KEY") {
+    const result = await coordinator.testPlatformApiKey(message.apiKey, message.goal);
+    return { success: true, result };
+  }
   throw new Error(`Unsupported side-panel request: ${message?.type || "unknown"}`);
 }
 if (typeof chrome !== "undefined" && chrome.runtime?.onConnect) {
@@ -29004,6 +29061,14 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
         sendResponse({ success: true, keyData });
       }).catch((err) => {
         sendResponse({ success: false, error: err?.message || "Failed to generate key" });
+      });
+      return true;
+    }
+    if (message.type === "TEST_PLATFORM_API_KEY") {
+      coordinator.testPlatformApiKey(message.apiKey, message.goal).then((result) => {
+        sendResponse({ success: true, result });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err?.message || "Failed to test API key" });
       });
       return true;
     }

@@ -834,18 +834,33 @@
             </div>
           </div>
 
-          <!-- Card 4: Quick Integration Snippet -->
+          <!-- Card 4: Quick Integration Snippet & Live API Tester -->
           <div class="api-card">
             <div class="api-card-header">
               <div>
-                <h3 class="api-card-title">Integration Snippet (cURL)</h3>
-                <p class="api-card-desc">Dispatch tasks to the Comet parallel swarm:</p>
+                <h3 class="api-card-title">Integration Snippet &amp; Live Tester</h3>
+                <p class="api-card-desc">Dispatch tasks to the Comet parallel swarm or verify your key live:</p>
               </div>
             </div>
             <pre class="api-code-block"><code id="apiCurlSnippet">curl -X POST http://127.0.0.1:4501/api/v1/agent/dispatch \
   -H "Authorization: Bearer comet_live_sih2026_demo_key" \
   -H "Content-Type: application/json" \
   -d '{"protocolVersion":"1.0","goal":"Compare iPhone 16 prices across Amazon and Flipkart","enableSubAgents":true}'</code></pre>
+            <div class="api-actions-row" style="margin-top: 10px; display: flex; gap: 8px;">
+              <button type="button" id="apiTestValidKeyBtn" class="btn-api-generate" style="flex: 1; background: #ffffff; color: #09090b; border: 1px solid #ffffff; font-weight: 600;">
+                <span>Send Live Request (200 OK)</span>
+              </button>
+              <button type="button" id="apiTestInvalidKeyBtn" class="btn-api-generate" style="flex: 1; background: rgba(239, 68, 68, 0.12); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3);">
+                <span>Test Invalid Key (401)</span>
+              </button>
+            </div>
+            <div id="apiTestResponseWrap" class="hidden" style="margin-top: 10px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 11px;">
+                <span id="apiTestStatusBadge" style="padding: 2px 8px; border-radius: 4px; font-weight: 600;">200 OK</span>
+                <span id="apiTestLatencyLabel" style="color: #94a3b8; font-family: monospace;">12ms</span>
+              </div>
+              <pre id="apiTestResponseJson" class="api-code-block" style="max-height: 180px; overflow-y: auto; margin: 0; font-size: 10.5px;"></pre>
+            </div>
           </div>
         </div>
       </div>

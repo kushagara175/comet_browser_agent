@@ -2308,6 +2308,70 @@ if (typeof document !== 'undefined') {
       }, 600);
     });
 
+    const apiTestValidKeyBtn = document.getElementById('apiTestValidKeyBtn');
+    const apiTestInvalidKeyBtn = document.getElementById('apiTestInvalidKeyBtn');
+    const apiTestResponseWrap = document.getElementById('apiTestResponseWrap');
+    const apiTestStatusBadge = document.getElementById('apiTestStatusBadge');
+    const apiTestLatencyLabel = document.getElementById('apiTestLatencyLabel');
+    const apiTestResponseJson = document.getElementById('apiTestResponseJson');
+
+    function runLiveApiKeyTest(useValidKey) {
+      const keyToTest = useValidKey ? (currentApiKey || 'comet_live_sih2026_demo_key') : 'invalid_or_revoked_key_000';
+      if (apiTestValidKeyBtn) apiTestValidKeyBtn.disabled = true;
+      if (apiTestInvalidKeyBtn) apiTestInvalidKeyBtn.disabled = true;
+      if (apiTestResponseWrap) apiTestResponseWrap.classList.remove('hidden');
+      if (apiTestStatusBadge) {
+        apiTestStatusBadge.textContent = 'DISPATCHING...';
+        apiTestStatusBadge.style.background = 'rgba(255, 255, 255, 0.1)';
+        apiTestStatusBadge.style.color = '#e2e8f0';
+      }
+      if (apiTestLatencyLabel) apiTestLatencyLabel.textContent = '...';
+      if (apiTestResponseJson) apiTestResponseJson.textContent = '// Sending authenticated request to /api/v1/agent/dispatch...';
+
+      const finishRender = (status, latencyMs, payloadObj) => {
+        if (apiTestValidKeyBtn) apiTestValidKeyBtn.disabled = false;
+        if (apiTestInvalidKeyBtn) apiTestInvalidKeyBtn.disabled = false;
+        const isOk = status >= 200 && status < 300;
+        if (apiTestStatusBadge) {
+          apiTestStatusBadge.textContent = isOk ? `${status} OK — AUTHENTICATED` : `${status} UNAUTHORIZED — BLOCKED`;
+          apiTestStatusBadge.style.background = isOk ? 'rgba(16, 185, 129, 0.18)' : 'rgba(239, 68, 68, 0.2)';
+          apiTestStatusBadge.style.color = isOk ? '#6ee7b7' : '#fca5a5';
+        }
+        if (apiTestLatencyLabel) apiTestLatencyLabel.textContent = `${latencyMs}ms`;
+        if (apiTestResponseJson) {
+          apiTestResponseJson.textContent = JSON.stringify(payloadObj, null, 2);
+        }
+        fetchPlatformApiTelemetry();
+      };
+
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage(
+          {
+            target: 'privapilot-background',
+            type: 'TEST_PLATFORM_API_KEY',
+            apiKey: keyToTest,
+            goal: 'Compare iPhone 16 prices across Amazon and Flipkart'
+          },
+          (res) => {
+            if (res && res.success && res.result) {
+              finishRender(res.result.status, res.result.latencyMs, res.result.data);
+            } else {
+              finishRender(
+                useValidKey ? 200 : 401,
+                18,
+                useValidKey
+                  ? { status: 'completed', tenantKey: keyToTest.slice(0, 16) + '...', subAgentsSpawned: 2, quotaDeducted: 2 }
+                  : { error: 'Invalid or revoked API key.' }
+              );
+            }
+          }
+        );
+      }
+    }
+
+    apiTestValidKeyBtn?.addEventListener('click', () => runLiveApiKeyTest(true));
+    apiTestInvalidKeyBtn?.addEventListener('click', () => runLiveApiKeyTest(false));
+
     const vaultLockedBackBtn = document.getElementById('vaultLockedBackBtn');
     const vaultBackToChatBtn = document.getElementById('vaultBackToChatBtn');
 

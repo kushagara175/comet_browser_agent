@@ -315,7 +315,7 @@ npm run dev:portal
 1. Open Google Chrome and navigate to `chrome://extensions`.
 2. Toggle **Developer mode** on (top-right corner).
 3. Click the **Load unpacked** button (top-left).
-4. Select the directory: `SIH/apps/extension/`.
+4. Select the directory: `comet_browser_agent/apps/extension/`.
 5. Comet is now loaded with active Manifest V3 service workers!
 
 ### 7. Run Your First Task
@@ -324,6 +324,44 @@ npm run dev:portal
 3. Type or speak a goal into the Orbloom voice bar:
    > *"Fill out the application form using my vault profile and preview submission"*
 4. Watch the dual visualizer: The left HUD displays your live screen; the right HUD proves that all sensitive data is solid blacked-out before reaching the server!
+
+---
+
+## 🔑 Platform API Key & Multi-Agent Swarm Dispatch
+
+Comet includes a multi-tenant **Platform API Key & Telemetry Engine** (`apps/server/src/auth/api-key-manager.ts`) for external developers and enterprise integrations. You can manage keys, monitor live step quotas, and view real-time request telemetry inside the extension under **Menu (`⋮`) → Developer API & Keys**.
+
+### 1. Dispatch a Parallel Sub-Agent Swarm Task (Authenticated `200 OK`)
+```bash
+curl -X POST http://127.0.0.1:4501/api/v1/agent/dispatch \
+  -H "Authorization: Bearer comet_live_sih2026_demo_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "protocolVersion": "1.0",
+    "goal": "Compare iPhone 16 prices across Amazon and Flipkart",
+    "enableSubAgents": true
+  }'
+```
+
+### 2. Provision a Fresh Tenant API Key (`201 Created`)
+```bash
+curl -X POST http://127.0.0.1:4501/api/v1/platform/keys \
+  -H "Content-Type: application/json" \
+  -d '{"name": "ISRO Mission Control Integration", "tier": "enterprise"}'
+```
+
+### 3. Inspect Live Quota & Request Telemetry
+```bash
+curl http://127.0.0.1:4501/api/v1/platform/telemetry
+```
+
+### 4. Verify Auth Guardrail (`401 Unauthorized`)
+```bash
+curl -X POST http://127.0.0.1:4501/api/v1/agent/dispatch \
+  -H "Authorization: Bearer invalid_or_revoked_key" \
+  -H "Content-Type: application/json" \
+  -d '{"protocolVersion": "1.0", "goal": "Test unauthorized request"}'
+```
 
 ---
 
@@ -341,9 +379,15 @@ npm run test:llm
 Run repository integrity & type checks:
 ```bash
 npm run lint
+node scripts/check-repo-integrity.mjs
 ```
 
-Execute the full 456-test agent harness suite:
+Run the fast architecture & outbound privacy boundary gates (< 1s):
+```bash
+npm run test:fast
+```
+
+Execute the full agent harness test suite:
 ```bash
 npm test
 ```
@@ -353,45 +397,58 @@ npm test
 ## 📂 Repository Layout
 
 ```
-SIH/
+comet_browser_agent/
 ├── apps/
-│   ├── extension/            # Chrome MV3 Extension (Offscreen, Background, Content, HUD)
-│   │   ├── src/background/   # RunCoordinator, Telemetry, Multi-step loops
-│   │   ├── src/browser/      # High-performance BrowserAdapter & Tab Controller
-│   │   ├── src/sanitizer/    # UltraFace ONNX, DOM Scanner, Verhoeff/Luhn Maskers
-│   │   ├── src/sidepanel/    # Mission Control HUD, Orbloom 3D, VoiceBeam Audio Canvas
-│   │   └── src/vault/        # AES-GCM Encrypted Credentials & Demographic Profiles
-│   ├── server/               # Stateless Node.js Reasoning Gateway (node:http, Canary Scanner)
-│   └── demo-portal/          # Synthetic PII testing ground & multi-step demo workflows
+│   ├── extension/                 # Chrome MV3 Extension (Offscreen, Background, Content, HUD)
+│   │   ├── src/background/        # RunCoordinator, Telemetry, Multi-step loops
+│   │   ├── src/browser/           # High-performance BrowserAdapter & Tab Controller
+│   │   ├── src/content/           # DOM Extractor, Action Executor & Visual Overlays
+│   │   ├── src/sanitizer/         # UltraFace ONNX, DOM Scanner, Verhoeff/Luhn Maskers
+│   │   ├── src/sidepanel/         # Mission Control HUD, Orbloom 3D, VoiceBeam Audio Canvas
+│   │   └── src/vault/             # AES-GCM Encrypted Credentials & Semantic Matcher
+│   ├── server/                    # Stateless Node.js Reasoning Gateway (node:http, :4501)
+│   │   ├── src/auth/              # Multi-Tenant API Key Manager, Quotas & Rate Limiter
+│   │   ├── src/engines/           # Open-Weights VLM Engine & Sub-Agent Orchestrator
+│   │   ├── src/middleware/        # Cryptographic Canary Scanner & Privacy Guards
+│   │   └── src/schemas/           # Closed-Schema Action Proposal & Request Validators
+│   └── demo-portal/               # Synthetic PII testing ground & multi-step demo workflows
 │
-├── agent-harness/            # Comprehensive Agent Evaluation Harness & Testbeds (456 tests)
-│   ├── agent-core/           # Coordinator, thinking monologue, multi-step agent loop
-│   ├── browser-mgmt/         # Browser adapter, DOM interaction, HUD sidepanel, voice, Tavily
-│   ├── models-perception/    # UltraFace ONNX model, face blur, visual perception, focused crop
-│   ├── privacy-sanitizer/    # PII rules, Verhoeff/Luhn checksums, offscreen canvas sanitizer
-│   ├── server-gateway/       # Closed-schema gateway validator, canary scanner, VLM auth
-│   └── benchmarks-eval/      # Official ISRO evaluation metrics, action cache, repo integrity
+├── agent-harness/                 # Comprehensive Agent Evaluation Harness & Testbeds
+│   ├── architecture-gates/        # 46 fast gates for HITL, streaming, grounding & security
+│   ├── agent-core/                # Coordinator, thinking monologue, multi-step agent loop
+│   ├── browser-mgmt/              # Browser adapter, DOM interaction, HUD sidepanel, voice, vault
+│   ├── models-perception/         # UltraFace ONNX model, face blur, visual perception, crop
+│   ├── privacy-sanitizer/         # Outbound boundary regression, Verhoeff/Luhn, canvas masks
+│   ├── server-gateway/            # Closed-schema gateway validator, canary scanner, VLM auth
+│   └── benchmarks-eval/           # Official ISRO evaluation metrics, action cache, repo integrity
 │
 ├── packages/
-│   ├── protocol/             # Type-enforced privacy contracts & branded types
-│   ├── pii-rules/            # Deterministic regex, DOM & checksum PII detectors
-│   ├── benchmark/            # ISRO 5-pillar evaluation engine
-│   └── test-fixtures/        # Authoritative ground truth annotated pages
+│   ├── protocol/                  # Type-enforced privacy contracts & branded types
+│   ├── pii-rules/                 # Deterministic regex, DOM & checksum PII detectors
+│   ├── benchmark/                 # ISRO 5-pillar evaluation engine
+│   └── test-fixtures/             # Authoritative ground truth annotated pages
 │
-├── scripts/                  # Automated build, CDP benchmark runner, E2E matrix
-│   ├── build.js              # Production monorepo builder & bundler
-│   ├── run-benchmarks.js     # ISRO 5-pillar evaluation benchmark runner
-│   ├── run-browser-benchmark.mjs # Real Chrome CDP benchmark against ground truth
-│   └── lib/                  # CDP client, Chrome launcher, harness runner
+├── skills/                        # Modular Agent Capabilities & Domain Playbooks
+│   ├── browser-harness/           # Core browser lifecycle & observation skills
+│   ├── domain-skills/             # Specialized domain workflows (scholar, research, portals)
+│   └── interaction-skills/        # Granular UI interaction primitives (forms, tables, modals)
 │
-├── diagrams/                 # Publication-grade Mermaid diagrams & PPT slides
+├── scripts/                       # Automated build, CDP benchmark runner, E2E matrix
+│   ├── build.js                   # Production monorepo builder & bundler
+│   ├── check-repo-integrity.mjs   # Build freshness, link integrity & crypto hash verifier
+│   ├── run-benchmarks.js          # ISRO 5-pillar evaluation benchmark runner
+│   ├── run-browser-benchmark.mjs  # Real Chrome CDP benchmark against ground truth
+│   └── lib/                       # CDP client, Chrome launcher, harness runner
+│
+├── diagrams/                      # Publication-grade Mermaid diagrams & PPT slides
 │   ├── 01_4zone_system_architecture.md
 │   ├── 02_algorithmic_execution_dag.md
 │   ├── 03_on_device_redaction_pipeline.md
 │   ├── 06_CODE_ALIGNED_MASTER_ARCHITECTURE.md
 │   └── README.md
-├── index.html                # Interactive PPT Diagrams & Algorithmic DAGs Studio
-└── docs/                     # Authoritative specifications, audit reports & playbooks
+├── portfolio/                     # Showcase landing page & demo media assets
+├── index.html                     # Interactive PPT Diagrams & Algorithmic DAGs Studio
+└── docs/                          # Authoritative specifications, audit reports & playbooks
 ```
 
 ---

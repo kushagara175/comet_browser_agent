@@ -5120,6 +5120,10 @@ export class RunCoordinator {
     return this.httpClient.generatePlatformApiKey(name, tier);
   }
 
+  async testPlatformApiKey(apiKey: string, goal?: string): Promise<any> {
+    return this.httpClient.testPlatformApiKey(apiKey, goal);
+  }
+
   /**
    * Drives visual browser interaction on a designated tab for a sub-agent worker.
    * Performs real DOM inspection, form typing / search submission, and live result extraction.

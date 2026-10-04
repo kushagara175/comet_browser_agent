@@ -806,6 +806,60 @@ export class ReasoningHttpClient {
     return null;
   }
 
+  async testPlatformApiKey(
+    apiKey: string,
+    goal = 'Compare iPhone 16 prices across Amazon and Flipkart'
+  ): Promise<{ ok: boolean; status: number; latencyMs: number; data: any }> {
+    const urls = [
+      `${this.serverBaseUrl}/api/v1/agent/dispatch`,
+      this.serverBaseUrl.includes('localhost') ? `${this.serverBaseUrl.replace('localhost', '127.0.0.1')}/api/v1/agent/dispatch` : null
+    ].filter(Boolean) as string[];
+
+    const safeReqBody = {
+      protocolVersion: '1.0',
+      goal: scrubOptionalText(goal),
+      enableSubAgents: true,
+      maxParallel: 2
+    };
+    assertNoCanaryLeak(safeReqBody, 'Outgoing Platform Task Payload');
+
+    const tStart = Date.now();
+    for (const url of urls) {
+      try {
+        const response = await this.fetchWithTimeout(
+          url,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(safeReqBody)
+          },
+          'Platform API Key Test',
+          20000
+        );
+        const latencyMs = Math.max(1, Date.now() - tStart);
+        let data: any = {};
+        try {
+          data = await response.json();
+        } catch {}
+        return {
+          ok: response.ok,
+          status: response.status,
+          latencyMs,
+          data
+        };
+      } catch {}
+    }
+    return {
+      ok: false,
+      status: 503,
+      latencyMs: Math.max(1, Date.now() - tStart),
+      data: { error: 'Gateway unreachable at 127.0.0.1:4501. Start server with npm run dev:server.' }
+    };
+  }
+
   /**
    * Performs an autonomous web search via Tavily through the reasoning server gateway.
    */

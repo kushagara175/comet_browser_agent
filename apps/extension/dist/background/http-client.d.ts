@@ -101,6 +101,12 @@ export declare class ReasoningHttpClient {
         maxParallel?: number;
         contextUrl?: string;
     }, apiKey?: string): Promise<any>;
+    testPlatformApiKey(apiKey: string, goal?: string): Promise<{
+        ok: boolean;
+        status: number;
+        latencyMs: number;
+        data: any;
+    }>;
     /**
      * Performs an autonomous web search via Tavily through the reasoning server gateway.
      */

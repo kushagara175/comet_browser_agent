@@ -219,6 +219,7 @@ export declare class RunCoordinator {
     getModelStatus(): Promise<ModelStatus>;
     getPlatformApiTelemetry(): Promise<any>;
     generatePlatformApiKey(name?: string, tier?: string): Promise<any>;
+    testPlatformApiKey(apiKey: string, goal?: string): Promise<any>;
     /**
      * Drives visual browser interaction on a designated tab for a sub-agent worker.
      * Performs real DOM inspection, form typing / search submission, and live result extraction.
