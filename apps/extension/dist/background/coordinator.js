@@ -13,6 +13,7 @@
  */
 import { classifyActionRisk, validateActionProposal, resolveTaskContract, groundTargetCandidates, scoreCandidate, tokenizeSemanticText, extractSearchQueryFromGoal, extractTargetUrlFromGoal, stripNavigationPrefixFromGoal, isPureNavigationGoal, createInitialObjectiveProgress, getCurrentObjective, recordObjectiveEvidence, completeObjectiveWithEvidence, canFinishTask } from '@privapilot/protocol';
 import { WebExtensionAdapter } from '../browser/browser-adapter.js';
+import { CdpInputDispatcher } from '../browser/cdp-dispatcher.js';
 import { ReasoningHttpClient } from './http-client.js';
 import { sanitizeOutboundUrl, scrubOptionalText, scrubHistory } from '@privapilot/pii-rules';
 import { AuditLogger } from './audit-logger.js';
@@ -353,7 +354,7 @@ export function isSubAgentSwarmGoal(goal) {
     const entityMatches = trimmed.match(/(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi);
     const uniqueEntities = entityMatches ? Array.from(new Set(entityMatches.map((e) => e.toLowerCase().replace(/\s+/g, '')))) : [];
     const isExplicitSubagent = /\b(?:sub-?agents?|subagnts?|subwgrns?|subegmts?|swarm|parallel\s+agents?|multi-?agents?|call\s+(?:sub-?)?agents?|create\s+(?:sub-?)?agents?|deploy\s+(?:sub-?)?agents?|deploy\s+agents?)\b/i.test(trimmed);
-    const isCrossDomainQuery = isComparative && (uniqueEntities.length >= 2 || /\b(?:flight|flights|airline|airlines|hotel|hotels|price|prices|ticket|tickets|fare|fares)\b/i.test(trimmed));
+    const isCrossDomainQuery = isComparative && (uniqueEntities.length >= 2 || (hasMultiplePortals && /\b(?:flight|flights|airline|airlines|hotel|hotels|price|prices|ticket|tickets|fare|fares)\b/i.test(trimmed)));
     return isCrossDomainQuery || hasMultiplePortals || (uniqueEntities.length >= 2) || isExplicitSubagent;
 }
 /**
@@ -1253,6 +1254,52 @@ export class RunCoordinator {
                 const isFormOrRegistrationGoal = /\b(?:fill|register|registration|signup|sign\s*up|submit|details)\b/i.test(this.currentGoal || '');
                 // Step 1: Capture active tab DOM & screenshot (fresh captureId each cycle)
                 this.transition('capturing', `Step ${step}/${maxSteps}: Capturing active tab DOM & screenshot`);
+                // Intelligent child tab auto-adoption:
+                // If a child tab was opened (e.g. by target="_blank", window.open, or opening a Google Doc /document/d/),
+                // seamlessly adopt and switch to it instead of forcing focus back to the parent dashboard!
+                if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+                    try {
+                        const focusedTabs = await new Promise((resolve) => {
+                            chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+                                resolve(chrome.runtime.lastError ? [] : (tabs || []));
+                            });
+                        });
+                        if (focusedTabs.length > 0 && focusedTabs[0].id && focusedTabs[0].id !== this.currentTabId) {
+                            const newlyActiveTab = focusedTabs[0];
+                            const newlyActiveUrl = newlyActiveTab.url || '';
+                            const prevUrl = this.previousUrl || '';
+                            const isChildOrRelated = newlyActiveTab.openerTabId === this.currentTabId ||
+                                (newlyActiveUrl.includes('/document/d/') && prevUrl.includes('docs.google.com')) ||
+                                (Boolean(newlyActiveUrl) && !isRestrictedBrowserUrl(newlyActiveUrl).isRestricted && (!prevUrl ||
+                                    (newlyActiveUrl.startsWith('http') && prevUrl.startsWith('http') && new URL(newlyActiveUrl).origin === new URL(prevUrl).origin) ||
+                                    this.lastExecutedProposal?.kind === 'click'));
+                            if (isChildOrRelated) {
+                                console.log(`[Comet:Coordinator] 🔀 Auto-adopting newly focused child tab: ${newlyActiveTab.id} (${newlyActiveUrl})`);
+                                this.currentTabId = newlyActiveTab.id;
+                            }
+                        }
+                        // Also check if a child tab was spawned in the background matching openerTabId or document edit route
+                        const allTabs = await new Promise((resolve) => {
+                            chrome.tabs.query({ lastFocusedWindow: true }, (tabs) => {
+                                resolve(chrome.runtime.lastError ? [] : (tabs || []));
+                            });
+                        });
+                        const spawnedChild = allTabs.find((t) => t.id !== this.currentTabId && (t.openerTabId === this.currentTabId ||
+                            (t.url && t.url.includes('/document/d/') && (this.previousUrl || '').includes('docs.google.com'))));
+                        if (spawnedChild && spawnedChild.id) {
+                            const prevWasOpenAction = this.lastExecutedProposal && (this.lastExecutedProposal.kind === 'click' && ((this.lastExecutedProposal.targetName || '').toLowerCase().includes('open in new tab') ||
+                                (this.lastExecutedProposal.targetName || '').toLowerCase().includes('document') ||
+                                (this.lastExecutedProposal.targetName || '').toLowerCase().includes('letter') ||
+                                spawnedChild.active));
+                            if (prevWasOpenAction || spawnedChild.active) {
+                                console.log(`[Comet:Coordinator] 🔀 Switching to spawned child tab ${spawnedChild.id} (${spawnedChild.url})`);
+                                this.currentTabId = spawnedChild.id;
+                                await new Promise((r) => chrome.tabs.update(spawnedChild.id, { active: true }, () => r()));
+                            }
+                        }
+                    }
+                    catch (_) { }
+                }
                 if (this.currentTabId && typeof chrome !== 'undefined' && chrome.tabs?.update) {
                     try {
                         await new Promise((resolve) => {
@@ -1269,6 +1316,9 @@ export class RunCoordinator {
                     catch (_) { }
                 }
                 let activeTab = await this.browser.getActiveTab(this.currentTabId);
+                if (activeTab?.url) {
+                    this.previousUrl = activeTab.url;
+                }
                 // Guard: Block restricted browser surfaces (chrome://, chrome-extension://, file://, devtools://)
                 const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
                 if (restrictedCheck.isRestricted) {
@@ -4265,6 +4315,47 @@ export class RunCoordinator {
                         }
                     }
                 }
+                // Phase 3 Hardware-Level CDP Fallback (Chrome DevTools Protocol)
+                if (execResponse && !execResponse.success && (proposal.kind === 'click' || proposal.kind === 'type')) {
+                    if (CdpInputDispatcher.isAvailable()) {
+                        if (proposal.kind === 'click') {
+                            let clickX = null;
+                            let clickY = null;
+                            if (proposal.coordinates && Array.isArray(proposal.coordinates) && proposal.coordinates.length === 2) {
+                                clickX = proposal.coordinates[0];
+                                clickY = proposal.coordinates[1];
+                            }
+                            else if (targetElement?.boundingBox && targetElement.boundingBox.width > 0) {
+                                clickX = targetElement.boundingBox.x + targetElement.boundingBox.width / 2;
+                                clickY = targetElement.boundingBox.y + targetElement.boundingBox.height / 2;
+                            }
+                            else if (Array.isArray(targetElement?.coarseBounds) && targetElement.coarseBounds.length === 4) {
+                                clickX = (targetElement.coarseBounds[0] + targetElement.coarseBounds[2] / 2) * 1280;
+                                clickY = (targetElement.coarseBounds[1] + targetElement.coarseBounds[3] / 2) * 720;
+                            }
+                            if (clickX !== null && clickY !== null) {
+                                const cdpOk = await CdpInputDispatcher.dispatchClick(activeTab.id, clickX, clickY);
+                                if (cdpOk) {
+                                    execResponse = {
+                                        success: true,
+                                        semanticOutcomeVerified: true,
+                                        message: `Synthetic click blocked; dispatched hardware click via chrome.debugger (CDP)`
+                                    };
+                                }
+                            }
+                        }
+                        else if (proposal.kind === 'type' && proposal.textToType) {
+                            const cdpOk = await CdpInputDispatcher.dispatchType(activeTab.id, proposal.textToType);
+                            if (cdpOk) {
+                                execResponse = {
+                                    success: true,
+                                    semanticOutcomeVerified: true,
+                                    message: `Synthetic typing blocked; dispatched hardware typing via chrome.debugger (CDP)`
+                                };
+                            }
+                        }
+                    }
+                }
                 // If the action submitted a form (pressEnter) or executed an interaction that may trigger navigation/redirection,
                 // allow the browser event loop to initiate navigation, then wait for the tab to reach 'complete' state.
                 if (proposal.pressEnter || (proposal.kind === 'type' && proposal.pressEnter) || proposal.kind === 'click') {
@@ -4366,7 +4457,7 @@ export class RunCoordinator {
                     this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
                 }
                 const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) ||
-                    /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?|register|registration|apply|application|complete|fill|signup|sign\s+up|form|workflow|survey|questionnaire)\b/i.test(this.currentGoal || '');
+                    /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?|register|registration|apply|application|complete|fill|signup|sign\s+up|form|workflow|survey|questionnaire|navigate|explore|browse|search|look|open|checkout|login|sign\s*in|view|read|test)\b/i.test(this.currentGoal || '');
                 // Handle Stale Target Recovery
                 if (execResponse && execResponse.staleTarget) {
                     if (proposal.risk !== 'safe') {
@@ -4579,6 +4670,29 @@ export class RunCoordinator {
                         };
                         return this.completeWithResult(res);
                     }
+                }
+                else if (proposal.kind === 'extract' && execResponse?.success) {
+                    const tFin = Date.now();
+                    const telemetry = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
+                    if (this.listeners.onTelemetryUpdated) {
+                        this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
+                    }
+                    const count = execResponse.extractedCount || (Array.isArray(execResponse.extractedItems) ? execResponse.extractedItems.length : 0);
+                    const dataMd = execResponse.extractedData || '';
+                    const reply = `✅ **Extracted ${count} items successfully**\n\n${dataMd}`;
+                    this.transition('complete', `Extracted ${count} items successfully`);
+                    const res = {
+                        success: true,
+                        state: 'complete',
+                        message: `Extracted ${count} items successfully`,
+                        reply,
+                        sanitized,
+                        proposal,
+                        telemetry,
+                        stepCount: step,
+                        steps: this.stepsTrace
+                    };
+                    return this.completeWithResult(res);
                 }
                 else if (!isMultiStepGoal &&
                     !requiresVisualVerification &&

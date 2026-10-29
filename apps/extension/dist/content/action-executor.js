@@ -4,6 +4,7 @@
  * Resolves localId back to the real DOM element and dispatches framework-compatible synthetic events.
  */
 import { analyzeDomElementSensitivity } from '@privapilot/pii-rules';
+import { TableExtractor } from './table-extractor.js';
 function getAssociatedLabelText(el) {
     const doc = el.ownerDocument;
     if (!doc)
@@ -1109,6 +1110,25 @@ export class ActionExecutor {
                     timestamp,
                     semanticOutcomeVerified: true,
                     message: `Requested user input on element '${proposal.targetLocalId || 'field'}'`
+                };
+            }
+            if (proposal.kind === 'extract') {
+                const rootDoc = (targetEl ? targetEl : (typeof document !== 'undefined' ? document : null));
+                const extractResult = TableExtractor.extract(rootDoc, {
+                    targetElement: targetEl,
+                    containerSelector: proposal.containerSelector,
+                    schema: proposal.extractSchema,
+                    limit: proposal.extractLimit || 50
+                });
+                return {
+                    actionId: proposal.actionId,
+                    success: extractResult.success,
+                    timestamp,
+                    semanticOutcomeVerified: extractResult.success,
+                    message: extractResult.summary,
+                    extractedCount: extractResult.count,
+                    extractedItems: extractResult.items,
+                    extractedData: extractResult.markdown
                 };
             }
             return {

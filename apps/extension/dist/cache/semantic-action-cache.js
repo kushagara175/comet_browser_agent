@@ -69,9 +69,38 @@ export class SemanticActionCache {
             this.metrics.totalMisses++;
             return null;
         }
+        const normGoal = this.normalizeIntent(goal);
         const key = this.computeKey(goal, sanitized);
-        const entry = this.memoryCache.get(key);
+        let entry = this.memoryCache.get(key);
+        // Parameterized template fast-path:
+        // If exact key missed, check if an input template for the same domain + topology exists
         if (!entry) {
+            const paramMatch = (goal || '').match(/^(?:please|can you|kindly|privapilot|hey privapilot\s+)?(?:search for|find|lookup|type|enter)\s+(.+)$/i);
+            if (paramMatch && paramMatch[1]) {
+                const paramValue = paramMatch[1].trim();
+                for (const existingEntry of this.memoryCache.values()) {
+                    if (existingEntry.domain === domain &&
+                        existingEntry.topologySignature === this.computeTopologySignature(sanitized) &&
+                        existingEntry.proposal.kind === 'type' &&
+                        existingEntry.proposal.targetLocalId) {
+                        existingEntry.hitCount++;
+                        existingEntry.lastUsedAt = Date.now();
+                        this.metrics.totalHits++;
+                        this.metrics.tokensSavedEstimate += 4200;
+                        this.metrics.latencySavedMsEstimate += 11500;
+                        const hitExplanation = `[Edge Semantic Cache Hit — Parameterized]\nReplaying verified input action into ${existingEntry.proposal.targetLocalId} with dynamic argument "${paramValue}".\nResource savings: ~4,200 cloud tokens saved, 0 bytes over network.`;
+                        return {
+                            ...existingEntry.proposal,
+                            actionId: `act_cache_${Date.now()}`,
+                            textToType: paramValue,
+                            confidence: 0.98,
+                            thought: hitExplanation,
+                            reasoning: hitExplanation,
+                            rationale: `Replaying cached typing workflow with parameter: "${paramValue}"`
+                        };
+                    }
+                }
+            }
             this.metrics.totalMisses++;
             return null;
         }

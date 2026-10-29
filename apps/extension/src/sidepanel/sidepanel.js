@@ -5193,9 +5193,24 @@ if (typeof document !== 'undefined') {
         const port = chrome.runtime.connect({ name: 'privapilot-sidepanel' });
         activeRunPort = port;
         let settled = false;
+
+        // Keep Chrome MV3 service worker active throughout long-running reasoning loops
+        const heartbeatInterval = setInterval(() => {
+          if (settled) {
+            clearInterval(heartbeatInterval);
+            return;
+          }
+          try {
+            port.postMessage({ type: 'HEARTBEAT', timestamp: Date.now() });
+          } catch (_) {
+            clearInterval(heartbeatInterval);
+          }
+        }, 15000);
+
         const finish = (res, error) => {
           if (settled) return;
           settled = true;
+          clearInterval(heartbeatInterval);
           port.disconnect();
           if (activeRunPort === port) activeRunPort = null;
           if (runId !== currentRunId) return;

@@ -477,14 +477,16 @@ export class ElementExtractor {
         }
       });
 
-      // 2. Extract Visible Text Nodes & Compute Range Bounding Boxes
+      // 2. Extract Visible Text Nodes & Compute Range Bounding Boxes (Optimized Fast-Path)
       const textWalker = (currentDoc as any).createTreeWalker ? (currentDoc as any).createTreeWalker((currentDoc as any).body || currentDoc, SHOW_TEXT_FILTER) : null;
       if (textWalker) {
         let textNode: Node | null = textWalker.nextNode();
         let textIdx = 0;
         const visitedContainers = new Set<Element>();
+        const parentCache = new WeakMap<Element, { isIgnored?: boolean; isControl?: boolean; isAccount?: boolean; isDelivery?: boolean }>();
+        const MAX_TEXT_NODES_PER_DOC = 150;
 
-        while (textNode) {
+        while (textNode && textNodes.length < MAX_TEXT_NODES_PER_DOC) {
           const content = textNode.nodeValue || '';
           const trimmed = content.trim();
           const parent = textNode.parentElement;
@@ -493,25 +495,49 @@ export class ElementExtractor {
             continue;
           }
 
-          const isIgnored = Boolean(
-            typeof parent.closest === 'function' &&
-            parent.closest('script, style, noscript, .privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]')
-          );
+          let cached = parentCache.get(parent);
+          if (!cached) {
+            cached = {
+              isIgnored: Boolean(
+                typeof parent.closest === 'function' &&
+                parent.closest('script, style, noscript, .privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]')
+              ),
+              isControl: Boolean(
+                typeof parent.closest === 'function' &&
+                parent.closest('button, [role="button"], input, textarea, select')
+              )
+            };
+            parentCache.set(parent, cached);
+          }
 
-          if (trimmed.length > 1 && !isIgnored && isVisibleElement(parent)) {
+          if (cached.isIgnored) {
+            textNode = textWalker.nextNode();
+            continue;
+          }
+
+          // Fast-path: Skip static button labels and plain controls with no sensitive digits or symbols
+          const hasPotentialPII = /[0-9@+]/.test(content);
+          if (cached.isControl && !hasPotentialPII) {
+            textNode = textWalker.nextNode();
+            continue;
+          }
+
+          if (trimmed.length > 1 && isVisibleElement(parent)) {
             const parentRect = parent.getBoundingClientRect();
             if (parentRect.width > 0.5 && parentRect.height > 0.5 && parentRect.right + offset.x > 0 && parentRect.bottom + offset.y > 0 && parentRect.left + offset.x < viewportWidth && parentRect.top + offset.y < viewportHeight) {
               textIdx++;
               const nodeId = `txt_${depth}_${textIdx}`;
 
-              // Check if parent element represents user account identity (e.g. User-Name header on X, user-menu button on Claude/ChatGPT, account header on Flipkart)
-              const isAccountIdentity = !isPublicBroadcast && !isPublicPostContent(parent) && Boolean(
-                typeof parent.closest === 'function' &&
-                (isPrivateAccountShell(parent) ||
-                 parent.closest(
-                   '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [title*="profile" i], [title*="account" i], [class*="account-info" i], [class*="profile-info" i], [data-testid*="account" i], [data-testid*="profile" i]'
-                 ))
-              );
+              if (cached.isAccount === undefined) {
+                cached.isAccount = !isPublicBroadcast && !isPublicPostContent(parent) && Boolean(
+                  typeof parent.closest === 'function' &&
+                  (isPrivateAccountShell(parent) ||
+                   parent.closest(
+                     '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [title*="profile" i], [title*="account" i], [class*="account-info" i], [class*="profile-info" i], [data-testid*="account" i], [data-testid*="profile" i]'
+                   ))
+                );
+              }
+              const isAccountIdentity = cached.isAccount;
 
               // Check if parent element is within a private messaging surface (Instagram Direct, X Messages, LinkedIn Messaging, Slack, WhatsApp)
               const isMsgSurface = !isPublicPostContent(parent) && (
@@ -519,17 +545,21 @@ export class ElementExtractor {
                 isPrivateMessagingSurface(parent, currentDocUrl)
               );
 
-              // Check if parent element represents delivery address / shipping location widget on checkout forms
-              const isDeliveryAddressContainer = !isPublicBroadcast && Boolean(
-                typeof parent.closest === 'function' &&
-                parent.closest(
-                  '[class*="deliver" i], [id*="deliver" i], [class*="shipping-address" i], [id*="shipping-address" i], [class*="delivery-address" i], [id*="delivery-address" i], [class*="pincode" i], [id*="pincode" i]'
-                )
-              );
+              if (cached.isDelivery === undefined) {
+                cached.isDelivery = !isPublicBroadcast && hasPotentialPII && Boolean(
+                  typeof parent.closest === 'function' &&
+                  parent.closest(
+                    '[class*="deliver" i], [id*="deliver" i], [class*="shipping-address" i], [id*="shipping-address" i], [class*="delivery-address" i], [id*="delivery-address" i], [class*="pincode" i], [id*="pincode" i]'
+                  )
+                );
+              }
+              const isDeliveryAddressContainer = cached.isDelivery;
 
               // Scan text node for PII matches
               const isPublicAuthor = isPublicPostContent(parent);
-              let matches = scanTextForPII(content, { publicAuthorHandles: isPublicAuthor });
+              let matches = hasPotentialPII || isAccountIdentity || isMsgSurface
+                ? scanTextForPII(content, { publicAuthorHandles: isPublicAuthor })
+                : [];
               if (matches.length === 0 && isDeliveryAddressContainer && trimmed.length > 2 && trimmed.length < 120 &&
                   !/^(?:address|location|pin\s*code|postal\s*code)$/i.test(trimmed) &&
                   (/\b(?:home|work|office|deliver|katra|nagar|colony|road|street|bhavan|bhawan|marg|lane|avenue|floor|block|sector|plot|post|pin|[1-9][0-9]{2}\s?[0-9]{3})\b/i.test(trimmed) ||

@@ -78,6 +78,23 @@ export declare class MaskRenderer {
      * Places clear, high-contrast badges (e.g. "1", "2") corresponding to "el_1", "el_2"
      * on the sanitized screenshot canvas.
      */
+    /**
+     * Resolves visual styling tokens for Set-of-Marks labels based on interactive role.
+     * Matches the modern engineering design system: Discord Blurple (#5865F2) for primary actions,
+     * Emerald Green (#23A55A) for text inputs, Violet (#8B5CF6) for selects, Cyan (#00A8FC) for links.
+     */
+    private static getSoMTheme;
+    /**
+     * Set-of-Marks (SOM) visual labeling overlay renderer.
+     * Places clear, high-contrast badges (e.g. "1", "2") corresponding to "el_1", "el_2"
+     * on the sanitized screenshot canvas.
+     *
+     * Features:
+     * 1. Discord/Cyber-Engineering design palette with semantic role color coding.
+     * 2. Collision-aware badge staggering so clustered badges never occlude each other.
+     * 3. Subtle translucent bounding-box wireframes showing exact interactive perimeters.
+     * 4. Clamped strictly inside canvas boundaries to prevent clipping.
+     */
     static renderSetOfMarks(imageCanvas: HTMLCanvasElement | OffscreenCanvas, elements: ReadonlyArray<any>, viewportWidth?: number, viewportHeight?: number): void;
     /**
      * Returns a clean, human-readable semantic surrogate label for a sensitive category.

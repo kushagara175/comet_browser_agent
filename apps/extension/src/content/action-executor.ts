@@ -6,6 +6,7 @@
 
 import { ActionProposal, ActionExecutionResult } from '@privapilot/protocol';
 import { analyzeDomElementSensitivity, DomElementDescriptor } from '@privapilot/pii-rules';
+import { TableExtractor } from './table-extractor.js';
 
 function getAssociatedLabelText(el: HTMLElement): string {
   const doc = el.ownerDocument;
@@ -1162,6 +1163,27 @@ export class ActionExecutor {
           timestamp,
           semanticOutcomeVerified: true,
           message: `Requested user input on element '${proposal.targetLocalId || 'field'}'`
+        };
+      }
+
+      if (proposal.kind === 'extract') {
+        const rootDoc = (targetEl ? targetEl : (typeof document !== 'undefined' ? document : null)) as any;
+        const extractResult = TableExtractor.extract(rootDoc, {
+          targetElement: targetEl,
+          containerSelector: proposal.containerSelector,
+          schema: proposal.extractSchema as any,
+          limit: proposal.extractLimit || 50
+        });
+
+        return {
+          actionId: proposal.actionId,
+          success: extractResult.success,
+          timestamp,
+          semanticOutcomeVerified: extractResult.success,
+          message: extractResult.summary,
+          extractedCount: extractResult.count,
+          extractedItems: extractResult.items as any,
+          extractedData: extractResult.markdown
         };
       }
 

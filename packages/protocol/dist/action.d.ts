@@ -199,6 +199,13 @@ export interface ActionProposal {
     readonly elementText?: string;
     readonly searchQuery?: string;
     readonly searchResults?: ReadonlyArray<any>;
+    readonly extractSchema?: {
+        readonly itemType?: string;
+        readonly fields?: Record<string, string>;
+    };
+    readonly extractLimit?: number;
+    readonly containerSelector?: string;
+    readonly extractedItems?: ReadonlyArray<Record<string, any>>;
 }
 export interface ActionExecutionResult {
     readonly actionId: string;
@@ -208,6 +215,9 @@ export interface ActionExecutionResult {
     readonly semanticOutcomeVerified: boolean;
     readonly reasonCode?: string;
     readonly staleTarget?: boolean;
+    readonly extractedCount?: number;
+    readonly extractedItems?: ReadonlyArray<Record<string, any>>;
+    readonly extractedData?: string;
 }
 export interface ActionValidationResult {
     readonly isValid: boolean;

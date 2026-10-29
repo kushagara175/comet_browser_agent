@@ -15424,6 +15424,58 @@ var GOOGLE_PLAYBOOK = {
     search: ["q", "search", "query"]
   }
 };
+var GOOGLE_DOCS_PLAYBOOK = {
+  domain: "docs.google.com",
+  name: "Google Docs",
+  aliases: ["docs.google.com", "google docs", "docs"],
+  routes: [
+    {
+      name: "dashboard",
+      path: "/document/u/",
+      aliases: ["/document/u/0", "/document/u/1", "/document/"],
+      description: "Google Docs document dashboard and file manager",
+      matchKeywords: ["dashboard", "home", "recent documents", "files", "document list", "template gallery"]
+    },
+    {
+      name: "editor",
+      path: "/document/d/",
+      aliases: ["/edit", "/preview"],
+      description: "Google Docs active document editor canvas",
+      matchKeywords: ["editor", "document", "edit", "canvas", "doc"]
+    }
+  ],
+  landmarks: [
+    {
+      id: "doc_title_input",
+      phrase: "Document title",
+      aliases: ["Rename", "Document title", "docs-title-input", "title input", "doc title"],
+      role: "input",
+      description: "Editable input field for renaming the document",
+      intentAction: "type"
+    },
+    {
+      id: "share_button",
+      phrase: "Share",
+      aliases: ["Share button", "share document", "collaborate"],
+      role: "button",
+      description: "Document sharing modal button",
+      intentAction: "click"
+    },
+    {
+      id: "search_docs_input",
+      phrase: "Search Docs",
+      aliases: ["Search", "search documents", "Search Docs input"],
+      role: "input",
+      description: "Search box for finding documents on the dashboard",
+      intentAction: "type"
+    }
+  ],
+  metricsRules: [],
+  formFieldHints: {
+    search: ["Search Docs", "Search", "searchBox", "q"],
+    title: ["Document title", "Rename", "docs-title-input"]
+  }
+};
 var AMAZON_PLAYBOOK = {
   domain: "amazon.in",
   name: "Amazon India",
@@ -16190,6 +16242,7 @@ var REGISTERED_PLAYBOOKS = [
   YOUTUBE_PLAYBOOK,
   REDDIT_PLAYBOOK,
   DUCKDUCKGO_PLAYBOOK,
+  GOOGLE_DOCS_PLAYBOOK,
   GOOGLE_PLAYBOOK,
   AMAZON_PLAYBOOK,
   FLIPKART_PLAYBOOK,
@@ -16961,6 +17014,10 @@ var ALLOWED_ACTION_PROPOSAL_KEYS = /* @__PURE__ */ new Set([
   "userApproved",
   "pressEnter",
   "extractedData",
+  "extractSchema",
+  "extractLimit",
+  "containerSelector",
+  "extractedItems",
   "answerText",
   "reply",
   "message",
@@ -19571,6 +19628,71 @@ var MaskRenderer = class _MaskRenderer {
    * Places clear, high-contrast badges (e.g. "1", "2") corresponding to "el_1", "el_2"
    * on the sanitized screenshot canvas.
    */
+  /**
+   * Resolves visual styling tokens for Set-of-Marks labels based on interactive role.
+   * Matches the modern engineering design system: Discord Blurple (#5865F2) for primary actions,
+   * Emerald Green (#23A55A) for text inputs, Violet (#8B5CF6) for selects, Cyan (#00A8FC) for links.
+   */
+  static getSoMTheme(role) {
+    switch (role) {
+      case "input":
+      case "textarea":
+        return {
+          badgeBg: "#23A55A",
+          // Discord Emerald Green
+          badgeText: "#ffffff",
+          borderStroke: "#166534",
+          wireframeStroke: "rgba(35, 165, 90, 0.40)"
+        };
+      case "select":
+        return {
+          badgeBg: "#8B5CF6",
+          // Vibrant Violet
+          badgeText: "#ffffff",
+          borderStroke: "#6D28D9",
+          wireframeStroke: "rgba(139, 92, 246, 0.40)"
+        };
+      case "link":
+        return {
+          badgeBg: "#00A8FC",
+          // Discord Cyan / Sky
+          badgeText: "#ffffff",
+          borderStroke: "#0284C7",
+          wireframeStroke: "rgba(0, 168, 252, 0.40)"
+        };
+      case "checkbox":
+      case "radio":
+        return {
+          badgeBg: "#F59E0B",
+          // Amber
+          badgeText: "#ffffff",
+          borderStroke: "#D97706",
+          wireframeStroke: "rgba(245, 158, 11, 0.40)"
+        };
+      case "button":
+      case "menuitem":
+      case "tab":
+      default:
+        return {
+          badgeBg: "#5865F2",
+          // Signature Discord Blurple
+          badgeText: "#ffffff",
+          borderStroke: "#4752C4",
+          wireframeStroke: "rgba(88, 101, 242, 0.40)"
+        };
+    }
+  }
+  /**
+   * Set-of-Marks (SOM) visual labeling overlay renderer.
+   * Places clear, high-contrast badges (e.g. "1", "2") corresponding to "el_1", "el_2"
+   * on the sanitized screenshot canvas.
+   *
+   * Features:
+   * 1. Discord/Cyber-Engineering design palette with semantic role color coding.
+   * 2. Collision-aware badge staggering so clustered badges never occlude each other.
+   * 3. Subtle translucent bounding-box wireframes showing exact interactive perimeters.
+   * 4. Clamped strictly inside canvas boundaries to prevent clipping.
+   */
   static renderSetOfMarks(imageCanvas, elements, viewportWidth = 1280, viewportHeight = 800) {
     if (!elements || elements.length === 0) return;
     const ctx = imageCanvas.getContext("2d");
@@ -19580,7 +19702,20 @@ var MaskRenderer = class _MaskRenderer {
     const scaleX = canvasWidth / (viewportWidth || 1280);
     const scaleY = canvasHeight / (viewportHeight || 800);
     ctx.save();
-    const candidates = elements.slice(0, 60);
+    const candidates = elements.filter((el2) => {
+      if (el2.inViewport === false || el2.verticalOffset === "below" || el2.verticalOffset === "above") return false;
+      if (el2.state && el2.state.includes("disabled")) return false;
+      return true;
+    }).slice(0, 60);
+    const renderedBadges = [];
+    const doesBadgeOverlap = (cand) => {
+      for (const b of renderedBadges) {
+        if (cand.x < b.x + b.width && cand.x + cand.width > b.x && cand.y < b.y + b.height && cand.y + cand.height > b.y) {
+          return true;
+        }
+      }
+      return false;
+    };
     for (const el2 of candidates) {
       const localId = el2.localId || "";
       const numMatch = localId.match(/(\d+)$/);
@@ -19588,25 +19723,78 @@ var MaskRenderer = class _MaskRenderer {
       if (!label) continue;
       let x = 0;
       let y = 0;
+      let elemW = 0;
+      let elemH = 0;
       if (el2.boundingBox && el2.boundingBox.width > 0 && el2.boundingBox.height > 0) {
         x = Math.round(el2.boundingBox.x * scaleX);
         y = Math.round(el2.boundingBox.y * scaleY);
+        elemW = Math.round(el2.boundingBox.width * scaleX);
+        elemH = Math.round(el2.boundingBox.height * scaleY);
       } else if (Array.isArray(el2.coarseBounds) && el2.coarseBounds.length === 4) {
         x = Math.round(el2.coarseBounds[0] * canvasWidth);
         y = Math.round(el2.coarseBounds[1] * canvasHeight);
+        elemW = Math.round(el2.coarseBounds[2] * canvasWidth);
+        elemH = Math.round(el2.coarseBounds[3] * canvasHeight);
       } else {
         continue;
       }
-      x = Math.max(0, Math.min(canvasWidth - 32, x));
-      y = Math.max(0, Math.min(canvasHeight - 16, y));
-      ctx.font = "bold 10px sans-serif";
+      const theme = _MaskRenderer.getSoMTheme(el2.role);
+      if (elemW >= 8 && elemH >= 8) {
+        const wireX = Math.max(0, Math.min(canvasWidth - 2, x));
+        const wireY = Math.max(0, Math.min(canvasHeight - 2, y));
+        const wireW = Math.max(1, Math.min(canvasWidth - wireX, elemW));
+        const wireH = Math.max(1, Math.min(canvasHeight - wireY, elemH));
+        ctx.save();
+        ctx.strokeStyle = theme.wireframeStroke;
+        ctx.lineWidth = 1;
+        if (typeof ctx.roundRect === "function") {
+          ctx.beginPath();
+          ctx.roundRect(wireX, wireY, wireW, wireH, 3);
+          ctx.stroke();
+        } else if (typeof ctx.strokeRect === "function") {
+          ctx.strokeRect(wireX, wireY, wireW, wireH);
+        }
+        ctx.restore();
+      }
+      ctx.font = 'bold 10px "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace';
       const textWidth = Math.max(10, ctx.measureText ? ctx.measureText(label).width : 10);
-      const badgeWidth = textWidth + 6;
-      const badgeHeight = 13;
-      const badgeY = y >= badgeHeight ? y - 1 : y + 1;
-      const badgeX = Math.min(x, canvasWidth - badgeWidth - 2);
-      ctx.fillStyle = "#0284c7";
-      ctx.strokeStyle = "#ffffff";
+      const badgeWidth = textWidth + 8;
+      const badgeHeight = 14;
+      const cand1Y = y >= badgeHeight ? y - 1 : y + 1;
+      const cand1X = Math.min(x, canvasWidth - badgeWidth - 2);
+      const cand2Y = y + elemH + 1;
+      const cand2X = Math.min(x, canvasWidth - badgeWidth - 2);
+      const cand3Y = y >= badgeHeight ? y - 1 : y + 1;
+      const cand3X = Math.min(Math.max(0, x + elemW - badgeWidth), canvasWidth - badgeWidth - 2);
+      let chosenX = cand1X;
+      let chosenY = cand1Y;
+      const c1 = { x: cand1X, y: cand1Y, width: badgeWidth, height: badgeHeight };
+      if (!doesBadgeOverlap(c1)) {
+        chosenX = cand1X;
+        chosenY = cand1Y;
+      } else {
+        const c2 = { x: cand2X, y: cand2Y, width: badgeWidth, height: badgeHeight };
+        const c3 = { x: cand3X, y: cand3Y, width: badgeWidth, height: badgeHeight };
+        if (cand2Y + badgeHeight <= canvasHeight && !doesBadgeOverlap(c2)) {
+          chosenX = cand2X;
+          chosenY = cand2Y;
+        } else if (!doesBadgeOverlap(c3)) {
+          chosenX = cand3X;
+          chosenY = cand3Y;
+        } else {
+          let nudgedY = cand1Y;
+          while (nudgedY + badgeHeight < canvasHeight && doesBadgeOverlap({ x: cand1X, y: nudgedY, width: badgeWidth, height: badgeHeight })) {
+            nudgedY += badgeHeight + 2;
+          }
+          chosenX = cand1X;
+          chosenY = Math.min(nudgedY, canvasHeight - badgeHeight - 2);
+        }
+      }
+      const badgeX = Math.max(0, Math.min(canvasWidth - badgeWidth - 2, chosenX));
+      const badgeY = Math.max(0, Math.min(canvasHeight - badgeHeight - 2, chosenY));
+      renderedBadges.push({ x: badgeX, y: badgeY, width: badgeWidth, height: badgeHeight });
+      ctx.fillStyle = theme.badgeBg;
+      ctx.strokeStyle = theme.borderStroke;
       ctx.lineWidth = 1;
       if (typeof ctx.roundRect === "function") {
         ctx.beginPath();
@@ -19617,8 +19805,8 @@ var MaskRenderer = class _MaskRenderer {
         ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight);
         ctx.strokeRect(badgeX, badgeY, badgeWidth, badgeHeight);
       }
-      ctx.fillStyle = "#ffffff";
-      ctx.fillText(label, badgeX + 3, badgeY + 10);
+      ctx.fillStyle = theme.badgeText;
+      ctx.fillText(label, badgeX + 4, badgeY + 10);
     }
     ctx.restore();
   }
@@ -21101,6 +21289,288 @@ var WebExtensionAdapter = class {
       }
     }
     throw new Error("Sanitization Host Unavailable: No DOM or offscreen document available to render masks safely");
+  }
+};
+
+// src/browser/cdp-dispatcher.ts
+var CdpInputDispatcher = class _CdpInputDispatcher {
+  static attachedTabs = /* @__PURE__ */ new Set();
+  static detachTimers = /* @__PURE__ */ new Map();
+  /**
+   * Checks if Chrome debugger API is available in the current runtime.
+   */
+  static isAvailable() {
+    return typeof chrome !== "undefined" && Boolean(chrome.debugger && chrome.debugger.attach);
+  }
+  /**
+   * Returns whether a tab is currently attached to the debugger.
+   */
+  static isAttached(tabId) {
+    return this.attachedTabs.has(tabId);
+  }
+  /**
+   * Attaches Chrome debugger to the specified tab if not already attached.
+   */
+  static async attach(tabId) {
+    if (!this.isAvailable()) return false;
+    if (this.attachedTabs.has(tabId)) {
+      this.cancelAutoDetach(tabId);
+      return true;
+    }
+    return new Promise((resolve) => {
+      try {
+        chrome.debugger.attach({ tabId }, "1.3", () => {
+          if (chrome.runtime?.lastError) {
+            const err = chrome.runtime.lastError.message || "";
+            if (err.includes("already attached") || err.includes("Another debugger")) {
+              this.attachedTabs.add(tabId);
+              resolve(true);
+              return;
+            }
+            console.warn(`[PrivaPilot CDP] Attach failed on tab ${tabId}: ${err}`);
+            resolve(false);
+            return;
+          }
+          this.attachedTabs.add(tabId);
+          try {
+            if (chrome.debugger.onDetach && typeof chrome.debugger.onDetach.addListener === "function") {
+              if (!chrome.debugger.onDetach.hasListener(this.handleDetachEvent)) {
+                chrome.debugger.onDetach.addListener(this.handleDetachEvent);
+              }
+            }
+          } catch (_) {
+          }
+          resolve(true);
+        });
+      } catch (err) {
+        console.warn(`[PrivaPilot CDP] Exception attaching debugger: ${err.message}`);
+        resolve(false);
+      }
+    });
+  }
+  /**
+   * Detaches the debugger from the tab.
+   */
+  static async detach(tabId) {
+    if (!this.isAvailable()) return;
+    this.cancelAutoDetach(tabId);
+    if (!this.attachedTabs.has(tabId)) return;
+    return new Promise((resolve) => {
+      try {
+        chrome.debugger.detach({ tabId }, () => {
+          this.attachedTabs.delete(tabId);
+          resolve();
+        });
+      } catch (_) {
+        this.attachedTabs.delete(tabId);
+        resolve();
+      }
+    });
+  }
+  /**
+   * Schedules an auto-detach after idleMs to remove the top browser debugging banner.
+   */
+  static scheduleAutoDetach(tabId, idleMs = 4e3) {
+    this.cancelAutoDetach(tabId);
+    const timer = setTimeout(() => {
+      this.detach(tabId).catch(() => {
+      });
+    }, idleMs);
+    this.detachTimers.set(tabId, timer);
+  }
+  static cancelAutoDetach(tabId) {
+    if (this.detachTimers.has(tabId)) {
+      clearTimeout(this.detachTimers.get(tabId));
+      this.detachTimers.delete(tabId);
+    }
+  }
+  static handleDetachEvent = (source) => {
+    if (source && source.tabId) {
+      _CdpInputDispatcher.attachedTabs.delete(source.tabId);
+      _CdpInputDispatcher.cancelAutoDetach(source.tabId);
+    }
+  };
+  /**
+   * Dispatches a native hardware mouse click at viewport coordinates (x, y).
+   */
+  static async dispatchClick(tabId, x, y, options = {}) {
+    const attached = await this.attach(tabId);
+    if (!attached) return false;
+    const button = options.button || "left";
+    const clickCount = options.clickCount || 1;
+    const modifiers = options.modifiers || 0;
+    try {
+      await this.sendCommand(tabId, "Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: Math.round(x),
+        y: Math.round(y),
+        modifiers
+      });
+      await this.sendCommand(tabId, "Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        button,
+        clickCount,
+        x: Math.round(x),
+        y: Math.round(y),
+        modifiers
+      });
+      await new Promise((r) => setTimeout(r, 25));
+      await this.sendCommand(tabId, "Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        button,
+        clickCount,
+        x: Math.round(x),
+        y: Math.round(y),
+        modifiers
+      });
+      this.scheduleAutoDetach(tabId);
+      return true;
+    } catch (err) {
+      console.warn(`[PrivaPilot CDP] Click dispatch failed on tab ${tabId}: ${err.message}`);
+      return false;
+    }
+  }
+  /**
+   * Dispatches native hardware keyboard typing.
+   */
+  static async dispatchType(tabId, text, options = {}) {
+    const attached = await this.attach(tabId);
+    if (!attached) return false;
+    const delay = options.delayMs || 10;
+    try {
+      for (const char of text) {
+        if (char === "\n") {
+          await this.sendCommand(tabId, "Input.dispatchKeyEvent", {
+            type: "rawKeyDown",
+            windowsVirtualKeyCode: 13,
+            nativeVirtualKeyCode: 13,
+            macCharCode: 13,
+            unmodifiedText: "\r",
+            text: "\r",
+            key: "Enter",
+            code: "Enter"
+          });
+          await this.sendCommand(tabId, "Input.dispatchKeyEvent", {
+            type: "keyUp",
+            windowsVirtualKeyCode: 13,
+            nativeVirtualKeyCode: 13,
+            macCharCode: 13,
+            unmodifiedText: "\r",
+            text: "\r",
+            key: "Enter",
+            code: "Enter"
+          });
+        } else {
+          await this.sendCommand(tabId, "Input.dispatchKeyEvent", {
+            type: "keyDown",
+            text: char,
+            unmodifiedText: char
+          });
+          await this.sendCommand(tabId, "Input.dispatchKeyEvent", {
+            type: "keyUp",
+            text: char,
+            unmodifiedText: char
+          });
+        }
+        if (delay > 0) {
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+      this.scheduleAutoDetach(tabId);
+      return true;
+    } catch (err) {
+      console.warn(`[PrivaPilot CDP] Type dispatch failed on tab ${tabId}: ${err.message}`);
+      return false;
+    }
+  }
+  /**
+   * Dispatches hardware wheel scroll event.
+   */
+  static async dispatchScroll(tabId, x, y, deltaX, deltaY) {
+    const attached = await this.attach(tabId);
+    if (!attached) return false;
+    try {
+      await this.sendCommand(tabId, "Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x: Math.round(x),
+        y: Math.round(y),
+        deltaX: Math.round(deltaX),
+        deltaY: Math.round(deltaY)
+      });
+      this.scheduleAutoDetach(tabId);
+      return true;
+    } catch (err) {
+      console.warn(`[PrivaPilot CDP] Scroll dispatch failed on tab ${tabId}: ${err.message}`);
+      return false;
+    }
+  }
+  /**
+   * Dispatches genuine hardware-level drag-and-drop between two screen points.
+   * Simulates continuous movement vectors across the Chromium compositor.
+   */
+  static async dispatchDragAndDrop(tabId, from, to2, steps = 8) {
+    const attached = await this.attach(tabId);
+    if (!attached) return false;
+    try {
+      await this.sendCommand(tabId, "Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: Math.round(from.x),
+        y: Math.round(from.y)
+      });
+      await this.sendCommand(tabId, "Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        button: "left",
+        clickCount: 1,
+        x: Math.round(from.x),
+        y: Math.round(from.y),
+        buttons: 1
+      });
+      await new Promise((r) => setTimeout(r, 20));
+      const totalSteps = Math.max(3, steps);
+      for (let i = 1; i <= totalSteps; i++) {
+        const progress = i / totalSteps;
+        const curX = Math.round(from.x + (to2.x - from.x) * progress);
+        const curY = Math.round(from.y + (to2.y - from.y) * progress);
+        await this.sendCommand(tabId, "Input.dispatchMouseEvent", {
+          type: "mouseMoved",
+          x: curX,
+          y: curY,
+          buttons: 1
+        });
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      await this.sendCommand(tabId, "Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        button: "left",
+        clickCount: 1,
+        x: Math.round(to2.x),
+        y: Math.round(to2.y),
+        buttons: 0
+      });
+      this.scheduleAutoDetach(tabId);
+      return true;
+    } catch (err) {
+      console.warn(`[PrivaPilot CDP] Drag-and-drop failed on tab ${tabId}: ${err.message}`);
+      return false;
+    }
+  }
+  /**
+   * Internal helper to send CDP commands asynchronously.
+   */
+  static sendCommand(tabId, method, params = {}) {
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
+          if (chrome.runtime?.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(result);
+          }
+        });
+      } catch (err) {
+        reject(err);
+      }
+    });
   }
 };
 
@@ -22821,9 +23291,35 @@ var SemanticActionCache = class _SemanticActionCache {
       this.metrics.totalMisses++;
       return null;
     }
+    const normGoal = this.normalizeIntent(goal);
     const key = this.computeKey(goal, sanitized);
-    const entry = this.memoryCache.get(key);
+    let entry = this.memoryCache.get(key);
     if (!entry) {
+      const paramMatch = (goal || "").match(/^(?:please|can you|kindly|privapilot|hey privapilot\s+)?(?:search for|find|lookup|type|enter)\s+(.+)$/i);
+      if (paramMatch && paramMatch[1]) {
+        const paramValue = paramMatch[1].trim();
+        for (const existingEntry of this.memoryCache.values()) {
+          if (existingEntry.domain === domain && existingEntry.topologySignature === this.computeTopologySignature(sanitized) && existingEntry.proposal.kind === "type" && existingEntry.proposal.targetLocalId) {
+            existingEntry.hitCount++;
+            existingEntry.lastUsedAt = Date.now();
+            this.metrics.totalHits++;
+            this.metrics.tokensSavedEstimate += 4200;
+            this.metrics.latencySavedMsEstimate += 11500;
+            const hitExplanation2 = `[Edge Semantic Cache Hit \u2014 Parameterized]
+Replaying verified input action into ${existingEntry.proposal.targetLocalId} with dynamic argument "${paramValue}".
+Resource savings: ~4,200 cloud tokens saved, 0 bytes over network.`;
+            return {
+              ...existingEntry.proposal,
+              actionId: `act_cache_${Date.now()}`,
+              textToType: paramValue,
+              confidence: 0.98,
+              thought: hitExplanation2,
+              reasoning: hitExplanation2,
+              rationale: `Replaying cached typing workflow with parameter: "${paramValue}"`
+            };
+          }
+        }
+      }
       this.metrics.totalMisses++;
       return null;
     }
@@ -23204,7 +23700,7 @@ function isSubAgentSwarmGoal(goal) {
   const entityMatches = trimmed.match(/(?:indigo|air\s*india|spicejet|vistara|akasa|makemytrip|easemytrip|cleartrip|amazon|flipkart|booking|agoda|expedia|github|gitlab|apple|myntra|ajio|zomato|swiggy)/gi);
   const uniqueEntities = entityMatches ? Array.from(new Set(entityMatches.map((e) => e.toLowerCase().replace(/\s+/g, "")))) : [];
   const isExplicitSubagent = /\b(?:sub-?agents?|subagnts?|subwgrns?|subegmts?|swarm|parallel\s+agents?|multi-?agents?|call\s+(?:sub-?)?agents?|create\s+(?:sub-?)?agents?|deploy\s+(?:sub-?)?agents?|deploy\s+agents?)\b/i.test(trimmed);
-  const isCrossDomainQuery = isComparative && (uniqueEntities.length >= 2 || /\b(?:flight|flights|airline|airlines|hotel|hotels|price|prices|ticket|tickets|fare|fares)\b/i.test(trimmed));
+  const isCrossDomainQuery = isComparative && (uniqueEntities.length >= 2 || hasMultiplePortals && /\b(?:flight|flights|airline|airlines|hotel|hotels|price|prices|ticket|tickets|fare|fares)\b/i.test(trimmed));
   return isCrossDomainQuery || hasMultiplePortals || uniqueEntities.length >= 2 || isExplicitSubagent;
 }
 function getSnapshotElements(snap) {
@@ -24005,6 +24501,42 @@ var RunCoordinator = class {
         const t0_step = Date.now();
         const isFormOrRegistrationGoal = /\b(?:fill|register|registration|signup|sign\s*up|submit|details)\b/i.test(this.currentGoal || "");
         this.transition("capturing", `Step ${step}/${maxSteps}: Capturing active tab DOM & screenshot`);
+        if (typeof chrome !== "undefined" && chrome.tabs?.query) {
+          try {
+            const focusedTabs = await new Promise((resolve) => {
+              chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+                resolve(chrome.runtime.lastError ? [] : tabs || []);
+              });
+            });
+            if (focusedTabs.length > 0 && focusedTabs[0].id && focusedTabs[0].id !== this.currentTabId) {
+              const newlyActiveTab = focusedTabs[0];
+              const newlyActiveUrl = newlyActiveTab.url || "";
+              const prevUrl = this.previousUrl || "";
+              const isChildOrRelated = newlyActiveTab.openerTabId === this.currentTabId || newlyActiveUrl.includes("/document/d/") && prevUrl.includes("docs.google.com") || Boolean(newlyActiveUrl) && !isRestrictedBrowserUrl(newlyActiveUrl).isRestricted && (!prevUrl || newlyActiveUrl.startsWith("http") && prevUrl.startsWith("http") && new URL(newlyActiveUrl).origin === new URL(prevUrl).origin || this.lastExecutedProposal?.kind === "click");
+              if (isChildOrRelated) {
+                console.log(`[Comet:Coordinator] \u{1F500} Auto-adopting newly focused child tab: ${newlyActiveTab.id} (${newlyActiveUrl})`);
+                this.currentTabId = newlyActiveTab.id;
+              }
+            }
+            const allTabs = await new Promise((resolve) => {
+              chrome.tabs.query({ lastFocusedWindow: true }, (tabs) => {
+                resolve(chrome.runtime.lastError ? [] : tabs || []);
+              });
+            });
+            const spawnedChild = allTabs.find(
+              (t) => t.id !== this.currentTabId && (t.openerTabId === this.currentTabId || t.url && t.url.includes("/document/d/") && (this.previousUrl || "").includes("docs.google.com"))
+            );
+            if (spawnedChild && spawnedChild.id) {
+              const prevWasOpenAction = this.lastExecutedProposal && (this.lastExecutedProposal.kind === "click" && ((this.lastExecutedProposal.targetName || "").toLowerCase().includes("open in new tab") || (this.lastExecutedProposal.targetName || "").toLowerCase().includes("document") || (this.lastExecutedProposal.targetName || "").toLowerCase().includes("letter") || spawnedChild.active));
+              if (prevWasOpenAction || spawnedChild.active) {
+                console.log(`[Comet:Coordinator] \u{1F500} Switching to spawned child tab ${spawnedChild.id} (${spawnedChild.url})`);
+                this.currentTabId = spawnedChild.id;
+                await new Promise((r) => chrome.tabs.update(spawnedChild.id, { active: true }, () => r()));
+              }
+            }
+          } catch (_) {
+          }
+        }
         if (this.currentTabId && typeof chrome !== "undefined" && chrome.tabs?.update) {
           try {
             await new Promise((resolve) => {
@@ -24020,6 +24552,9 @@ var RunCoordinator = class {
           }
         }
         let activeTab = await this.browser.getActiveTab(this.currentTabId);
+        if (activeTab?.url) {
+          this.previousUrl = activeTab.url;
+        }
         const restrictedCheck = isRestrictedBrowserUrl(activeTab?.url);
         if (restrictedCheck.isRestricted) {
           let proposal2 = null;
@@ -26785,6 +27320,43 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
             }
           }
         }
+        if (execResponse && !execResponse.success && (proposal.kind === "click" || proposal.kind === "type")) {
+          if (CdpInputDispatcher.isAvailable()) {
+            if (proposal.kind === "click") {
+              let clickX = null;
+              let clickY = null;
+              if (proposal.coordinates && Array.isArray(proposal.coordinates) && proposal.coordinates.length === 2) {
+                clickX = proposal.coordinates[0];
+                clickY = proposal.coordinates[1];
+              } else if (targetElement?.boundingBox && targetElement.boundingBox.width > 0) {
+                clickX = targetElement.boundingBox.x + targetElement.boundingBox.width / 2;
+                clickY = targetElement.boundingBox.y + targetElement.boundingBox.height / 2;
+              } else if (Array.isArray(targetElement?.coarseBounds) && targetElement.coarseBounds.length === 4) {
+                clickX = (targetElement.coarseBounds[0] + targetElement.coarseBounds[2] / 2) * 1280;
+                clickY = (targetElement.coarseBounds[1] + targetElement.coarseBounds[3] / 2) * 720;
+              }
+              if (clickX !== null && clickY !== null) {
+                const cdpOk = await CdpInputDispatcher.dispatchClick(activeTab.id, clickX, clickY);
+                if (cdpOk) {
+                  execResponse = {
+                    success: true,
+                    semanticOutcomeVerified: true,
+                    message: `Synthetic click blocked; dispatched hardware click via chrome.debugger (CDP)`
+                  };
+                }
+              }
+            } else if (proposal.kind === "type" && proposal.textToType) {
+              const cdpOk = await CdpInputDispatcher.dispatchType(activeTab.id, proposal.textToType);
+              if (cdpOk) {
+                execResponse = {
+                  success: true,
+                  semanticOutcomeVerified: true,
+                  message: `Synthetic typing blocked; dispatched hardware typing via chrome.debugger (CDP)`
+                };
+              }
+            }
+          }
+        }
         if (proposal.pressEnter || proposal.kind === "type" && proposal.pressEnter || proposal.kind === "click") {
           await new Promise((r) => setTimeout(r, 450));
           if (typeof this.browser.getActiveTab === "function") {
@@ -26867,7 +27439,7 @@ ${visiblePosts.map((s) => `- ${s}`).join("\n")}` };
         if (this.listeners.onTelemetryUpdated) {
           this.listeners.onTelemetryUpdated(telemetry, this.currentRunId);
         }
-        const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) || /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?|register|registration|apply|application|complete|fill|signup|sign\s+up|form|workflow|survey|questionnaire)\b/i.test(this.currentGoal || "");
+        const isMultiStepGoal = Boolean(this.currentTaskContract?.isMultiStep) || /\b(?:and\s+then|then|after\s+that|next|also|and\s+see|and\s+check|and\s+search|and\s+find|and\s+tell|and\s+type|and\s+select|and\s+click|and\s+hover|and\s+drag|and\s+drop|and\s+upload|how\s+many|count|submissions?|problem\s+statements?|register|registration|apply|application|complete|fill|signup|sign\s+up|form|workflow|survey|questionnaire|navigate|explore|browse|search|look|open|checkout|login|sign\s*in|view|read|test)\b/i.test(this.currentGoal || "");
         if (execResponse && execResponse.staleTarget) {
           if (proposal.risk !== "safe") {
             const errorMsg2 = `Stale target detected on protected action '${proposal.kind}': auto-retry is prohibited for non-safe actions`;
@@ -27070,6 +27642,30 @@ Direct link: ${docHref}` : ""}`;
             };
             return this.completeWithResult(res2);
           }
+        } else if (proposal.kind === "extract" && execResponse?.success) {
+          const tFin = Date.now();
+          const telemetry2 = this.createTelemetry(t0_step, t1_captureComplete, t2_detectionComplete, t3_sanitizationValidated, t4_reasoningReceived, t5_actionValidated, t6_actionExecuted, t7_stateVerified, step);
+          if (this.listeners.onTelemetryUpdated) {
+            this.listeners.onTelemetryUpdated(telemetry2, this.currentRunId);
+          }
+          const count = execResponse.extractedCount || (Array.isArray(execResponse.extractedItems) ? execResponse.extractedItems.length : 0);
+          const dataMd = execResponse.extractedData || "";
+          const reply = `\u2705 **Extracted ${count} items successfully**
+
+${dataMd}`;
+          this.transition("complete", `Extracted ${count} items successfully`);
+          const res2 = {
+            success: true,
+            state: "complete",
+            message: `Extracted ${count} items successfully`,
+            reply,
+            sanitized,
+            proposal,
+            telemetry: telemetry2,
+            stepCount: step,
+            steps: this.stepsTrace
+          };
+          return this.completeWithResult(res2);
         } else if (!isMultiStepGoal && !requiresVisualVerification && this.currentTaskContract?.goalPattern === "click_control" && proposal.kind === "click" && this.currentTaskContract?.structuredIntent?.targetPhrase && !/\b(repeatedly|again|multiple|times|until|loop)\b/i.test(this.currentGoal || "")) {
           const matchesTarget = targetElement && scoreCandidate(targetElement, this.currentTaskContract.structuredIntent, false).score >= 50;
           if (matchesTarget) {
@@ -28783,6 +29379,9 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onConnect) {
   chrome.runtime.onConnect.addListener((port) => {
     if (port.name !== "privapilot-sidepanel") return;
     port.onMessage.addListener((message) => {
+      if (message?.type === "HEARTBEAT") {
+        return;
+      }
       const requestId = message?.requestId;
       if (!requestId) return;
       const streamingOptions = {

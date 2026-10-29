@@ -77,6 +77,10 @@ export declare const DUCKDUCKGO_PLAYBOOK: DomainPlaybook;
  */
 export declare const GOOGLE_PLAYBOOK: DomainPlaybook;
 /**
+ * Playbook for Google Docs (docs.google.com)
+ */
+export declare const GOOGLE_DOCS_PLAYBOOK: DomainPlaybook;
+/**
  * Playbook for Amazon (amazon.in / amazon.com)
  */
 export declare const AMAZON_PLAYBOOK: DomainPlaybook;

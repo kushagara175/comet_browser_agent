@@ -204,6 +204,10 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onConnect) {
     if (port.name !== 'privapilot-sidepanel') return;
 
     port.onMessage.addListener((message: any) => {
+      if (message?.type === 'HEARTBEAT') {
+        // Keeps the MV3 service worker active and prevents idle timeout during long runs
+        return;
+      }
       const requestId = message?.requestId;
       if (!requestId) return;
 

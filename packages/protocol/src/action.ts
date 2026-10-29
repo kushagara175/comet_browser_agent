@@ -909,6 +909,13 @@ export interface ActionProposal {
   readonly elementText?: string;
   readonly searchQuery?: string;
   readonly searchResults?: ReadonlyArray<any>;
+  readonly extractSchema?: {
+    readonly itemType?: string;
+    readonly fields?: Record<string, string>;
+  };
+  readonly extractLimit?: number;
+  readonly containerSelector?: string;
+  readonly extractedItems?: ReadonlyArray<Record<string, any>>;
 }
 
 export interface ActionExecutionResult {
@@ -919,6 +926,9 @@ export interface ActionExecutionResult {
   readonly semanticOutcomeVerified: boolean;
   readonly reasonCode?: string;
   readonly staleTarget?: boolean;
+  readonly extractedCount?: number;
+  readonly extractedItems?: ReadonlyArray<Record<string, any>>;
+  readonly extractedData?: string;
 }
 
 export interface ActionValidationResult {
@@ -951,6 +961,10 @@ export const ALLOWED_ACTION_PROPOSAL_KEYS = new Set([
   'userApproved',
   'pressEnter',
   'extractedData',
+  'extractSchema',
+  'extractLimit',
+  'containerSelector',
+  'extractedItems',
   'answerText',
   'reply',
   'message',

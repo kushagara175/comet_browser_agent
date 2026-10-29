@@ -652,6 +652,32 @@
     return SAFE;
   }
 
+  // ../../packages/pii-rules/dist/scrubber.js
+  function scrubText(text, options = {}) {
+    if (!text || typeof text !== "string") {
+      return text;
+    }
+    const matches = scanTextForPII(text, options);
+    if (matches.length === 0) {
+      return text;
+    }
+    let result = "";
+    let lastIndex = 0;
+    for (const match of matches) {
+      if (match.startIndex < lastIndex) {
+        if (match.endIndex > lastIndex) {
+          lastIndex = match.endIndex;
+        }
+        continue;
+      }
+      result += text.substring(lastIndex, match.startIndex);
+      result += `[REDACTED_${match.category.toUpperCase()}]`;
+      lastIndex = match.endIndex;
+    }
+    result += text.substring(lastIndex);
+    return result;
+  }
+
   // ../../packages/pii-rules/dist/surface-classifier.js
   var PRIVATE_WORKSPACE_PATTERNS = [
     // Webmail
@@ -1258,7 +1284,9 @@
           let textNode = textWalker.nextNode();
           let textIdx = 0;
           const visitedContainers = /* @__PURE__ */ new Set();
-          while (textNode) {
+          const parentCache = /* @__PURE__ */ new WeakMap();
+          const MAX_TEXT_NODES_PER_DOC = 150;
+          while (textNode && textNodes.length < MAX_TEXT_NODES_PER_DOC) {
             const content = textNode.nodeValue || "";
             const trimmed = content.trim();
             const parent = textNode.parentElement;
@@ -1266,27 +1294,51 @@
               textNode = textWalker.nextNode();
               continue;
             }
-            const isIgnored = Boolean(
-              typeof parent.closest === "function" && parent.closest("script, style, noscript, .privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]")
-            );
-            if (trimmed.length > 1 && !isIgnored && isVisibleElement(parent)) {
+            let cached = parentCache.get(parent);
+            if (!cached) {
+              cached = {
+                isIgnored: Boolean(
+                  typeof parent.closest === "function" && parent.closest("script, style, noscript, .privapilot-overlay, .privapilot-hud, #privapilot-root, [data-privapilot-ignore]")
+                ),
+                isControl: Boolean(
+                  typeof parent.closest === "function" && parent.closest('button, [role="button"], input, textarea, select')
+                )
+              };
+              parentCache.set(parent, cached);
+            }
+            if (cached.isIgnored) {
+              textNode = textWalker.nextNode();
+              continue;
+            }
+            const hasPotentialPII = /[0-9@+]/.test(content);
+            if (cached.isControl && !hasPotentialPII) {
+              textNode = textWalker.nextNode();
+              continue;
+            }
+            if (trimmed.length > 1 && isVisibleElement(parent)) {
               const parentRect = parent.getBoundingClientRect();
               if (parentRect.width > 0.5 && parentRect.height > 0.5 && parentRect.right + offset.x > 0 && parentRect.bottom + offset.y > 0 && parentRect.left + offset.x < viewportWidth && parentRect.top + offset.y < viewportHeight) {
                 textIdx++;
                 const nodeId = `txt_${depth}_${textIdx}`;
-                const isAccountIdentity = !isPublicBroadcast && !isPublicPostContent(parent) && Boolean(
-                  typeof parent.closest === "function" && (isPrivateAccountShell(parent) || parent.closest(
-                    '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [title*="profile" i], [title*="account" i], [class*="account-info" i], [class*="profile-info" i], [data-testid*="account" i], [data-testid*="profile" i]'
-                  ))
-                );
+                if (cached.isAccount === void 0) {
+                  cached.isAccount = !isPublicBroadcast && !isPublicPostContent(parent) && Boolean(
+                    typeof parent.closest === "function" && (isPrivateAccountShell(parent) || parent.closest(
+                      '[data-testid="User-Name"], [data-testid="user-menu-button"], [data-testid="profile-button"], [data-testid*="user-profile" i], [class*="user-name" i], [class*="username" i], [class*="account-name" i], a[href*="/account" i], a[href*="/profile" i], [aria-label*="account" i], [aria-label*="profile" i], [title*="profile" i], [title*="account" i], [class*="account-info" i], [class*="profile-info" i], [data-testid*="account" i], [data-testid*="profile" i]'
+                    ))
+                  );
+                }
+                const isAccountIdentity = cached.isAccount;
                 const isMsgSurface = !isPublicPostContent(parent) && (pageZone2 === "private_workspace" || isPrivateMessagingSurface(parent, currentDocUrl));
-                const isDeliveryAddressContainer = !isPublicBroadcast && Boolean(
-                  typeof parent.closest === "function" && parent.closest(
-                    '[class*="deliver" i], [id*="deliver" i], [class*="shipping-address" i], [id*="shipping-address" i], [class*="delivery-address" i], [id*="delivery-address" i], [class*="pincode" i], [id*="pincode" i]'
-                  )
-                );
+                if (cached.isDelivery === void 0) {
+                  cached.isDelivery = !isPublicBroadcast && hasPotentialPII && Boolean(
+                    typeof parent.closest === "function" && parent.closest(
+                      '[class*="deliver" i], [id*="deliver" i], [class*="shipping-address" i], [id*="shipping-address" i], [class*="delivery-address" i], [id*="delivery-address" i], [class*="pincode" i], [id*="pincode" i]'
+                    )
+                  );
+                }
+                const isDeliveryAddressContainer = cached.isDelivery;
                 const isPublicAuthor = isPublicPostContent(parent);
-                let matches = scanTextForPII(content, { publicAuthorHandles: isPublicAuthor });
+                let matches = hasPotentialPII || isAccountIdentity || isMsgSurface ? scanTextForPII(content, { publicAuthorHandles: isPublicAuthor }) : [];
                 if (matches.length === 0 && isDeliveryAddressContainer && trimmed.length > 2 && trimmed.length < 120 && !/^(?:address|location|pin\s*code|postal\s*code)$/i.test(trimmed) && (/\b(?:home|work|office|deliver|katra|nagar|colony|road|street|bhavan|bhawan|marg|lane|avenue|floor|block|sector|plot|post|pin|[1-9][0-9]{2}\s?[0-9]{3})\b/i.test(trimmed) || /[1-9][0-9]{2}\s?[0-9]{3}/.test(trimmed))) {
                   matches = [{
                     category: "address",
@@ -1824,6 +1876,339 @@
         },
         elementMap: this.elementMap
       };
+    }
+  };
+
+  // src/content/table-extractor.ts
+  var TableExtractor = class {
+    /**
+     * Extracts structured data from tables, list repeaters, or card containers.
+     */
+    static extract(rootDoc = typeof document !== "undefined" ? document : null, options = {}) {
+      if (!rootDoc) {
+        return {
+          success: false,
+          count: 0,
+          items: [],
+          markdown: "",
+          summary: "Root document is unavailable"
+        };
+      }
+      const limit = Math.max(1, Math.min(100, options.limit || 50));
+      let container = rootDoc;
+      if (options.targetElement) {
+        container = options.targetElement;
+      } else if (options.containerSelector) {
+        try {
+          const found = rootDoc.querySelector(options.containerSelector);
+          if (found) container = found;
+        } catch (_) {
+        }
+      }
+      const nextPageHint = this.findNextPageTarget(rootDoc) || void 0;
+      const tableResult = this.extractHtmlTables(container, options.schema, limit);
+      if (tableResult && tableResult.items.length > 0) {
+        return { ...tableResult, nextPageHint };
+      }
+      const repeaterResult = this.extractCardRepeaters(container, options.schema, limit);
+      if (repeaterResult && repeaterResult.items.length > 0) {
+        return { ...repeaterResult, nextPageHint };
+      }
+      const genericResult = this.extractGenericKeyValue(container, limit);
+      return { ...genericResult, nextPageHint };
+    }
+    /**
+     * Identifies pagination controls or "Next Page" links for multi-page extractions.
+     */
+    static findNextPageTarget(rootDoc) {
+      if (!rootDoc || typeof rootDoc.querySelectorAll !== "function") return null;
+      const relNext = rootDoc.querySelector('a[rel~="next"], link[rel~="next"]');
+      if (relNext && (relNext.href || relNext.getAttribute("href"))) {
+        return {
+          href: relNext.href || relNext.getAttribute("href") || "",
+          text: relNext.textContent?.trim() || "Next"
+        };
+      }
+      const ariaNext = rootDoc.querySelector('a[aria-label*="next" i], button[aria-label*="next" i]');
+      if (ariaNext) {
+        return {
+          href: ariaNext.href || "",
+          text: ariaNext.getAttribute("aria-label") || ariaNext.textContent?.trim() || "Next"
+        };
+      }
+      const candidates = Array.from(rootDoc.querySelectorAll('a, button, [role="button"]'));
+      for (const cand of candidates) {
+        const text = (cand.textContent || "").trim();
+        if (/^(?:next(?:\s*(?:page|>|»|→))?|load\s*more|older(?:\s*posts)?)$/i.test(text)) {
+          return {
+            href: cand.href || "",
+            text
+          };
+        }
+      }
+      return null;
+    }
+    /**
+     * Extracts data from HTML <table>, <tbody>, or ARIA [role="table"] elements.
+     */
+    static extractHtmlTables(container, schema, limit = 50) {
+      let tables = [];
+      if (container && container.tagName === "TABLE") {
+        tables = [container];
+      } else {
+        tables = Array.from(container.querySelectorAll("table"));
+        if (tables.length === 0) {
+          tables = Array.from(container.querySelectorAll('[role="table"], [role="grid"]'));
+        }
+      }
+      if (tables.length === 0) return null;
+      let bestTable = null;
+      let maxRows = 0;
+      for (const tbl of tables) {
+        const rows2 = tbl.querySelectorAll("tr");
+        const count = rows2 ? rows2.length : 0;
+        if (count > maxRows) {
+          maxRows = count;
+          bestTable = tbl;
+        }
+      }
+      if (!bestTable || maxRows < 2) return null;
+      const headers = [];
+      const headerRow = bestTable.querySelector("thead tr") || bestTable.querySelector("tr");
+      if (headerRow) {
+        let ths = Array.from(headerRow.querySelectorAll("th"));
+        if (ths.length === 0) {
+          ths = Array.from(headerRow.querySelectorAll("td"));
+        }
+        ths.forEach((th, idx) => {
+          const txt = this.cleanText(th.textContent || "");
+          headers.push(txt || `column_${idx + 1}`);
+        });
+      }
+      let rows = Array.from(bestTable.querySelectorAll("tbody tr"));
+      if (rows.length === 0) {
+        rows = Array.from(bestTable.querySelectorAll("tr"));
+      }
+      const items = [];
+      for (const row of rows) {
+        if (items.length >= limit) break;
+        if (row.querySelector("th") && !row.querySelector("td")) continue;
+        let cells = Array.from(row.querySelectorAll("td"));
+        if (cells.length === 0) {
+          cells = Array.from(row.querySelectorAll('[role="cell"], [role="gridcell"]'));
+        }
+        if (cells.length === 0) continue;
+        const record = {};
+        cells.forEach((cell, idx) => {
+          const colName = headers[idx] || `column_${idx + 1}`;
+          const rawText = this.cleanText(cell.textContent || "");
+          const sanitized = scrubText(rawText);
+          const linkEl = cell.querySelector("a[href]");
+          if (linkEl && linkEl.href) {
+            record[colName] = sanitized;
+            record[`${colName}_url`] = linkEl.href;
+          } else {
+            record[colName] = this.coerceValue(sanitized, schema?.fields?.[colName]);
+          }
+        });
+        if (Object.keys(record).length > 0) {
+          items.push(record);
+        }
+      }
+      if (items.length === 0) return null;
+      const markdown = this.recordsToMarkdown(items, headers);
+      return {
+        success: true,
+        count: items.length,
+        items,
+        markdown,
+        summary: `Extracted ${items.length} rows from table`
+      };
+    }
+    /**
+     * Extracts repeating card, search result, or list item structures.
+     */
+    static extractCardRepeaters(container, schema, limit = 50) {
+      const candidateParents = Array.from(
+        container.querySelectorAll('ul, ol, [role="list"], [role="feed"], main, section, .results, .grid, .list')
+      );
+      if (container && container.tagName && container.tagName !== "DOCUMENT") {
+        candidateParents.unshift(container);
+      }
+      let bestGroup = [];
+      for (const parent of candidateParents) {
+        const children = Array.from(parent.children);
+        if (children.length < 2) continue;
+        const classGroups = /* @__PURE__ */ new Map();
+        for (const child of children) {
+          if (["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"].includes(child.tagName)) continue;
+          if (child.offsetWidth === 0 && child.offsetHeight === 0 && child.style?.display === "none") continue;
+          const key = `${child.tagName}.${(child.className || "").trim().split(/\s+/)[0] || "none"}`;
+          if (!classGroups.has(key)) classGroups.set(key, []);
+          classGroups.get(key).push(child);
+        }
+        for (const group of classGroups.values()) {
+          if (group.length > bestGroup.length && group.length >= 2) {
+            bestGroup = group;
+          }
+        }
+      }
+      if (bestGroup.length < 2) {
+        const articles = Array.from(container.querySelectorAll('article, [role="article"], [role="listitem"], .card, .item'));
+        if (articles.length >= 2) {
+          bestGroup = articles;
+        }
+      }
+      if (bestGroup.length < 2) return null;
+      const items = [];
+      for (const card of bestGroup) {
+        if (items.length >= limit) break;
+        const record = {};
+        if (schema && schema.fields && Object.keys(schema.fields).length > 0) {
+          for (const [field, fieldType] of Object.entries(schema.fields)) {
+            record[field] = this.extractFieldBySchema(card, field, fieldType);
+          }
+        } else {
+          const titleEl = card.querySelector('h1, h2, h3, h4, h5, h6, [role="heading"], strong, b, a.title, .title');
+          if (titleEl) {
+            record["title"] = scrubText(this.cleanText(titleEl.textContent || ""));
+          }
+          const linkEl = card.tagName === "A" ? card : card.querySelector("a[href]");
+          if (linkEl && linkEl.href) {
+            record["url"] = linkEl.href;
+            if (!record["title"] && linkEl.textContent) {
+              record["title"] = scrubText(this.cleanText(linkEl.textContent));
+            }
+          }
+          const descEl = card.querySelector("p, .description, .summary, .snippet, .desc");
+          if (descEl) {
+            record["description"] = scrubText(this.cleanText(descEl.textContent || ""));
+          }
+          const badgeEl = card.querySelector('.badge, .tag, .label, .category, span[class*="badge"], span[class*="tag"]');
+          if (badgeEl) {
+            record["tag"] = scrubText(this.cleanText(badgeEl.textContent || ""));
+          }
+          const allText = card.textContent || "";
+          const priceMatch = allText.match(/(?:[$€£₹]|USD|INR|EUR)\s*\d+(?:[.,]\d+)?/i);
+          if (priceMatch) {
+            record["price"] = priceMatch[0].trim();
+          }
+          if (Object.keys(record).length === 0) {
+            const fallback = scrubText(this.cleanText(allText));
+            if (fallback) record["content"] = fallback;
+          }
+        }
+        if (Object.keys(record).length > 0) {
+          items.push(record);
+        }
+      }
+      if (items.length === 0) return null;
+      const markdown = this.recordsToMarkdown(items);
+      return {
+        success: true,
+        count: items.length,
+        items,
+        markdown,
+        summary: `Extracted ${items.length} cards/items`
+      };
+    }
+    /**
+     * Schema-guided extractor for an individual card element.
+     */
+    static extractFieldBySchema(el, fieldName, fieldType) {
+      const normalizedName = fieldName.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (fieldType === "link") {
+        const linkEl = el.tagName === "A" ? el : el.querySelector(`a[href*="${normalizedName}"], a.${normalizedName}, a[href]`);
+        return linkEl?.href || "";
+      }
+      if (fieldType === "image") {
+        const imgEl = el.querySelector(`img[src*="${normalizedName}"], img.${normalizedName}, img`);
+        return imgEl?.src || "";
+      }
+      const matchedEl = el.querySelector(`.${normalizedName}, [data-field="${fieldName}"], [itemprop="${fieldName}"], .${fieldName}`);
+      const targetText = matchedEl ? matchedEl.textContent : el.textContent;
+      const cleaned = scrubText(this.cleanText(targetText || ""));
+      if (fieldType === "number") {
+        const numMatch = cleaned.match(/(\d+(?:\.\d+)?)/);
+        return numMatch ? parseFloat(numMatch[1]) : 0;
+      }
+      return cleaned;
+    }
+    /**
+     * Generic key-value fallback when no repeating lists or tables are detected.
+     */
+    static extractGenericKeyValue(container, limit = 50) {
+      const dlElements = Array.from(container.querySelectorAll("dl"));
+      const items = [];
+      if (dlElements.length > 0) {
+        for (const dl of dlElements) {
+          const dts = Array.from(dl.querySelectorAll("dt"));
+          const dds = Array.from(dl.querySelectorAll("dd"));
+          const record = {};
+          dts.forEach((dt, idx) => {
+            const key = this.cleanText(dt.textContent || `key_${idx}`);
+            const val = scrubText(this.cleanText(dds[idx]?.textContent || ""));
+            if (key && val) record[key] = val;
+          });
+          if (Object.keys(record).length > 0) items.push(record);
+        }
+      }
+      if (items.length === 0) {
+        const headings = Array.from(container.querySelectorAll("h1, h2, h3, h4"));
+        for (const h of headings.slice(0, limit)) {
+          const title = scrubText(this.cleanText(h.textContent || ""));
+          const nextP = h.nextElementSibling?.tagName === "P" ? h.nextElementSibling : null;
+          const text = nextP ? scrubText(this.cleanText(nextP.textContent || "")) : "";
+          if (title) {
+            items.push({ section: title, detail: text });
+          }
+        }
+      }
+      const markdown = this.recordsToMarkdown(items);
+      return {
+        success: items.length > 0,
+        count: items.length,
+        items,
+        markdown,
+        summary: items.length > 0 ? `Extracted ${items.length} structural elements` : "No structured data detected"
+      };
+    }
+    /**
+     * Transforms structured records into a clean GitHub Flavored Markdown table.
+     */
+    static recordsToMarkdown(items, explicitHeaders) {
+      if (!items || items.length === 0) return "";
+      const keySet = /* @__PURE__ */ new Set();
+      for (const item of items) {
+        for (const k of Object.keys(item)) {
+          keySet.add(k);
+        }
+      }
+      const headers = explicitHeaders && explicitHeaders.length > 0 ? explicitHeaders : Array.from(keySet.values());
+      if (headers.length === 0) return "";
+      const lines = [];
+      lines.push(`| ${headers.join(" | ")} |`);
+      lines.push(`| ${headers.map(() => "---").join(" | ")} |`);
+      for (const item of items) {
+        const row = headers.map((h) => {
+          const val = item[h];
+          if (val === void 0 || val === null) return "";
+          const str = String(val).replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
+          return str;
+        });
+        lines.push(`| ${row.join(" | ")} |`);
+      }
+      return lines.join("\n");
+    }
+    static cleanText(text) {
+      return text.replace(/\s+/g, " ").trim();
+    }
+    static coerceValue(text, expectedType) {
+      if (expectedType === "number") {
+        const num = parseFloat(text.replace(/[^0-9.-]/g, ""));
+        return isNaN(num) ? text : num;
+      }
+      return text;
     }
   };
 
@@ -2820,6 +3205,25 @@
             timestamp,
             semanticOutcomeVerified: true,
             message: `Requested user input on element '${proposal.targetLocalId || "field"}'`
+          };
+        }
+        if (proposal.kind === "extract") {
+          const rootDoc = targetEl ? targetEl : typeof document !== "undefined" ? document : null;
+          const extractResult = TableExtractor.extract(rootDoc, {
+            targetElement: targetEl,
+            containerSelector: proposal.containerSelector,
+            schema: proposal.extractSchema,
+            limit: proposal.extractLimit || 50
+          });
+          return {
+            actionId: proposal.actionId,
+            success: extractResult.success,
+            timestamp,
+            semanticOutcomeVerified: extractResult.success,
+            message: extractResult.summary,
+            extractedCount: extractResult.count,
+            extractedItems: extractResult.items,
+            extractedData: extractResult.markdown
           };
         }
         return {
@@ -4910,6 +5314,18 @@
             staleTarget: execResult.staleTarget ?? (!targetEl && Boolean(proposal.targetLocalId)),
             message: execResult.message || "Action execution failed",
             reasonCode: execResult.reasonCode || "EXECUTION_FAILED"
+          };
+        }
+        if (proposal.kind === "extract") {
+          return {
+            success: execResult.success,
+            actionId: proposal.actionId,
+            semanticOutcomeVerified: execResult.semanticOutcomeVerified,
+            reasonCode: execResult.reasonCode || "EXTRACTION_COMPLETED",
+            message: execResult.message,
+            extractedCount: execResult.extractedCount,
+            extractedItems: execResult.extractedItems,
+            extractedData: execResult.extractedData
           };
         }
         const verification = await SemanticStateVerifier.verifyOutcome(proposal, targetEl, preSnapshot, { timeoutMs: 2500 });

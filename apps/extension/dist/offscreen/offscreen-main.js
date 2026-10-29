@@ -16130,6 +16130,71 @@ as ORT format: ${n}`);
      * Places clear, high-contrast badges (e.g. "1", "2") corresponding to "el_1", "el_2"
      * on the sanitized screenshot canvas.
      */
+    /**
+     * Resolves visual styling tokens for Set-of-Marks labels based on interactive role.
+     * Matches the modern engineering design system: Discord Blurple (#5865F2) for primary actions,
+     * Emerald Green (#23A55A) for text inputs, Violet (#8B5CF6) for selects, Cyan (#00A8FC) for links.
+     */
+    static getSoMTheme(role) {
+      switch (role) {
+        case "input":
+        case "textarea":
+          return {
+            badgeBg: "#23A55A",
+            // Discord Emerald Green
+            badgeText: "#ffffff",
+            borderStroke: "#166534",
+            wireframeStroke: "rgba(35, 165, 90, 0.40)"
+          };
+        case "select":
+          return {
+            badgeBg: "#8B5CF6",
+            // Vibrant Violet
+            badgeText: "#ffffff",
+            borderStroke: "#6D28D9",
+            wireframeStroke: "rgba(139, 92, 246, 0.40)"
+          };
+        case "link":
+          return {
+            badgeBg: "#00A8FC",
+            // Discord Cyan / Sky
+            badgeText: "#ffffff",
+            borderStroke: "#0284C7",
+            wireframeStroke: "rgba(0, 168, 252, 0.40)"
+          };
+        case "checkbox":
+        case "radio":
+          return {
+            badgeBg: "#F59E0B",
+            // Amber
+            badgeText: "#ffffff",
+            borderStroke: "#D97706",
+            wireframeStroke: "rgba(245, 158, 11, 0.40)"
+          };
+        case "button":
+        case "menuitem":
+        case "tab":
+        default:
+          return {
+            badgeBg: "#5865F2",
+            // Signature Discord Blurple
+            badgeText: "#ffffff",
+            borderStroke: "#4752C4",
+            wireframeStroke: "rgba(88, 101, 242, 0.40)"
+          };
+      }
+    }
+    /**
+     * Set-of-Marks (SOM) visual labeling overlay renderer.
+     * Places clear, high-contrast badges (e.g. "1", "2") corresponding to "el_1", "el_2"
+     * on the sanitized screenshot canvas.
+     *
+     * Features:
+     * 1. Discord/Cyber-Engineering design palette with semantic role color coding.
+     * 2. Collision-aware badge staggering so clustered badges never occlude each other.
+     * 3. Subtle translucent bounding-box wireframes showing exact interactive perimeters.
+     * 4. Clamped strictly inside canvas boundaries to prevent clipping.
+     */
     static renderSetOfMarks(imageCanvas, elements, viewportWidth = 1280, viewportHeight = 800) {
       if (!elements || elements.length === 0) return;
       const ctx = imageCanvas.getContext("2d");
@@ -16139,7 +16204,20 @@ as ORT format: ${n}`);
       const scaleX = canvasWidth / (viewportWidth || 1280);
       const scaleY = canvasHeight / (viewportHeight || 800);
       ctx.save();
-      const candidates = elements.slice(0, 60);
+      const candidates = elements.filter((el2) => {
+        if (el2.inViewport === false || el2.verticalOffset === "below" || el2.verticalOffset === "above") return false;
+        if (el2.state && el2.state.includes("disabled")) return false;
+        return true;
+      }).slice(0, 60);
+      const renderedBadges = [];
+      const doesBadgeOverlap = (cand) => {
+        for (const b of renderedBadges) {
+          if (cand.x < b.x + b.width && cand.x + cand.width > b.x && cand.y < b.y + b.height && cand.y + cand.height > b.y) {
+            return true;
+          }
+        }
+        return false;
+      };
       for (const el2 of candidates) {
         const localId = el2.localId || "";
         const numMatch = localId.match(/(\d+)$/);
@@ -16147,25 +16225,78 @@ as ORT format: ${n}`);
         if (!label) continue;
         let x = 0;
         let y = 0;
+        let elemW = 0;
+        let elemH = 0;
         if (el2.boundingBox && el2.boundingBox.width > 0 && el2.boundingBox.height > 0) {
           x = Math.round(el2.boundingBox.x * scaleX);
           y = Math.round(el2.boundingBox.y * scaleY);
+          elemW = Math.round(el2.boundingBox.width * scaleX);
+          elemH = Math.round(el2.boundingBox.height * scaleY);
         } else if (Array.isArray(el2.coarseBounds) && el2.coarseBounds.length === 4) {
           x = Math.round(el2.coarseBounds[0] * canvasWidth);
           y = Math.round(el2.coarseBounds[1] * canvasHeight);
+          elemW = Math.round(el2.coarseBounds[2] * canvasWidth);
+          elemH = Math.round(el2.coarseBounds[3] * canvasHeight);
         } else {
           continue;
         }
-        x = Math.max(0, Math.min(canvasWidth - 32, x));
-        y = Math.max(0, Math.min(canvasHeight - 16, y));
-        ctx.font = "bold 10px sans-serif";
+        const theme = _MaskRenderer.getSoMTheme(el2.role);
+        if (elemW >= 8 && elemH >= 8) {
+          const wireX = Math.max(0, Math.min(canvasWidth - 2, x));
+          const wireY = Math.max(0, Math.min(canvasHeight - 2, y));
+          const wireW = Math.max(1, Math.min(canvasWidth - wireX, elemW));
+          const wireH = Math.max(1, Math.min(canvasHeight - wireY, elemH));
+          ctx.save();
+          ctx.strokeStyle = theme.wireframeStroke;
+          ctx.lineWidth = 1;
+          if (typeof ctx.roundRect === "function") {
+            ctx.beginPath();
+            ctx.roundRect(wireX, wireY, wireW, wireH, 3);
+            ctx.stroke();
+          } else if (typeof ctx.strokeRect === "function") {
+            ctx.strokeRect(wireX, wireY, wireW, wireH);
+          }
+          ctx.restore();
+        }
+        ctx.font = 'bold 10px "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace';
         const textWidth = Math.max(10, ctx.measureText ? ctx.measureText(label).width : 10);
-        const badgeWidth = textWidth + 6;
-        const badgeHeight = 13;
-        const badgeY = y >= badgeHeight ? y - 1 : y + 1;
-        const badgeX = Math.min(x, canvasWidth - badgeWidth - 2);
-        ctx.fillStyle = "#0284c7";
-        ctx.strokeStyle = "#ffffff";
+        const badgeWidth = textWidth + 8;
+        const badgeHeight = 14;
+        const cand1Y = y >= badgeHeight ? y - 1 : y + 1;
+        const cand1X = Math.min(x, canvasWidth - badgeWidth - 2);
+        const cand2Y = y + elemH + 1;
+        const cand2X = Math.min(x, canvasWidth - badgeWidth - 2);
+        const cand3Y = y >= badgeHeight ? y - 1 : y + 1;
+        const cand3X = Math.min(Math.max(0, x + elemW - badgeWidth), canvasWidth - badgeWidth - 2);
+        let chosenX = cand1X;
+        let chosenY = cand1Y;
+        const c1 = { x: cand1X, y: cand1Y, width: badgeWidth, height: badgeHeight };
+        if (!doesBadgeOverlap(c1)) {
+          chosenX = cand1X;
+          chosenY = cand1Y;
+        } else {
+          const c2 = { x: cand2X, y: cand2Y, width: badgeWidth, height: badgeHeight };
+          const c3 = { x: cand3X, y: cand3Y, width: badgeWidth, height: badgeHeight };
+          if (cand2Y + badgeHeight <= canvasHeight && !doesBadgeOverlap(c2)) {
+            chosenX = cand2X;
+            chosenY = cand2Y;
+          } else if (!doesBadgeOverlap(c3)) {
+            chosenX = cand3X;
+            chosenY = cand3Y;
+          } else {
+            let nudgedY = cand1Y;
+            while (nudgedY + badgeHeight < canvasHeight && doesBadgeOverlap({ x: cand1X, y: nudgedY, width: badgeWidth, height: badgeHeight })) {
+              nudgedY += badgeHeight + 2;
+            }
+            chosenX = cand1X;
+            chosenY = Math.min(nudgedY, canvasHeight - badgeHeight - 2);
+          }
+        }
+        const badgeX = Math.max(0, Math.min(canvasWidth - badgeWidth - 2, chosenX));
+        const badgeY = Math.max(0, Math.min(canvasHeight - badgeHeight - 2, chosenY));
+        renderedBadges.push({ x: badgeX, y: badgeY, width: badgeWidth, height: badgeHeight });
+        ctx.fillStyle = theme.badgeBg;
+        ctx.strokeStyle = theme.borderStroke;
         ctx.lineWidth = 1;
         if (typeof ctx.roundRect === "function") {
           ctx.beginPath();
@@ -16176,8 +16307,8 @@ as ORT format: ${n}`);
           ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight);
           ctx.strokeRect(badgeX, badgeY, badgeWidth, badgeHeight);
         }
-        ctx.fillStyle = "#ffffff";
-        ctx.fillText(label, badgeX + 3, badgeY + 10);
+        ctx.fillStyle = theme.badgeText;
+        ctx.fillText(label, badgeX + 4, badgeY + 10);
       }
       ctx.restore();
     }

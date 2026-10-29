@@ -3,5 +3,10 @@
 __pycache__/
 node_modules/
 .env
+loggy3.md
+*loggy*
+.vscode/
+.agents/
+GEMINI.md
 *.dmg
 *.tsbuildinfo

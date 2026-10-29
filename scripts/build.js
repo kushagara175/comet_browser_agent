@@ -73,7 +73,6 @@ try {
 console.log('📦 Bundling Chrome MV3 offscreen host script (IIFE)...');
 const offscreenEntry = path.join(extensionDir, 'src', 'offscreen', 'offscreen-main.ts');
 const offscreenOutfile = path.join(extensionDir, 'dist', 'offscreen', 'offscreen-main.js');
-
 try {
   execSync(
     `"${ESBUILD_BIN}" "${offscreenEntry}" --bundle --outfile="${offscreenOutfile}" --format=iife --target=es2022`,

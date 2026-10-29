@@ -2409,6 +2409,22 @@ Act only on the current objective and paste its exact id value (e.g. "objective_
     - For information retrieval, question-answering, or summarization goals (e.g. "summarize mission milestones", "how many submissions", "what are the details"):
       * NEVER propose kind: 'finish' without providing the authentic, synthesized answer/summary in 'reply' and 'rationale'!
       * Premature finishes with empty replies, or placeholder replies like "Task finished" / "Done", are strictly prohibited and will be rejected.
+25. DECLARATIVE STRUCTURED DATA EXTRACTION DIRECTIVE (STAGEHAND PATTERN):
+    - When the user asks to extract, scrape, or list tabular data or repeating cards (e.g. "extract all problem statements with ID, title, and domain", "scrape top 10 search results", "get pricing comparison table", "extract articles"):
+      Propose kind: "extract" with an optional "extractSchema" and "extractLimit" (e.g. { "kind": "extract", "extractSchema": { "itemType": "article", "fields": { "title": "string", "link": "link" } }, "extractLimit": 20, "rationale": "Extract structured articles" }).
+      The browser harness runs on-device DOM repeater detection, parses all rows/cards in a single turn, and outputs a formatted Markdown table without wasting tokens on multi-click crawler loops.
+26. GOOGLE WORKSPACE & DOCUMENT DASHBOARD DIRECTIVE (CRITICAL):
+    - When on document management / dashboard pages (e.g. docs.google.com/document/u/0/, drive.google.com, sheets.google.com):
+      * The user is looking at a grid/list of files, NOT an active document editor!
+      * If the user's goal is to edit, type, replace, or read inside a document (e.g. "type X instead of 1st heading", "edit document join prac", "replace heading in doc", "open authorization letter and edit details"):
+        YOU MUST PROPOSE kind: "click" on the matching document card/thumbnail from the "Recent documents" grid (role: "link" or [role="listitem"] matching the document title) to OPEN the document in the editor first!
+      * DO NOT open context menus or click 'More actions' (3-dots popup buttons) or 'Open in new tab' context menu items—click the document card/thumbnail itself directly.
+      * The coordinator automatically tracks and adopts newly opened editor tabs seamlessly.
+      * STRICT BAN: NEVER click the hamburger menu (Main menu, 3 horizontal bars, el_1), settings, or search bar when the user asks to edit document content!
+      * STRICT BAN: NEVER attempt to type document text or edit headings while on the /document/u/0/ dashboard URL! You must open the document first.
+    - When inside the Google Docs editor (docs.google.com/document/d/.../edit):
+      * The document title / rename field is located at the top-left (e.g. "Document title" / "Rename"). To rename the document, click/type into that input.
+      * The document body is rendered via a specialized Canvas / rich-text editor (.kix-appview). To replace or find text, propose clicking into the document area or using the search/replace dialog.
 
 JSON Schema:
 CRITICAL STREAMING DIRECTIVE: You MUST output "thought" as the VERY FIRST key in your JSON object. This ensures your live thinking monologue streams to the user in real time without lag.
@@ -2427,6 +2443,9 @@ CRITICAL STREAMING DIRECTIVE: You MUST output "thought" as the VERY FIRST key in
   "scrollDirection": "down" | "up",
   "searchQuery": "Required search query string when kind is web_search (e.g. 'ISRO Chandrayaan-3 brochure PDF')",
   "userInputPrompt": "Optional prompt text when kind is request_user_input asking user for missing information",
+  "extractSchema": "Optional schema object with fields definition when kind is extract (e.g. { \"itemType\": \"article\", \"fields\": { \"title\": \"string\", \"link\": \"link\" } })",
+  "extractLimit": 20,
+  "containerSelector": "Optional CSS selector string to scope extraction",
   "batchActions": [
     { "actionId": "act_sub_1", "kind": "type", "targetLocalId": "el_1", "textToType": "..." },
     { "actionId": "act_sub_2", "kind": "click", "targetLocalId": "el_2" }
@@ -2458,6 +2477,7 @@ CRITICAL STREAMING DIRECTIVE: You MUST output "thought" as the VERY FIRST key in
 
     const compactElements = selectedElements.map(e => ({
       id: e.localId,
+      mark: (e.localId || '').match(/(\d+)$/)?.[1] || (e.localId || '').replace(/^el_/, ''),
       role: e.role,
       name: e.sanitizedName,
       bounds: e.coarseBounds,

@@ -542,6 +542,61 @@ export const GOOGLE_PLAYBOOK = {
     }
 };
 /**
+ * Playbook for Google Docs (docs.google.com)
+ */
+export const GOOGLE_DOCS_PLAYBOOK = {
+    domain: 'docs.google.com',
+    name: 'Google Docs',
+    aliases: ['docs.google.com', 'google docs', 'docs'],
+    routes: [
+        {
+            name: 'dashboard',
+            path: '/document/u/',
+            aliases: ['/document/u/0', '/document/u/1', '/document/'],
+            description: 'Google Docs document dashboard and file manager',
+            matchKeywords: ['dashboard', 'home', 'recent documents', 'files', 'document list', 'template gallery']
+        },
+        {
+            name: 'editor',
+            path: '/document/d/',
+            aliases: ['/edit', '/preview'],
+            description: 'Google Docs active document editor canvas',
+            matchKeywords: ['editor', 'document', 'edit', 'canvas', 'doc']
+        }
+    ],
+    landmarks: [
+        {
+            id: 'doc_title_input',
+            phrase: 'Document title',
+            aliases: ['Rename', 'Document title', 'docs-title-input', 'title input', 'doc title'],
+            role: 'input',
+            description: 'Editable input field for renaming the document',
+            intentAction: 'type'
+        },
+        {
+            id: 'share_button',
+            phrase: 'Share',
+            aliases: ['Share button', 'share document', 'collaborate'],
+            role: 'button',
+            description: 'Document sharing modal button',
+            intentAction: 'click'
+        },
+        {
+            id: 'search_docs_input',
+            phrase: 'Search Docs',
+            aliases: ['Search', 'search documents', 'Search Docs input'],
+            role: 'input',
+            description: 'Search box for finding documents on the dashboard',
+            intentAction: 'type'
+        }
+    ],
+    metricsRules: [],
+    formFieldHints: {
+        search: ['Search Docs', 'Search', 'searchBox', 'q'],
+        title: ['Document title', 'Rename', 'docs-title-input']
+    }
+};
+/**
  * Playbook for Amazon (amazon.in / amazon.com)
  */
 export const AMAZON_PLAYBOOK = {
@@ -1329,6 +1384,7 @@ export const REGISTERED_PLAYBOOKS = [
     YOUTUBE_PLAYBOOK,
     REDDIT_PLAYBOOK,
     DUCKDUCKGO_PLAYBOOK,
+    GOOGLE_DOCS_PLAYBOOK,
     GOOGLE_PLAYBOOK,
     AMAZON_PLAYBOOK,
     FLIPKART_PLAYBOOK,
